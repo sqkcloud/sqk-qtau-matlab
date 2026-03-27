@@ -12,5 +12,9 @@ sccprj/
 codegen/
 *.slxc
 
+# Output — generated logs, plots, reports (keep the folder, ignore contents)
+output/*
+!output/.gitkeep
+
 # Project metadata
 .serena/

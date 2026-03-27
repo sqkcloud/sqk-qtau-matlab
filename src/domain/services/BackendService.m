@@ -1,0 +1,114 @@
+classdef BackendService < handle
+    % BackendService  Domain service for IBM Quantum backend operations.
+    %
+    %   Wraps /api/backends/* endpoints.  All methods return raw decoded
+    %   structs; DTO transformation is handled by JsonHelper or the caller.
+
+    properties (Access = private)
+        Client FastAPIClient
+    end
+
+    methods
+        function obj = BackendService(client)
+            obj.Client = client;
+            Logger.info('BackendService', 'Initialized');
+        end
+
+        % List all available backends with status, qubit counts, and queue.
+        function data = listBackends(obj, token)
+            Logger.info('BackendService', 'listBackends → GET /api/backends');
+            try
+                data = obj.Client.getAuth('/api/backends', token);
+                Logger.info('BackendService', 'listBackends → response received');
+            catch ME
+                Logger.error('BackendService', 'listBackends FAILED: %s', ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Fetch detailed information for one backend by name.
+        function data = getBackend(obj, backendName, token)
+            ep = sprintf('/api/backends/%s', char(backendName));
+            Logger.info('BackendService', 'getBackend → GET %s', ep);
+            try
+                data = obj.Client.getAuth(ep, token);
+                Logger.info('BackendService', 'getBackend → response received for: %s', char(backendName));
+            catch ME
+                Logger.error('BackendService', 'getBackend FAILED (backend: %s): %s', char(backendName), ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Retrieve the latest calibration data (gate errors, T1/T2, etc.).
+        function data = getCalibration(obj, backendName, token)
+            ep = sprintf('/api/backends/%s/calibration', char(backendName));
+            Logger.info('BackendService', 'getCalibration → GET %s', ep);
+            try
+                data = obj.Client.getAuth(ep, token);
+                Logger.info('BackendService', 'getCalibration → response received for: %s', char(backendName));
+            catch ME
+                Logger.error('BackendService', 'getCalibration FAILED (backend: %s): %s', char(backendName), ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Fetch the hardware connectivity topology.
+        function data = getTopology(obj, backendName, token)
+            ep = sprintf('/api/backends/%s/topology', char(backendName));
+            Logger.info('BackendService', 'getTopology → GET %s', ep);
+            try
+                data = obj.Client.getAuth(ep, token);
+                Logger.info('BackendService', 'getTopology → response received for: %s', char(backendName));
+            catch ME
+                Logger.error('BackendService', 'getTopology FAILED (backend: %s): %s', char(backendName), ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Compare a set of backends.  backendNames is a cell array of strings.
+        function data = compareBackends(obj, backendNames, circuitId, token)
+            Logger.info('BackendService', 'compareBackends → POST /api/backends/compare (circuit: %s, count: %d)', ...
+                char(circuitId), numel(backendNames));
+            payload = struct( ...
+                'backend_names', {backendNames}, ...
+                'circuit_id',    char(circuitId));
+            try
+                data = obj.Client.postAuthJson('/api/backends/compare', payload, token);
+                Logger.info('BackendService', 'compareBackends → comparison complete');
+            catch ME
+                Logger.error('BackendService', 'compareBackends FAILED: %s', ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Persist the primary / backup backend selection for a project.
+        function data = saveSelection(obj, projectId, primaryName, backupName, token)
+            ep = sprintf('/api/projects/%s/backend-selection', char(projectId));
+            Logger.info('BackendService', 'saveSelection → POST %s (primary: %s, backup: %s)', ...
+                ep, char(primaryName), char(backupName));
+            payload = struct( ...
+                'primary_backend', char(primaryName), ...
+                'backup_backend',  char(backupName));
+            try
+                data = obj.Client.postAuthJson(ep, payload, token);
+                Logger.info('BackendService', 'saveSelection → saved for project: %s', char(projectId));
+            catch ME
+                Logger.error('BackendService', 'saveSelection FAILED (project: %s): %s', char(projectId), ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Retrieve the previously saved backend selection for a project.
+        function data = getSelection(obj, projectId, token)
+            ep = sprintf('/api/projects/%s/backend-selection', char(projectId));
+            Logger.info('BackendService', 'getSelection → GET %s', ep);
+            try
+                data = obj.Client.getAuth(ep, token);
+                Logger.info('BackendService', 'getSelection → response received for project: %s', char(projectId));
+            catch ME
+                Logger.error('BackendService', 'getSelection FAILED (project: %s): %s', char(projectId), ME.message);
+                rethrow(ME);
+            end
+        end
+    end
+end

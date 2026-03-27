@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MATLABProject xmlns="http://www.mathworks.com/MATLABProjectFile" schemaVersion="1.0" buildVersion="R2025b" productVersion="25.2">
+  <ProjectFiles>
+    <ProjectFile>QTAUWorkbenchLauncher.m</ProjectFile>
+    <ProjectFile>README.md</ProjectFile>
+    <ProjectFile>src/QTAUWorkbenchApp.m</ProjectFile>
+    <ProjectFile>src/models/AppState.m</ProjectFile>
+    <ProjectFile>src/services/BackendService.m</ProjectFile>
+    <ProjectFile>src/services/CircuitService.m</ProjectFile>
+    <ProjectFile>src/services/FastAPIClient.m</ProjectFile>
+    <ProjectFile>src/services/JobService.m</ProjectFile>
+    <ProjectFile>src/services/PredictionService.m</ProjectFile>
+    <ProjectFile>src/services/ProjectService.m</ProjectFile>
+    <ProjectFile>src/services/ReportService.m</ProjectFile>
+    <ProjectFile>src/services/SettingsService.m</ProjectFile>
+    <ProjectFile>src/tabs/AnalysisTab.m</ProjectFile>
+    <ProjectFile>src/tabs/BackendsTab.m</ProjectFile>
+    <ProjectFile>src/tabs/BenchmarkTab.m</ProjectFile>
+    <ProjectFile>src/tabs/DashboardTab.m</ProjectFile>
+    <ProjectFile>src/tabs/DetailedAnalysisTab.m</ProjectFile>
+    <ProjectFile>src/tabs/JobsTab.m</ProjectFile>
+    <ProjectFile>src/tabs/NotesTab.m</ProjectFile>
+    <ProjectFile>src/tabs/PredictionTab.m</ProjectFile>
+    <ProjectFile>src/tabs/ReportsTab.m</ProjectFile>
+    <ProjectFile>src/tabs/ResultsTab.m</ProjectFile>
+    <ProjectFile>src/tabs/SettingsTab.m</ProjectFile>
+    <ProjectFile>src/tabs/UploadTab.m</ProjectFile>
+    <ProjectFile>src/tabs/WelcomeTab.m</ProjectFile>
+    <ProjectFile>src/utils/AppConfig.m</ProjectFile>
+    <ProjectFile>src/utils/JsonHelper.m</ProjectFile>
+    <ProjectFile>src/utils/Labels.m</ProjectFile>
+    <ProjectFile>src/utils/Logger.m</ProjectFile>
+    <ProjectFile>resources/app.properties</ProjectFile>
+    <ProjectFile>resources/labels.properties</ProjectFile>
+    <ProjectFile>resources/sqk-logo-kokkos-white1-reordered.svg</ProjectFile>
+    <ProjectFile>docs/fastapi_contract.md</ProjectFile>
+    <ProjectFile>docs/openapi.json</ProjectFile>
+    <ProjectFile>scripts/launch.m</ProjectFile>
+    <ProjectFile>tests/test_AppConfig.m</ProjectFile>
+    <ProjectFile>tests/test_Labels.m</ProjectFile>
+  </ProjectFiles>
+  <ProjectReferences/>
+  <MATLABProjectProperties>
+    <AddPath>
+      <Item>src</Item>
+      <Item>src/models</Item>
+      <Item>src/services</Item>
+      <Item>src/tabs</Item>
+      <Item>src/utils</Item>
+    </AddPath>
+    <StartupFiles>
+      <Item>QTAUWorkbenchLauncher.m</Item>
+    </StartupFiles>
+    <ShutdownFiles/>
+    <ProjectShortcuts>
+      <ProjectShortcut>
+        <Label>Launch App</Label>
+        <Command>QTAUWorkbenchApp</Command>
+      </ProjectShortcut>
+      <ProjectShortcut>
+        <Label>Run Tests</Label>
+        <Command>runtests('tests')</Command>
+      </ProjectShortcut>
+      <ProjectShortcut>
+        <Label>Reload Config</Label>
+        <Command>AppConfig.reload(); Labels.reload(); disp('Config reloaded.')</Command>
+      </ProjectShortcut>
+    </ProjectShortcuts>
+  </MATLABProjectProperties>
+</MATLABProject>

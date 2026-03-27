@@ -1,0 +1,100 @@
+% NotesTab  Populates the Notes section panel.
+%
+%   Layout:
+%     Row 1 (toolbar, 42 px)   — heading + Save Notes / Load Notes / Clear buttons.
+%     Row 2 ('1x')             — Markdown editor (left) | Pre-submission runbook (right).
+%     Divider (col 2, 6 px)    — drag-to-resize.
+%
+%   All visible strings come from resources/labels.properties via Labels.
+function NotesScreen(app)
+    Logger.info('NotesScreen', 'Building Notes tab UI');
+    t = app.createSectionPage('Notes');
+
+    g = uigridlayout(t, [2 3]);
+    g.RowHeight     = {42, '1x'};
+    g.ColumnWidth   = {'1.2x', 6, '1x'};
+    g.Padding       = [16 16 16 16];
+    g.RowSpacing    = 12;
+    g.ColumnSpacing = 4;
+    g.BackgroundColor = [0.96 0.97 0.99];
+
+    % ── Toolbar ──────────────────────────────────────────────────────────────
+    topRow = uigridlayout(g, [1 4]);
+    topRow.Layout.Row = 1; topRow.Layout.Column = [1 3];
+    topRow.ColumnWidth = {'1x', 140, 140, 140};
+    topRow.Padding = [0 0 0 0];
+    topRow.BackgroundColor = [0.96 0.97 0.99];
+
+    heading = uilabel(topRow, 'Text', Labels.get('notes_toolbar_title'));
+    heading.FontSize = 16; heading.FontWeight = 'bold'; heading.FontColor = [0.18 0.26 0.40];
+    heading.Layout.Row = 1; heading.Layout.Column = 1;
+
+    app.SaveNotesButton = uibutton(topRow, 'Text', Labels.get('notes_btn_save'), ...
+        'ButtonPushedFcn', @(~,~)app.NotesVm.onSaveNotes());
+    app.SaveNotesButton.Layout.Row = 1; app.SaveNotesButton.Layout.Column = 2;
+    app.styleBtn(app.SaveNotesButton, 'primary');
+    app.SaveNotesButton.Tooltip = 'Persist notes to server (requires login)';
+
+    loadBtn = uibutton(topRow, 'Text', Labels.get('notes_btn_load'), ...
+        'ButtonPushedFcn', @(~,~)app.NotesVm.onLoadNotes());
+    loadBtn.Layout.Row = 1; loadBtn.Layout.Column = 3;
+    app.styleBtn(loadBtn, 'secondary');
+    loadBtn.Tooltip = 'Fetch notes from server for current project';
+
+    app.ClearNotesButton = uibutton(topRow, 'Text', Labels.get('notes_btn_clear'), ...
+        'ButtonPushedFcn', @(~,~)app.NotesVm.onClearNotes());
+    app.ClearNotesButton.Layout.Row = 1; app.ClearNotesButton.Layout.Column = 4;
+    app.styleBtn(app.ClearNotesButton, 'ghost');
+
+    % ── Column divider ────────────────────────────────────────────────────────
+    div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
+    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    app.attachColumnDivider(div, g);
+
+    % ── Markdown notes editor (left) ─────────────────────────────────────────
+    editorPanel = uipanel(g, 'Title', Labels.get('notes_panel_editor'));
+    editorPanel.Layout.Row = 2; editorPanel.Layout.Column = 1; editorPanel.BackgroundColor = [1 1 1];
+
+    eg = uigridlayout(editorPanel, [1 1]);
+    eg.Padding = [12 10 12 10]; eg.BackgroundColor = [1 1 1];
+    app.NotesArea = uitextarea(eg, 'Editable', 'on');
+    app.NotesArea.FontSize = 13; app.NotesArea.FontName = 'Courier New';
+    app.NotesArea.BackgroundColor = [1 1 1];
+    app.NotesArea.Value = { ...
+        '# Run Notes', '', ...
+        '## Objective', '', ...
+        '## Pre-run checklist', ...
+        '- [ ] Account credentials verified', ...
+        '- [ ] Circuit uploaded and parsed', ...
+        '- [ ] Backend confirmed available', ...
+        '- [ ] Benchmark configured', '', ...
+        '## Observations', '', ...
+        '## Next steps', ''};
+
+    % ── Pre-submission Runbook (right) ────────────────────────────────────────
+    checkPanel = uipanel(g, 'Title', Labels.get('notes_panel_runbook'));
+    checkPanel.Layout.Row = 2; checkPanel.Layout.Column = 3; checkPanel.BackgroundColor = [1 1 1];
+
+    cpg = uigridlayout(checkPanel, [2 1]);
+    cpg.RowHeight = {'1x', 60};
+    cpg.Padding = [12 10 12 10]; cpg.BackgroundColor = [1 1 1];
+
+    app.NotesRunbookTable = uitable(cpg);
+    app.NotesRunbookTable.ColumnName = Labels.cols('notes_table_cols_runbook', {'Check','Done'});
+    app.NotesRunbookTable.ColumnEditable = [false true];
+    app.NotesRunbookTable.Data = { ...
+        'Credentials valid',   false; ...
+        'Circuit uploaded',    false; ...
+        'Backend selected',    false; ...
+        'Benchmark configured',false; ...
+        'Prediction reviewed', false; ...
+        'Job submitted',       false; ...
+        'Results reviewed',    false; ...
+        'Report generated',    false};
+    app.NotesRunbookTable.Layout.Row = 1; app.styleTable(app.NotesRunbookTable);
+
+    hint = uitextarea(cpg, 'Editable', 'off'); hint.Layout.Row = 2; hint.FontSize = 12; hint.WordWrap = 'on';
+    hint.Value = {Labels.get('notes_hint')};
+
+    Logger.info('NotesScreen', 'Notes tab UI built successfully');
+end
