@@ -667,6 +667,11 @@ classdef QTAUWorkbenchApp < handle
             app.fitAllSections();
         end
 
+    end % private methods
+
+    % ── Public helpers (called by ViewModels) ─────────────────────────────────
+    methods
+
         % Synchronise BaseUrl in state + client whenever the URL field changes.
         function syncClient(app)
             url = string(app.BaseUrlField.Value);
@@ -709,10 +714,6 @@ classdef QTAUWorkbenchApp < handle
             uialert(app.UIFigure, msg, Labels.get('error_title', 'Error'), 'Icon', 'error');
         end
 
-    end % private methods
-
-    % ── Public factory + style helpers ────────────────────────────────────────
-    methods
         function panel = createSectionPage(app, key)
             panel = uipanel(app.ContentContainer, 'Title', '', 'Visible', 'off');
             panel.Position = [0 0 max(1, app.ContentContainer.Position(3)) ...
