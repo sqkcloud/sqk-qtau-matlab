@@ -812,7 +812,7 @@ classdef QTAUWorkbenchApp < handle
             app.ContentShell.BackgroundColor = [0.96 0.97 0.99];
 
             shellGrid = uigridlayout(app.ContentShell, [3 1]);
-            shellGrid.RowHeight  = {72, 1, '1x'};
+            shellGrid.RowHeight  = {82, 1, '1x'};
             shellGrid.Padding    = [20 16 20 16];
             shellGrid.RowSpacing = 12;
             shellGrid.BackgroundColor = [0.96 0.97 0.99];
