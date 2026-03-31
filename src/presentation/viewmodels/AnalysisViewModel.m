@@ -8,6 +8,55 @@ classdef AnalysisViewModel < handle
             obj.App = app;
         end
 
+        function onEnter(obj)
+            % Called when navigating to the Analysis screen — load circuits
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            app.logEvent('API', 'GET /api/circuits — loading circuit list for Analysis');
+            try
+                data = app.CircuitSvc.listCircuits(app.State.authToken);
+                items = JsonHelper.extractList(data, 'circuits');
+                if isempty(items); items = JsonHelper.asList(data); end
+                n = numel(items);
+                if n == 0
+                    app.AnalysisCircuitDropdown.Items     = {'(no circuits)'};
+                    app.AnalysisCircuitDropdown.ItemsData = {''};
+                    return;
+                end
+                names = cell(1, n);
+                ids   = cell(1, n);
+                for i = 1:n
+                    cid  = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
+                    cname = char(JsonHelper.pick(items(i), {'name','circuit_name'}));
+                    if isempty(cname); cname = cid; end
+                    names{i} = cname;
+                    ids{i}   = cid;
+                end
+                app.AnalysisCircuitDropdown.Items     = names;
+                app.AnalysisCircuitDropdown.ItemsData = ids;
+                % Auto-select the first circuit
+                app.AnalysisCircuitDropdown.Value = ids{1};
+                obj.onCircuitSelected(ids{1});
+                app.logEvent('API', sprintf('Circuit list loaded — %d circuit(s), auto-selected: %s', n, names{1}));
+            catch ME
+                app.logEvent('WARN', sprintf('Failed to load circuits: %s', ME.message));
+            end
+        end
+
+        function onCircuitSelected(obj, circuitId)
+            app = obj.App;
+            if isempty(circuitId); return; end
+            app.State.selectedCircuitId   = string(circuitId);
+            app.State.selectedCircuitName = string(app.AnalysisCircuitDropdown.Value);
+            % Find display name from Items
+            idx = find(strcmp(app.AnalysisCircuitDropdown.ItemsData, circuitId), 1);
+            if ~isempty(idx)
+                app.State.selectedCircuitName = string(app.AnalysisCircuitDropdown.Items{idx});
+            end
+            app.logEvent('UI', sprintf('Circuit selected: %s (%s)', ...
+                char(app.State.selectedCircuitName), circuitId));
+        end
+
         function onAnalyzeCircuit(obj)
             app = obj.App;
             if ~app.State.isAuthenticated()

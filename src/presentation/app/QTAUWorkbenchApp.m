@@ -141,6 +141,7 @@ classdef QTAUWorkbenchApp < handle
 
     % ── Analysis tab ──────────────────────────────────────────────────────────
     properties
+        AnalysisCircuitDropdown     % Circuit selector dropdown
         AnalyzeButton
         FeatureTree
         AnalysisFeatureArea     % annotation text beside the tree
@@ -1133,6 +1134,10 @@ classdef QTAUWorkbenchApp < handle
             end
             app.updateNavStyles(key);
             app.onResizeUI();
+            % Notify ViewModel when entering a screen
+            if strcmp(key, 'Analysis') && ~isempty(app.AnalysisVm)
+                app.AnalysisVm.onEnter();
+            end
         end
 
         function onToggleNav(app)

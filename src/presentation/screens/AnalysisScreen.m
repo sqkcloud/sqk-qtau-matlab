@@ -19,9 +19,26 @@ function AnalysisScreen(app)
     g.ColumnSpacing = 4;
     g.BackgroundColor = [0.96 0.97 0.99];
 
-    app.AnalyzeButton = uibutton(g, 'Text', Labels.get('analysis_btn_analyze'), ...
+    % ── Circuit selector + Analyze button ────────────────────────────────────
+    topBar = uigridlayout(g, [1 3]);
+    topBar.Layout.Row = 1; topBar.Layout.Column = [1 3];
+    topBar.ColumnWidth = {90, '1x', 160};
+    topBar.Padding = [0 0 0 0]; topBar.ColumnSpacing = 8;
+    topBar.BackgroundColor = [0.96 0.97 0.99];
+
+    circLbl = uilabel(topBar, 'Text', Labels.get('analysis_label_circuit', 'Circuit'), ...
+        'FontSize', 13, 'FontColor', [0.35 0.42 0.52], ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+    circLbl.Layout.Row = 1; circLbl.Layout.Column = 1;
+
+    app.AnalysisCircuitDropdown = uidropdown(topBar, ...
+        'Items', {'(none)'}, 'ItemsData', {''}, 'Value', '', ...
+        'ValueChangedFcn', @(src,~)app.AnalysisVm.onCircuitSelected(src.Value));
+    app.AnalysisCircuitDropdown.Layout.Row = 1; app.AnalysisCircuitDropdown.Layout.Column = 2;
+
+    app.AnalyzeButton = uibutton(topBar, 'Text', Labels.get('analysis_btn_analyze'), ...
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onAnalyzeCircuit());
-    app.AnalyzeButton.Layout.Row = 1; app.AnalyzeButton.Layout.Column = [1 3];
+    app.AnalyzeButton.Layout.Row = 1; app.AnalyzeButton.Layout.Column = 3;
     app.styleBtn(app.AnalyzeButton, 'primary');
     app.AnalyzeButton.Tooltip = 'POST /api/circuits/{id}/analyze + match-benchmarks';
 
