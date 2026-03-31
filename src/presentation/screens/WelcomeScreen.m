@@ -88,8 +88,13 @@ function WelcomeScreen(app)
         {'Project Id','Name','Member Count','Created At','Description'});
     app.ProjectsTable.Data = {};
     app.ProjectsTable.Layout.Row = 2; app.ProjectsTable.Layout.Column = 1;
-    app.ProjectsTable.ColumnWidth = {160, 200, 120, 220, '1x'};
+    app.ProjectsTable.ColumnWidth = {180, 220, 120, 220, 500};
     app.styleTable(app.ProjectsTable);
+    % Left-align text columns, centre numeric/date columns
+    leftStyle  = uistyle('HorizontalAlignment', 'left');
+    centerStyle = uistyle('HorizontalAlignment', 'center');
+    addStyle(app.ProjectsTable, leftStyle,   'column', [1 2 5]);
+    addStyle(app.ProjectsTable, centerStyle, 'column', [3 4]);
     app.ProjectsTable.SelectionChangedFcn = @(src,~)app.WelcomeVm.onProjectTableSelect(src);
 
     % Pagination bar: Prev | Page X of Y | Next
