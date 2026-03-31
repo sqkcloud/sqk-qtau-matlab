@@ -403,13 +403,11 @@ classdef QTAUWorkbenchApp < handle
 
             % Row 11 — spacer (empty)
 
-            % Row 12 — Login button (Google Blue accent)
+            % Row 12 — Login button
             loginBtn = uibutton(cg, 'Text', Labels.get('welcome_btn_login', 'Sign in'), ...
-                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onLogin(), ...
-                'FontSize', 14, 'FontWeight', 'bold', ...
-                'FontColor', [1 1 1], ...
-                'BackgroundColor', [0.26 0.52 0.96]);
+                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onLogin());
             loginBtn.Layout.Row = 12; loginBtn.Layout.Column = 1;
+            app.styleBtn(loginBtn, 'primary');
 
             % Row 13 — Status label (error messages)
             app.LoginDlgStatusLabel = uilabel(cg, 'Text', '', ...
@@ -462,108 +460,98 @@ classdef QTAUWorkbenchApp < handle
                 'BorderColor', [0.88 0.89 0.92]);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            % 13 rows: icon | title | subtitle | spacer |
+            % 11 rows: title | subtitle | spacer |
             %          name label | name field | desc label | desc area |
             %          tags label | tags field | spacer |
             %          button bar | status
-            cg = uigridlayout(card, [13 1]);
-            cg.RowHeight = {36, 26, 18, 10, ...    % icon, title, subtitle, spacer
-                            16, 34, 16, 90, ...     % name lbl, name field, desc lbl, desc area
-                            16, 34, 14, ...          % tags lbl, tags field, spacer
-                            42, 20};                 % button bar, status
+            cg = uigridlayout(card, [12 1]);
+            cg.RowHeight = {28, 18, 10, ...          % title, subtitle, spacer
+                            16, 34, 16, 90, ...      % name lbl, name field, desc lbl, desc area
+                            16, 34, 14, ...           % tags lbl, tags field, spacer
+                            42, 20};                  % button bar, status
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [36 24 36 20];
             cg.RowSpacing  = 2;
             cg.BackgroundColor = [1 1 1];
 
-            % Row 1 — Icon
-            iconLbl = uilabel(cg, 'Text', char(9733), ...
-                'FontSize', 26, 'FontColor', [0.26 0.52 0.96], ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
-            iconLbl.Layout.Row = 1; iconLbl.Layout.Column = 1;
-
-            % Row 2 — Title
+            % Row 1 — Title
             titleLbl = uilabel(cg, 'Text', Labels.get('new_proj_dlg_heading', 'Create New Project'), ...
                 'FontSize', 19, 'FontWeight', 'bold', ...
                 'FontColor', [0.15 0.18 0.24], ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
-            titleLbl.Layout.Row = 2; titleLbl.Layout.Column = 1;
+            titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
 
-            % Row 3 — Subtitle
+            % Row 2 — Subtitle
             subLbl = uilabel(cg, 'Text', Labels.get('new_proj_dlg_subtitle', 'Set up a new quantum experiment workspace'), ...
                 'FontSize', 11, 'FontColor', [0.45 0.50 0.58], ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
-            subLbl.Layout.Row = 3; subLbl.Layout.Column = 1;
+            subLbl.Layout.Row = 2; subLbl.Layout.Column = 1;
 
-            % Row 4 — spacer
+            % Row 3 — spacer
 
-            % Row 5 — Project Name label
+            % Row 4 — Project Name label
             nameLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_name', 'Project Name'), ...
                 'FontSize', 11, 'FontWeight', 'bold', ...
                 'FontColor', [0.30 0.34 0.42], ...
                 'VerticalAlignment', 'bottom');
-            nameLbl.Layout.Row = 5; nameLbl.Layout.Column = 1;
+            nameLbl.Layout.Row = 4; nameLbl.Layout.Column = 1;
 
-            % Row 6 — Project Name field
+            % Row 5 — Project Name field
             app.NewProjNameField = uieditfield(cg, 'text', 'Value', '', ...
                 'Placeholder', Labels.get('new_proj_placeholder_name', 'e.g. BV-27 Fidelity Study'), ...
                 'FontSize', 13);
-            app.NewProjNameField.Layout.Row = 6; app.NewProjNameField.Layout.Column = 1;
+            app.NewProjNameField.Layout.Row = 5; app.NewProjNameField.Layout.Column = 1;
 
-            % Row 7 — Description label
+            % Row 6 — Description label
             descLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_desc', 'Description'), ...
                 'FontSize', 11, 'FontWeight', 'bold', ...
                 'FontColor', [0.30 0.34 0.42], ...
                 'VerticalAlignment', 'bottom');
-            descLbl.Layout.Row = 7; descLbl.Layout.Column = 1;
+            descLbl.Layout.Row = 6; descLbl.Layout.Column = 1;
 
-            % Row 8 — Description text area
+            % Row 7 — Description text area
             app.NewProjDescField = uitextarea(cg, 'Value', '', ...
                 'Placeholder', Labels.get('new_proj_placeholder_desc', 'Describe the purpose and scope of this project...'), ...
                 'FontSize', 13);
-            app.NewProjDescField.Layout.Row = 8; app.NewProjDescField.Layout.Column = 1;
+            app.NewProjDescField.Layout.Row = 7; app.NewProjDescField.Layout.Column = 1;
 
-            % Row 9 — Tags label
+            % Row 8 — Tags label
             tagsLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_tags', 'Tags (comma-separated)'), ...
                 'FontSize', 11, 'FontWeight', 'bold', ...
                 'FontColor', [0.30 0.34 0.42], ...
                 'VerticalAlignment', 'bottom');
-            tagsLbl.Layout.Row = 9; tagsLbl.Layout.Column = 1;
+            tagsLbl.Layout.Row = 8; tagsLbl.Layout.Column = 1;
 
-            % Row 10 — Tags field
+            % Row 9 — Tags field
             app.NewProjTagsField = uieditfield(cg, 'text', 'Value', '', ...
                 'Placeholder', Labels.get('new_proj_placeholder_tags', 'e.g. calibration, 27-qubit, fidelity'), ...
                 'FontSize', 13);
-            app.NewProjTagsField.Layout.Row = 10; app.NewProjTagsField.Layout.Column = 1;
+            app.NewProjTagsField.Layout.Row = 9; app.NewProjTagsField.Layout.Column = 1;
 
-            % Row 11 — spacer
+            % Row 10 — spacer
 
-            % Row 12 — Button bar (Create + Cancel)
+            % Row 11 — Button bar (Create + Cancel)
             btnBar = uigridlayout(cg, [1 2]);
-            btnBar.Layout.Row = 12; btnBar.Layout.Column = 1;
+            btnBar.Layout.Row = 11; btnBar.Layout.Column = 1;
             btnBar.ColumnWidth = {'1x', '1x'};
             btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
             btnBar.BackgroundColor = [1 1 1];
 
             cancelBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_cancel', 'Cancel'), ...
-                'FontSize', 14, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], ...
-                'BackgroundColor', [0.95 0.96 0.98], ...
                 'ButtonPushedFcn', @(~,~)delete(app.NewProjectDialog));
             cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+            app.styleBtn(cancelBtn, 'ghost');
 
-            createBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_create', 'Create Project'), ...
-                'FontSize', 14, 'FontWeight', 'bold', ...
-                'FontColor', [1 1 1], ...
-                'BackgroundColor', [0.26 0.52 0.96], ...
+            createBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_create', 'Create'), ...
                 'ButtonPushedFcn', @(~,~)app.WelcomeVm.onCreateProject());
             createBtn.Layout.Row = 1; createBtn.Layout.Column = 2;
+            app.styleBtn(createBtn, 'primary');
 
-            % Row 13 — Status label
+            % Row 12 — Status label
             app.NewProjStatusLabel = uilabel(cg, 'Text', '', ...
                 'FontSize', 11, 'FontColor', [0.84 0.18 0.18], ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.NewProjStatusLabel.Layout.Row = 13; app.NewProjStatusLabel.Layout.Column = 1;
+            app.NewProjStatusLabel.Layout.Row = 12; app.NewProjStatusLabel.Layout.Column = 1;
 
             Logger.info('QTAUWorkbenchApp', 'New Project dialog shown');
         end
@@ -1031,32 +1019,30 @@ classdef QTAUWorkbenchApp < handle
         % styleBtn  Apply a consistent palette to any uibutton.
         %   variant: 'primary' | 'secondary' | 'success' | 'danger' | 'ghost'
         function styleBtn(~, btn, variant)
+            % Clean macOS-native button style: white bg, dark text, subtle fill variants
             btn.FontSize = 13;
+            btn.FontWeight = 'normal';
+            btn.BackgroundColor = [1 1 1];
+            btn.FontColor       = [0.15 0.15 0.15];
             switch lower(char(variant))
                 case 'primary'
-                    btn.BackgroundColor = [0.78 0.80 0.83];
-                    btn.FontColor       = [0.10 0.12 0.16];
+                    btn.BackgroundColor = [0.93 0.95 1.00];
+                    btn.FontColor       = [0.13 0.33 0.73];
                     btn.FontWeight      = 'bold';
                 case 'secondary'
-                    btn.BackgroundColor = [0.84 0.86 0.88];
-                    btn.FontColor       = [0.18 0.22 0.28];
-                    btn.FontWeight      = 'normal';
+                    btn.BackgroundColor = [0.96 0.96 0.97];
+                    btn.FontColor       = [0.15 0.15 0.15];
                 case 'success'
-                    btn.BackgroundColor = [0.83 0.87 0.84];
-                    btn.FontColor       = [0.12 0.20 0.14];
+                    btn.BackgroundColor = [0.93 0.98 0.94];
+                    btn.FontColor       = [0.13 0.40 0.18];
                     btn.FontWeight      = 'bold';
                 case 'danger'
-                    btn.BackgroundColor = [0.88 0.84 0.84];
-                    btn.FontColor       = [0.28 0.10 0.10];
+                    btn.BackgroundColor = [0.99 0.93 0.93];
+                    btn.FontColor       = [0.70 0.15 0.15];
                     btn.FontWeight      = 'bold';
                 case 'ghost'
-                    btn.BackgroundColor = [0.92 0.93 0.94];
-                    btn.FontColor       = [0.28 0.32 0.38];
-                    btn.FontWeight      = 'normal';
-                otherwise
-                    btn.BackgroundColor = [0.90 0.91 0.92];
-                    btn.FontColor       = [0.22 0.26 0.32];
-                    btn.FontWeight      = 'normal';
+                    btn.BackgroundColor = [0.96 0.96 0.97];
+                    btn.FontColor       = [0.25 0.25 0.28];
             end
         end
 
