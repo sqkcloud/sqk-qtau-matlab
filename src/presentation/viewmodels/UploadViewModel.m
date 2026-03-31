@@ -19,6 +19,8 @@ classdef UploadViewModel < handle
             fullp = fullfile(path, file);
             app.State.selectedFile = string(fullp);
             app.UploadFileField.Value = fullp;
+            [~, fname, ~] = fileparts(file);
+            app.CircuitNameField.Value = fname;
             info = dir(fullp);
             app.logEvent('UI', sprintf('Circuit file selected: %s  path: %s  size: %d bytes', ...
                 file, path, info.bytes));

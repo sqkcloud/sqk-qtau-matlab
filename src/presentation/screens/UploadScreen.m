@@ -69,11 +69,13 @@ function UploadScreen(app)
     metaPanel = uipanel(g, 'Title', Labels.get('upload_panel_format_meta'));
     metaPanel.Layout.Row = 2; metaPanel.Layout.Column = 1; metaPanel.BackgroundColor = [1 1 1];
 
-    mg = uigridlayout(metaPanel, [5 2]);
-    mg.RowHeight   = {28, 28, 28, 28, '1x'};
-    mg.ColumnWidth = {130, '1x'};
-    mg.Padding = [16 12 16 12]; mg.RowSpacing = 6; mg.BackgroundColor = [1 1 1];
+    mg = uigridlayout(metaPanel, [4 4]);
+    mg.RowHeight   = {28, 28, 28, '1x'};
+    mg.ColumnWidth = {100, '1x', 80, '1x'};
+    mg.Padding = [16 12 16 12]; mg.RowSpacing = 6; mg.ColumnSpacing = 8;
+    mg.BackgroundColor = [1 1 1];
 
+    % Row 1 — Input Format (left) + Category (right)
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_format'));
     lbl.FontColor = [0.35 0.42 0.52];
     lbl.Layout.Row = 1; lbl.Layout.Column = 1;
@@ -82,27 +84,29 @@ function UploadScreen(app)
         'Value', 'OpenQASM 2.0');
     app.UploadFormatDropdown.Layout.Row = 1; app.UploadFormatDropdown.Layout.Column = 2;
 
+    lbl = uilabel(mg, 'Text', Labels.get('upload_label_category'));
+    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.Layout.Row = 1; lbl.Layout.Column = 3;
+    app.CircuitCategoryDropdown = uidropdown(mg, ...
+        'Items', {'Oracle','Fourier','Sampling','Optimization','Search','Simulation','Other'}, ...
+        'Value', 'Oracle');
+    app.CircuitCategoryDropdown.Layout.Row = 1; app.CircuitCategoryDropdown.Layout.Column = 4;
+
+    % Row 2 — Circuit Name (full width)
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_name'));
     lbl.FontColor = [0.35 0.42 0.52];
     lbl.Layout.Row = 2; lbl.Layout.Column = 1;
     app.CircuitNameField = uieditfield(mg, 'text', 'Value', '');
-    app.CircuitNameField.Layout.Row = 2; app.CircuitNameField.Layout.Column = 2;
+    app.CircuitNameField.Layout.Row = 2; app.CircuitNameField.Layout.Column = [2 4];
     app.CircuitNameField.Placeholder = Labels.get('upload_placeholder_name');
 
-    lbl = uilabel(mg, 'Text', Labels.get('upload_label_category'));
-    lbl.FontColor = [0.35 0.42 0.52];
-    lbl.Layout.Row = 3; lbl.Layout.Column = 1;
-    app.CircuitCategoryDropdown = uidropdown(mg, ...
-        'Items', {'Oracle','Fourier','Sampling','Optimization','Search','Simulation','Other'}, ...
-        'Value', 'Oracle');
-    app.CircuitCategoryDropdown.Layout.Row = 3; app.CircuitCategoryDropdown.Layout.Column = 2;
-
+    % Row 3 — Metadata label
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_metadata'));
     lbl.FontColor = [0.35 0.42 0.52];
-    lbl.Layout.Row = 4; lbl.Layout.Column = 1;
+    lbl.Layout.Row = 3; lbl.Layout.Column = 1;
     app.CircuitMetadataArea = uitextarea(mg, 'Value', {'Source: QASMBench', 'Owner: '});
-    app.CircuitMetadataArea.FontSize = 12; app.CircuitMetadataArea.Layout.Row = 4;
-    app.CircuitMetadataArea.Layout.Column = 2;
+    app.CircuitMetadataArea.FontSize = 12;
+    app.CircuitMetadataArea.Layout.Row = [3 4]; app.CircuitMetadataArea.Layout.Column = [2 4];
 
     % ── Circuit Statistics (right) ────────────────────────────────────────────
     statsPanel = uipanel(g, 'Title', Labels.get('upload_panel_stats'));
