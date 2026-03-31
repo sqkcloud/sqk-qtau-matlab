@@ -76,22 +76,24 @@ classdef QTAUWorkbenchApp < handle
         SettingsVm          % SettingsViewModel
     end
 
+    % ── Login dialog ──────────────────────────────────────────────────────────
+    properties
+        LoginDialog                % modal uifigure
+        LoginDlgBaseUrlField       % Base URL edit field in dialog
+        LoginDlgUsernameField      % Username edit field in dialog
+        LoginDlgPasswordField      % Password edit field (displays masked dots)
+        LoginDlgPasswordReal       % Real password string (stored separately)
+        LoginDlgStatusLabel        % Status label in dialog
+    end
+
     % ── Welcome tab ───────────────────────────────────────────────────────────
     properties
-        BaseUrlField
-        ApplyUrlButton
-        OpenApiCheckButton
-        UsernameField
-        PasswordField
-        LoginButton
-        MeButton
-        LogoutButton
-        FetchProjectsButton
-        LoginStatusArea
         UserInfoArea
         ProjectsTable
-        SkipField
-        LimitField
+        ProjectsPageLabel          % "Page X of Y"
+        ProjectsPrevButton
+        ProjectsNextButton
+        WelcomeLogoutButton        % Logout button on Welcome screen
     end
 
     % ── Dashboard tab ─────────────────────────────────────────────────────────
@@ -267,24 +269,169 @@ classdef QTAUWorkbenchApp < handle
     % Callable from src/presentation/screens/*.m (package-less functions cannot use private methods).
     methods
         function updateWelcomeAuthButtons(app)
-            if isempty(app.LoginButton) || ~isvalid(app.LoginButton)
-                return;
-            end
-            if isempty(app.MeButton) || ~isvalid(app.MeButton) || ...
-                    isempty(app.LogoutButton) || ~isvalid(app.LogoutButton)
+            if isempty(app.WelcomeLogoutButton) || ~isvalid(app.WelcomeLogoutButton)
                 return;
             end
             if app.State.isAuthenticated()
-                app.LoginButton.Visible = 'off';
-                app.LoginButton.Layout.Column = 1;
-                app.MeButton.Visible = 'on';
-                app.LogoutButton.Visible = 'on';
+                app.WelcomeLogoutButton.Visible = 'on';
             else
-                app.LoginButton.Visible = 'on';
-                app.LoginButton.Layout.Column = [1 2];
-                app.MeButton.Visible = 'off';
-                app.LogoutButton.Visible = 'off';
+                app.WelcomeLogoutButton.Visible = 'off';
             end
+        end
+
+        function showLoginDialog(app)
+            % Create modal login dialog — modern card layout centred over main figure
+            figPos = app.UIFigure.Position;
+            dlgW = 440; dlgH = 480;
+            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
+            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
+
+            app.LoginDialog = uifigure('Name', Labels.get('login_dlg_title', 'Login'), ...
+                'Position', [dlgX dlgY dlgW dlgH], ...
+                'WindowStyle', 'modal', ...
+                'Resize', 'off', ...
+                'Color', [0.95 0.96 0.98]);
+
+            % ── Outer grid: centres the card vertically & horizontally ───────
+            outerGrid = uigridlayout(app.LoginDialog, [3 3]);
+            outerGrid.RowHeight   = {16, '1x', 28};
+            outerGrid.ColumnWidth = {24, '1x', 24};
+            outerGrid.Padding     = [0 0 0 0];
+            outerGrid.RowSpacing  = 0;
+            outerGrid.ColumnSpacing = 0;
+            outerGrid.BackgroundColor = [0.95 0.96 0.98];
+
+            % ── Card panel ───────────────────────────────────────────────────
+            card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', [1 1 1], ...
+                'HighlightColor', [0.88 0.89 0.92], ...
+                'ShadowColor', [0.88 0.89 0.92]);
+            card.Layout.Row = 2; card.Layout.Column = 2;
+
+            % 11 rows: brand icon | brand text | subtitle | spacer |
+            %          baseurl label | baseurl field | user label | user field |
+            %          pass label | pass field | spacer | login btn |
+            %          status | help link
+            cg = uigridlayout(card, [14 1]);
+            cg.RowHeight   = {40, 28, 20, 12, ...   % brand icon, title, subtitle, spacer
+                              16, 34, 16, 34, ...    % url label, url field, user label, user field
+                              16, 34, 14, ...         % pass label, pass field, spacer
+                              42, 22, 18};            % login btn, status, help
+            cg.ColumnWidth = {'1x'};
+            cg.Padding     = [36 28 36 20];
+            cg.RowSpacing  = 2;
+            cg.BackgroundColor = [1 1 1];
+
+            % Row 1 — Brand icon (quantum atom symbol)
+            brandIcon = uilabel(cg, 'Text', char(9883), ...
+                'FontSize', 30, 'FontColor', [0.26 0.52 0.96], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
+            brandIcon.Layout.Row = 1; brandIcon.Layout.Column = 1;
+
+            % Row 2 — Brand title
+            brandTitle = uilabel(cg, 'Text', Labels.get('login_dlg_brand', 'QTAU Connector'), ...
+                'FontSize', 20, 'FontWeight', 'bold', ...
+                'FontColor', [0.15 0.18 0.24], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
+            brandTitle.Layout.Row = 2; brandTitle.Layout.Column = 1;
+
+            % Row 3 — Subtitle
+            subtitleLbl = uilabel(cg, 'Text', Labels.get('login_dlg_subtitle', 'Sign in to your workspace'), ...
+                'FontSize', 12, 'FontColor', [0.45 0.50 0.58], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
+            subtitleLbl.Layout.Row = 3; subtitleLbl.Layout.Column = 1;
+
+            % Row 4 — spacer (empty)
+
+            % Row 5 — Base URL label
+            urlLbl = uilabel(cg, 'Text', Labels.get('welcome_label_base_url', 'Base URL'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            urlLbl.Layout.Row = 5; urlLbl.Layout.Column = 1;
+
+            % Row 6 — Base URL field
+            app.LoginDlgBaseUrlField = uieditfield(cg, 'text', ...
+                'Value', AppConfig.get('base_url', 'http://34.42.87.190:5715'), ...
+                'Placeholder', Labels.get('login_dlg_placeholder_url', 'https://your-server:port'), ...
+                'FontSize', 13);
+            app.LoginDlgBaseUrlField.Layout.Row = 6; app.LoginDlgBaseUrlField.Layout.Column = 1;
+
+            % Row 7 — Username label
+            userLbl = uilabel(cg, 'Text', Labels.get('welcome_label_username', 'Username'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            userLbl.Layout.Row = 7; userLbl.Layout.Column = 1;
+
+            % Row 8 — Username field
+            app.LoginDlgUsernameField = uieditfield(cg, 'text', 'Value', '', ...
+                'Placeholder', Labels.get('login_dlg_placeholder_user', 'Enter your username'), ...
+                'FontSize', 13);
+            app.LoginDlgUsernameField.Layout.Row = 8; app.LoginDlgUsernameField.Layout.Column = 1;
+
+            % Row 9 — Password label
+            passLbl = uilabel(cg, 'Text', Labels.get('welcome_label_password', 'Password'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            passLbl.Layout.Row = 9; passLbl.Layout.Column = 1;
+
+            % Row 10 — Password field (dot-masked)
+            app.LoginDlgPasswordReal = '';
+            app.LoginDlgPasswordField = uieditfield(cg, 'text', 'Value', '', ...
+                'Placeholder', Labels.get('login_dlg_placeholder_pass', 'Enter your password'), ...
+                'FontSize', 13);
+            app.LoginDlgPasswordField.Layout.Row = 10; app.LoginDlgPasswordField.Layout.Column = 1;
+            app.LoginDlgPasswordField.ValueChangingFcn = @(~, evt) app.onPasswordChanging(evt);
+
+            % Row 11 — spacer (empty)
+
+            % Row 12 — Login button (Google Blue accent)
+            loginBtn = uibutton(cg, 'Text', Labels.get('welcome_btn_login', 'Sign in'), ...
+                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onLogin(), ...
+                'FontSize', 14, 'FontWeight', 'bold', ...
+                'FontColor', [1 1 1], ...
+                'BackgroundColor', [0.26 0.52 0.96]);
+            loginBtn.Layout.Row = 12; loginBtn.Layout.Column = 1;
+
+            % Row 13 — Status label (error messages)
+            app.LoginDlgStatusLabel = uilabel(cg, 'Text', '', ...
+                'FontSize', 11, 'FontColor', [0.84 0.18 0.18], ...
+                'WordWrap', 'on', 'HorizontalAlignment', 'center');
+            app.LoginDlgStatusLabel.Layout.Row = 13; app.LoginDlgStatusLabel.Layout.Column = 1;
+
+            % Row 14 — Help / forgot link
+            helpLbl = uilabel(cg, 'Text', Labels.get('login_dlg_forgot', 'Forgot credentials? Contact your admin.'), ...
+                'FontSize', 10, 'FontColor', [0.55 0.58 0.64], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
+            helpLbl.Layout.Row = 14; helpLbl.Layout.Column = 1;
+
+            % ── Version footer outside the card ──────────────────────────────
+            verLbl = uilabel(outerGrid, 'Text', Labels.get('login_dlg_version', 'QTAU Connector Workspace v2026'), ...
+                'FontSize', 9, 'FontColor', [0.60 0.63 0.68], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
+            verLbl.Layout.Row = 3; verLbl.Layout.Column = 2;
+
+            Logger.info('QTAUWorkbenchApp', 'Login dialog shown');
+        end
+
+        function onPasswordChanging(app, evt)
+            newVal  = char(evt.Value);
+            oldReal = char(app.LoginDlgPasswordReal);
+            oldLen  = strlength(string(oldReal));
+            newLen  = strlength(string(newVal));
+
+            if newLen > oldLen
+                % Characters added at the end
+                typed = newVal(oldLen+1:end);
+                app.LoginDlgPasswordReal = [oldReal, typed];
+            elseif newLen < oldLen
+                % Characters deleted from end
+                app.LoginDlgPasswordReal = oldReal(1:newLen);
+            end
+            % Replace displayed text with dots
+            app.LoginDlgPasswordField.Value = repmat(char(8226), 1, strlength(string(app.LoginDlgPasswordReal)));
         end
     end
 
@@ -295,6 +442,7 @@ classdef QTAUWorkbenchApp < handle
             app.UIFigure = uifigure('Name', 'Tunning Analysis', ...
                 'Position', [80 40 1600 940], ...
                 'Color', [0.97 0.98 1.00], 'Visible', 'off');
+            app.UIFigure.AutoResizeChildren    = 'off';
             app.UIFigure.SizeChangedFcn        = @(~,~)app.onResizeUI();
             app.UIFigure.WindowButtonDownFcn   = @(~,~)app.onFigMouseDown();
             app.UIFigure.WindowButtonMotionFcn = @(~,~)app.onFigMouseMove();
@@ -350,6 +498,11 @@ classdef QTAUWorkbenchApp < handle
                     'TimerFcn', @(~,~)app.forceInitialLayout());
                 start(t);
             catch; end
+
+            % Auto-show login dialog if not yet authenticated
+            if ~app.State.isAuthenticated()
+                app.showLoginDialog();
+            end
         end
 
         function buildHeader(app)
@@ -672,13 +825,11 @@ classdef QTAUWorkbenchApp < handle
     % ── Public helpers (called by ViewModels) ─────────────────────────────────
     methods
 
-        % Synchronise BaseUrl in state + client whenever the URL field changes.
+        % Synchronise HTTP client base URL from AppState.
         function syncClient(app)
-            url = string(app.BaseUrlField.Value);
-            app.State.baseUrl = url;
-            app.Client.setBaseUrl(url);
+            app.Client.setBaseUrl(app.State.baseUrl);
             if ~isempty(app.SettingsBaseUrlField) && isvalid(app.SettingsBaseUrlField)
-                app.SettingsBaseUrlField.Value = char(url);
+                app.SettingsBaseUrlField.Value = char(app.State.baseUrl);
             end
         end
 
