@@ -23,20 +23,34 @@ function ResultsScreen(app)
     hero = uipanel(g, 'Title', Labels.get('results_panel_hero'));
     hero.Layout.Row = 1; hero.Layout.Column = [1 3]; hero.BackgroundColor = [1 1 1];
 
-    hg = uigridlayout(hero, [2 5]);
-    hg.RowHeight = {26,'1x'};
-    hg.ColumnWidth = {'1x','1x','1x','1x',140};
-    hg.Padding = [16 12 16 12]; hg.BackgroundColor = [1 1 1];
+    hg = uigridlayout(hero, [2 1]);
+    hg.RowHeight = {36, '1x'};
+    hg.Padding = [16 12 16 12]; hg.RowSpacing = 8;
+    hg.BackgroundColor = [1 1 1];
 
-    titleLabel = uilabel(hg, 'Text', Labels.get('results_hero_title'));
+    % Header row: title (left) + button (right)
+    headerRow = uigridlayout(hg, [1 2]);
+    headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
+    headerRow.ColumnWidth = {'1x', 140};
+    headerRow.Padding = [0 0 0 0]; headerRow.BackgroundColor = [1 1 1];
+
+    titleLabel = uilabel(headerRow, 'Text', Labels.get('results_hero_title'));
     titleLabel.FontSize = 15; titleLabel.FontWeight = 'bold';
-    titleLabel.Layout.Row = 1; titleLabel.Layout.Column = [1 4]; titleLabel.WordWrap = 'on';
+    titleLabel.Layout.Row = 1; titleLabel.Layout.Column = 1;
+    titleLabel.VerticalAlignment = 'center'; titleLabel.WordWrap = 'on';
 
-    refreshBtn = uibutton(hg, 'Text', Labels.get('results_btn_refresh'), ...
+    refreshBtn = uibutton(headerRow, 'Text', Labels.get('results_btn_refresh'), ...
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onRefreshResults());
-    refreshBtn.Layout.Row = 1; refreshBtn.Layout.Column = 5;
+    refreshBtn.Layout.Row = 1; refreshBtn.Layout.Column = 2;
     app.styleBtn(refreshBtn, 'primary');
     refreshBtn.Tooltip = 'GET /api/jobs/{id}/results';
+
+    % Cards row: 4 KPI cards
+    cardsRow = uigridlayout(hg, [1 4]);
+    cardsRow.Layout.Row = 2; cardsRow.Layout.Column = 1;
+    cardsRow.ColumnWidth = {'1x','1x','1x','1x'};
+    cardsRow.Padding = [0 0 0 0]; cardsRow.ColumnSpacing = 12;
+    cardsRow.BackgroundColor = [1 1 1];
 
     cards = { ...
         Labels.get('results_kpi_measured',   'Measured fidelity'),   '—', [0.18 0.45 0.82]; ...
@@ -44,7 +58,7 @@ function ResultsScreen(app)
         Labels.get('results_kpi_ideal',      'Ideal overlap'),       '—', [0.62 0.38 0.82]; ...
         Labels.get('results_kpi_validation', 'Validation status'),   '—', [0.75 0.48 0.10]};
     for i = 1:4
-        p = uipanel(hg, 'Title', ''); p.Layout.Row = 2; p.Layout.Column = i;
+        p = uipanel(cardsRow, 'Title', ''); p.Layout.Row = 1; p.Layout.Column = i;
         p.BackgroundColor = [0.96 0.97 0.99];
         pg = uigridlayout(p, [1 2]); pg.ColumnWidth = {5,'1x'}; pg.Padding = [0 0 0 0];
         pg.ColumnSpacing = 0; pg.BackgroundColor = [0.96 0.97 0.99];

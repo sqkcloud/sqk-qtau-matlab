@@ -94,6 +94,7 @@ classdef QTAUWorkbenchApp < handle
         ProjectsPrevButton
         ProjectsNextButton
         WelcomeLogoutButton        % Logout button on Welcome screen
+        WelcomeLoginButton         % Login button on Welcome screen
     end
 
     % ── Dashboard tab ─────────────────────────────────────────────────────────
@@ -274,8 +275,14 @@ classdef QTAUWorkbenchApp < handle
             end
             if app.State.isAuthenticated()
                 app.WelcomeLogoutButton.Visible = 'on';
+                if ~isempty(app.WelcomeLoginButton) && isvalid(app.WelcomeLoginButton)
+                    app.WelcomeLoginButton.Visible = 'off';
+                end
             else
                 app.WelcomeLogoutButton.Visible = 'off';
+                if ~isempty(app.WelcomeLoginButton) && isvalid(app.WelcomeLoginButton)
+                    app.WelcomeLoginButton.Visible = 'on';
+                end
             end
         end
 
@@ -305,7 +312,7 @@ classdef QTAUWorkbenchApp < handle
             card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
                 'BackgroundColor', [1 1 1], ...
                 'HighlightColor', [0.88 0.89 0.92], ...
-                'ShadowColor', [0.88 0.89 0.92]);
+                'BorderColor', [0.88 0.89 0.92]);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
             % 11 rows: brand icon | brand text | subtitle | spacer |
@@ -920,6 +927,10 @@ classdef QTAUWorkbenchApp < handle
         function styleTable(~, tbl)
             try; tbl.RowStriping = 'on'; catch; end
             try; tbl.ColumnSortable = true(1, numel(tbl.ColumnName)); catch; end
+            try
+                s = uistyle('HorizontalAlignment', 'center');
+                addStyle(tbl, s);
+            catch; end
         end
 
         % attachColumnDivider  Registers a panel as a resizable column handle.

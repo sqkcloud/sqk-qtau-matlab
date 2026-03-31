@@ -12,11 +12,13 @@ classdef SettingsViewModel < handle
             app = obj.App;
             app.logEvent('CONFIG', 'Settings save triggered');
             try
-                app.State.baseUrl = string(app.BaseUrlField.Value);
-                app.Client.setBaseUrl(app.State.baseUrl);
+                if ~isempty(app.SettingsBaseUrlField) && isvalid(app.SettingsBaseUrlField)
+                    app.State.baseUrl = string(app.SettingsBaseUrlField.Value);
+                end
+                app.syncClient();
                 app.logEvent('CONFIG', sprintf('Base URL updated: %s', app.State.baseUrl));
             catch ME
-                app.logEvent('WARN', sprintf('Could not update base URL from field: %s', ME.message));
+                app.logEvent('WARN', sprintf('Could not update base URL: %s', ME.message));
             end
             if app.State.isAuthenticated()
                 shots    = round(app.DefaultShotsField.Value);
@@ -79,10 +81,7 @@ classdef SettingsViewModel < handle
             try
                 newUrl = string(src.Value);
                 app.State.baseUrl = newUrl;
-                app.Client.setBaseUrl(app.State.baseUrl);
-                if ~isempty(app.BaseUrlField) && isvalid(app.BaseUrlField)
-                    app.BaseUrlField.Value = char(app.State.baseUrl);
-                end
+                app.syncClient();
                 app.logEvent('CONFIG', sprintf('Base URL updated from Settings tab: %s', newUrl));
             catch ME
                 app.logEvent('WARN', sprintf('Settings URL change handler error: %s', ME.message));

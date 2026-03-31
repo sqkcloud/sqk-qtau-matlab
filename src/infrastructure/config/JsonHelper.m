@@ -58,20 +58,19 @@ classdef JsonHelper
 
         % ── DTO row mappers ───────────────────────────────────────────────────
 
-        % projectsToRows  Map an /admin/projects response → 6-column cell matrix.
+        % projectsToRows  Map an /admin/projects response → 5-column cell matrix.
         function rows = projectsToRows(data)
-            rows  = cell(0, 6);
+            rows  = cell(0, 5);
             items = JsonHelper.extractList(data, 'projects');
             n     = numel(items);
             if n == 0; return; end
-            rows  = cell(n, 6);
+            rows  = cell(n, 5);
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'project_id','id'}));
                 rows{i,2} = char(JsonHelper.pick(items(i), {'name'}));
-                rows{i,3} = char(JsonHelper.pick(items(i), {'owner_username'}));
-                rows{i,4} = char(JsonHelper.pick(items(i), {'member_count'}));
-                rows{i,5} = char(JsonHelper.pick(items(i), {'created_at'}));
-                rows{i,6} = char(JsonHelper.pick(items(i), {'description'}));
+                rows{i,3} = char(JsonHelper.pick(items(i), {'member_count'}));
+                rows{i,4} = char(JsonHelper.pick(items(i), {'created_at'}));
+                rows{i,5} = char(JsonHelper.pick(items(i), {'description'}));
             end
         end
 

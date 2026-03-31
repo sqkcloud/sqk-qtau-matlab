@@ -3,6 +3,11 @@ classdef WelcomeViewModel < handle
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
+    properties
+        CurrentPage  double = 1
+        TotalItems   double = 0
+        ItemsPerPage double = 10
+    end
     methods
         function obj = WelcomeViewModel(app)
             obj.App = app;
@@ -26,6 +31,7 @@ classdef WelcomeViewModel < handle
                 app.State.currentProjectId = string(JsonHelper.pick(data, {'project_id','id'}));
                 app.logEvent('API', sprintf('Project created successfully — id: %s  name: %s', ...
                     app.State.currentProjectId, answer{1}));
+                obj.CurrentPage = 1;
                 obj.onFetchProjects();
             catch ME
                 app.showError('Create Project', ME);
@@ -33,6 +39,7 @@ classdef WelcomeViewModel < handle
         end
 
         function onLoadProject(obj)
+            obj.CurrentPage = 1;
             obj.onFetchProjects();
         end
 
@@ -44,51 +51,32 @@ classdef WelcomeViewModel < handle
                 if ~isempty(data) && row <= size(data,1)
                     app.State.currentProjectId = string(data{row, 1});
                     app.logEvent('UI', sprintf('Project selected: %s', app.State.currentProjectId));
-                    app.setStatus(app.UserInfoArea, { ...
-                        sprintf('Active project: %s', app.State.currentProjectId), ...
-                        sprintf('Name: %s', char(data{row,2})), ...
-                        sprintf('Owner: %s', char(data{row,3}))});
+                    app.UserInfoArea.Text = sprintf('Active project: %s  |  Name: %s', ...
+                        char(app.State.currentProjectId), char(data{row,2}));
                 end
             catch; end
         end
 
-        function onApplyUrl(obj)
-            app = obj.App;
-            app.syncClient();
-            app.logEvent('CONFIG', sprintf('Base URL applied: %s', app.State.baseUrl));
-            app.setStatus(app.LoginStatusArea, {sprintf('Base URL set to: %s', app.State.baseUrl)});
-        end
-
-        function onOpenApiCheck(obj)
-            app = obj.App;
-            app.syncClient();
-            app.logEvent('API', sprintf('OpenAPI check → %s/api/openapi.json', app.State.baseUrl));
-            try
-                data = app.Client.openApi();
-                app.State.lastHealth = "OK";
-                apiTitle   = JsonHelper.pick(data, {'info.title'});
-                apiVersion = JsonHelper.pick(data, {'info.version'});
-                app.setStatus(app.LoginStatusArea, {'OpenAPI check succeeded.', ...
-                    sprintf('Title: %s', apiTitle), ...
-                    sprintf('Version: %s', apiVersion)});
-                app.logEvent('API', sprintf('OpenAPI check OK — title: %s  version: %s', apiTitle, apiVersion));
-            catch ME
-                app.State.lastHealth = "FAILED";
-                app.logEvent('ERROR', sprintf('OpenAPI check FAILED: %s', ME.message));
-                app.setStatus(app.LoginStatusArea, {'OpenAPI check failed.', ME.message});
-                app.showError('OpenAPI Check', ME);
-            end
-        end
-
         function onLogin(obj)
             app = obj.App;
-            app.syncClient();
-            username = string(app.UsernameField.Value);
-            password = string(app.PasswordField.Value);
-            if strlength(strtrim(username)) == 0 || strlength(password) == 0
-                uialert(app.UIFigure, Labels.get('error_missing_credentials', 'Enter username and password first.'), 'Login', 'Icon', 'warning');
+
+            % Read fields from the login dialog
+            if isempty(app.LoginDialog) || ~isvalid(app.LoginDialog)
                 return;
             end
+            baseUrl  = string(app.LoginDlgBaseUrlField.Value);
+            username = string(app.LoginDlgUsernameField.Value);
+            password = string(app.LoginDlgPasswordReal);
+
+            if strlength(strtrim(username)) == 0 || strlength(password) == 0
+                app.LoginDlgStatusLabel.Text = Labels.get('error_missing_credentials', 'Enter username and password first.');
+                return;
+            end
+
+            % Set base URL from dialog and sync client
+            app.State.baseUrl = strtrim(baseUrl);
+            app.syncClient();
+
             app.logEvent('AUTH', sprintf('Login attempt — user: %s  url: %s', username, app.State.baseUrl));
             try
                 data = app.Client.login(username, password);
@@ -100,48 +88,40 @@ classdef WelcomeViewModel < handle
 
                 if strlength(strtrim(app.State.authToken)) == 0
                     app.logEvent('WARN', 'Login response received but no access_token found');
-                    app.setStatus(app.LoginStatusArea, {'Login response received — no token found.', JsonHelper.pretty(data)});
-                    uialert(app.UIFigure, Labels.get('error_login_no_token'), 'Login', 'Icon', 'warning');
+                    app.LoginDlgStatusLabel.Text = Labels.get('error_login_no_token', 'No token in response.');
                     return;
                 end
                 if strlength(strtrim(app.State.tokenType)) == 0
                     app.State.tokenType = "Bearer";
                 end
-                app.setStatus(app.LoginStatusArea, { ...
-                    'Login successful.', ...
-                    sprintf('Username: %s', app.State.currentUser), ...
-                    sprintf('Token type: %s', app.State.tokenType), ...
-                    sprintf('Default project: %s', app.State.defaultProjectId)});
+
                 app.logEvent('AUTH', sprintf('Login OK — user: %s  token_type: %s  default_project: %s', ...
                     app.State.currentUser, app.State.tokenType, app.State.defaultProjectId));
-                app.updateWelcomeAuthButtons();
-            catch ME
-                app.setStatus(app.LoginStatusArea, {'Login failed.', ME.message});
-                app.logEvent('ERROR', sprintf('Login FAILED (user: %s): %s', username, ME.message));
-                if contains(ME.message, '401')
-                    msg = sprintf('%s\n\nTechnical details:\n%s', ...
-                        Labels.get('error_login_unauthorized'), ME.message);
-                    app.logEvent('ERROR', sprintf('[Login] %s', ME.message));
-                    uialert(app.UIFigure, msg, Labels.get('error_title', 'Error'), 'Icon', 'error');
-                else
-                    app.showError('Login', ME);
-                end
-            end
-        end
 
-        function onGetMe(obj)
-            app = obj.App;
-            app.logEvent('API', 'GET /api/auth/me — fetching user info');
-            if ~app.State.isAuthenticated()
-                uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'User Info', 'Icon', 'warning'); return;
-            end
-            try
-                data = app.Client.getMe(app.State.authToken);
-                app.setStatus(app.UserInfoArea, {JsonHelper.pretty(data)});
-                app.logEvent('API', 'GET /api/auth/me → user info received');
+                % Close the login dialog
+                if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                    delete(app.LoginDialog);
+                    app.LoginDialog = [];
+                end
+
+                % Update Welcome screen
+                app.updateWelcomeAuthButtons();
+                app.UserInfoArea.Text = sprintf('Logged in as: %s  |  Default project: %s', ...
+                    char(app.State.currentUser), char(app.State.defaultProjectId));
+
+                % Auto-fetch projects
+                obj.CurrentPage = 1;
+                obj.onFetchProjects();
+
             catch ME
-                app.setStatus(app.UserInfoArea, {'User info failed.', ME.message});
-                app.showError('Get User Info', ME);
+                if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                    if contains(ME.message, '401')
+                        app.LoginDlgStatusLabel.Text = Labels.get('error_login_unauthorized', 'Invalid credentials.');
+                    else
+                        app.LoginDlgStatusLabel.Text = ME.message;
+                    end
+                end
+                app.logEvent('ERROR', sprintf('Login FAILED (user: %s): %s', username, ME.message));
             end
         end
 
@@ -149,7 +129,6 @@ classdef WelcomeViewModel < handle
             app = obj.App;
             app.logEvent('AUTH', sprintf('Logout requested — user: %s', app.State.currentUser));
             if ~app.State.isAuthenticated()
-                app.setStatus(app.LoginStatusArea, {'Already logged out.'});
                 app.updateWelcomeAuthButtons();
                 return;
             end
@@ -158,12 +137,16 @@ classdef WelcomeViewModel < handle
                 app.Client.logout(app.State.authToken);
                 app.State.authToken = "";
                 app.State.currentUser = "";
-                app.setStatus(app.LoginStatusArea, {'Logout successful.'});
-                app.setStatus(app.UserInfoArea, {'Logged out.'});
                 app.logEvent('AUTH', sprintf('Logout OK — user: %s', prevUser));
                 app.updateWelcomeAuthButtons();
+                app.UserInfoArea.Text = Labels.get('welcome_user_info_hint');
+                app.ProjectsTable.Data = {};
+                app.ProjectsPageLabel.Text = '';
+                app.ProjectsPrevButton.Enable = 'off';
+                app.ProjectsNextButton.Enable = 'off';
+                obj.CurrentPage = 1;
+                obj.TotalItems = 0;
             catch ME
-                app.setStatus(app.LoginStatusArea, {'Logout failed.', ME.message});
                 app.showError('Logout', ME);
             end
         end
@@ -171,25 +154,62 @@ classdef WelcomeViewModel < handle
         function onFetchProjects(obj)
             app = obj.App;
             if ~app.State.isAuthenticated()
-                uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Projects', 'Icon', 'warning'); return;
+                return;
             end
-            skip  = max(0, round(app.SkipField.Value));
-            limit = max(1, round(app.LimitField.Value));
+            skip  = (obj.CurrentPage - 1) * obj.ItemsPerPage;
+            limit = obj.ItemsPerPage;
             app.logEvent('API', sprintf('GET /api/admin/projects — skip=%d  limit=%d', skip, limit));
             try
                 data = app.Client.listProjects(app.State.authToken, skip, limit);
                 rows = JsonHelper.projectsToRows(data);
                 app.ProjectsTable.Data = rows;
-                nRows = size(rows, 1);
-                app.logEvent('API', sprintf('GET /api/admin/projects → %d row(s) returned', nRows));
-                info = sprintf('Fetched %d project row(s).', nRows);
+
                 if isstruct(data) && isfield(data, 'total')
-                    info = [info sprintf('  Total on server: %s', string(data.total))];
+                    obj.TotalItems = double(data.total);
+                else
+                    obj.TotalItems = size(rows, 1);
                 end
-                app.setStatus(app.UserInfoArea, {info, JsonHelper.pretty(data)});
+
+                nRows = size(rows, 1);
+                app.logEvent('API', sprintf('GET /api/admin/projects → %d row(s) returned (total: %d)', nRows, obj.TotalItems));
+                obj.updatePagination();
             catch ME
-                app.setStatus(app.UserInfoArea, {'Project fetch failed.', ME.message});
+                app.UserInfoArea.Text = sprintf('Project fetch failed: %s', ME.message);
                 app.showError('Fetch Projects', ME);
+            end
+        end
+
+        function onPrevPage(obj)
+            if obj.CurrentPage > 1
+                obj.CurrentPage = obj.CurrentPage - 1;
+                obj.onFetchProjects();
+            end
+        end
+
+        function onNextPage(obj)
+            totalPages = ceil(obj.TotalItems / obj.ItemsPerPage);
+            if obj.CurrentPage < totalPages
+                obj.CurrentPage = obj.CurrentPage + 1;
+                obj.onFetchProjects();
+            end
+        end
+    end
+
+    methods (Access = private)
+        function updatePagination(obj)
+            app = obj.App;
+            totalPages = max(1, ceil(obj.TotalItems / obj.ItemsPerPage));
+            app.ProjectsPageLabel.Text = sprintf('Page %d of %d  (%d items)', ...
+                obj.CurrentPage, totalPages, obj.TotalItems);
+            if obj.CurrentPage > 1
+                app.ProjectsPrevButton.Enable = 'on';
+            else
+                app.ProjectsPrevButton.Enable = 'off';
+            end
+            if obj.CurrentPage < totalPages
+                app.ProjectsNextButton.Enable = 'on';
+            else
+                app.ProjectsNextButton.Enable = 'off';
             end
         end
     end

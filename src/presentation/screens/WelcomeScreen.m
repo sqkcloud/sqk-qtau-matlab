@@ -1,29 +1,27 @@
 % WelcomeTab  Populates the Welcome section panel.
 %
-%   Layout (3-column grid):
-%     Row 1: Hero banner spanning all 3 columns — quick-start actions.
-%     Row 2, Col 1: Server / Authentication form (URL, credentials, login).
-%     Row 2, Col 2: 6 px resizable column divider.
-%     Row 2, Col 3: Recent Projects table with pagination controls.
+%   Layout (single-column grid):
+%     Row 1 (136 px): Hero banner — quick-start actions.
+%     Row 2 ('1x'):   Recent Projects (full width) with pagination.
 %
-%   The API base URL is read from resources/app.properties via AppConfig.
-%   All visible strings are loaded from resources/labels.properties via Labels.
+%   Server/Authentication is handled by the modal login dialog
+%   (showLoginDialog in QTAUWorkbenchApp).
+%   All visible strings come from resources/labels.properties via Labels.
 function WelcomeScreen(app)
     Logger.info('WelcomeScreen', 'Building Welcome tab UI');
     t = app.createSectionPage('Welcome');
 
-    % ── Root grid: 2 rows × 3 cols (left | divider | right) ─────────────────
-    g = uigridlayout(t, [2 3]);
+    % ── Root grid: 2 rows × 1 col ───────────────────────────────────────────
+    g = uigridlayout(t, [2 1]);
     g.RowHeight     = {136, '1x'};
-    g.ColumnWidth   = {'1.15x', 6, '1x'};
+    g.ColumnWidth   = {'1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
-    g.ColumnSpacing = 4;
     g.BackgroundColor = [0.96 0.97 0.99];
 
-    % ── Hero banner (full width) ──────────────────────────────────────────────
+    % ── Hero banner (full width) ─────────────────────────────────────────────
     hero = uipanel(g, 'Title', Labels.get('welcome_panel_project_launch'));
-    hero.Layout.Row = 1; hero.Layout.Column = [1 3];
+    hero.Layout.Row = 1; hero.Layout.Column = 1;
     hero.BackgroundColor = [1 1 1];
     hg = uigridlayout(hero, [2 4]);
     hg.RowHeight   = {30, '1x'};
@@ -50,114 +48,72 @@ function WelcomeScreen(app)
     btn4.Layout.Row = 2; btn4.Layout.Column = 4; app.styleBtn(btn4, 'secondary');
     btn4.ButtonPushedFcn = @(~,~)app.onSelectSection('Settings');
 
-    % ── Column divider ────────────────────────────────────────────────────────
-    div = uipanel(g, 'Title', '');
-    div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
+    % ── Recent Projects (full width) ─────────────────────────────────────────
+    projPanel = uipanel(g, 'Title', Labels.get('welcome_panel_recent_projects'));
+    projPanel.Layout.Row = 2; projPanel.Layout.Column = 1;
+    projPanel.BackgroundColor = [1 1 1];
 
-    % ── Server / Authentication (left panel) ─────────────────────────────────
-    left = uipanel(g, 'Title', Labels.get('welcome_panel_server_auth'));
-    left.Layout.Row = 2; left.Layout.Column = 1; left.BackgroundColor = [1 1 1];
-    lg = uigridlayout(left, [7 2]);
-    lg.RowHeight = {36, 36, 36, 36, 36, 36, '1x'};
-    lg.ColumnWidth = {130,'1x'};
-    lg.Padding = [16 12 16 12]; lg.RowSpacing = 8; lg.BackgroundColor = [1 1 1];
+    pg = uigridlayout(projPanel, [3 1]);
+    pg.RowHeight = {36, '1x', 36};
+    pg.ColumnWidth = {'1x'};
+    pg.Padding = [16 12 16 12]; pg.RowSpacing = 8;
+    pg.BackgroundColor = [1 1 1];
 
-    lbl = uilabel(lg, 'Text', Labels.get('welcome_label_base_url'));
-    lbl.FontColor = [0.35 0.42 0.52];
-    lbl.Layout.Row = 1; lbl.Layout.Column = 1;
+    % Top bar: user info + logout/login button (right-aligned)
+    topBar = uigridlayout(pg, [1 2]);
+    topBar.Layout.Row = 1; topBar.Layout.Column = 1;
+    topBar.ColumnWidth = {'1x', 120};
+    topBar.Padding = [0 0 0 0]; topBar.BackgroundColor = [1 1 1];
 
-    % Base URL loaded from app.properties — never hardcoded here
-    app.BaseUrlField = uieditfield(lg, 'text', 'Value', AppConfig.get('base_url', 'http://34.42.87.190:5715'));
-    app.BaseUrlField.Layout.Row = 1; app.BaseUrlField.Layout.Column = 2;
-    app.BaseUrlField.Tooltip = 'FastAPI backend base URL (no trailing slash)';
+    app.UserInfoArea = uilabel(topBar, 'Text', Labels.get('welcome_user_info_hint'), ...
+        'FontSize', 12, 'FontColor', [0.38 0.46 0.58], 'WordWrap', 'on');
+    app.UserInfoArea.Layout.Row = 1; app.UserInfoArea.Layout.Column = 1;
+    app.UserInfoArea.VerticalAlignment = 'center';
 
-    app.ApplyUrlButton = uibutton(lg, 'Text', Labels.get('welcome_btn_apply_url'), ...
-        'ButtonPushedFcn', @(~,~)app.WelcomeVm.onApplyUrl());
-    app.ApplyUrlButton.Layout.Row = 2; app.ApplyUrlButton.Layout.Column = 1;
-    app.styleBtn(app.ApplyUrlButton, 'ghost');
-
-    app.OpenApiCheckButton = uibutton(lg, 'Text', Labels.get('welcome_btn_openapi_check'), ...
-        'ButtonPushedFcn', @(~,~)app.WelcomeVm.onOpenApiCheck());
-    app.OpenApiCheckButton.Layout.Row = 2; app.OpenApiCheckButton.Layout.Column = 2;
-    app.styleBtn(app.OpenApiCheckButton, 'ghost');
-    app.OpenApiCheckButton.Tooltip = 'GET /api/openapi.json — confirm server is reachable';
-
-    lbl = uilabel(lg, 'Text', Labels.get('welcome_label_username'));
-    lbl.FontColor = [0.35 0.42 0.52];
-    lbl.Layout.Row = 3; lbl.Layout.Column = 1;
-    app.UsernameField = uieditfield(lg, 'text', 'Value', 'sqkadmin');
-    app.UsernameField.Layout.Row = 3; app.UsernameField.Layout.Column = 2;
-
-    lbl = uilabel(lg, 'Text', Labels.get('welcome_label_password'));
-    lbl.FontColor = [0.35 0.42 0.52];
-    lbl.Layout.Row = 4; lbl.Layout.Column = 1;
-    app.PasswordField = uieditfield(lg, 'text', 'Value', 'Sqkcloud2022!');
-    app.PasswordField.Layout.Row = 4; app.PasswordField.Layout.Column = 2;
-
-    app.LoginButton = uibutton(lg, 'Text', Labels.get('welcome_btn_login'), ...
-        'ButtonPushedFcn', @(~,~)app.WelcomeVm.onLogin());
-    app.LoginButton.Layout.Row = 5; app.LoginButton.Layout.Column = 1;
-    app.styleBtn(app.LoginButton, 'primary');
-    app.LoginButton.Tooltip = 'POST /api/auth/login';
-
-    app.MeButton = uibutton(lg, 'Text', Labels.get('welcome_btn_get_user_info'), ...
-        'ButtonPushedFcn', @(~,~)app.WelcomeVm.onGetMe());
-    app.MeButton.Layout.Row = 5; app.MeButton.Layout.Column = 2;
-    app.styleBtn(app.MeButton, 'ghost');
-    app.MeButton.Tooltip = 'GET /api/auth/me';
-
-    app.LogoutButton = uibutton(lg, 'Text', Labels.get('welcome_btn_logout'), ...
+    % Stack logout and login in the same column; only one visible at a time
+    app.WelcomeLogoutButton = uibutton(topBar, 'Text', Labels.get('welcome_btn_logout', 'Logout'), ...
         'ButtonPushedFcn', @(~,~)app.WelcomeVm.onLogout());
-    app.LogoutButton.Layout.Row = 6; app.LogoutButton.Layout.Column = [1 2];
-    app.styleBtn(app.LogoutButton, 'danger');
+    app.WelcomeLogoutButton.Layout.Row = 1; app.WelcomeLogoutButton.Layout.Column = 2;
+    app.styleBtn(app.WelcomeLogoutButton, 'danger');
+    app.WelcomeLogoutButton.Visible = 'off';
 
-    app.LoginStatusArea = uitextarea(lg, 'Editable', 'off');
-    app.LoginStatusArea.Value = { ...
-        'Demo credentials are pre-filled.', ...
-        'Click Login to authenticate against the live server.'};
-    app.LoginStatusArea.Layout.Row = 7; app.LoginStatusArea.Layout.Column = [1 2];
-    app.LoginStatusArea.FontSize = 12;
+    app.WelcomeLoginButton = uibutton(topBar, 'Text', Labels.get('welcome_btn_login', 'Login'), ...
+        'ButtonPushedFcn', @(~,~)app.showLoginDialog());
+    app.WelcomeLoginButton.Layout.Row = 1; app.WelcomeLoginButton.Layout.Column = 2;
+    app.styleBtn(app.WelcomeLoginButton, 'ghost');
 
-    % ── Recent Projects (right panel) ────────────────────────────────────────
-    right = uipanel(g, 'Title', Labels.get('welcome_panel_recent_projects'));
-    right.Layout.Row = 2; right.Layout.Column = 3; right.BackgroundColor = [1 1 1];
-    rg = uigridlayout(right, [4 4]);
-    rg.RowHeight = {36, 36, 80, '1x'};
-    rg.ColumnWidth = {60, 90, '1x', '1x'};
-    rg.Padding = [16 12 16 12]; rg.RowSpacing = 8; rg.BackgroundColor = [1 1 1];
-
-    lbl = uilabel(rg, 'Text', Labels.get('welcome_label_skip'));
-    lbl.FontColor = [0.35 0.42 0.52];
-    lbl.Layout.Row = 1; lbl.Layout.Column = 1;
-    app.SkipField = uieditfield(rg, 'numeric', 'Value', 0);
-    app.SkipField.Layout.Row = 1; app.SkipField.Layout.Column = 2;
-
-    lbl = uilabel(rg, 'Text', Labels.get('welcome_label_limit'));
-    lbl.FontColor = [0.35 0.42 0.52];
-    lbl.Layout.Row = 1; lbl.Layout.Column = 3;
-    app.LimitField = uieditfield(rg, 'numeric', 'Value', 100);
-    app.LimitField.Layout.Row = 1; app.LimitField.Layout.Column = 4;
-
-    app.FetchProjectsButton = uibutton(rg, 'Text', Labels.get('welcome_btn_fetch_projects'), ...
-        'ButtonPushedFcn', @(~,~)app.WelcomeVm.onFetchProjects());
-    app.FetchProjectsButton.Layout.Row = 2; app.FetchProjectsButton.Layout.Column = [1 4];
-    app.styleBtn(app.FetchProjectsButton, 'secondary');
-    app.FetchProjectsButton.Tooltip = 'GET /api/admin/projects?skip=…&limit=…';
-
-    app.UserInfoArea = uitextarea(rg, 'Editable', 'off');
-    app.UserInfoArea.Value = {Labels.get('welcome_user_info_hint')};
-    app.UserInfoArea.Layout.Row = 3; app.UserInfoArea.Layout.Column = [1 4];
-    app.UserInfoArea.FontSize = 12;
-
-    app.ProjectsTable = uitable(rg);
+    % Projects table
+    app.ProjectsTable = uitable(pg);
     app.ProjectsTable.ColumnName = Labels.cols('welcome_table_cols_projects', ...
-        {'project_id','name','owner_username','member_count','created_at','description'});
+        {'Project Id','Name','Member Count','Created At','Description'});
     app.ProjectsTable.Data = {};
-    app.ProjectsTable.Layout.Row = 4; app.ProjectsTable.Layout.Column = [1 4];
+    app.ProjectsTable.Layout.Row = 2; app.ProjectsTable.Layout.Column = 1;
+    app.ProjectsTable.ColumnWidth = {160, 200, 120, 220, '1x'};
     app.styleTable(app.ProjectsTable);
     app.ProjectsTable.SelectionChangedFcn = @(src,~)app.WelcomeVm.onProjectTableSelect(src);
+
+    % Pagination bar: Prev | Page X of Y | Next
+    pageBar = uigridlayout(pg, [1 3]);
+    pageBar.Layout.Row = 3; pageBar.Layout.Column = 1;
+    pageBar.ColumnWidth = {90, '1x', 90};
+    pageBar.Padding = [0 0 0 0]; pageBar.BackgroundColor = [1 1 1];
+
+    app.ProjectsPrevButton = uibutton(pageBar, 'Text', Labels.get('welcome_btn_prev', '< Previous'), ...
+        'ButtonPushedFcn', @(~,~)app.WelcomeVm.onPrevPage());
+    app.ProjectsPrevButton.Layout.Row = 1; app.ProjectsPrevButton.Layout.Column = 1;
+    app.styleBtn(app.ProjectsPrevButton, 'ghost');
+    app.ProjectsPrevButton.Enable = 'off';
+
+    app.ProjectsPageLabel = uilabel(pageBar, 'Text', '', ...
+        'HorizontalAlignment', 'center', 'FontSize', 12, 'FontColor', [0.38 0.46 0.58]);
+    app.ProjectsPageLabel.Layout.Row = 1; app.ProjectsPageLabel.Layout.Column = 2;
+    app.ProjectsPageLabel.VerticalAlignment = 'center';
+
+    app.ProjectsNextButton = uibutton(pageBar, 'Text', Labels.get('welcome_btn_next', 'Next >'), ...
+        'ButtonPushedFcn', @(~,~)app.WelcomeVm.onNextPage());
+    app.ProjectsNextButton.Layout.Row = 1; app.ProjectsNextButton.Layout.Column = 3;
+    app.styleBtn(app.ProjectsNextButton, 'ghost');
+    app.ProjectsNextButton.Enable = 'off';
 
     Logger.info('WelcomeScreen', 'Welcome tab UI built successfully');
 end
