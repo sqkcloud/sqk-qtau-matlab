@@ -21,7 +21,7 @@ fprintf('\n=== QTAU Seed: Creating 20 sample projects ===\n\n');
 BASE_URL  = 'http://34.42.87.190:5715';
 LOGIN_PATH = '/api/auth/login';
 USERNAME  = 'sqkadmin';
-PASSWORD  = 'sqkadmin';
+PASSWORD  = 'Sqkcloud2022!';
 
 % ── Step 1: Authenticate ────────────────────────────────────────────────────
 fprintf('[1/3] Logging in as "%s" ... ', USERNAME);
