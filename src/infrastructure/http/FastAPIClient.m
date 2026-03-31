@@ -246,15 +246,14 @@ classdef FastAPIClient < handle
 
         function data = loginViaHttpNet(url, username, password, timeout)
             % POST application/x-www-form-urlencoded via matlab.net.http.
-            % webwrite only accepts JSON MediaTypes, so we build the request
-            % manually here.
+            % Uses FormProvider for proper form encoding and response decoding.
             import matlab.net.http.*
             import matlab.net.http.field.*
+            import matlab.net.http.io.*
             import matlab.net.*
 
-            body    = ['username=' FastAPIClient.urlEncode(username) ...
-                       '&password=' FastAPIClient.urlEncode(password)];
-            headers = [ContentTypeField('application/x-www-form-urlencoded'), ...
+            body    = FormProvider('username', username, 'password', password);
+            headers = [ContentTypeField(MediaType('application/x-www-form-urlencoded')), ...
                        GenericField('Accept', 'application/json')];
             req     = RequestMessage(RequestMethod.POST, headers, body);
             opts    = HTTPOptions('ConnectTimeout', timeout);

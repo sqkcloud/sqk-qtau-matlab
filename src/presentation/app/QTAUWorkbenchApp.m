@@ -83,6 +83,8 @@ classdef QTAUWorkbenchApp < handle
         LoginDlgUsernameField      % Username edit field in dialog
         LoginDlgPasswordField      % Password edit field (displays masked dots)
         LoginDlgPasswordReal       % Real password string (stored separately)
+        LoginDlgPasswordVisible    % logical — true = show plain text
+        LoginDlgEyeButton          % Eye toggle button
         LoginDlgStatusLabel        % Status label in dialog
     end
 
@@ -393,13 +395,26 @@ classdef QTAUWorkbenchApp < handle
                 'VerticalAlignment', 'bottom');
             passLbl.Layout.Row = 9; passLbl.Layout.Column = 1;
 
-            % Row 10 — Password field (dot-masked)
-            app.LoginDlgPasswordReal = '';
-            app.LoginDlgPasswordField = uieditfield(cg, 'text', 'Value', '', ...
+            % Row 10 — Password field (dot-masked) + eye toggle
+            app.LoginDlgPasswordReal    = '';
+            app.LoginDlgPasswordVisible = false;
+            passRow = uigridlayout(cg, [1 2]);
+            passRow.Layout.Row = 10; passRow.Layout.Column = 1;
+            passRow.ColumnWidth = {'1x', 36};
+            passRow.Padding = [0 0 0 0]; passRow.ColumnSpacing = 4;
+            passRow.BackgroundColor = [1 1 1];
+
+            app.LoginDlgPasswordField = uieditfield(passRow, 'text', 'Value', '', ...
                 'Placeholder', Labels.get('login_dlg_placeholder_pass', 'Enter your password'), ...
                 'FontSize', 13);
-            app.LoginDlgPasswordField.Layout.Row = 10; app.LoginDlgPasswordField.Layout.Column = 1;
+            app.LoginDlgPasswordField.Layout.Row = 1; app.LoginDlgPasswordField.Layout.Column = 1;
             app.LoginDlgPasswordField.ValueChangingFcn = @(~, evt) app.onPasswordChanging(evt);
+
+            app.LoginDlgEyeButton = uibutton(passRow, 'Text', char(128065), ...
+                'FontSize', 16, 'BackgroundColor', [0.96 0.96 0.97], ...
+                'ButtonPushedFcn', @(~,~)app.onTogglePasswordVisibility());
+            app.LoginDlgEyeButton.Layout.Row = 1; app.LoginDlgEyeButton.Layout.Column = 2;
+            app.LoginDlgEyeButton.Tooltip = 'Show/hide password';
 
             % Row 11 — spacer (empty)
 
@@ -557,6 +572,11 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function onPasswordChanging(app, evt)
+            if app.LoginDlgPasswordVisible
+                % Plain-text mode — store the value directly
+                app.LoginDlgPasswordReal = char(evt.Value);
+                return;
+            end
             newVal  = char(evt.Value);
             oldReal = char(app.LoginDlgPasswordReal);
             oldLen  = strlength(string(oldReal));
@@ -572,6 +592,19 @@ classdef QTAUWorkbenchApp < handle
             end
             % Replace displayed text with dots
             app.LoginDlgPasswordField.Value = repmat(char(8226), 1, strlength(string(app.LoginDlgPasswordReal)));
+        end
+
+        function onTogglePasswordVisibility(app)
+            app.LoginDlgPasswordVisible = ~app.LoginDlgPasswordVisible;
+            if app.LoginDlgPasswordVisible
+                % Show real password
+                app.LoginDlgPasswordField.Value = char(app.LoginDlgPasswordReal);
+                app.LoginDlgEyeButton.Text = char(128064);  % eyes emoji (hidden)
+            else
+                % Mask with dots
+                app.LoginDlgPasswordField.Value = repmat(char(8226), 1, strlength(string(app.LoginDlgPasswordReal)));
+                app.LoginDlgEyeButton.Text = char(128065);  % eye emoji (visible)
+            end
         end
     end
 
