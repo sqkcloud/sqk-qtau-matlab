@@ -27,9 +27,12 @@ classdef ProjectService < handle
         end
 
         % Create a new project.
-        function data = createProject(obj, name, description, token)
+        function data = createProject(obj, name, description, tags, token)
             Logger.info('ProjectService', 'createProject → POST /api/projects (name: %s)', char(name));
             payload = struct('name', char(name), 'description', char(description));
+            if ~isempty(tags)
+                payload.tags = tags;
+            end
             try
                 data = obj.Client.postAuthJson('/api/projects', payload, token);
                 Logger.info('ProjectService', 'createProject → project created: %s', char(name));

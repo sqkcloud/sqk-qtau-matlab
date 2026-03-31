@@ -20,21 +20,57 @@ classdef WelcomeViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'New Project', 'Icon', 'warning');
                 return;
             end
-            answer = inputdlg({'Project name','Description'}, 'New Project', [1 60; 3 60]);
-            if isempty(answer)
-                app.logEvent('UI', 'New Project dialog cancelled');
+            app.showNewProjectDialog();
+        end
+
+        function onCreateProject(obj)
+            app = obj.App;
+
+            % Read fields from the dialog
+            if isempty(app.NewProjectDialog) || ~isvalid(app.NewProjectDialog)
                 return;
             end
-            app.logEvent('API', sprintf('Creating project: "%s"', answer{1}));
+            projName = strtrim(string(app.NewProjNameField.Value));
+            projDesc = strtrim(strjoin(string(app.NewProjDescField.Value), newline));
+            tagsRaw  = strtrim(string(app.NewProjTagsField.Value));
+
+            if strlength(projName) == 0
+                app.NewProjStatusLabel.Text = Labels.get('new_proj_error_name_required', 'Project name is required.');
+                return;
+            end
+            if strlength(projName) > 100
+                app.NewProjStatusLabel.Text = Labels.get('new_proj_error_name_long', 'Project name must be 100 characters or fewer.');
+                return;
+            end
+
+            % Parse tags
+            tags = {};
+            if strlength(tagsRaw) > 0
+                parts = strsplit(char(tagsRaw), ',');
+                tags = strtrim(parts);
+                tags = tags(~cellfun(@isempty, tags));
+            end
+
+            app.logEvent('API', sprintf('Creating project: "%s"', projName));
             try
-                data = app.ProjectSvc.createProject(answer{1}, answer{2}, app.State.authToken);
+                data = app.ProjectSvc.createProject(char(projName), char(projDesc), tags, app.State.authToken);
                 app.State.currentProjectId = string(JsonHelper.pick(data, {'project_id','id'}));
                 app.logEvent('API', sprintf('Project created successfully — id: %s  name: %s', ...
-                    app.State.currentProjectId, answer{1}));
+                    app.State.currentProjectId, char(projName)));
+
+                % Close dialog
+                if ~isempty(app.NewProjectDialog) && isvalid(app.NewProjectDialog)
+                    delete(app.NewProjectDialog);
+                    app.NewProjectDialog = [];
+                end
+
                 obj.CurrentPage = 1;
                 obj.onFetchProjects();
             catch ME
-                app.showError('Create Project', ME);
+                if ~isempty(app.NewProjectDialog) && isvalid(app.NewProjectDialog)
+                    app.NewProjStatusLabel.Text = ME.message;
+                end
+                app.logEvent('ERROR', sprintf('Create project FAILED: %s', ME.message));
             end
         end
 

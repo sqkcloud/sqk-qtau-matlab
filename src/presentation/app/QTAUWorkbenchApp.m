@@ -86,6 +86,15 @@ classdef QTAUWorkbenchApp < handle
         LoginDlgStatusLabel        % Status label in dialog
     end
 
+    % ── New Project dialog ────────────────────────────────────────────────────
+    properties
+        NewProjectDialog            % modal uifigure
+        NewProjNameField            % Project name edit field
+        NewProjDescField            % Description text area
+        NewProjTagsField            % Tags edit field (comma-separated)
+        NewProjStatusLabel          % Status / error label
+    end
+
     % ── Welcome tab ───────────────────────────────────────────────────────────
     properties
         UserInfoArea
@@ -421,6 +430,142 @@ classdef QTAUWorkbenchApp < handle
             verLbl.Layout.Row = 3; verLbl.Layout.Column = 2;
 
             Logger.info('QTAUWorkbenchApp', 'Login dialog shown');
+        end
+
+        function showNewProjectDialog(app)
+            % Create modal New Project dialog — modern card layout matching login style
+            figPos = app.UIFigure.Position;
+            dlgW = 480; dlgH = 520;
+            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
+            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
+
+            app.NewProjectDialog = uifigure( ...
+                'Name', Labels.get('new_proj_dlg_title', 'New Project'), ...
+                'Position', [dlgX dlgY dlgW dlgH], ...
+                'WindowStyle', 'modal', ...
+                'Resize', 'off', ...
+                'Color', [0.95 0.96 0.98]);
+
+            % ── Outer grid: centres the card ────────────────────────────────
+            outerGrid = uigridlayout(app.NewProjectDialog, [3 3]);
+            outerGrid.RowHeight     = {16, '1x', 16};
+            outerGrid.ColumnWidth   = {24, '1x', 24};
+            outerGrid.Padding       = [0 0 0 0];
+            outerGrid.RowSpacing    = 0;
+            outerGrid.ColumnSpacing = 0;
+            outerGrid.BackgroundColor = [0.95 0.96 0.98];
+
+            % ── Card panel ──────────────────────────────────────────────────
+            card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', [1 1 1], ...
+                'HighlightColor', [0.88 0.89 0.92], ...
+                'BorderColor', [0.88 0.89 0.92]);
+            card.Layout.Row = 2; card.Layout.Column = 2;
+
+            % 13 rows: icon | title | subtitle | spacer |
+            %          name label | name field | desc label | desc area |
+            %          tags label | tags field | spacer |
+            %          button bar | status
+            cg = uigridlayout(card, [13 1]);
+            cg.RowHeight = {36, 26, 18, 10, ...    % icon, title, subtitle, spacer
+                            16, 34, 16, 90, ...     % name lbl, name field, desc lbl, desc area
+                            16, 34, 14, ...          % tags lbl, tags field, spacer
+                            42, 20};                 % button bar, status
+            cg.ColumnWidth = {'1x'};
+            cg.Padding     = [36 24 36 20];
+            cg.RowSpacing  = 2;
+            cg.BackgroundColor = [1 1 1];
+
+            % Row 1 — Icon
+            iconLbl = uilabel(cg, 'Text', char(9733), ...
+                'FontSize', 26, 'FontColor', [0.26 0.52 0.96], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
+            iconLbl.Layout.Row = 1; iconLbl.Layout.Column = 1;
+
+            % Row 2 — Title
+            titleLbl = uilabel(cg, 'Text', Labels.get('new_proj_dlg_heading', 'Create New Project'), ...
+                'FontSize', 19, 'FontWeight', 'bold', ...
+                'FontColor', [0.15 0.18 0.24], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
+            titleLbl.Layout.Row = 2; titleLbl.Layout.Column = 1;
+
+            % Row 3 — Subtitle
+            subLbl = uilabel(cg, 'Text', Labels.get('new_proj_dlg_subtitle', 'Set up a new quantum experiment workspace'), ...
+                'FontSize', 11, 'FontColor', [0.45 0.50 0.58], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
+            subLbl.Layout.Row = 3; subLbl.Layout.Column = 1;
+
+            % Row 4 — spacer
+
+            % Row 5 — Project Name label
+            nameLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_name', 'Project Name'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            nameLbl.Layout.Row = 5; nameLbl.Layout.Column = 1;
+
+            % Row 6 — Project Name field
+            app.NewProjNameField = uieditfield(cg, 'text', 'Value', '', ...
+                'Placeholder', Labels.get('new_proj_placeholder_name', 'e.g. BV-27 Fidelity Study'), ...
+                'FontSize', 13);
+            app.NewProjNameField.Layout.Row = 6; app.NewProjNameField.Layout.Column = 1;
+
+            % Row 7 — Description label
+            descLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_desc', 'Description'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            descLbl.Layout.Row = 7; descLbl.Layout.Column = 1;
+
+            % Row 8 — Description text area
+            app.NewProjDescField = uitextarea(cg, 'Value', '', ...
+                'Placeholder', Labels.get('new_proj_placeholder_desc', 'Describe the purpose and scope of this project...'), ...
+                'FontSize', 13);
+            app.NewProjDescField.Layout.Row = 8; app.NewProjDescField.Layout.Column = 1;
+
+            % Row 9 — Tags label
+            tagsLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_tags', 'Tags (comma-separated)'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            tagsLbl.Layout.Row = 9; tagsLbl.Layout.Column = 1;
+
+            % Row 10 — Tags field
+            app.NewProjTagsField = uieditfield(cg, 'text', 'Value', '', ...
+                'Placeholder', Labels.get('new_proj_placeholder_tags', 'e.g. calibration, 27-qubit, fidelity'), ...
+                'FontSize', 13);
+            app.NewProjTagsField.Layout.Row = 10; app.NewProjTagsField.Layout.Column = 1;
+
+            % Row 11 — spacer
+
+            % Row 12 — Button bar (Create + Cancel)
+            btnBar = uigridlayout(cg, [1 2]);
+            btnBar.Layout.Row = 12; btnBar.Layout.Column = 1;
+            btnBar.ColumnWidth = {'1x', '1x'};
+            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
+            btnBar.BackgroundColor = [1 1 1];
+
+            cancelBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_cancel', 'Cancel'), ...
+                'FontSize', 14, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'BackgroundColor', [0.95 0.96 0.98], ...
+                'ButtonPushedFcn', @(~,~)delete(app.NewProjectDialog));
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+
+            createBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_create', 'Create Project'), ...
+                'FontSize', 14, 'FontWeight', 'bold', ...
+                'FontColor', [1 1 1], ...
+                'BackgroundColor', [0.26 0.52 0.96], ...
+                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onCreateProject());
+            createBtn.Layout.Row = 1; createBtn.Layout.Column = 2;
+
+            % Row 13 — Status label
+            app.NewProjStatusLabel = uilabel(cg, 'Text', '', ...
+                'FontSize', 11, 'FontColor', [0.84 0.18 0.18], ...
+                'WordWrap', 'on', 'HorizontalAlignment', 'center');
+            app.NewProjStatusLabel.Layout.Row = 13; app.NewProjStatusLabel.Layout.Column = 1;
+
+            Logger.info('QTAUWorkbenchApp', 'New Project dialog shown');
         end
 
         function onPasswordChanging(app, evt)
