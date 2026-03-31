@@ -1058,14 +1058,6 @@ classdef QTAUWorkbenchApp < handle
         function styleTable(~, tbl)
             try; tbl.RowStriping = 'on'; catch; end
             try; tbl.ColumnSortable = true(1, numel(tbl.ColumnName)); catch; end
-            % Centre column headers via HTML
-            try
-                names = tbl.ColumnName;
-                for i = 1:numel(names)
-                    names{i} = ['<html><center>' names{i} '</center></html>'];
-                end
-                tbl.ColumnName = names;
-            catch; end
         end
 
         % attachColumnDivider  Registers a panel as a resizable column handle.
