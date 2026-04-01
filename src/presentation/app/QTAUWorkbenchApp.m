@@ -299,72 +299,93 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function showLoginDialog(app)
-            % Create modal login dialog — clean, professional card layout
+            % Create modal login dialog — Google-inspired professional layout
             figPos = app.UIFigure.Position;
-            dlgW = 420; dlgH = 500;
+            dlgW = 480; dlgH = 640;
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
+
+            % Google-inspired color palette
+            bgColor     = [0.965 0.969 0.976];   % #f7f8f9 — page background
+            cardBg      = [1 1 1];                % white card
+            cardBorder  = [0.855 0.863 0.878];    % #dadce0
+            titleColor  = [0.125 0.129 0.141];    % #202124
+            subtColor   = [0.373 0.392 0.424];    % #5f6368
+            labelColor  = [0.373 0.392 0.424];    % #5f6368
+            fieldColor  = [0.125 0.129 0.141];    % #202124
+            accentBlue  = [0.102 0.451 0.910];    % #1a73e8
+            errorRed    = [0.851 0.188 0.145];    % #d93025
+            footerColor = [0.584 0.604 0.643];    % #959aa4
 
             app.LoginDialog = uifigure( ...
                 'Name', Labels.get('login_dlg_title', 'Sign In'), ...
                 'Position', [dlgX dlgY dlgW dlgH], ...
                 'WindowStyle', 'modal', ...
                 'Resize', 'off', ...
-                'Color', [0.95 0.96 0.98]);
+                'Color', bgColor);
 
-            % ── Outer grid: card + footer ────────────────────────────────────
-            outerGrid = uigridlayout(app.LoginDialog, [2 1]);
-            outerGrid.RowHeight   = {'1x', 24};
-            outerGrid.ColumnWidth = {'1x'};
-            outerGrid.Padding     = [32 16 32 12];
-            outerGrid.RowSpacing  = 8;
-            outerGrid.BackgroundColor = [0.95 0.96 0.98];
+            % ── Outer grid: top spacer + card + footer ───────────────────────
+            outerGrid = uigridlayout(app.LoginDialog, [3 3]);
+            outerGrid.RowHeight   = {16, '1x', 28};
+            outerGrid.ColumnWidth = {36, '1x', 36};
+            outerGrid.Padding     = [0 0 0 0];
+            outerGrid.RowSpacing  = 0;
+            outerGrid.ColumnSpacing = 0;
+            outerGrid.BackgroundColor = bgColor;
 
             % ── Card panel ───────────────────────────────────────────────────
             card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
-                'BackgroundColor', [1 1 1], ...
-                'HighlightColor', [0.90 0.91 0.93], ...
-                'BorderColor', [0.90 0.91 0.93]);
-            card.Layout.Row = 1; card.Layout.Column = 1;
+                'BackgroundColor', cardBg, ...
+                'HighlightColor', cardBorder, ...
+                'BorderColor', cardBorder);
+            card.Layout.Row = 2; card.Layout.Column = 2;
 
-            % Card inner grid
-            % title | subtitle | divider | url label | url field |
-            % user label | user field | pass label | pass row |
-            % spacer | sign-in btn | status | forgot
-            cg = uigridlayout(card, [13 1]);
-            cg.RowHeight = {32, 20, 16, ...           % title, subtitle, divider
-                            15, 34, ...                % url label, url field
-                            15, 34, ...                % user label, user field
-                            15, 34, ...                % pass label, pass row
-                            16, 40, 20};               % spacer, btn, status
+            % Card inner grid — generous spacing for Google-like airiness
+            % logo | title | subtitle | gap1 |
+            % url-lbl | url-field | gap2 | user-lbl | user-field |
+            % gap3 | pass-lbl | pass-row | forgot | gap4 |
+            % sign-in | status
+            cg = uigridlayout(card, [15 1]);
+            cg.RowHeight = {36, ...     %  1: "Sign in" title
+                            22, ...     %  2: subtitle
+                            20, ...     %  3: gap
+                            18, ...     %  4: Server URL label
+                            40, ...     %  5: Server URL field
+                            14, ...     %  6: gap
+                            18, ...     %  7: Username label
+                            40, ...     %  8: Username field
+                            14, ...     %  9: gap
+                            18, ...     % 10: Password label
+                            40, ...     % 11: Password row
+                            24, ...     % 12: Forgot link
+                            20, ...     % 13: gap
+                            46, ...     % 14: Sign In button
+                            24};        % 15: Status / error
             cg.ColumnWidth = {'1x'};
-            cg.Padding     = [32 28 32 20];
-            cg.RowSpacing  = 3;
-            cg.BackgroundColor = [1 1 1];
+            cg.Padding     = [40 32 40 24];
+            cg.RowSpacing  = 2;
+            cg.BackgroundColor = cardBg;
 
-            % Row 1 — Title
-            titleLbl = uilabel(cg, 'Text', Labels.get('login_dlg_brand', 'QTAU Connector'), ...
-                'FontSize', 22, 'FontWeight', 'bold', ...
-                'FontColor', [0.12 0.14 0.20], ...
+            % Row 1 — "Sign in" title
+            titleLbl = uilabel(cg, 'Text', Labels.get('login_dlg_sign_in', 'Sign in'), ...
+                'FontSize', 24, 'FontWeight', 'bold', ...
+                'FontColor', titleColor, ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
             titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
 
             % Row 2 — Subtitle
-            subLbl = uilabel(cg, 'Text', Labels.get('login_dlg_subtitle', 'Sign in to your workspace'), ...
-                'FontSize', 12, 'FontColor', [0.50 0.53 0.60], ...
+            subLbl = uilabel(cg, ...
+                'Text', Labels.get('login_dlg_subtitle', 'to continue to QTAU Connector'), ...
+                'FontSize', 13, 'FontColor', subtColor, ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
             subLbl.Layout.Row = 2; subLbl.Layout.Column = 1;
 
-            % Row 3 — Divider line
-            divider = uipanel(cg, 'Title', '', 'BorderType', 'line', ...
-                'BackgroundColor', [0.90 0.91 0.93], ...
-                'HighlightColor', [0.90 0.91 0.93], ...
-                'BorderColor', [0.90 0.91 0.93]);
-            divider.Layout.Row = 3; divider.Layout.Column = 1;
+            % Row 3 — gap
 
             % Row 4 — Server URL label
-            urlLbl = uilabel(cg, 'Text', Labels.get('welcome_label_base_url', 'Server URL'), ...
-                'FontSize', 11, 'FontColor', [0.40 0.43 0.50], ...
+            urlLbl = uilabel(cg, ...
+                'Text', Labels.get('welcome_label_base_url', 'Server URL'), ...
+                'FontSize', 12, 'FontColor', labelColor, ...
                 'VerticalAlignment', 'bottom');
             urlLbl.Layout.Row = 4; urlLbl.Layout.Column = 1;
 
@@ -372,76 +393,91 @@ classdef QTAUWorkbenchApp < handle
             app.LoginDlgBaseUrlField = uieditfield(cg, 'text', ...
                 'Value', AppConfig.get('base_url', 'http://34.42.87.190:5715'), ...
                 'Placeholder', Labels.get('login_dlg_placeholder_url', 'https://your-server:port'), ...
-                'FontSize', 13, 'FontColor', [0.30 0.33 0.38]);
-            app.LoginDlgBaseUrlField.Layout.Row = 5; app.LoginDlgBaseUrlField.Layout.Column = 1;
+                'FontSize', 14, 'FontColor', fieldColor);
+            app.LoginDlgBaseUrlField.Layout.Row = 5;
+            app.LoginDlgBaseUrlField.Layout.Column = 1;
 
-            % Row 6 — Username label
-            userLbl = uilabel(cg, 'Text', Labels.get('welcome_label_username', 'Username'), ...
-                'FontSize', 11, 'FontColor', [0.40 0.43 0.50], ...
+            % Row 6 — gap
+
+            % Row 7 — Username label
+            userLbl = uilabel(cg, ...
+                'Text', Labels.get('welcome_label_username', 'Username'), ...
+                'FontSize', 12, 'FontColor', labelColor, ...
                 'VerticalAlignment', 'bottom');
-            userLbl.Layout.Row = 6; userLbl.Layout.Column = 1;
+            userLbl.Layout.Row = 7; userLbl.Layout.Column = 1;
 
-            % Row 7 — Username field
+            % Row 8 — Username field
             app.LoginDlgUsernameField = uieditfield(cg, 'text', 'Value', '', ...
                 'Placeholder', Labels.get('login_dlg_placeholder_user', 'Enter your username'), ...
-                'FontSize', 13);
-            app.LoginDlgUsernameField.Layout.Row = 7; app.LoginDlgUsernameField.Layout.Column = 1;
+                'FontSize', 14, 'FontColor', fieldColor);
+            app.LoginDlgUsernameField.Layout.Row = 8;
+            app.LoginDlgUsernameField.Layout.Column = 1;
 
-            % Row 8 — Password label
-            passLbl = uilabel(cg, 'Text', Labels.get('welcome_label_password', 'Password'), ...
-                'FontSize', 11, 'FontColor', [0.40 0.43 0.50], ...
+            % Row 9 — gap
+
+            % Row 10 — Password label
+            passLbl = uilabel(cg, ...
+                'Text', Labels.get('welcome_label_password', 'Password'), ...
+                'FontSize', 12, 'FontColor', labelColor, ...
                 'VerticalAlignment', 'bottom');
-            passLbl.Layout.Row = 8; passLbl.Layout.Column = 1;
+            passLbl.Layout.Row = 10; passLbl.Layout.Column = 1;
 
-            % Row 9 — Password field + Show/Hide toggle
+            % Row 11 — Password field + Show/Hide toggle
             app.LoginDlgPasswordReal    = '';
             app.LoginDlgPasswordVisible = false;
             passRow = uigridlayout(cg, [1 2]);
-            passRow.Layout.Row = 9; passRow.Layout.Column = 1;
-            passRow.ColumnWidth = {'1x', 64};
-            passRow.Padding = [0 0 0 0]; passRow.ColumnSpacing = 6;
-            passRow.BackgroundColor = [1 1 1];
+            passRow.Layout.Row = 11; passRow.Layout.Column = 1;
+            passRow.ColumnWidth = {'1x', 60};
+            passRow.Padding = [0 0 0 0]; passRow.ColumnSpacing = 8;
+            passRow.BackgroundColor = cardBg;
 
             app.LoginDlgPasswordField = uieditfield(passRow, 'text', 'Value', '', ...
                 'Placeholder', Labels.get('login_dlg_placeholder_pass', 'Enter your password'), ...
-                'FontSize', 13);
-            app.LoginDlgPasswordField.Layout.Row = 1; app.LoginDlgPasswordField.Layout.Column = 1;
-            app.LoginDlgPasswordField.ValueChangingFcn = @(~, evt) app.onPasswordChanging(evt);
+                'FontSize', 14, 'FontColor', fieldColor);
+            app.LoginDlgPasswordField.Layout.Row = 1;
+            app.LoginDlgPasswordField.Layout.Column = 1;
+            app.LoginDlgPasswordField.ValueChangingFcn = ...
+                @(~, evt) app.onPasswordChanging(evt);
 
             app.LoginDlgEyeButton = uibutton(passRow, 'Text', 'Show', ...
-                'FontSize', 11, 'FontColor', [0.35 0.40 0.50], ...
-                'BackgroundColor', [0.96 0.96 0.97], ...
+                'FontSize', 11, 'FontColor', accentBlue, ...
+                'BackgroundColor', [0.972 0.976 0.988], ...
                 'ButtonPushedFcn', @(~,~)app.onTogglePasswordVisibility());
-            app.LoginDlgEyeButton.Layout.Row = 1; app.LoginDlgEyeButton.Layout.Column = 2;
+            app.LoginDlgEyeButton.Layout.Row = 1;
+            app.LoginDlgEyeButton.Layout.Column = 2;
             app.LoginDlgEyeButton.Tooltip = 'Show or hide password';
 
-            % Row 10 — spacer
+            % Row 12 — Forgot credentials link (blue, left-aligned)
+            helpLbl = uilabel(cg, ...
+                'Text', Labels.get('login_dlg_forgot', 'Forgot credentials? Contact your admin.'), ...
+                'FontSize', 11, 'FontColor', accentBlue, ...
+                'HorizontalAlignment', 'left', 'VerticalAlignment', 'center');
+            helpLbl.Layout.Row = 12; helpLbl.Layout.Column = 1;
 
-            % Row 11 — Sign In button
-            loginBtn = uibutton(cg, 'Text', Labels.get('welcome_btn_login', 'Sign In'), ...
-                'FontSize', 14, 'FontWeight', 'bold', ...
+            % Row 13 — gap
+
+            % Row 14 — Sign In button (Google blue, bold)
+            loginBtn = uibutton(cg, ...
+                'Text', Labels.get('welcome_btn_login', 'Sign In'), ...
+                'FontSize', 15, 'FontWeight', 'bold', ...
                 'FontColor', [1 1 1], ...
-                'BackgroundColor', [0.22 0.42 0.85], ...
+                'BackgroundColor', accentBlue, ...
                 'ButtonPushedFcn', @(~,~)app.WelcomeVm.onLogin());
-            loginBtn.Layout.Row = 11; loginBtn.Layout.Column = 1;
+            loginBtn.Layout.Row = 14; loginBtn.Layout.Column = 1;
 
-            % Row 12 — Status / error label
+            % Row 15 — Status / error label
             app.LoginDlgStatusLabel = uilabel(cg, 'Text', '', ...
-                'FontSize', 11, 'FontColor', [0.80 0.20 0.20], ...
+                'FontSize', 11, 'FontColor', errorRed, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.LoginDlgStatusLabel.Layout.Row = 12; app.LoginDlgStatusLabel.Layout.Column = 1;
-
-            % Row 13 — Forgot hint
-            helpLbl = uilabel(cg, 'Text', Labels.get('login_dlg_forgot', 'Forgot credentials? Contact your admin.'), ...
-                'FontSize', 10, 'FontColor', [0.58 0.60 0.66], ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
-            helpLbl.Layout.Row = 13; helpLbl.Layout.Column = 1;
+            app.LoginDlgStatusLabel.Layout.Row = 15;
+            app.LoginDlgStatusLabel.Layout.Column = 1;
 
             % ── Version footer below card ────────────────────────────────────
-            verLbl = uilabel(outerGrid, 'Text', Labels.get('login_dlg_version', 'QTAU Connector Workspace v2026'), ...
-                'FontSize', 9, 'FontColor', [0.60 0.63 0.68], ...
+            verLbl = uilabel(outerGrid, ...
+                'Text', Labels.get('login_dlg_version', 'QTAU Connector Workspace v2026'), ...
+                'FontSize', 9, 'FontColor', footerColor, ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
-            verLbl.Layout.Row = 2; verLbl.Layout.Column = 1;
+            verLbl.Layout.Row = 3; verLbl.Layout.Column = 2;
 
             Logger.info('QTAUWorkbenchApp', 'Login dialog shown');
         end
@@ -1134,9 +1170,41 @@ classdef QTAUWorkbenchApp < handle
             end
             app.updateNavStyles(key);
             app.onResizeUI();
-            % Notify ViewModel when entering a screen
-            if strcmp(key, 'Analysis') && ~isempty(app.AnalysisVm)
-                app.AnalysisVm.onEnter();
+            % Auto-load data when entering a screen
+            app.autoLoadScreen(key);
+        end
+
+        function autoLoadScreen(app, key)
+            % Trigger the appropriate ViewModel data-load for each screen.
+            switch key
+                case 'Welcome'
+                    if ~isempty(app.WelcomeVm) && app.State.isAuthenticated()
+                        app.WelcomeVm.onFetchProjects();
+                    end
+                case 'Dashboard'
+                    if ~isempty(app.DashboardVm)
+                        app.DashboardVm.onRefreshDashboard();
+                    end
+                case 'Notes'
+                    if ~isempty(app.NotesVm) && app.State.hasProject()
+                        app.NotesVm.onLoadNotes();
+                    end
+                case 'Analysis'
+                    if ~isempty(app.AnalysisVm)
+                        app.AnalysisVm.onEnter();
+                    end
+                case 'Backends'
+                    if ~isempty(app.BackendsVm) && app.State.isAuthenticated()
+                        app.BackendsVm.onRefreshBackends();
+                    end
+                case 'Jobs'
+                    if ~isempty(app.JobsVm) && app.State.hasProject()
+                        app.JobsVm.onRefreshJobs();
+                    end
+                case 'Results'
+                    if ~isempty(app.ResultsVm) && app.State.hasProject()
+                        app.ResultsVm.onRefreshResults();
+                    end
             end
         end
 

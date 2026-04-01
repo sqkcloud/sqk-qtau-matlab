@@ -85,7 +85,8 @@ classdef WelcomeViewModel < handle
                 row = src.Selection(1);
                 data = src.Data;
                 if ~isempty(data) && row <= size(data,1)
-                    app.State.currentProjectId = string(data{row, 1});
+                    app.State.currentProjectId   = string(data{row, 1});
+                    app.State.currentProjectName = string(data{row, 2});
                     app.logEvent('UI', sprintf('Project selected: %s', app.State.currentProjectId));
                     app.UserInfoArea.Text = sprintf('Active project: %s  |  Name: %s', ...
                         char(app.State.currentProjectId), char(data{row,2}));

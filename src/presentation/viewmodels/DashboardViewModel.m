@@ -34,9 +34,14 @@ classdef DashboardViewModel < handle
         function applyDashboardData(obj, data)
             app = obj.App;
             try
-                proj   = char(JsonHelper.pick(data, {'project_name','project.name'}));
-                circ   = char(JsonHelper.pick(data, {'circuit_name','circuit.name'}));
-                bknd   = char(JsonHelper.pick(data, {'backend_name','selected_backend'}));
+                % Prefer stored project name over API ID fields
+                if strlength(app.State.currentProjectName) > 0
+                    proj = char(app.State.currentProjectName);
+                else
+                    proj = char(JsonHelper.pick(data, {'project_name','project.name','active_project','project_id'}));
+                end
+                circ   = char(JsonHelper.pick(data, {'circuit_name','circuit.name','circuit_version'}));
+                bknd   = char(JsonHelper.pick(data, {'backend_name','selected_backend','target_backend'}));
                 stage  = char(JsonHelper.pick(data, {'pipeline_stage','stage'}));
                 if ~isempty(app.DashKpiLabels) && numel(app.DashKpiLabels) >= 4
                     vals = {proj, circ, bknd, stage};
@@ -57,6 +62,22 @@ classdef DashboardViewModel < handle
 
         function refreshDashboardFromState(obj)
             app = obj.App;
+            % Update KPI labels from session state
+            if ~isempty(app.DashKpiLabels) && numel(app.DashKpiLabels) >= 4
+                projText = char(app.State.currentProjectName);
+                if isempty(projText)
+                    projText = char(app.State.currentProjectId);
+                end
+                kpiVals = {projText, ...
+                           char(app.State.selectedCircuitName), ...
+                           char(app.State.selectedBackend), ...
+                           ''};
+                for i = 1:4
+                    if ~isempty(kpiVals{i}) && isvalid(app.DashKpiLabels{i})
+                        app.DashKpiLabels{i}.Text = kpiVals{i};
+                    end
+                end
+            end
             summary = { ...
                 sprintf('Base URL: %s',        app.State.baseUrl), ...
                 sprintf('Current user: %s',     app.State.currentUser), ...

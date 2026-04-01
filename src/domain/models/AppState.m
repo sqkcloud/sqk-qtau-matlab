@@ -23,8 +23,9 @@ classdef AppState < handle
         lastHealth   string = "Unknown"
 
         % ── Project context ───────────────────────────────────────────────────
-        defaultProjectId  string = ""
-        currentProjectId  string = ""
+        defaultProjectId    string = ""
+        currentProjectId    string = ""
+        currentProjectName  string = ""
 
         % ── Circuit pipeline context ──────────────────────────────────────────
         selectedFile        string = ""
