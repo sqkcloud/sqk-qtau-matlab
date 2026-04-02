@@ -109,7 +109,8 @@ classdef AnalysisViewModel < handle
                     uitreenode(qf, 'Text', sprintf('Parallelism score: %s', par));
                     uitreenode(qf, 'Text', sprintf('Coupling pressure: %s', coup));
                 expand(root); expand(arch); expand(gc); expand(qf);
-            catch
+            catch ME
+                Logger.warn('AnalysisViewModel', 'applyAnalysisData tree build failed: %s', ME.message);
                 uitreenode(app.FeatureTree, 'Text', JsonHelper.pretty(data));
             end
         end
@@ -129,7 +130,9 @@ classdef AnalysisViewModel < handle
                     rows{i,4} = char(JsonHelper.pick(items(i), {'notes','comment'}));
                 end
                 app.SimilarityTable.Data = rows;
-            catch; end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'applyBenchmarkMatches failed: %s', ME.message);
+            end
         end
     end
 end

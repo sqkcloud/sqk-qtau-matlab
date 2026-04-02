@@ -106,7 +106,8 @@ classdef DetailedAnalysisViewModel < handle
                 legend(app.CompareAxes, {'Measured','Ideal'}, 'Location', 'northeast');
                 app.CompareAxes.Title.String = 'Top-10 State Probabilities';
                 app.styleAxes(app.CompareAxes);
-            catch
+            catch ME
+                Logger.warn('DetailedAnalysisViewModel', 'plotComparisonFromData failed: %s', ME.message);
                 obj.plotComparisonDemo();
             end
         end

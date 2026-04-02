@@ -135,7 +135,9 @@ classdef SettingsViewModel < handle
                 if ~isempty(app.EventLogArea) && isvalid(app.EventLogArea)
                     app.EventLogArea.Value = {'Log cleared.'};
                 end
-            catch; end
+            catch ME
+                Logger.warn('SettingsViewModel', 'onClearLog UI update failed: %s', ME.message);
+            end
             fprintf('[%s] UI       Event log cleared (%d entries removed)\n', ...
                 datestr(now,'HH:MM:SS.FFF'), prevCount); %#ok<TNOW1,DATST>
         end

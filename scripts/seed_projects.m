@@ -100,8 +100,25 @@ projectDescs = { ...
     'Characterize and mitigate readout assignment errors using calibration matrices and M3 framework.', ...
     'Map multi-qubit entanglement across the full 127-qubit heavy-hex topology to identify optimal qubit subsets.'};
 
-% ── Step 3: Create projects ──────────────────────────────────────────────────
-fprintf('[3/3] Creating 20 projects ...\n');
+% ── Step 3: Fetch existing projects to avoid duplicates ─────────────────────
+fprintf('[3/4] Checking for existing projects ... ');
+getOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
+    'HeaderFields', {'Authorization', char("Bearer " + token)});
+existingNames = {};
+try
+    projResp = webread([BASE_URL '/api/admin/projects?skip=0&limit=100'], getOpts);
+    if isstruct(projResp) && isfield(projResp, 'projects')
+        for k = 1:numel(projResp.projects)
+            existingNames{end+1} = string(projResp.projects(k).name); %#ok<SAGROW>
+        end
+    end
+    fprintf('found %d existing\n', numel(existingNames));
+catch
+    fprintf('(could not check — will attempt all)\n');
+end
+
+% ── Step 4: Create projects ──────────────────────────────────────────────────
+fprintf('[4/4] Creating projects ...\n');
 
 createUrl = [BASE_URL '/api/projects'];
 opts = weboptions( ...
@@ -111,7 +128,15 @@ opts = weboptions( ...
     'HeaderFields', {'Authorization', char("Bearer " + token)});
 
 successCount = 0;
+skipCount    = 0;
 for i = 1:20
+    % Skip if project already exists
+    if any(strcmp(existingNames, projectNames{i}))
+        skipCount = skipCount + 1;
+        fprintf('  [%2d/20] SKIP:    %s  (already exists)\n', i, projectNames{i});
+        continue;
+    end
+
     % Pick 1-3 random tags from the pool
     nTags = randi([1 3]);
     idx = randperm(numel(tagPool), nTags);
@@ -131,4 +156,4 @@ for i = 1:20
     end
 end
 
-fprintf('\n=== Done: %d / 20 projects created ===\n\n', successCount);
+fprintf('\n=== Done: %d created, %d skipped (existing) out of 20 ===\n\n', successCount, skipCount);

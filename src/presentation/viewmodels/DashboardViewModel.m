@@ -56,7 +56,8 @@ classdef DashboardViewModel < handle
                     app.setStatus(app.DashboardSummaryArea, {summary});
                 end
                 app.setStatus(app.DashboardStatusArea, {JsonHelper.pretty(data)});
-            catch
+            catch ME
+                Logger.warn('DashboardViewModel', 'applyDashboardData failed: %s', ME.message);
             end
         end
 

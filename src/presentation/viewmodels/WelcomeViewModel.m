@@ -91,7 +91,9 @@ classdef WelcomeViewModel < handle
                     app.UserInfoArea.Text = sprintf('Active project: %s  |  Name: %s', ...
                         char(app.State.currentProjectId), char(data{row,2}));
                 end
-            catch; end
+            catch ME
+                Logger.warn('WelcomeViewModel', 'onProjectTableSelect failed: %s', ME.message);
+            end
         end
 
         function onLogin(obj)

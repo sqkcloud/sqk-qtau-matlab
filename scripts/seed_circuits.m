@@ -291,8 +291,28 @@ struct( ...
         'measure q -> c;\n'])) ...
 };
 
-% ── Step 3: Upload circuits ──────────────────────────────────────────────────
-fprintf('[3/3] Uploading 10 circuits ...\n');
+% ── Step 3: Check for existing circuits ──────────────────────────────────────
+fprintf('[3/4] Checking for existing circuits ... ');
+getOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
+    'HeaderFields', {'Authorization', char("Bearer " + token)});
+existingCircuits = {};
+try
+    circResp = webread([BASE_URL '/api/circuits'], getOpts);
+    if isstruct(circResp) && isfield(circResp, 'circuits')
+        items = circResp.circuits;
+    else
+        items = circResp;
+    end
+    for k = 1:numel(items)
+        existingCircuits{end+1} = string(items(k).name); %#ok<SAGROW>
+    end
+    fprintf('found %d existing\n', numel(existingCircuits));
+catch
+    fprintf('(could not check — will attempt all)\n');
+end
+
+% ── Step 4: Upload circuits ──────────────────────────────────────────────────
+fprintf('[4/4] Uploading circuits ...\n');
 
 uploadUrl = [BASE_URL '/api/circuits/upload'];
 opts = weboptions( ...
@@ -302,10 +322,19 @@ opts = weboptions( ...
     'HeaderFields', {'Authorization', char("Bearer " + token)});
 
 successCount = 0;
+skipCount    = 0;
 circuitIds   = {};
 
 for i = 1:numel(circuits)
     circ = circuits{i};
+
+    % Skip if circuit already exists
+    if any(strcmp(existingCircuits, circ.name))
+        skipCount = skipCount + 1;
+        fprintf('  [%2d/10] SKIP:    %-35s  (already exists)\n', i, circ.name);
+        continue;
+    end
+
     try
         resp = webwrite(uploadUrl, circ, opts);
         cid = string(resp.circuit_id);
@@ -317,7 +346,7 @@ for i = 1:numel(circuits)
     end
 end
 
-fprintf('\n=== Done: %d / 10 circuits uploaded ===\n', successCount);
+fprintf('\n=== Done: %d uploaded, %d skipped (existing) out of 10 ===\n', successCount, skipCount);
 if ~isempty(circuitIds)
     fprintf('Circuit IDs available in workspace variable "circuitIds"\n\n');
 end

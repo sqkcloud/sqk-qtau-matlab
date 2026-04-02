@@ -313,18 +313,23 @@ classdef FastAPIClient < handle
         end
 
         function data = uploadViaCurl(url, filePath, extraFields, token)
-            % System curl fallback for environments without matlab.net.http
+            % System curl fallback for environments without matlab.net.http.
+            % All arguments are shell-escaped to prevent command injection.
+            esc = @(s) ['''' strrep(char(s), '''', '''\\''''') ''''];
             extra = '';
             if isstruct(extraFields)
                 fns = fieldnames(extraFields);
                 for i = 1:numel(fns)
                     val = char(string(extraFields.(fns{i})));
-                    extra = [extra sprintf(' -F "%s=%s"', fns{i}, val)]; %#ok
+                    extra = [extra ' -F ' esc([fns{i} '=' val])]; %#ok
                 end
             end
-            cmd = sprintf('curl -s -X POST -H "Authorization: Bearer %s" -H "Accept: application/json" -F "file=@%s"%s "%s"', ...
-                char(token), filePath, extra, url);
-            Logger.debug('FastAPIClient', 'curl command: %s', cmd);
+            cmd = sprintf('curl -s -X POST -H %s -H %s -F %s%s %s', ...
+                esc(['Authorization: Bearer ' char(token)]), ...
+                esc('Accept: application/json'), ...
+                esc(['file=@' char(filePath)]), ...
+                extra, esc(char(url)));
+            Logger.debug('FastAPIClient', 'curl upload → POST %s', char(url));
             [status, out] = system(cmd);
             if status ~= 0
                 error('FastAPIClient:curlFailed', 'curl upload failed (exit %d): %s', status, out);

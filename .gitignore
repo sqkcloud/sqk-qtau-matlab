@@ -16,5 +16,17 @@ codegen/
 output/*
 !output/.gitkeep
 
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+credentials*
+secrets/
+*.token
+.secret*
+
+# Claude Code local settings (may contain tokens)
+.claude/settings.local.json
+
 # Project metadata
 .serena/

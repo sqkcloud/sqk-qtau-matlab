@@ -105,7 +105,14 @@ for i = 1:nProj
         fprintf('  [%2d/%d] %-40s  primary=%-15s backup=%s\n', ...
             i, nProj, name, pair.primary, pair.backup);
     catch ME
-        fprintf('  [%2d/%d] FAILED: %-40s  %s\n', i, nProj, name, ME.message);
+        % Show HTTP status if available for easier debugging
+        msg = ME.message;
+        if contains(msg, '404')
+            msg = [msg ' (endpoint may not exist — check API version)'];
+        elseif contains(msg, '422')
+            msg = [msg ' (payload validation failed — check field names)'];
+        end
+        fprintf('  [%2d/%d] FAILED: %-40s  %s\n', i, nProj, name, msg);
     end
 end
 

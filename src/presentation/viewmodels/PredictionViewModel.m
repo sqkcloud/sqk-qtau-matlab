@@ -61,7 +61,8 @@ classdef PredictionViewModel < handle
                 if ~isempty(dist);  lines{end+1} = dist;  end
                 if ~isempty(ebudg); lines{end+1} = ebudg; end
                 app.setStatus(app.PredictionTextArea, lines);
-            catch
+            catch ME
+                Logger.warn('PredictionViewModel', 'applyPredictionData failed: %s', ME.message);
                 app.setStatus(app.PredictionTextArea, {JsonHelper.pretty(data)});
             end
         end

@@ -12,7 +12,7 @@ QDash Workbench is a **MATLAB R2025b** desktop application (App Designer) for ma
 % Launch the app
 run('QTAUWorkbenchLauncher.m')
 % Or via MATLAB Project Manager:
-matlab.project.openProject('sqkcloud-qdash-workbench.prj')
+matlab.project.openProject('sqk-qtau-matlab.prj')
 
 % Run all tests
 runtests('tests')
@@ -22,6 +22,11 @@ runtests('tests/test_AppConfig')
 
 % Reload externalized config without restarting
 AppConfig.reload(); Labels.reload();
+
+% Seed demo data into the backend (all screens)
+run('scripts/seed_all.m')
+% Or seed a single screen's data
+run('scripts/seed_projects.m')
 ```
 
 There is no build step, linter, or CI pipeline. MATLAB interprets `.m` files directly.
@@ -52,6 +57,19 @@ src/
 - **AppState** is instantiated once by `QTAUWorkbenchApp` and shared across ViewModels for the session lifetime.
 - **Static utilities** (`AppConfig`, `Labels`, `Logger`, `JsonHelper`) use static methods with cached state; call `.reload()` to refresh.
 
+## Navigation and Screen Switching
+
+`QTAUWorkbenchApp` manages screens via a `SectionPanels` struct (keyed by screen name). Each screen calls `app.createSectionPage('ScreenName')` during `buildUI()` to register a hidden panel, then populates it with UI controls. Navigation is handled by `onSelectSection(key)`, which hides all panels and shows the matching one. The `autoLoadScreen(key)` method triggers ViewModel data-fetching when a screen becomes visible (e.g., Dashboard auto-refreshes on enter).
+
+## Adding a New Screen
+
+Adding a screen requires changes in four places:
+
+1. **Screen function** — Create `src/presentation/screens/FooScreen.m`. Call `app.createSectionPage('Foo')` to get the container, then build UI into it. Wire button callbacks to `app.FooVm.onSomething()`.
+2. **ViewModel class** — Create `src/presentation/viewmodels/FooViewModel.m`. Constructor takes `app`. Methods call services and update `app.*` UI properties.
+3. **QTAUWorkbenchApp.m** — Add UI property declarations for the screen's controls. Add `FooVm` property. Instantiate `FooVm = FooViewModel(app)` in the constructor. Call `FooScreen(app)` in `buildUI()`. Add a case to `autoLoadScreen()` if the screen should auto-fetch data on navigation.
+4. **Nav list** — Add the screen name to `Labels.get('nav_*')` in `resources/labels.properties` and to the nav button/list builder in `buildUI()`.
+
 ## Configuration
 
 All runtime config is externalized in `resources/` (key=value `.properties` files):
@@ -77,9 +95,11 @@ FastAPIClient talks to a FastAPI server (default `http://34.42.87.190:5715`). Au
 
 - Errors propagate as `MException` from HTTP → Service → ViewModel, which displays via `uialert()`
 - Logger output is structured: `[HH:MM:SS.FFF] LEVEL [Category] Message`
-- Button styling uses `styleBtn(button, type)` with types `'primary'`, `'secondary'`, `'ghost'`, `'danger'`
+- Button styling uses `app.styleBtn(button, type)` with types `'primary'`, `'secondary'`, `'success'`, `'danger'`, `'ghost'`
 - Path resolution uses `fullfile()` throughout (OS-agnostic)
 - No hardcoded strings in UI — all text comes from `Labels.get()`
+- `JsonHelper.pick(data, {'path1', 'path2'})` walks dotted paths with fallback chains for resilient API field mapping
+- File upload in `FastAPIClient` tries `matlab.net.http` multipart first, falls back to system `curl`
 
 ## Required MCP Tool Workflow
 
@@ -90,7 +110,3 @@ Every request that involves analyzing, debugging, or modifying code **must** use
 3. **Serena** — Use via SuperClaude skills (`/sc:analyze`, `/sc:reflect`, `/sc:load`) for project-aware deep code analysis, validation, and reflection.
 
 This is not optional. Use all three even for seemingly simple tasks.
-
-## Note on README
-
-The `README.md` project structure section reflects the pre-refactor layout (flat `src/` with `tabs/`, `utils/`). The actual current structure uses `presentation/`, `domain/`, `infrastructure/` layers as described above.
