@@ -36,14 +36,10 @@ catch ME
     return;
 end
 
-authHeader = {'Authorization', char("Bearer " + token)};
+authHeader = {'Authorization', char("Bearer " + token); 'Accept', 'application/json'};
 getOpts = weboptions('Timeout', 30, 'ContentType', 'json', 'HeaderFields', authHeader);
-
-% Use matlab.net.http for PUT (webwrite only supports POST/PUT with some
-% versions; we use the low-level API for reliability)
-import matlab.net.http.*
-import matlab.net.http.field.*
-import matlab.net.http.io.*
+putOpts = weboptions('Timeout', 30, 'MediaType', 'application/json', ...
+    'ContentType', 'json', 'RequestMethod', 'put', 'HeaderFields', authHeader);
 
 % ── Step 2: Fetch projects ───────────────────────────────────────────────────
 fprintf('[2/3] Fetching projects ... ');
@@ -205,26 +201,15 @@ for i = 1:nProj
     tmplIdx = mod(i - 1, numel(noteTemplates)) + 1;
     tmpl    = noteTemplates{tmplIdx};
 
-    % Build JSON payload manually
-    checklistArray = tmpl.checklist{1};
+    checklistArray = tmpl.checklist;
     payload = struct('working_notes', tmpl.notes, 'checklist', {checklistArray});
 
     url = sprintf('%s/api/projects/%s/notes', BASE_URL, char(pid));
     try
-        jsonBody = jsonencode(payload);
-        reqMsg = RequestMessage('PUT', ...
-            [ContentTypeField(MediaType('application/json')), ...
-             GenericField('Authorization', "Bearer " + token)], ...
-            StringProvider(jsonBody, 'application/json'));
-        respMsg = reqMsg.send(matlab.net.URI(url));
-        if respMsg.StatusCode == 200
-            successCount = successCount + 1;
-            fprintf('  [%2d/%d] Notes saved: %-40s  (%d checklist items)\n', ...
-                i, nProj, name, numel(checklistArray));
-        else
-            fprintf('  [%2d/%d] FAILED:     %-40s  HTTP %d\n', ...
-                i, nProj, name, int32(respMsg.StatusCode));
-        end
+        webwrite(url, payload, putOpts);
+        successCount = successCount + 1;
+        fprintf('  [%2d/%d] Notes saved: %-40s  (%d checklist items)\n', ...
+            i, nProj, name, numel(checklistArray));
     catch ME
         fprintf('  [%2d/%d] FAILED:     %-40s  %s\n', i, nProj, name, ME.message);
     end

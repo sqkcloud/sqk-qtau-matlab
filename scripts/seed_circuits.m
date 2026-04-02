@@ -291,11 +291,13 @@ struct( ...
         'measure q -> c;\n'])) ...
 };
 
-% ── Step 3: Check for existing circuits ──────────────────────────────────────
-fprintf('[3/4] Checking for existing circuits ... ');
+% ── Step 3: Delete existing circuits (re-upload ensures fresh validation) ────
+fprintf('[3/4] Deleting existing circuits ... ');
 getOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
     'HeaderFields', {'Authorization', char("Bearer " + token)});
-existingCircuits = {};
+deleteOpts = weboptions('Timeout', 30, 'RequestMethod', 'delete', ...
+    'HeaderFields', {'Authorization', char("Bearer " + token)});
+deleteCount = 0;
 try
     circResp = webread([BASE_URL '/api/circuits'], getOpts);
     if isstruct(circResp) && isfield(circResp, 'circuits')
@@ -304,11 +306,18 @@ try
         items = circResp;
     end
     for k = 1:numel(items)
-        existingCircuits{end+1} = string(items(k).name); %#ok<SAGROW>
+        try
+            delUrl = sprintf('%s/api/circuits/%s', BASE_URL, char(string(items(k).circuit_id)));
+            webread(delUrl, deleteOpts);
+            deleteCount = deleteCount + 1;
+        catch
+            % 204 No Content is expected; ignore errors
+            deleteCount = deleteCount + 1;
+        end
     end
-    fprintf('found %d existing\n', numel(existingCircuits));
+    fprintf('deleted %d\n', deleteCount);
 catch
-    fprintf('(could not check — will attempt all)\n');
+    fprintf('(none found or could not check)\n');
 end
 
 % ── Step 4: Upload circuits ──────────────────────────────────────────────────
@@ -322,31 +331,27 @@ opts = weboptions( ...
     'HeaderFields', {'Authorization', char("Bearer " + token)});
 
 successCount = 0;
-skipCount    = 0;
 circuitIds   = {};
 
 for i = 1:numel(circuits)
     circ = circuits{i};
-
-    % Skip if circuit already exists
-    if any(strcmp(existingCircuits, circ.name))
-        skipCount = skipCount + 1;
-        fprintf('  [%2d/10] SKIP:    %-35s  (already exists)\n', i, circ.name);
-        continue;
-    end
 
     try
         resp = webwrite(uploadUrl, circ, opts);
         cid = string(resp.circuit_id);
         circuitIds{end+1} = cid; %#ok<SAGROW>
         successCount = successCount + 1;
-        fprintf('  [%2d/10] Uploaded: %-35s  id=%s\n', i, circ.name, cid);
+        valid = 'valid';
+        if isfield(resp, 'is_valid') && ~resp.is_valid
+            valid = 'INVALID';
+        end
+        fprintf('  [%2d/10] Uploaded: %-35s  id=%s  (%s)\n', i, circ.name, cid, valid);
     catch ME
         fprintf('  [%2d/10] FAILED:  %-35s  %s\n', i, circ.name, ME.message);
     end
 end
 
-fprintf('\n=== Done: %d uploaded, %d skipped (existing) out of 10 ===\n', successCount, skipCount);
+fprintf('\n=== Done: %d uploaded out of 10 ===\n', successCount);
 if ~isempty(circuitIds)
     fprintf('Circuit IDs available in workspace variable "circuitIds"\n\n');
 end

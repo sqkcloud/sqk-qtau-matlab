@@ -71,11 +71,8 @@ classdef AnalysisViewModel < handle
             try
                 data = app.CircuitSvc.analyzeCircuit(cid, app.State.authToken);
                 obj.applyAnalysisData(data);
+                obj.applyBenchmarkMatches(data);
                 app.logEvent('API', sprintf('Circuit analysis complete — circuit: %s', cid));
-                app.logEvent('API', sprintf('POST /api/circuits/%s/match-benchmarks', cid));
-                sim  = app.CircuitSvc.matchBenchmarks(cid, app.State.authToken);
-                obj.applyBenchmarkMatches(sim);
-                app.logEvent('API', sprintf('Benchmark matching complete — circuit: %s', cid));
             catch ME
                 app.logEvent('ERROR', sprintf('Analysis FAILED (circuit: %s): %s', cid, ME.message));
                 app.showError('Analyze Circuit', ME);
@@ -118,7 +115,8 @@ classdef AnalysisViewModel < handle
         function applyBenchmarkMatches(obj, data)
             app = obj.App;
             try
-                items = JsonHelper.extractList(data, 'matches');
+                items = JsonHelper.extractList(data, 'benchmark_matches');
+                if isempty(items); items = JsonHelper.extractList(data, 'matches'); end
                 if isempty(items); items = JsonHelper.asList(data); end
                 n = numel(items);
                 if n == 0; return; end
