@@ -11,25 +11,13 @@
 fprintf('\n=== QTAU Seed: Uploading 10 sample circuits ===\n\n');
 
 % ── Configuration ────────────────────────────────────────────────────────────
-BASE_URL   = 'http://34.42.87.190:5715';
-LOGIN_PATH = '/api/auth/login';
-USERNAME   = 'admin';
-PASSWORD   = 'passw0rd';
+cfg      = seed_helpers.loadConfig();
+BASE_URL = cfg.base_url;
 
 % ── Step 1: Authenticate ────────────────────────────────────────────────────
-fprintf('[1/3] Logging in as "%s" ... ', USERNAME);
+fprintf('[1/4] Logging in as "%s" ... ', cfg.username);
 try
-    import matlab.net.http.*
-    import matlab.net.http.field.*
-    import matlab.net.http.io.*
-    body = FormProvider('username', USERNAME, 'password', PASSWORD);
-    req  = RequestMessage('POST', ...
-        [ContentTypeField(MediaType('application/x-www-form-urlencoded'))], body);
-    resp = req.send(matlab.net.URI([BASE_URL LOGIN_PATH]));
-    if resp.StatusCode ~= 200
-        error('Login failed with status %d', int32(resp.StatusCode));
-    end
-    token = string(resp.Body.Data.access_token);
+    token = seed_helpers.login(BASE_URL, cfg.login_path, cfg.username, cfg.password);
     fprintf('OK\n');
 catch ME
     fprintf('FAILED\n  %s\n', ME.message);
@@ -37,7 +25,7 @@ catch ME
 end
 
 % ── Step 2: Define circuits ──────────────────────────────────────────────────
-fprintf('[2/3] Preparing circuit data ...\n');
+fprintf('[2/4] Preparing circuit data ...\n');
 
 circuits = { ...
 % ── 1. Bell State (2 qubits) ────────────────────────────────────────────────
@@ -293,8 +281,7 @@ struct( ...
 
 % ── Step 3: Delete existing circuits (re-upload ensures fresh validation) ────
 fprintf('[3/4] Deleting existing circuits ... ');
-getOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
-    'HeaderFields', {'Authorization', char("Bearer " + token)});
+getOpts = seed_helpers.getOpts(token);
 deleteOpts = weboptions('Timeout', 30, 'RequestMethod', 'delete', ...
     'HeaderFields', {'Authorization', char("Bearer " + token)});
 deleteCount = 0;
@@ -324,11 +311,7 @@ end
 fprintf('[4/4] Uploading circuits ...\n');
 
 uploadUrl = [BASE_URL '/api/circuits/upload'];
-opts = weboptions( ...
-    'Timeout',      30, ...
-    'MediaType',    'application/json', ...
-    'ContentType',  'json', ...
-    'HeaderFields', {'Authorization', char("Bearer " + token)});
+opts = seed_helpers.postOpts(token);
 
 successCount = 0;
 circuitIds   = {};

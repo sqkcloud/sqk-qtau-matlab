@@ -21,7 +21,8 @@ classdef JsonHelper
                 else
                     out = evalc('disp(data)');
                 end
-            catch
+            catch ME
+                Logger.warn('JsonHelper', 'pretty() failed: %s', ME.message);
                 out = 'Unable to render response.';
             end
         end
@@ -139,7 +140,8 @@ classdef JsonHelper
                     rows{i,4} = JsonHelper.toDouble(JsonHelper.pick(m, {'ideal'}));
                     rows{i,5} = char(JsonHelper.pick(m, {'notes','comment'}));
                 end
-            catch
+            catch ME
+                Logger.warn('JsonHelper', 'resultsToRows() failed: %s', ME.message);
             end
         end
 
@@ -175,7 +177,8 @@ classdef JsonHelper
                     sprintf('Expected success probability: %s', prob), ...
                     sprintf('Expected queue time: %s', qt), ...
                     sprintf('Estimated runtime: %s', rt)};
-            catch
+            catch ME
+                Logger.warn('JsonHelper', 'predictionToLines() failed: %s', ME.message);
             end
         end
 
@@ -194,7 +197,8 @@ classdef JsonHelper
                         data = jsondecode(txt);
                     end
                 end
-            catch
+            catch ME
+                Logger.warn('JsonHelper', 'decodeIfJson() failed: %s', ME.message);
             end
         end
     end
@@ -217,7 +221,8 @@ classdef JsonHelper
                 if isstruct(data) && isfield(data, fieldName)
                     items = data.(fieldName);
                 end
-            catch
+            catch ME
+                Logger.warn('JsonHelper', 'extractList(%s) failed: %s', fieldName, ME.message);
             end
         end
 
@@ -229,7 +234,8 @@ classdef JsonHelper
                 elseif iscell(data); items = [data{:}];
                 else; items = [];
                 end
-            catch
+            catch ME
+                Logger.warn('JsonHelper', 'asList() failed: %s', ME.message);
                 items = [];
             end
         end

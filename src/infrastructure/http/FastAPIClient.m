@@ -204,8 +204,8 @@ classdef FastAPIClient < handle
                     data = FastAPIClient.uploadViaCurl(url, filePath, extraFields, token);
                     Logger.info('FastAPIClient', 'uploadFileAuth → POST %s OK (via curl fallback)', endpoint);
                 catch ME2
-                    Logger.error('FastAPIClient', 'uploadFileAuth → POST %s FAILED (both methods): %s', endpoint, ME.message);
-                    rethrow(ME);
+                    Logger.error('FastAPIClient', 'uploadFileAuth → POST %s FAILED (both methods): http=%s  curl=%s', endpoint, ME.message, ME2.message);
+                    rethrow(ME2);
                 end
             end
         end
@@ -221,11 +221,6 @@ classdef FastAPIClient < handle
         function tf = isNoContent(ME)
             tf = contains(ME.message, '204') || contains(ME.message, 'No Content') || ...
                  contains(ME.identifier, 'URLREAD');
-        end
-
-        function out = urlEncode(str)
-            import java.net.URLEncoder
-            out = char(URLEncoder.encode(str, 'UTF-8'));
         end
 
         function data = normalizeJsonResponse(raw)
@@ -279,8 +274,8 @@ classdef FastAPIClient < handle
             if fid < 0
                 error('FastAPIClient:fileNotFound', 'Cannot open file: %s', filePath);
             end
+            closeFile = onCleanup(@() fclose(fid));
             bytes = fread(fid, '*uint8');
-            fclose(fid);
 
             dispValue = sprintf('form-data; name="file"; filename="%s"', fileName);
 

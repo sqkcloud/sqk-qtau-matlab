@@ -1,0 +1,7 @@
+# Seed Script Configuration
+#
+# Credentials and settings used by scripts/seed_*.m to populate demo data.
+# Copy this file to seed.properties and fill in your values.
+
+seed_username=admin
+seed_password=changeme

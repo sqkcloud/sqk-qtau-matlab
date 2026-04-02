@@ -118,7 +118,7 @@ classdef WelcomeViewModel < handle
 
             app.logEvent('AUTH', sprintf('Login attempt — user: %s  url: %s', username, app.State.baseUrl));
             try
-                data = app.Client.login(username, password);
+                data = app.AuthSvc.login(username, password);
                 app.State.authToken        = string(JsonHelper.pick(data, {'access_token','token','data.access_token'}));
                 app.State.tokenType        = string(JsonHelper.pick(data, {'token_type','data.token_type'}));
                 app.State.currentUser      = string(JsonHelper.pick(data, {'username','user.username','data.username'}));
@@ -173,7 +173,7 @@ classdef WelcomeViewModel < handle
             end
             try
                 prevUser = app.State.currentUser;
-                app.Client.logout(app.State.authToken);
+                app.AuthSvc.logout(app.State.authToken);
                 app.State.authToken = "";
                 app.State.currentUser = "";
                 app.logEvent('AUTH', sprintf('Logout OK — user: %s', prevUser));
@@ -199,7 +199,7 @@ classdef WelcomeViewModel < handle
             limit = obj.ItemsPerPage;
             app.logEvent('API', sprintf('GET /api/admin/projects — skip=%d  limit=%d', skip, limit));
             try
-                data = app.Client.listProjects(app.State.authToken, skip, limit);
+                data = app.AuthSvc.listProjects(app.State.authToken, skip, limit);
                 rows = JsonHelper.projectsToRows(data);
                 app.ProjectsTable.Data = rows;
 

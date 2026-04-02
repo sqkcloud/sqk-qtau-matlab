@@ -24,6 +24,7 @@ credentials*
 secrets/
 *.token
 .secret*
+resources/seed.properties
 
 # Claude Code local settings (may contain tokens)
 .claude/settings.local.json

@@ -50,6 +50,7 @@ classdef QTAUWorkbenchApp < handle
     properties
         State           % AppState
         Client          % FastAPIClient
+        AuthSvc         % AuthService
         CircuitSvc      % CircuitService
         BackendSvc      % BackendService
         JobSvc          % JobService
@@ -241,6 +242,7 @@ classdef QTAUWorkbenchApp < handle
             app.State         = AppState();
             Logger.info('QTAUWorkbenchApp', 'AppState created — baseUrl: %s', char(app.State.baseUrl));
             app.Client        = FastAPIClient(app.State.baseUrl);
+            app.AuthSvc       = AuthService(app.Client);
             app.CircuitSvc    = CircuitService(app.Client);
             app.BackendSvc    = BackendService(app.Client);
             app.JobSvc        = JobService(app.Client);
