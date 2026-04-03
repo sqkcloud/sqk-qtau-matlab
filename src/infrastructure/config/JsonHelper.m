@@ -19,7 +19,7 @@ classdef JsonHelper
                 elseif ischar(data)
                     out = data;
                 else
-                    out = evalc('disp(data)');
+                    out = strtrim(formattedDisplayText(data));
                 end
             catch ME
                 Logger.warn('JsonHelper', 'pretty() failed: %s', ME.message);
@@ -250,7 +250,7 @@ classdef JsonHelper
             if ischar(v);   val = string(v); return; end
             if isnumeric(v) && isscalar(v); val = string(v); return; end
             if islogical(v) && isscalar(v); val = string(v); return; end
-            try; val = string(jsonencode(v)); catch; val = ""; end
+            try; val = string(jsonencode(v)); catch ME; Logger.debug('JsonHelper', 'toStr fallback: %s', ME.message); val = ""; end
         end
 
     end

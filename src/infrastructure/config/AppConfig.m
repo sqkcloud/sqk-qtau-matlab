@@ -26,10 +26,10 @@ classdef AppConfig
                     value = props.(safeKey);
                 else
                     value = char(defaultValue);
-                    fprintf('[AppConfig] Key not found: "%s" — using default: "%s"\n', key, char(defaultValue));
+                    Logger.debug('AppConfig', 'Key not found: "%s" — using default: "%s"', key, char(defaultValue));
                 end
             catch ME
-                fprintf('[AppConfig] ERROR reading config key "%s": %s\n', key, ME.message);
+                Logger.error('AppConfig', 'Reading config key "%s": %s', key, ME.message);
                 value = char(defaultValue);
             end
         end
@@ -43,7 +43,7 @@ classdef AppConfig
             else
                 parsed = str2double(raw);
                 if isnan(parsed)
-                    fprintf('[AppConfig] Key "%s" value "%s" is not numeric — using default: %g\n', ...
+                    Logger.warn('AppConfig', 'Key "%s" value "%s" is not numeric — using default: %g', ...
                         key, raw, defaultValue);
                     value = defaultValue;
                 else
@@ -55,7 +55,7 @@ classdef AppConfig
         % reload  Force the cache to be cleared so the file is re-read on next call.
         function reload()
             AppConfig.loadProps(true);
-            fprintf('[AppConfig] Configuration cache cleared — will reload on next access.\n');
+            Logger.info('AppConfig', 'Configuration cache cleared — will reload on next access.');
         end
 
     end
@@ -74,15 +74,14 @@ classdef AppConfig
             filePath = AppConfig.resolveFile('app.properties');
 
             if ~isfile(filePath)
-                fprintf('[AppConfig] WARNING: properties file not found at: %s\n', filePath);
-                fprintf('[AppConfig]   Falling back to built-in defaults.\n');
+                Logger.warn('AppConfig', 'Properties file not found at: %s — falling back to built-in defaults.', filePath);
                 cachedProps = props;
                 return;
             end
 
             fid = fopen(filePath, 'r', 'n', 'UTF-8');
             if fid < 0
-                fprintf('[AppConfig] ERROR: cannot open: %s\n', filePath);
+                Logger.error('AppConfig', 'Cannot open: %s', filePath);
                 cachedProps = props;
                 return;
             end
@@ -107,10 +106,10 @@ classdef AppConfig
                 end
                 fclose(fid);
                 cachedProps = props;
-                fprintf('[AppConfig] Loaded %d config entries from: %s\n', count, filePath);
+                Logger.info('AppConfig', 'Loaded %d config entries from: %s', count, filePath);
             catch ME
                 fclose(fid);
-                fprintf('[AppConfig] ERROR parsing properties file: %s\n', ME.message);
+                Logger.error('AppConfig', 'Parsing properties file: %s', ME.message);
                 cachedProps = props;
             end
         end

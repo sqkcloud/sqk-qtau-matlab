@@ -393,7 +393,7 @@ classdef QTAUWorkbenchApp < handle
 
             % Row 5 — Server URL field
             app.LoginDlgBaseUrlField = uieditfield(cg, 'text', ...
-                'Value', AppConfig.get('base_url', 'http://34.42.87.190:5715'), ...
+                'Value', char(app.State.baseUrl), ...
                 'Placeholder', Labels.get('login_dlg_placeholder_url', 'https://your-server:port'), ...
                 'FontSize', 14, 'FontColor', fieldColor);
             app.LoginDlgBaseUrlField.Layout.Row = 5;
@@ -700,14 +700,14 @@ classdef QTAUWorkbenchApp < handle
                     delete(app.LoadingOverlay);
                     app.LoadingOverlay = [];
                 end
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'Overlay cleanup: %s', ME.message); end
             drawnow();
 
             try
                 t = timer('ExecutionMode','singleShot','StartDelay',0.15, ...
                     'TimerFcn', @(~,~)app.forceInitialLayout());
                 start(t);
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'Layout timer init: %s', ME.message); end
 
             % Auto-show login dialog if not yet authenticated
             if ~app.State.isAuthenticated()
@@ -990,7 +990,7 @@ classdef QTAUWorkbenchApp < handle
                 app.fitAllSections(); app.onResizeUI();
                 drawnow(); pause(0.02);
                 app.fitAllSections();
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'forceInitialLayout: %s', ME.message); end
         end
 
         function updateNavStyles(app, activeKey)
@@ -1014,7 +1014,7 @@ classdef QTAUWorkbenchApp < handle
                 if ~isempty(p) && isvalid(p)
                     panel.Position = [0 0 max(1, p.Position(3)) max(1, p.Position(4))];
                 end
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'fitSectionPanel: %s', ME.message); end
         end
 
         function fitAllSections(app)
@@ -1023,7 +1023,7 @@ classdef QTAUWorkbenchApp < handle
                 for i = 1:numel(names)
                     app.fitSectionPanel(app.SectionPanels.(names{i}));
                 end
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'fitAllSections: %s', ME.message); end
         end
 
         function onResizeUI(app)
@@ -1063,7 +1063,7 @@ classdef QTAUWorkbenchApp < handle
                 if ~isempty(app.EventLogArea) && isvalid(app.EventLogArea)
                     app.EventLogArea.Value = app.EventLog(1:min(numel(app.EventLog), 200));
                 end
-            catch; end
+            catch ME; fprintf('[QTAUWorkbenchApp] EventLogArea update: %s\n', ME.message); end
         end
 
         % showError  Display a standardised error popup with title "Error".
@@ -1122,12 +1122,12 @@ classdef QTAUWorkbenchApp < handle
             ax.FontSize  = 11; ax.LineWidth = 1;
             ax.Color = [1 1 1];
             ax.XColor = [0.28 0.36 0.48]; ax.YColor = [0.28 0.36 0.48];
-            try; axtoolbar(ax, {'zoom','pan','datacursor','restoreview'}); catch; end
+            try; axtoolbar(ax, {'zoom','pan','datacursor','restoreview'}); catch ME; Logger.debug('QTAUWorkbenchApp', 'axtoolbar: %s', ME.message); end
         end
 
         function styleTable(~, tbl)
-            try; tbl.RowStriping = 'on'; catch; end
-            try; tbl.ColumnSortable = true(1, numel(tbl.ColumnName)); catch; end
+            try; tbl.RowStriping = 'on'; catch ME; Logger.debug('QTAUWorkbenchApp', 'RowStriping: %s', ME.message); end
+            try; tbl.ColumnSortable = true(1, numel(tbl.ColumnName)); catch ME; Logger.debug('QTAUWorkbenchApp', 'ColumnSortable: %s', ME.message); end
         end
 
         % attachColumnDivider  Registers a panel as a resizable column handle.
@@ -1140,14 +1140,14 @@ classdef QTAUWorkbenchApp < handle
                         for gc = ch.Children(:)'
                             comps{end+1} = gc; %#ok
                         end
-                    catch; end
+                    catch ME; Logger.debug('QTAUWorkbenchApp', 'Divider grandchildren: %s', ME.message); end
                 end
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'Divider children: %s', ME.message); end
             app.ColumnDividers{end+1} = struct('comps', {comps}, 'grid', g);
             divPanel.Tooltip = 'Drag left/right to resize panels';
             cb = @(~,~)app.onDividerDown(g);
             for j = 1:numel(comps)
-                try; comps{j}.ButtonDownFcn = cb; catch; end
+                try; comps{j}.ButtonDownFcn = cb; catch ME; Logger.debug('QTAUWorkbenchApp', 'ButtonDownFcn: %s', ME.message); end
             end
         end
     end
@@ -1245,16 +1245,16 @@ classdef QTAUWorkbenchApp < handle
                             if isvalid(entry.comps{j}) && isequal(clicked, entry.comps{j})
                                 app.onDividerDown(entry.grid); return;
                             end
-                        catch; end
+                        catch ME; Logger.debug('QTAUWorkbenchApp', 'Divider comp check: %s', ME.message); end
                     end
                 end
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'onFigMouseDown: %s', ME.message); end
         end
 
         function onDividerDown(app, g)
             try
                 cw = g.ColumnWidth;
-                try; availW = max(300, app.ContentShell.Position(3) - 70); catch; availW = 900; end
+                try; availW = max(300, app.ContentShell.Position(3) - 70); catch ME; Logger.debug('QTAUWorkbenchApp', 'availW fallback: %s', ME.message); availW = 900; end
                 if isnumeric(cw{1})
                     w1 = cw{1}; w3 = cw{3};
                 else
@@ -1268,7 +1268,7 @@ classdef QTAUWorkbenchApp < handle
                 app.DragState.startX = app.UIFigure.CurrentPoint(1);
                 app.DragState.col1W  = w1; app.DragState.col3W = w3;
                 app.UIFigure.Pointer = 'lrdrag';
-            catch; app.DragState.active = false; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'onDividerDown: %s', ME.message); app.DragState.active = false; end
         end
 
         function onFigMouseMove(app)
@@ -1277,7 +1277,7 @@ classdef QTAUWorkbenchApp < handle
                 dx = app.UIFigure.CurrentPoint(1) - app.DragState.startX;
                 app.DragState.grid.ColumnWidth = {max(120, app.DragState.col1W + dx), 6, ...
                                                    max(120, app.DragState.col3W - dx)};
-            catch; app.DragState.active = false; app.UIFigure.Pointer = 'arrow'; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'onFigMouseMove: %s', ME.message); app.DragState.active = false; app.UIFigure.Pointer = 'arrow'; end
         end
 
         function onFigMouseUp(app)

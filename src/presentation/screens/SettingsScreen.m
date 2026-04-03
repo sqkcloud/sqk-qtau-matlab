@@ -64,8 +64,8 @@ function SettingsScreen(app)
     lbl = uilabel(ig, 'Text', Labels.get('settings_label_base_url'));
     lbl.FontColor = [0.35 0.42 0.52];
     lbl.Layout.Row = 5; lbl.Layout.Column = 1;
-    % Base URL loaded from app.properties — never hardcoded here
-    app.SettingsBaseUrlField = uieditfield(ig, 'text', 'Value', AppConfig.get('base_url', 'http://34.42.87.190:5715'));
+    % Base URL loaded from AppState (which reads app.properties at startup)
+    app.SettingsBaseUrlField = uieditfield(ig, 'text', 'Value', char(app.State.baseUrl));
     app.SettingsBaseUrlField.Layout.Row = 5; app.SettingsBaseUrlField.Layout.Column = 2;
     app.SettingsBaseUrlField.ValueChangedFcn = @(src,~)app.SettingsVm.onSettingsUrlChanged(src);
 
