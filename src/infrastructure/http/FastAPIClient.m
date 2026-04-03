@@ -51,15 +51,16 @@ classdef FastAPIClient < handle
             if loginPath(1) ~= '/'
                 loginPath = ['/' loginPath];
             end
-            Logger.info('FastAPIClient', 'login → POST %s (user: %s)', loginPath, char(username));
+            maskedUser = FastAPIClient.maskUsername(username);
+            Logger.info('FastAPIClient', 'login → POST %s (user: %s)', loginPath, maskedUser);
             url = char(obj.BaseUrl + string(loginPath));
             try
                 % webwrite does not support application/x-www-form-urlencoded
                 % as MediaType; use matlab.net.http to build the request.
                 data = FastAPIClient.loginViaHttpNet(url, char(username), char(password), obj.Timeout);
-                Logger.info('FastAPIClient', 'login → response received for user: %s', char(username));
+                Logger.info('FastAPIClient', 'login → response received for user: %s', maskedUser);
             catch ME
-                Logger.error('FastAPIClient', 'login FAILED (user: %s): %s', char(username), ME.message);
+                Logger.error('FastAPIClient', 'login FAILED (user: %s): %s', maskedUser, ME.message);
                 rethrow(ME);
             end
         end
@@ -216,6 +217,16 @@ classdef FastAPIClient < handle
     % ── Private static helpers ────────────────────────────────────────────────
     methods (Static, Access = private)
 
+        function masked = maskUsername(username)
+            % Mask username for safe logging: show first char + '***'.
+            u = char(username);
+            if isempty(u)
+                masked = '***';
+            else
+                masked = [u(1) '***'];
+            end
+        end
+
         function hdrs = authHeaders(token, projectId)
             hdrs = {'Authorization', ['Bearer ' char(token)]; 'Accept', 'application/json'};
             if nargin >= 2 && strlength(string(projectId)) > 0
@@ -240,7 +251,8 @@ classdef FastAPIClient < handle
                         data = jsondecode(txt);
                     end
                 end
-            catch
+            catch ME
+                Logger.debug('FastAPIClient', 'JSON parse: %s', ME.message);
             end
         end
 

@@ -46,7 +46,7 @@ function WelcomeScreen(app)
     btn3 = uibutton(hg, 'Text', [char(8505) ' ' Labels.get('welcome_btn_documentation')]);
     btn3.Layout.Row = 3; btn3.Layout.Column = 4; app.styleBtn(btn3, 'ghost');
     btn3.FontSize = 12;
-    btn3.ButtonPushedFcn = @(~,~)web('https://docs.quantum.ibm.com', '-browser');
+    btn3.ButtonPushedFcn = @(~,~)web(char(AppConfig.get('docs_url', 'https://docs.quantum.ibm.com')), '-browser');
 
     btn4 = uibutton(hg, 'Text', [char(9881) ' ' Labels.get('welcome_btn_ibm_account')]);
     btn4.Layout.Row = 3; btn4.Layout.Column = 5; app.styleBtn(btn4, 'secondary');

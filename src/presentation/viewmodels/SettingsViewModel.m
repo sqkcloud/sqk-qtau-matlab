@@ -86,6 +86,12 @@ classdef SettingsViewModel < handle
             app = obj.App;
             try
                 newUrl = string(src.Value);
+                if ~startsWith(newUrl, 'http://') && ~startsWith(newUrl, 'https://')
+                    uialert(app.UIFigure, ...
+                        'Base URL must start with http:// or https://.', ...
+                        'Invalid URL', 'Icon', 'warning');
+                    return;
+                end
                 app.State.baseUrl = newUrl;
                 app.syncClient();
                 app.logEvent('CONFIG', sprintf('Base URL updated from Settings tab: %s', newUrl));
@@ -148,7 +154,7 @@ classdef SettingsViewModel < handle
                 Logger.warn('SettingsViewModel', 'onClearLog UI update failed: %s', ME.message);
             end
             fprintf('[%s] UI       Event log cleared (%d entries removed)\n', ...
-                datestr(now,'HH:MM:SS.FFF'), prevCount); %#ok<TNOW1,DATST>
+                char(datetime('now', 'Format', 'HH:mm:ss.SSS')), prevCount);
         end
     end
 end

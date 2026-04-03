@@ -16,12 +16,13 @@ classdef AuthService < handle
 
         % Authenticate with username/password. Returns token response struct.
         function data = login(obj, username, password)
-            Logger.info('AuthService', 'login → user: %s', char(username));
+            maskedUser = AuthService.maskUsername(username);
+            Logger.info('AuthService', 'login → user: %s', maskedUser);
             try
                 data = obj.Client.login(username, password);
-                Logger.info('AuthService', 'login OK — user: %s', char(username));
+                Logger.info('AuthService', 'login OK — user: %s', maskedUser);
             catch ME
-                Logger.error('AuthService', 'login FAILED (user: %s): %s', char(username), ME.message);
+                Logger.error('AuthService', 'login FAILED (user: %s): %s', maskedUser, ME.message);
                 rethrow(ME);
             end
         end
@@ -50,6 +51,21 @@ classdef AuthService < handle
             end
         end
 
+    end
+
+    methods (Static, Access = private)
+        function masked = maskUsername(username)
+            % Mask username for safe logging: show first char + '***'.
+            u = char(username);
+            if isempty(u)
+                masked = '***';
+            else
+                masked = [u(1) '***'];
+            end
+        end
+    end
+
+    methods
         % Fetch paginated admin project list.
         function data = listProjects(obj, token, skip, limit)
             Logger.debug('AuthService', 'listProjects → skip=%d  limit=%d', round(skip), round(limit));

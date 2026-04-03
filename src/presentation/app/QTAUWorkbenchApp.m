@@ -278,10 +278,19 @@ classdef QTAUWorkbenchApp < handle
 
         function delete(app)
             try
+                if app.State.isAuthenticated() && ~isempty(app.AuthSvc)
+                    app.AuthSvc.logout(app.State.authToken);
+                    app.State.authToken = "";
+                end
+            catch ME
+                Logger.debug('QTAUWorkbenchApp', 'Logout on close: %s', ME.message);
+            end
+            try
                 if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
                     delete(app.UIFigure);
                 end
-            catch
+            catch ME
+                Logger.debug('QTAUWorkbenchApp', 'Cleanup: %s', ME.message);
             end
         end
     end
@@ -693,7 +702,7 @@ classdef QTAUWorkbenchApp < handle
     methods (Access = private)
 
         function buildUI(app)
-            app.UIFigure = uifigure('Name', 'Tunning Analysis', ...
+            app.UIFigure = uifigure('Name', 'QTAU Connector Workspace', ...
                 'Position', [80 40 1600 940], ...
                 'Color', [0.97 0.98 1.00], 'Visible', 'off');
             app.UIFigure.AutoResizeChildren    = 'off';
@@ -807,7 +816,7 @@ classdef QTAUWorkbenchApp < handle
             end
 
             subtitle = uilabel(app.HeaderGrid, 'Text', 'Connector Workspace');
-            subtitle.FontSize = 14;
+            subtitle.FontSize = 14; subtitle.FontWeight = 'bold';
             subtitle.HorizontalAlignment = 'center';
             subtitle.FontColor = [0.80 0.87 0.97];
             subtitle.Layout.Row = 1; subtitle.Layout.Column = 2;
@@ -1295,7 +1304,7 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function logEvent(app, category, msg)
-            ts   = datestr(now, 'HH:MM:SS.FFF'); %#ok<TNOW1,DATST>
+            ts   = char(datetime('now', 'Format', 'HH:mm:ss.SSS'));
             line = sprintf('[%s] %-8s [QTAUWorkbenchApp] %s', ts, upper(char(category)), char(msg));
             if isempty(app.EventLog)
                 app.EventLog = {line};

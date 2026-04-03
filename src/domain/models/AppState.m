@@ -12,8 +12,8 @@ classdef AppState < handle
     properties
         % ── Network ──────────────────────────────────────────────────────────
         % Loaded from resources/app.properties key "base_url".
-        % Fallback: http://34.42.87.190:5715
-        baseUrl string = "http://34.42.87.190:5715"
+        % Fallback: http://localhost:5715
+        baseUrl string = ""
 
         % ── Authentication ───────────────────────────────────────────────────
         authToken    string = ""
@@ -66,14 +66,9 @@ classdef AppState < handle
 
     methods
         function obj = AppState()
-            % Load base URL from app.properties; fall back to built-in default.
-            configUrl = AppConfig.get('base_url', '');
-            if ~isempty(configUrl)
-                obj.baseUrl = string(configUrl);
-                fprintf('[AppState] Base URL loaded from config: %s\n', configUrl);
-            else
-                fprintf('[AppState] Using built-in default base URL: %s\n', char(obj.baseUrl));
-            end
+            % Load base URL from app.properties; fall back to localhost.
+            obj.baseUrl = string(AppConfig.get('base_url', 'http://localhost:5715'));
+            fprintf('[AppState] Base URL loaded from config: %s\n', char(obj.baseUrl));
         end
 
         % Predicate helpers so callers avoid duplicating strlength checks.

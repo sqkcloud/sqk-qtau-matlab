@@ -15,7 +15,7 @@ classdef Logger
 
         % log  Core method — writes one line to the Command Window.
         function log(level, category, fmt, varargin)
-            ts  = datestr(now, 'HH:MM:SS.FFF'); %#ok<TNOW1,DATST>
+            ts  = char(datetime('now', 'Format', 'HH:mm:ss.SSS'));
             if nargin > 3
                 msg = sprintf(fmt, varargin{:});
             else
