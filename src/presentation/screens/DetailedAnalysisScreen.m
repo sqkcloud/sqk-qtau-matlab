@@ -12,7 +12,7 @@ function DetailedAnalysisScreen(app)
     t = app.createSectionPage('Detailed Analysis');
 
     g = uigridlayout(t, [3 3]);
-    g.RowHeight     = {44, '1.3x', '0.9x'};
+    g.RowHeight     = {34, '1.3x', '0.9x'};
     g.ColumnWidth   = {'1x', 6, '1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
@@ -28,26 +28,29 @@ function DetailedAnalysisScreen(app)
 
     leftBtns = uigridlayout(toolbar, [1 3]);
     leftBtns.Layout.Row = 1; leftBtns.Layout.Column = 1;
-    leftBtns.ColumnWidth = {170, 170, 160};
+    leftBtns.ColumnWidth = {110, 110, 100};
     leftBtns.Padding = [0 0 0 0]; leftBtns.ColumnSpacing = 8;
     leftBtns.BackgroundColor = [0.96 0.97 0.99];
 
-    app.RefreshCompareButton = uibutton(leftBtns, 'Text', Labels.get('detailed_btn_refresh_compare'), ...
+    app.RefreshCompareButton = uibutton(leftBtns, 'Text', [char(8635) ' ' Labels.get('detailed_btn_refresh_compare')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotComparison());
     app.RefreshCompareButton.Layout.Row = 1; app.RefreshCompareButton.Layout.Column = 1;
     app.styleBtn(app.RefreshCompareButton, 'ghost');
+    app.RefreshCompareButton.FontSize = 12;
     app.RefreshCompareButton.Tooltip = 'GET /jobs/{id}/results/detailed — distribution comparison';
 
-    app.RefreshTemporalButton = uibutton(leftBtns, 'Text', Labels.get('detailed_btn_refresh_temporal'), ...
+    app.RefreshTemporalButton = uibutton(leftBtns, 'Text', [char(8635) ' ' Labels.get('detailed_btn_refresh_temporal')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotTemporal());
     app.RefreshTemporalButton.Layout.Row = 1; app.RefreshTemporalButton.Layout.Column = 2;
     app.styleBtn(app.RefreshTemporalButton, 'ghost');
+    app.RefreshTemporalButton.FontSize = 12;
     app.RefreshTemporalButton.Tooltip = 'GET /jobs/{id}/error-trends — temporal stability';
 
-    app.RefreshQubitButton = uibutton(leftBtns, 'Text', Labels.get('detailed_btn_refresh_qubit'), ...
+    app.RefreshQubitButton = uibutton(leftBtns, 'Text', [char(8635) ' ' Labels.get('detailed_btn_refresh_qubit')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotQubit());
     app.RefreshQubitButton.Layout.Row = 1; app.RefreshQubitButton.Layout.Column = 3;
     app.styleBtn(app.RefreshQubitButton, 'ghost');
+    app.RefreshQubitButton.FontSize = 12;
     app.RefreshQubitButton.Tooltip = 'GET /jobs/{id}/results/detailed — per-qubit fidelity';
 
     tmp = uibutton(toolbar, 'Text', Labels.get('detailed_btn_next'), ...

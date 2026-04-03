@@ -13,6 +13,7 @@ classdef AnalysisViewModel < handle
             app = obj.App;
             if ~app.State.isAuthenticated(); return; end
             app.logEvent('API', 'GET /api/circuits — loading circuit list for Analysis');
+            app.showLoading(Labels.get('loading_circuits', 'Loading circuits...'));
             try
                 data = app.CircuitSvc.listCircuits(app.State.authToken);
                 items = JsonHelper.extractList(data, 'circuits');
@@ -38,7 +39,9 @@ classdef AnalysisViewModel < handle
                 app.AnalysisCircuitDropdown.Value = ids{1};
                 obj.onCircuitSelected(ids{1});
                 app.logEvent('API', sprintf('Circuit list loaded — %d circuit(s), auto-selected: %s', n, names{1}));
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('WARN', sprintf('Failed to load circuits: %s', ME.message));
             end
         end
@@ -68,12 +71,15 @@ classdef AnalysisViewModel < handle
             cid = app.State.selectedCircuitId;
             app.logEvent('API', sprintf('POST /api/circuits/%s/analyze — circuit: %s  name: %s', ...
                 cid, cid, app.State.selectedCircuitName));
+            app.showLoading(Labels.get('loading_analyzing', 'Analyzing circuit...'));
             try
                 data = app.CircuitSvc.analyzeCircuit(cid, app.State.authToken);
                 obj.applyAnalysisData(data);
                 obj.applyBenchmarkMatches(data);
                 app.logEvent('API', sprintf('Circuit analysis complete — circuit: %s', cid));
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Analysis FAILED (circuit: %s): %s', cid, ME.message));
                 app.showError('Analyze Circuit', ME);
             end

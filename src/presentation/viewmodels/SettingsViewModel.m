@@ -26,6 +26,7 @@ classdef SettingsViewModel < handle
                 logLevel = char(app.SettingsLogLevelDropdown.Value);
                 app.logEvent('API', sprintf('POST /api/settings/preferences — shots: %d  opt: %d  logLevel: %s', ...
                     shots, opt, logLevel));
+                app.showLoading(Labels.get('loading_saving_settings', 'Saving settings...'));
                 try
                     prefs = struct( ...
                         'default_shots',      shots, ...
@@ -33,7 +34,9 @@ classdef SettingsViewModel < handle
                         'log_level',          logLevel);
                     app.SettingsSvc.savePreferences(prefs, app.State.authToken);
                     app.logEvent('API', 'Preferences saved to server successfully');
+                    app.hideLoading();
                 catch ME
+                    app.hideLoading();
                     app.logEvent('ERROR', sprintf('Save preferences FAILED: %s', ME.message));
                     app.showError('Save Settings', ME);
                 end
@@ -60,6 +63,7 @@ classdef SettingsViewModel < handle
             instance = char(app.IbmInstanceField.Value);
             app.logEvent('API', sprintf('POST /api/settings/verify-ibm — channel: %s  instance: %s', ...
                 channel, instance));
+            app.showLoading(Labels.get('loading_verifying', 'Verifying IBM credentials...'));
             try
                 data = app.SettingsSvc.verifyIbmCredentials(apiTok, channel, instance, app.State.authToken);
                 ok   = char(JsonHelper.pick(data, {'valid','status','ok'}));
@@ -67,7 +71,9 @@ classdef SettingsViewModel < handle
                     app.SettingsStatusArea.Value = {sprintf('IBM credentials verified: %s', ok)};
                 end
                 app.logEvent('API', sprintf('IBM credentials verification result: %s', ok));
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('IBM verify FAILED (channel: %s): %s', channel, ME.message));
                 if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
                     app.SettingsStatusArea.Value = {'Verification failed.', ME.message};
@@ -106,13 +112,16 @@ classdef SettingsViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Clear Cache', 'Icon', 'warning'); return;
             end
             app.logEvent('API', 'DELETE /api/settings/cache');
+            app.showLoading(Labels.get('loading_clearing_cache', 'Clearing cache...'));
             try
                 app.SettingsSvc.clearCache(app.State.authToken);
                 app.logEvent('API', 'Server cache cleared successfully');
                 if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
                     app.SettingsStatusArea.Value = {'Server-side cache cleared.'};
                 end
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Clear cache FAILED: %s', ME.message));
                 app.showError('Clear Server Cache', ME);
             end

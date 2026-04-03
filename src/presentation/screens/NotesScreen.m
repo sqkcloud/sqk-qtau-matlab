@@ -11,7 +11,7 @@ function NotesScreen(app)
     t = app.createSectionPage('Notes');
 
     g = uigridlayout(t, [2 3]);
-    g.RowHeight     = {42, '1x'};
+    g.RowHeight     = {34, '1x'};
     g.ColumnWidth   = {'1.2x', 6, '1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
@@ -21,7 +21,7 @@ function NotesScreen(app)
     % ── Toolbar ──────────────────────────────────────────────────────────────
     topRow = uigridlayout(g, [1 4]);
     topRow.Layout.Row = 1; topRow.Layout.Column = [1 3];
-    topRow.ColumnWidth = {'1x', 140, 140, 140};
+    topRow.ColumnWidth = {'1x', 90, 100, 80};
     topRow.Padding = [0 0 0 0];
     topRow.BackgroundColor = [0.96 0.97 0.99];
 
@@ -29,21 +29,24 @@ function NotesScreen(app)
     heading.FontSize = 16; heading.FontWeight = 'bold'; heading.FontColor = [0.18 0.26 0.40];
     heading.Layout.Row = 1; heading.Layout.Column = 1;
 
-    app.SaveNotesButton = uibutton(topRow, 'Text', Labels.get('notes_btn_save'), ...
+    app.SaveNotesButton = uibutton(topRow, 'Text', [char(10004) ' ' Labels.get('notes_btn_save')], ...
         'ButtonPushedFcn', @(~,~)app.NotesVm.onSaveNotes());
     app.SaveNotesButton.Layout.Row = 1; app.SaveNotesButton.Layout.Column = 2;
+    app.SaveNotesButton.FontSize = 12;
     app.styleBtn(app.SaveNotesButton, 'primary');
     app.SaveNotesButton.Tooltip = 'Persist notes to server (requires login)';
 
-    loadBtn = uibutton(topRow, 'Text', Labels.get('notes_btn_load'), ...
+    loadBtn = uibutton(topRow, 'Text', [char(8635) ' ' Labels.get('notes_btn_load')], ...
         'ButtonPushedFcn', @(~,~)app.NotesVm.onLoadNotes());
     loadBtn.Layout.Row = 1; loadBtn.Layout.Column = 3;
+    loadBtn.FontSize = 12;
     app.styleBtn(loadBtn, 'secondary');
     loadBtn.Tooltip = 'Fetch notes from server for current project';
 
-    app.ClearNotesButton = uibutton(topRow, 'Text', Labels.get('notes_btn_clear'), ...
+    app.ClearNotesButton = uibutton(topRow, 'Text', [char(10005) ' ' Labels.get('notes_btn_clear')], ...
         'ButtonPushedFcn', @(~,~)app.NotesVm.onClearNotes());
     app.ClearNotesButton.Layout.Row = 1; app.ClearNotesButton.Layout.Column = 4;
+    app.ClearNotesButton.FontSize = 12;
     app.styleBtn(app.ClearNotesButton, 'ghost');
 
     % ── Column divider ────────────────────────────────────────────────────────

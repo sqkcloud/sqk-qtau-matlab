@@ -44,6 +44,12 @@ classdef QTAUWorkbenchApp < handle
         SectionPanels
 
         LoadingOverlay
+        ActivityOverlay            % Reusable loading overlay for API calls
+        AuthOverlay                % Login-required overlay covering content area
+        HeaderUserLabel            % Logged-in username button in header
+        HeaderUserMenu             % Dropdown panel for user menu
+        HeaderUserMenuPanel        % The popup panel container
+        HeaderLoginButton          % Login button in header (shown when logged out)
     end
 
     % ── Shared services ───────────────────────────────────────────────────────
@@ -101,12 +107,11 @@ classdef QTAUWorkbenchApp < handle
     % ── Welcome tab ───────────────────────────────────────────────────────────
     properties
         UserInfoArea
+        ActiveProjectLabel         % Active Project name display in box
         ProjectsTable
         ProjectsPageLabel          % "Page X of Y"
         ProjectsPrevButton
         ProjectsNextButton
-        WelcomeLogoutButton        % Logout button on Welcome screen
-        WelcomeLoginButton         % Login button on Welcome screen
     end
 
     % ── Dashboard tab ─────────────────────────────────────────────────────────
@@ -284,18 +289,26 @@ classdef QTAUWorkbenchApp < handle
     % Callable from src/presentation/screens/*.m (package-less functions cannot use private methods).
     methods
         function updateWelcomeAuthButtons(app)
-            if isempty(app.WelcomeLogoutButton) || ~isvalid(app.WelcomeLogoutButton)
-                return;
-            end
             if app.State.isAuthenticated()
-                app.WelcomeLogoutButton.Visible = 'on';
-                if ~isempty(app.WelcomeLoginButton) && isvalid(app.WelcomeLoginButton)
-                    app.WelcomeLoginButton.Visible = 'off';
+                % Header: show username, hide Login button
+                if ~isempty(app.HeaderUserLabel) && isvalid(app.HeaderUserLabel)
+                    app.HeaderUserLabel.Text = ['  ' char(app.State.currentUser) '  ' char(9662)];
+                    app.HeaderUserLabel.Visible = 'on';
+                end
+                if ~isempty(app.HeaderLoginButton) && isvalid(app.HeaderLoginButton)
+                    app.HeaderLoginButton.Visible = 'off';
                 end
             else
-                app.WelcomeLogoutButton.Visible = 'off';
-                if ~isempty(app.WelcomeLoginButton) && isvalid(app.WelcomeLoginButton)
-                    app.WelcomeLoginButton.Visible = 'on';
+                % Header: hide username, show Login button, hide menu
+                if ~isempty(app.HeaderUserLabel) && isvalid(app.HeaderUserLabel)
+                    app.HeaderUserLabel.Text = '';
+                    app.HeaderUserLabel.Visible = 'off';
+                end
+                if ~isempty(app.HeaderLoginButton) && isvalid(app.HeaderLoginButton)
+                    app.HeaderLoginButton.Visible = 'on';
+                end
+                if ~isempty(app.HeaderUserMenuPanel) && isvalid(app.HeaderUserMenuPanel)
+                    app.HeaderUserMenuPanel.Visible = 'off';
                 end
             end
         end
@@ -303,7 +316,7 @@ classdef QTAUWorkbenchApp < handle
         function showLoginDialog(app)
             % Create modal login dialog — Google-inspired professional layout
             figPos = app.UIFigure.Position;
-            dlgW = 480; dlgH = 640;
+            dlgW = 480; dlgH = 520;
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
 
@@ -348,23 +361,23 @@ classdef QTAUWorkbenchApp < handle
             % gap3 | pass-lbl | pass-row | forgot | gap4 |
             % sign-in | status
             cg = uigridlayout(card, [15 1]);
-            cg.RowHeight = {36, ...     %  1: "Sign in" title
-                            22, ...     %  2: subtitle
-                            20, ...     %  3: gap
-                            18, ...     %  4: Server URL label
-                            40, ...     %  5: Server URL field
-                            14, ...     %  6: gap
-                            18, ...     %  7: Username label
-                            40, ...     %  8: Username field
-                            14, ...     %  9: gap
-                            18, ...     % 10: Password label
-                            40, ...     % 11: Password row
-                            24, ...     % 12: Forgot link
-                            20, ...     % 13: gap
-                            46, ...     % 14: Sign In button
-                            24};        % 15: Status / error
+            cg.RowHeight = {32, ...     %  1: "Sign in" title
+                            20, ...     %  2: subtitle
+                            12, ...     %  3: gap
+                            16, ...     %  4: Server URL label
+                            36, ...     %  5: Server URL field
+                            8, ...      %  6: gap
+                            16, ...     %  7: Username label
+                            36, ...     %  8: Username field
+                            8, ...      %  9: gap
+                            16, ...     % 10: Password label
+                            36, ...     % 11: Password row
+                            20, ...     % 12: Forgot link
+                            12, ...     % 13: gap
+                            40, ...     % 14: Sign In button
+                            20};        % 15: Status / error
             cg.ColumnWidth = {'1x'};
-            cg.Padding     = [40 32 40 24];
+            cg.Padding     = [32 24 32 18];
             cg.RowSpacing  = 2;
             cg.BackgroundColor = cardBg;
 
@@ -429,7 +442,7 @@ classdef QTAUWorkbenchApp < handle
             app.LoginDlgPasswordVisible = false;
             passRow = uigridlayout(cg, [1 2]);
             passRow.Layout.Row = 11; passRow.Layout.Column = 1;
-            passRow.ColumnWidth = {'1x', 60};
+            passRow.ColumnWidth = {'1x', 34};
             passRow.Padding = [0 0 0 0]; passRow.ColumnSpacing = 8;
             passRow.BackgroundColor = cardBg;
 
@@ -441,13 +454,30 @@ classdef QTAUWorkbenchApp < handle
             app.LoginDlgPasswordField.ValueChangingFcn = ...
                 @(~, evt) app.onPasswordChanging(evt);
 
-            app.LoginDlgEyeButton = uibutton(passRow, 'Text', 'Show', ...
-                'FontSize', 11, 'FontColor', accentBlue, ...
-                'BackgroundColor', [0.972 0.976 0.988], ...
-                'ButtonPushedFcn', @(~,~)app.onTogglePasswordVisibility());
+            eyeSvgOpen  = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#FIL" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>';
+            eyeSvgSlash = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#FIL" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C11.74 7.13 12.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>';
+            eyeColor = '6B7280';
+            htmlTpl = [ ...
+                '<html><head><style>' ...
+                'body{margin:0;display:flex;align-items:center;justify-content:center;height:100%%;' ...
+                'cursor:pointer;background:BGC;user-select:none;box-sizing:border-box;' ...
+                'border:1px solid #dadce0;border-radius:6px;}' ...
+                'div:hover{opacity:0.7;}' ...
+                '</style></head><body>' ...
+                '<div id="eyeBtn" title="Show or hide password">SVG</div>' ...
+                '<script>' ...
+                'function setup(comp){document.getElementById("eyeBtn").addEventListener("click",function(){comp.Data=Date.now();});}' ...
+                '</script></body></html>'];
+            openSvg  = strrep(eyeSvgOpen,  '#FIL', ['#' eyeColor]);
+            slashSvg = strrep(eyeSvgSlash, '#FIL', ['#' eyeColor]);
+            app.LoginDlgEyeButton = uihtml(passRow);
             app.LoginDlgEyeButton.Layout.Row = 1;
             app.LoginDlgEyeButton.Layout.Column = 2;
-            app.LoginDlgEyeButton.Tooltip = 'Show or hide password';
+            app.LoginDlgEyeButton.HTMLSource = strrep(strrep(htmlTpl, 'SVG', slashSvg), 'BGC', '#f8f9fc');
+            app.LoginDlgEyeButton.DataChangedFcn = @(~,~)app.onTogglePasswordVisibility();
+            app.LoginDlgEyeButton.UserData = struct( ...
+                'hiddenHtml', strrep(strrep(htmlTpl, 'SVG', slashSvg), 'BGC', '#f8f9fc'), ...
+                'visibleHtml', strrep(strrep(htmlTpl, 'SVG', openSvg), 'BGC', '#f8f9fc'));
 
             % Row 12 — Forgot credentials link (blue, left-aligned)
             helpLbl = uilabel(cg, ...
@@ -480,6 +510,9 @@ classdef QTAUWorkbenchApp < handle
                 'FontSize', 9, 'FontColor', footerColor, ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
             verLbl.Layout.Row = 3; verLbl.Layout.Column = 2;
+
+            % Enter key triggers login from anywhere in the dialog
+            app.LoginDialog.KeyPressFcn = @(~, evt) app.onLoginKeyPress(evt);
 
             Logger.info('QTAUWorkbenchApp', 'Login dialog shown');
         end
@@ -633,14 +666,25 @@ classdef QTAUWorkbenchApp < handle
             app.LoginDlgPasswordField.Value = repmat(char(8226), 1, strlength(string(app.LoginDlgPasswordReal)));
         end
 
+        function onLoginKeyPress(app, evt)
+            % Triggered on any key press in the login dialog
+            if strcmp(evt.Key, 'return')
+                if isempty(app.LoginDialog) || ~isvalid(app.LoginDialog)
+                    return;
+                end
+                app.WelcomeVm.onLogin();
+            end
+        end
+
         function onTogglePasswordVisibility(app)
             app.LoginDlgPasswordVisible = ~app.LoginDlgPasswordVisible;
+            ud = app.LoginDlgEyeButton.UserData;
             if app.LoginDlgPasswordVisible
                 app.LoginDlgPasswordField.Value = char(app.LoginDlgPasswordReal);
-                app.LoginDlgEyeButton.Text = 'Hide';
+                app.LoginDlgEyeButton.HTMLSource = ud.visibleHtml;
             else
                 app.LoginDlgPasswordField.Value = repmat(char(8226), 1, strlength(string(app.LoginDlgPasswordReal)));
-                app.LoginDlgEyeButton.Text = 'Show';
+                app.LoginDlgEyeButton.HTMLSource = ud.hiddenHtml;
             end
         end
     end
@@ -687,6 +731,7 @@ classdef QTAUWorkbenchApp < handle
             DetailedAnalysisScreen(app);
             ReportsScreen(app);
             SettingsScreen(app);
+            app.buildAuthOverlay();
             drawnow();
 
             app.onSelectSection('Welcome');
@@ -694,6 +739,13 @@ classdef QTAUWorkbenchApp < handle
             app.onResizeUI();
             drawnow();
             app.forceInitialLayout();
+
+            % Show auth overlay if not authenticated
+            if ~app.State.isAuthenticated()
+                app.showAuthOverlay();
+            else
+                app.hideAuthOverlay();
+            end
 
             try
                 if ~isempty(app.LoadingOverlay) && isvalid(app.LoadingOverlay)
@@ -719,7 +771,7 @@ classdef QTAUWorkbenchApp < handle
             app.HeaderGrid = uigridlayout(app.RootGrid, [1 3]);
             app.HeaderGrid.Layout.Row    = 1;
             app.HeaderGrid.Layout.Column = 1;
-            app.HeaderGrid.ColumnWidth   = {250, '1x', 240};
+            app.HeaderGrid.ColumnWidth   = {250, '1x', 'fit'};
             app.HeaderGrid.RowHeight     = {52};
             app.HeaderGrid.Padding       = [0 0 12 2];
             app.HeaderGrid.BackgroundColor = [0.10 0.17 0.30];
@@ -760,12 +812,82 @@ classdef QTAUWorkbenchApp < handle
             subtitle.FontColor = [0.80 0.87 0.97];
             subtitle.Layout.Row = 1; subtitle.Layout.Column = 2;
 
-            userBadge = uilabel(app.HeaderGrid, 'Text', 'SQK Admin Workspace');
+            headerRight = uigridlayout(app.HeaderGrid, [1 3]);
+            headerRight.Layout.Row = 1; headerRight.Layout.Column = 3;
+            headerRight.ColumnWidth = {'fit', 'fit', 'fit'};
+            headerRight.Padding = [0 0 4 0]; headerRight.ColumnSpacing = 10;
+            headerRight.BackgroundColor = [0.10 0.17 0.30];
+
+            userBadge = uilabel(headerRight, 'Text', 'SQK Admin Workspace');
             userBadge.FontSize = 13; userBadge.FontWeight = 'bold';
             userBadge.HorizontalAlignment = 'right';
             userBadge.FontColor = [1 1 1];
-            userBadge.Layout.Row = 1; userBadge.Layout.Column = 3;
+            userBadge.Layout.Row = 1; userBadge.Layout.Column = 1;
             userBadge.Tooltip = 'QTAU Connector v2026';
+
+            % Login link (shown when logged out) — no border
+            app.HeaderLoginButton = uihyperlink(headerRight, ...
+                'Text', Labels.get('header_btn_login', 'Login'), ...
+                'URL', '', ...
+                'HyperlinkClickedFcn', @(~,~)app.showLoginDialog(), ...
+                'FontSize', 12, 'FontWeight', 'bold', 'FontColor', [0.85 0.92 1.00], ...
+                'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+            app.HeaderLoginButton.Layout.Row = 1; app.HeaderLoginButton.Layout.Column = 2;
+            app.HeaderLoginButton.VisitedColor = [0.85 0.92 1.00];
+
+            % Username link (shown when logged in) — left-click opens dropdown menu
+            app.HeaderUserLabel = uihyperlink(headerRight, ...
+                'Text', '', ...
+                'URL', '', ...
+                'HyperlinkClickedFcn', @(~,~)app.toggleHeaderUserMenu(), ...
+                'FontSize', 12, 'FontWeight', 'bold', 'FontColor', [0.85 0.92 1.00], ...
+                'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 3;
+            app.HeaderUserLabel.Visible = 'off';
+            app.HeaderUserLabel.VisitedColor = [0.85 0.92 1.00];
+
+            % Dropdown menu panel (hidden by default, positioned over the figure)
+            app.HeaderUserMenuPanel = uipanel(app.UIFigure, 'Title', '', ...
+                'Position', [0 0 180 76], 'Visible', 'off', ...
+                'BackgroundColor', [1 1 1], 'BorderType', 'line');
+            mg = uigridlayout(app.HeaderUserMenuPanel, [2 1]);
+            mg.RowHeight = {32, 32}; mg.ColumnWidth = {'1x'};
+            mg.Padding = [4 4 4 4]; mg.RowSpacing = 2;
+            mg.BackgroundColor = [1 1 1];
+
+            accountBtn = uibutton(mg, 'Text', [char(9881) '  ' Labels.get('header_menu_my_account', 'My Account')], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'FontColor', [0.20 0.20 0.25], 'BackgroundColor', [1 1 1], ...
+                'ButtonPushedFcn', @(~,~)app.onHeaderMenuAction('account'));
+            accountBtn.Layout.Row = 1; accountBtn.Layout.Column = 1;
+
+            logoutBtn = uibutton(mg, 'Text', [char(9211) '  ' Labels.get('header_menu_logout', 'Logout')], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'FontColor', [0.70 0.15 0.15], 'BackgroundColor', [1 1 1], ...
+                'ButtonPushedFcn', @(~,~)app.onHeaderMenuAction('logout'));
+            logoutBtn.Layout.Row = 2; logoutBtn.Layout.Column = 1;
+        end
+
+        function toggleHeaderUserMenu(app)
+            if app.HeaderUserMenuPanel.Visible == "on"
+                app.HeaderUserMenuPanel.Visible = 'off';
+                return;
+            end
+            % Position the menu below the username button at top-right
+            figPos = app.UIFigure.Position;
+            menuW = 180; menuH = 76;
+            app.HeaderUserMenuPanel.Position = [figPos(3) - menuW - 16, figPos(4) - 52 - menuH - 4, menuW, menuH];
+            app.HeaderUserMenuPanel.Visible = 'on';
+        end
+
+        function onHeaderMenuAction(app, action)
+            app.HeaderUserMenuPanel.Visible = 'off';
+            switch action
+                case 'account'
+                    app.onSelectSection('Settings');
+                case 'logout'
+                    app.WelcomeVm.onLogout();
+            end
         end
 
         function buildBody(app)
@@ -863,7 +985,7 @@ classdef QTAUWorkbenchApp < handle
             hg.RowHeight = {28, 20}; hg.Padding = [16 10 16 10];
             hg.BackgroundColor = [1 1 1];
             app.SectionTitleLabel = uilabel(hg, 'Text', 'Welcome');
-            app.SectionTitleLabel.FontSize = 24; app.SectionTitleLabel.FontWeight = 'bold';
+            app.SectionTitleLabel.FontSize = 18; app.SectionTitleLabel.FontWeight = 'bold';
             app.SectionTitleLabel.Layout.Row = 1; app.SectionTitleLabel.Layout.Column = 1;
             app.SectionSubtitleLabel = uilabel(hg, 'Text', 'Server authentication and project access');
             app.SectionSubtitleLabel.FontSize = 12;
@@ -924,6 +1046,50 @@ classdef QTAUWorkbenchApp < handle
                 lbl.HorizontalAlignment = 'center';
                 lbl.VerticalAlignment   = 'center';
             end
+        end
+
+        function buildAuthOverlay(app)
+            % Overlay that covers content area when user is not authenticated.
+            pos = app.ContentContainer.Position;
+            app.AuthOverlay = uipanel(app.ContentContainer, 'Title', '', ...
+                'BorderType', 'none', 'BackgroundColor', [0.96 0.97 0.99]);
+            app.AuthOverlay.AutoResizeChildren = 'on';
+            app.AuthOverlay.Position = [0 0 max(1, pos(3)) max(1, pos(4))];
+
+            og = uigridlayout(app.AuthOverlay, [3 3]);
+            og.RowHeight   = {'1x', 180, '1x'};
+            og.ColumnWidth = {'1x', 320, '1x'};
+            og.Padding     = [0 0 0 0];
+            og.BackgroundColor = [0.96 0.97 0.99];
+
+            card = uipanel(og, 'Title', '');
+            card.Layout.Row = 2; card.Layout.Column = 2;
+            card.BackgroundColor = [1 1 1];
+
+            cg = uigridlayout(card, [4 1]);
+            cg.RowHeight  = {40, 24, 20, 34};
+            cg.Padding    = [24 20 24 20];
+            cg.RowSpacing = 10;
+            cg.BackgroundColor = [1 1 1];
+
+            icon = uilabel(cg, 'Text', char(9888));
+            icon.FontSize = 28; icon.HorizontalAlignment = 'center';
+            icon.Layout.Row = 1; icon.Layout.Column = 1;
+
+            ttl = uilabel(cg, 'Text', Labels.get('auth_overlay_title', 'Authentication Required'));
+            ttl.FontSize = 16; ttl.FontWeight = 'bold';
+            ttl.HorizontalAlignment = 'center';
+            ttl.Layout.Row = 2; ttl.Layout.Column = 1;
+
+            sub = uilabel(cg, 'Text', Labels.get('auth_overlay_subtitle', 'Please sign in to access the workspace'));
+            sub.FontSize = 12; sub.FontColor = [0.35 0.40 0.48];
+            sub.HorizontalAlignment = 'center';
+            sub.Layout.Row = 3; sub.Layout.Column = 1;
+
+            btn = uibutton(cg, 'Text', Labels.get('auth_overlay_btn', 'Sign In'));
+            btn.Layout.Row = 4; btn.Layout.Column = 1;
+            app.styleBtn(btn, 'primary');
+            btn.ButtonPushedFcn = @(~,~)app.showLoginDialog();
         end
 
         % ── Section metadata — loaded from labels.properties ─────────────────
@@ -1028,6 +1194,14 @@ classdef QTAUWorkbenchApp < handle
 
         function onResizeUI(app)
             app.fitAllSections();
+            app.fitAuthOverlay();
+        end
+
+        function fitAuthOverlay(app)
+            if ~isempty(app.AuthOverlay) && isvalid(app.AuthOverlay)
+                pos = app.ContentContainer.Position;
+                app.AuthOverlay.Position = [0 0 max(1, pos(3)) max(1, pos(4))];
+            end
         end
 
     end % private methods
@@ -1035,11 +1209,81 @@ classdef QTAUWorkbenchApp < handle
     % ── Public helpers (called by ViewModels) ─────────────────────────────────
     methods
 
+        function showAuthOverlay(app)
+            if ~isempty(app.AuthOverlay) && isvalid(app.AuthOverlay)
+                app.fitAuthOverlay();
+                app.AuthOverlay.Visible = 'on';
+                uistack(app.AuthOverlay, 'top');
+            end
+        end
+
+        function hideAuthOverlay(app)
+            if ~isempty(app.AuthOverlay) && isvalid(app.AuthOverlay)
+                app.AuthOverlay.Visible = 'off';
+            end
+        end
+
         % Synchronise HTTP client base URL from AppState.
         function syncClient(app)
             app.Client.setBaseUrl(app.State.baseUrl);
+            app.Client.ProjectId = app.State.currentProjectId;
             if ~isempty(app.SettingsBaseUrlField) && isvalid(app.SettingsBaseUrlField)
                 app.SettingsBaseUrlField.Value = char(app.State.baseUrl);
+            end
+        end
+
+        function showLoading(app, msg)
+            if nargin < 2; msg = 'Loading...'; end
+            try
+                % Remove previous overlay if any
+                if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
+                    delete(app.ActivityOverlay);
+                end
+                figW = app.UIFigure.Position(3);
+                figH = app.UIFigure.Position(4);
+                app.ActivityOverlay = uipanel(app.UIFigure, 'Title', '', ...
+                    'Units', 'pixels', 'Position', [0 0 figW figH], ...
+                    'BackgroundColor', [1 1 1], 'BorderType', 'none');
+                og = uigridlayout(app.ActivityOverlay, [3 3]);
+                og.RowHeight   = {'1x', 90, '1x'};
+                og.ColumnWidth = {'1x', 260, '1x'};
+                og.Padding     = [0 0 0 0];
+                og.BackgroundColor = [1 1 1];
+                host = uigridlayout(og, [1 1]);
+                host.Layout.Row = 2; host.Layout.Column = 2;
+                host.Padding = [0 0 0 0]; host.BackgroundColor = [1 1 1];
+                try
+                    sp = uihtml(host);
+                    sp.HTMLSource = [ ...
+                        '<div style="display:flex;flex-direction:column;align-items:center;' ...
+                        'justify-content:center;height:100%;font-family:-apple-system,' ...
+                        '''Segoe UI'',Arial,sans-serif;">' ...
+                        '<div style="width:36px;height:36px;border:4px solid #dde3ee;' ...
+                        'border-top-color:#2952a3;border-radius:50%;' ...
+                        'animation:spin 0.85s linear infinite;"></div>' ...
+                        '<style>@keyframes spin{to{transform:rotate(360deg)}}</style>' ...
+                        '<p style="margin-top:14px;font-size:13px;color:#5a6478;' ...
+                        'letter-spacing:0.03em;font-weight:500;">' char(msg) '</p></div>'];
+                catch
+                    lbl = uilabel(host, 'Text', char(msg), 'FontSize', 14, ...
+                        'FontWeight', 'bold', 'FontColor', [0.35 0.42 0.52], ...
+                        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
+                end
+                drawnow();
+            catch ME
+                Logger.debug('QTAUWorkbenchApp', 'showLoading: %s', ME.message);
+            end
+        end
+
+        function hideLoading(app)
+            try
+                if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
+                    delete(app.ActivityOverlay);
+                    app.ActivityOverlay = [];
+                end
+                drawnow();
+            catch ME
+                Logger.debug('QTAUWorkbenchApp', 'hideLoading: %s', ME.message);
             end
         end
 
@@ -1090,7 +1334,7 @@ classdef QTAUWorkbenchApp < handle
         %   variant: 'primary' | 'secondary' | 'success' | 'danger' | 'ghost'
         function styleBtn(~, btn, variant)
             % Clean macOS-native button style: white bg, dark text, subtle fill variants
-            btn.FontSize = 13;
+            btn.FontSize = 12;
             btn.FontWeight = 'normal';
             btn.BackgroundColor = [1 1 1];
             btn.FontColor       = [0.15 0.15 0.15];

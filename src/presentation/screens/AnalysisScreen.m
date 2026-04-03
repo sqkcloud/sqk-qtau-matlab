@@ -12,7 +12,7 @@ function AnalysisScreen(app)
     t = app.createSectionPage('Analysis');
 
     g = uigridlayout(t, [3 3]);
-    g.RowHeight     = {44, '1x', 72};
+    g.RowHeight     = {34, '1x', 72};
     g.ColumnWidth   = {'1x', 6, '1.15x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
@@ -22,7 +22,7 @@ function AnalysisScreen(app)
     % ── Circuit selector + Analyze button ────────────────────────────────────
     topBar = uigridlayout(g, [1 3]);
     topBar.Layout.Row = 1; topBar.Layout.Column = [1 3];
-    topBar.ColumnWidth = {90, '1x', 160};
+    topBar.ColumnWidth = {90, '1x', 110};
     topBar.Padding = [0 0 0 0]; topBar.ColumnSpacing = 8;
     topBar.BackgroundColor = [0.96 0.97 0.99];
 
@@ -36,10 +36,11 @@ function AnalysisScreen(app)
         'ValueChangedFcn', @(src,~)app.AnalysisVm.onCircuitSelected(src.Value));
     app.AnalysisCircuitDropdown.Layout.Row = 1; app.AnalysisCircuitDropdown.Layout.Column = 2;
 
-    app.AnalyzeButton = uibutton(topBar, 'Text', Labels.get('analysis_btn_analyze'), ...
+    app.AnalyzeButton = uibutton(topBar, 'Text', [char(9881) ' ' Labels.get('analysis_btn_analyze')], ...
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onAnalyzeCircuit());
     app.AnalyzeButton.Layout.Row = 1; app.AnalyzeButton.Layout.Column = 3;
     app.styleBtn(app.AnalyzeButton, 'primary');
+    app.AnalyzeButton.FontSize = 12;
     app.AnalyzeButton.Tooltip = 'POST /api/circuits/{id}/analyze + match-benchmarks';
 
     % ── Column divider ────────────────────────────────────────────────────────

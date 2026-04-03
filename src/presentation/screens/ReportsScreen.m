@@ -28,7 +28,7 @@ function ReportsScreen(app)
     genPanel.Layout.Row = 1; genPanel.Layout.Column = 1; genPanel.BackgroundColor = [1 1 1];
 
     gg = uigridlayout(genPanel, [5 2]);
-    gg.RowHeight = {36, 36, 36, 36, '1x'};
+    gg.RowHeight = {34, 34, 34, 34, '1x'};
     gg.ColumnWidth = {160,'1x'};
     gg.Padding = [16 12 16 12]; gg.RowSpacing = 8; gg.BackgroundColor = [1 1 1];
 
@@ -53,10 +53,11 @@ function ReportsScreen(app)
     app.ReportSectionsField.Layout.Row = 3; app.ReportSectionsField.Layout.Column = 2;
     app.ReportSectionsField.Tooltip = Labels.get('reports_placeholder_sections');
 
-    app.GenerateReportButton = uibutton(gg, 'Text', Labels.get('reports_btn_generate'), ...
+    app.GenerateReportButton = uibutton(gg, 'Text', [char(9881) ' ' Labels.get('reports_btn_generate')], ...
         'ButtonPushedFcn', @(~,~)app.ReportsVm.onGenerateReport());
     app.GenerateReportButton.Layout.Row = 4; app.GenerateReportButton.Layout.Column = [1 2];
     app.styleBtn(app.GenerateReportButton, 'primary');
+    app.GenerateReportButton.FontSize = 12;
     app.GenerateReportButton.Tooltip = 'POST /api/reports/generate (or /api/projects/{id}/reports)';
 
     app.ReportStatusArea = uitextarea(gg, 'Editable', 'off');
@@ -69,11 +70,12 @@ function ReportsScreen(app)
     previewPanel.Layout.Row = 1; previewPanel.Layout.Column = 3; previewPanel.BackgroundColor = [1 1 1];
 
     pvg = uigridlayout(previewPanel, [2 1]);
-    pvg.RowHeight = {44,'1x'}; pvg.Padding = [12 10 12 10]; pvg.BackgroundColor = [1 1 1];
+    pvg.RowHeight = {34,'1x'}; pvg.Padding = [12 10 12 10]; pvg.BackgroundColor = [1 1 1];
 
-    app.OpenReportButton = uibutton(pvg, 'Text', Labels.get('reports_btn_open'), ...
+    app.OpenReportButton = uibutton(pvg, 'Text', [char(9654) ' ' Labels.get('reports_btn_open')], ...
         'ButtonPushedFcn', @(~,~)app.ReportsVm.onOpenReport());
     app.styleBtn(app.OpenReportButton, 'ghost');
+    app.OpenReportButton.FontSize = 12;
     app.OpenReportButton.Tooltip = 'GET /api/reports/{id}/download';
 
     app.GeneratedReportList = uilistbox(pvg, 'Items', {}, ...
@@ -84,17 +86,20 @@ function ReportsScreen(app)
     actionPanel.Layout.Row = 2; actionPanel.Layout.Column = [1 3]; actionPanel.BackgroundColor = [1 1 1];
 
     ag = uigridlayout(actionPanel, [1 4]);
-    ag.RowHeight = {36}; ag.ColumnWidth = {'1x', 150, 150, 100};
+    ag.RowHeight = {34}; ag.ColumnWidth = {'1x', 110, 110, 100};
     ag.Padding = [14 10 14 10]; ag.BackgroundColor = [1 1 1];
     desc = uilabel(ag, 'Text', Labels.get('reports_distribute_desc'));
     desc.FontSize = 13; desc.FontColor = [0.28 0.36 0.48];
     desc.Layout.Row = 1; desc.Layout.Column = 1; desc.WordWrap = 'on';
-    b = uibutton(ag, 'Text', Labels.get('reports_btn_download_pdf'));
+    b = uibutton(ag, 'Text', [char(8595) ' ' Labels.get('reports_btn_download_pdf')]);
     b.Layout.Row = 1; b.Layout.Column = 2; app.styleBtn(b, 'primary');
-    b = uibutton(ag, 'Text', Labels.get('reports_btn_share_email'));
+    b.FontSize = 12;
+    b = uibutton(ag, 'Text', [char(9993) ' ' Labels.get('reports_btn_share_email')]);
     b.Layout.Row = 1; b.Layout.Column = 3; app.styleBtn(b, 'secondary');
-    b = uibutton(ag, 'Text', Labels.get('reports_btn_print'));
+    b.FontSize = 12;
+    b = uibutton(ag, 'Text', [char(9113) ' ' Labels.get('reports_btn_print')]);
     b.Layout.Row = 1; b.Layout.Column = 4; app.styleBtn(b, 'ghost');
+    b.FontSize = 12;
 
     % ── Workflow Complete action bar ───────────────────────────────────────────
     bottom = uipanel(g, 'Title', Labels.get('reports_panel_workflow'));

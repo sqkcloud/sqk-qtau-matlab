@@ -24,14 +24,14 @@ function ResultsScreen(app)
     hero.Layout.Row = 1; hero.Layout.Column = [1 3]; hero.BackgroundColor = [1 1 1];
 
     hg = uigridlayout(hero, [2 1]);
-    hg.RowHeight = {36, '1x'};
+    hg.RowHeight = {34, '1x'};
     hg.Padding = [16 12 16 12]; hg.RowSpacing = 8;
     hg.BackgroundColor = [1 1 1];
 
     % Header row: title (left) + button (right)
     headerRow = uigridlayout(hg, [1 2]);
     headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
-    headerRow.ColumnWidth = {'1x', 140};
+    headerRow.ColumnWidth = {'1x', 110};
     headerRow.Padding = [0 0 0 0]; headerRow.BackgroundColor = [1 1 1];
 
     titleLabel = uilabel(headerRow, 'Text', Labels.get('results_hero_title'));
@@ -39,10 +39,11 @@ function ResultsScreen(app)
     titleLabel.Layout.Row = 1; titleLabel.Layout.Column = 1;
     titleLabel.VerticalAlignment = 'center'; titleLabel.WordWrap = 'on';
 
-    refreshBtn = uibutton(headerRow, 'Text', Labels.get('results_btn_refresh'), ...
+    refreshBtn = uibutton(headerRow, 'Text', [char(8635) ' ' Labels.get('results_btn_refresh')], ...
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onRefreshResults());
     refreshBtn.Layout.Row = 1; refreshBtn.Layout.Column = 2;
     app.styleBtn(refreshBtn, 'primary');
+    refreshBtn.FontSize = 12;
     refreshBtn.Tooltip = 'GET /api/jobs/{id}/results';
 
     % Cards row: 4 KPI cards

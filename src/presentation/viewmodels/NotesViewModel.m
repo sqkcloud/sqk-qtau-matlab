@@ -18,11 +18,14 @@ classdef NotesViewModel < handle
             content = strjoin(app.NotesArea.Value, newline);
             app.logEvent('API', sprintf('PUT /api/projects/%s/notes (%d chars)', ...
                 app.State.currentProjectId, numel(content)));
+            app.showLoading(Labels.get('loading_saving_notes', 'Saving notes...'));
             try
                 app.ProjectSvc.saveNotes(app.State.currentProjectId, content, app.State.authToken);
                 app.State.projectNotes = content;
                 app.logEvent('API', sprintf('Notes saved to server — project: %s', app.State.currentProjectId));
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Save notes FAILED (project: %s): %s', ...
                     app.State.currentProjectId, ME.message));
                 app.showError('Save Notes', ME);
@@ -36,6 +39,7 @@ classdef NotesViewModel < handle
                 return;
             end
             app.logEvent('API', sprintf('GET /api/projects/%s/notes', app.State.currentProjectId));
+            app.showLoading(Labels.get('loading_notes', 'Loading notes...'));
             try
                 data    = app.ProjectSvc.getNotes(app.State.currentProjectId, app.State.authToken);
                 content = char(JsonHelper.pick(data, {'content','notes','text'}));
@@ -47,7 +51,9 @@ classdef NotesViewModel < handle
                 else
                     app.logEvent('API', 'Notes loaded — response empty, no content to display');
                 end
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Load notes FAILED (project: %s): %s', ...
                     app.State.currentProjectId, ME.message));
                 app.showError('Load Notes', ME);

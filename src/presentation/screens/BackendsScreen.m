@@ -65,19 +65,23 @@ function BackendsScreen(app)
     tablePanel.Layout.Row = 2; tablePanel.Layout.Column = 1; tablePanel.BackgroundColor = [1 1 1];
 
     tg = uigridlayout(tablePanel, [2 1]);
-    tg.RowHeight = {44,'1x'}; tg.Padding = [12 10 12 10]; tg.BackgroundColor = [1 1 1];
+    tg.RowHeight = {34,'1x'}; tg.Padding = [12 10 12 10]; tg.BackgroundColor = [1 1 1];
 
-    top = uigridlayout(tg, [1 2]);
-    top.ColumnWidth = {'1x','1x'}; top.Padding = [0 0 0 0]; top.BackgroundColor = [1 1 1];
+    top = uigridlayout(tg, [1 3]);
+    top.ColumnWidth = {'1x', 110, 110}; top.Padding = [0 0 0 0]; top.BackgroundColor = [1 1 1];
 
-    app.RefreshBackendsButton = uibutton(top, 'Text', Labels.get('backends_btn_refresh'), ...
+    app.RefreshBackendsButton = uibutton(top, 'Text', [char(8635) ' ' Labels.get('backends_btn_refresh')], ...
         'ButtonPushedFcn', @(~,~)app.BackendsVm.onRefreshBackends());
+    app.RefreshBackendsButton.Layout.Row = 1; app.RefreshBackendsButton.Layout.Column = 2;
     app.styleBtn(app.RefreshBackendsButton, 'ghost');
+    app.RefreshBackendsButton.FontSize = 12;
     app.RefreshBackendsButton.Tooltip = 'GET /api/backends';
 
-    app.SelectBackendButton = uibutton(top, 'Text', Labels.get('backends_btn_select'), ...
+    app.SelectBackendButton = uibutton(top, 'Text', [char(9745) ' ' Labels.get('backends_btn_select')], ...
         'ButtonPushedFcn', @(~,~)app.BackendsVm.onSelectBackend());
+    app.SelectBackendButton.Layout.Row = 1; app.SelectBackendButton.Layout.Column = 3;
     app.styleBtn(app.SelectBackendButton, 'primary');
+    app.SelectBackendButton.FontSize = 12;
     app.SelectBackendButton.Tooltip = 'Set as primary target backend';
 
     app.BackendTable = uitable(tg);

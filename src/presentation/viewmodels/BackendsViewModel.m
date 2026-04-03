@@ -14,6 +14,7 @@ classdef BackendsViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Backends', 'Icon', 'warning'); return;
             end
             app.logEvent('API', 'GET /api/backends');
+            app.showLoading(Labels.get('loading_backends', 'Loading backends...'));
             try
                 data = app.BackendSvc.listBackends(app.State.authToken);
                 rows = JsonHelper.backendsToRows(data);
@@ -27,7 +28,9 @@ classdef BackendsViewModel < handle
                 end
                 app.setStatus(app.BackendStatusArea, {sprintf('Loaded %d backend(s).', size(rows,1))});
                 app.logEvent('API', sprintf('Backends loaded — %d rows returned', size(rows,1)));
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Backends FAILED: %s', ME.message));
                 app.setStatus(app.BackendStatusArea, {'Backend refresh failed.', ME.message});
                 app.showError('Refresh Backends', ME);
@@ -50,12 +53,15 @@ classdef BackendsViewModel < handle
             if app.State.isAuthenticated() && app.State.hasProject()
                 app.logEvent('API', sprintf('POST /api/projects/%s/backend-selection — backend: %s', ...
                     app.State.currentProjectId, sel));
+                app.showLoading(Labels.get('loading_saving', 'Saving selection...'));
                 try
                     app.BackendSvc.saveSelection(app.State.currentProjectId, ...
                         app.State.selectedBackend, app.State.backupBackend, app.State.authToken);
                     app.logEvent('API', sprintf('Backend selection saved to server — project: %s  backend: %s', ...
                         app.State.currentProjectId, sel));
+                    app.hideLoading();
                 catch ME
+                    app.hideLoading();
                     app.logEvent('ERROR', sprintf('Save backend selection FAILED (project: %s): %s', ...
                         app.State.currentProjectId, ME.message));
                     app.showError('Save Backend Selection', ME);

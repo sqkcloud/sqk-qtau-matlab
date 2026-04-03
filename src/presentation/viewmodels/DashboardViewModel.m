@@ -14,12 +14,15 @@ classdef DashboardViewModel < handle
                 string(app.State.isAuthenticated()), app.State.currentProjectId));
             if app.State.isAuthenticated() && app.State.hasProject()
                 app.logEvent('API', sprintf('GET /api/projects/%s/dashboard', app.State.currentProjectId));
+                app.showLoading(Labels.get('loading_dashboard', 'Loading dashboard...'));
                 try
                     data = app.ProjectSvc.getDashboard(app.State.currentProjectId, app.State.authToken);
                     obj.applyDashboardData(data);
                     app.logEvent('API', sprintf('Dashboard data loaded for project: %s', app.State.currentProjectId));
+                    app.hideLoading();
                     return;
                 catch ME
+                    app.hideLoading();
                     app.logEvent('ERROR', sprintf('Dashboard fetch failed (project: %s): %s', ...
                         app.State.currentProjectId, ME.message));
                     app.showError('Dashboard Refresh', ME);

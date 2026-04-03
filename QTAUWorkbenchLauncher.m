@@ -6,7 +6,7 @@
 %   1. Automatically — the Project Manager runs it when you open the .prj file.
 %   2. Manually     — run it directly from the MATLAB Command Window:
 %
-%         >> run('QTAUWorkbenchLauncher.m')
+%         >> run('QTAUWorkbenchLauncher.m')IMP
 %
 % It adds all source folders to the MATLAB search path and then starts the app.
 % ──────────────────────────────────────────────────────────────────────────────

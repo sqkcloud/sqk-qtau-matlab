@@ -23,6 +23,7 @@ classdef ReportsViewModel < handle
                 app.logEvent('API', sprintf('POST /api/reports/generate — title: %s  format: %s  job: %s', ...
                     reportTitle, fmt, app.State.selectedJobId));
             end
+            app.showLoading(Labels.get('loading_report', 'Generating report...'));
             try
                 if app.State.hasProject()
                     data = app.ProjectSvc.generateReport(app.State.currentProjectId, ...
@@ -43,7 +44,9 @@ classdef ReportsViewModel < handle
                 end
                 app.logEvent('API', sprintf('Report generated — id: %s  file: %s  format: %s', ...
                     app.State.reportId, reportFile, fmt));
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Report generation FAILED (format: %s): %s', fmt, ME.message));
                 app.setStatus(app.ReportStatusArea, {'Report generation failed.', ME.message});
                 app.showError('Generate Report', ME);
@@ -62,6 +65,7 @@ classdef ReportsViewModel < handle
                 app.logEvent('UI', sprintf('Opening report: %s', sel));
                 if app.State.isAuthenticated() && strlength(app.State.reportId) > 0
                     app.logEvent('API', sprintf('GET /api/reports/%s/download', app.State.reportId));
+                    app.showLoading(Labels.get('loading_downloading', 'Downloading report...'));
                     try
                         data = app.ReportSvc.downloadReport(app.State.reportId, app.State.authToken);
                         url  = char(JsonHelper.pick(data, {'download_url','url','file_path'}));
@@ -71,7 +75,9 @@ classdef ReportsViewModel < handle
                         else
                             app.logEvent('WARN', 'Report download response contained no URL');
                         end
+                        app.hideLoading();
                     catch ME
+                        app.hideLoading();
                         app.logEvent('WARN', sprintf('Could not fetch report download URL: %s', ME.message));
                     end
                 end

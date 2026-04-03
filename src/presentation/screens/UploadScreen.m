@@ -23,8 +23,8 @@ function UploadScreen(app)
     dropPanel.Layout.Row = 1; dropPanel.Layout.Column = [1 3]; dropPanel.BackgroundColor = [1 1 1];
 
     dg = uigridlayout(dropPanel, [3 4]);
-    dg.RowHeight   = {26, 38, '1x'};
-    dg.ColumnWidth = {110, '1x', 130, 180};
+    dg.RowHeight   = {26, 34, '1x'};
+    dg.ColumnWidth = {110, '1x', 100, 110};
     dg.Padding = [16 12 16 12]; dg.RowSpacing = 8; dg.BackgroundColor = [1 1 1];
 
     info = uilabel(dg, 'Text', Labels.get('upload_hero_title'));
@@ -38,15 +38,17 @@ function UploadScreen(app)
     app.UploadFileField.Layout.Row = 2; app.UploadFileField.Layout.Column = 2;
     app.UploadFileField.Placeholder = Labels.get('upload_placeholder_file');
 
-    app.BrowseButton = uibutton(dg, 'Text', Labels.get('upload_btn_browse'), ...
+    app.BrowseButton = uibutton(dg, 'Text', [char(9776) ' ' Labels.get('upload_btn_browse')], ...
         'ButtonPushedFcn', @(~,~)app.UploadVm.onBrowseCircuit());
     app.BrowseButton.Layout.Row = 2; app.BrowseButton.Layout.Column = 3;
     app.styleBtn(app.BrowseButton, 'ghost');
+    app.BrowseButton.FontSize = 12;
 
-    app.UploadButton = uibutton(dg, 'Text', Labels.get('upload_btn_upload'), ...
+    app.UploadButton = uibutton(dg, 'Text', [char(8593) ' ' Labels.get('upload_btn_upload')], ...
         'ButtonPushedFcn', @(~,~)app.UploadVm.onUploadCircuit());
     app.UploadButton.Layout.Row = 2; app.UploadButton.Layout.Column = 4;
     app.styleBtn(app.UploadButton, 'primary');
+    app.UploadButton.FontSize = 12;
     app.UploadButton.Tooltip = 'POST /api/circuits/upload';
 
     app.CircuitPreviewArea = uitextarea(dg, 'Editable', 'on');

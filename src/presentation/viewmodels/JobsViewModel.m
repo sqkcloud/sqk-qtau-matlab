@@ -14,6 +14,7 @@ classdef JobsViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Jobs', 'Icon', 'warning'); return;
             end
             app.logEvent('API', 'GET /api/jobs');
+            app.showLoading(Labels.get('loading_jobs', 'Loading jobs...'));
             try
                 data = app.JobSvc.listJobs(app.State.authToken);
                 rows = JsonHelper.jobsToRows(data);
@@ -24,7 +25,9 @@ classdef JobsViewModel < handle
                 end
                 app.setStatus(app.JobStatusArea, {sprintf('Jobs loaded: %d', size(rows,1))});
                 app.logEvent('API', sprintf('Jobs loaded — %d rows returned', size(rows,1)));
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Jobs FAILED: %s', ME.message));
                 app.setStatus(app.JobStatusArea, {'Jobs refresh failed.', ME.message});
                 app.showError('Refresh Jobs', ME);
@@ -38,12 +41,15 @@ classdef JobsViewModel < handle
             end
             jobId = app.State.selectedJobId;
             app.logEvent('API', sprintf('POST /api/jobs/%s/cancel', jobId));
+            app.showLoading(Labels.get('loading_cancelling', 'Cancelling job...'));
             try
                 app.JobSvc.cancelJob(jobId, app.State.authToken);
                 app.setStatus(app.JobStatusArea, {sprintf('Cancel request sent for job: %s', jobId)});
                 app.logEvent('API', sprintf('Cancel request sent — job: %s', jobId));
+                app.hideLoading();
                 obj.onRefreshJobs();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Cancel FAILED (job: %s): %s', jobId, ME.message));
                 app.showError('Cancel Job', ME);
             end

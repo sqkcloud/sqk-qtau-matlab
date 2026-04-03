@@ -14,8 +14,9 @@ classdef FastAPIClient < handle
     %   the import fails (e.g. older MATLAB or restricted deployments).
 
     properties
-        BaseUrl string
-        Timeout double = 30
+        BaseUrl   string
+        Timeout   double = 30
+        ProjectId string = ""
     end
 
     % ── Constructor / config ──────────────────────────────────────────────────
@@ -103,7 +104,7 @@ classdef FastAPIClient < handle
             url = char(obj.BaseUrl + string(endpoint));
             Logger.http('GET', url);
             opts = weboptions('Timeout', obj.Timeout, ...
-                'HeaderFields', FastAPIClient.authHeaders(token));
+                'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
             try
                 raw  = webread(url, opts);
                 data = FastAPIClient.normalizeJsonResponse(raw);
@@ -120,7 +121,7 @@ classdef FastAPIClient < handle
             Logger.http('POST', url);
             opts = weboptions('Timeout', obj.Timeout, ...
                 'MediaType', 'application/json', 'ContentType', 'json', ...
-                'HeaderFields', FastAPIClient.authHeaders(token));
+                'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
             try
                 raw  = webwrite(url, payload, opts);
                 data = FastAPIClient.normalizeJsonResponse(raw);
@@ -138,7 +139,7 @@ classdef FastAPIClient < handle
             opts = weboptions('Timeout', obj.Timeout, ...
                 'MediaType', 'application/json', 'ContentType', 'json', ...
                 'RequestMethod', 'put', ...
-                'HeaderFields', FastAPIClient.authHeaders(token));
+                'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
             try
                 raw  = webwrite(url, payload, opts);
                 data = FastAPIClient.normalizeJsonResponse(raw);
@@ -156,7 +157,7 @@ classdef FastAPIClient < handle
             opts = weboptions('Timeout', obj.Timeout, ...
                 'MediaType', 'application/json', 'ContentType', 'json', ...
                 'RequestMethod', 'patch', ...
-                'HeaderFields', FastAPIClient.authHeaders(token));
+                'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
             try
                 raw  = webwrite(url, payload, opts);
                 data = FastAPIClient.normalizeJsonResponse(raw);
@@ -173,7 +174,7 @@ classdef FastAPIClient < handle
             Logger.http('DELETE', url);
             opts = weboptions('Timeout', obj.Timeout, ...
                 'RequestMethod', 'delete', ...
-                'HeaderFields', FastAPIClient.authHeaders(token));
+                'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
             try
                 raw  = webread(url, opts);
                 data = FastAPIClient.normalizeJsonResponse(raw);
@@ -195,13 +196,14 @@ classdef FastAPIClient < handle
         function data = uploadFileAuth(obj, endpoint, filePath, extraFields, token)
             url = char(obj.BaseUrl + string(endpoint));
             Logger.info('FastAPIClient', 'uploadFileAuth → POST %s (file: %s)', endpoint, filePath);
+            projId = obj.ProjectId;
             try
-                data = FastAPIClient.uploadViaHttpNet(url, filePath, extraFields, token, obj.Timeout);
+                data = FastAPIClient.uploadViaHttpNet(url, filePath, extraFields, token, obj.Timeout, projId);
                 Logger.info('FastAPIClient', 'uploadFileAuth → POST %s OK (via matlab.net.http)', endpoint);
             catch ME
                 Logger.warn('FastAPIClient', 'matlab.net.http upload failed (%s); attempting curl fallback', ME.message);
                 try
-                    data = FastAPIClient.uploadViaCurl(url, filePath, extraFields, token);
+                    data = FastAPIClient.uploadViaCurl(url, filePath, extraFields, token, projId);
                     Logger.info('FastAPIClient', 'uploadFileAuth → POST %s OK (via curl fallback)', endpoint);
                 catch ME2
                     Logger.error('FastAPIClient', 'uploadFileAuth → POST %s FAILED (both methods): http=%s  curl=%s', endpoint, ME.message, ME2.message);
@@ -214,8 +216,11 @@ classdef FastAPIClient < handle
     % ── Private static helpers ────────────────────────────────────────────────
     methods (Static, Access = private)
 
-        function hdrs = authHeaders(token)
+        function hdrs = authHeaders(token, projectId)
             hdrs = {'Authorization', ['Bearer ' char(token)]; 'Accept', 'application/json'};
+            if nargin >= 2 && strlength(string(projectId)) > 0
+                hdrs = [hdrs; {'X-Project-Id', char(projectId)}];
+            end
         end
 
         function tf = isNoContent(ME)
@@ -261,7 +266,7 @@ classdef FastAPIClient < handle
             data = FastAPIClient.normalizeJsonResponse(bodyData);
         end
 
-        function data = uploadViaHttpNet(url, filePath, extraFields, token, timeout)
+        function data = uploadViaHttpNet(url, filePath, extraFields, token, timeout, projectId)
             % matlab.net.http multipart upload (R2016b+)
             import matlab.net.http.*
             import matlab.net.http.io.*
@@ -296,6 +301,9 @@ classdef FastAPIClient < handle
             provider = MultipartFormProvider(parts{:});
             hdrs     = [field.GenericField('Authorization', ['Bearer ' char(token)]), ...
                         field.GenericField('Accept', 'application/json')];
+            if nargin >= 6 && strlength(string(projectId)) > 0
+                hdrs = [hdrs, field.GenericField('X-Project-Id', char(projectId))];
+            end
             req      = RequestMessage(RequestMethod.POST, hdrs, provider);
             opts     = HTTPOptions('ConnectTimeout', timeout);
             resp     = req.send(URI(url), opts);
@@ -307,7 +315,7 @@ classdef FastAPIClient < handle
             data = FastAPIClient.normalizeJsonResponse(bodyData);
         end
 
-        function data = uploadViaCurl(url, filePath, extraFields, token)
+        function data = uploadViaCurl(url, filePath, extraFields, token, projectId)
             % System curl fallback for environments without matlab.net.http.
             % All arguments are shell-escaped to prevent command injection.
             esc = @(s) ['''' strrep(char(s), '''', '''\\''''') ''''];
@@ -319,9 +327,14 @@ classdef FastAPIClient < handle
                     extra = [extra ' -F ' esc([fns{i} '=' val])]; %#ok
                 end
             end
-            cmd = sprintf('curl -s -X POST -H %s -H %s -F %s%s %s', ...
+            projHdr = '';
+            if nargin >= 5 && strlength(string(projectId)) > 0
+                projHdr = sprintf(' -H %s', esc(['X-Project-Id: ' char(projectId)]));
+            end
+            cmd = sprintf('curl -s -X POST -H %s -H %s%s -F %s%s %s', ...
                 esc(['Authorization: Bearer ' char(token)]), ...
                 esc('Accept: application/json'), ...
+                projHdr, ...
                 esc(['file=@' char(filePath)]), ...
                 extra, esc(char(url)));
             Logger.debug('FastAPIClient', 'curl upload → POST %s', char(url));

@@ -29,7 +29,7 @@ function BenchmarkScreen(app)
     config.Layout.Row = 1; config.Layout.Column = 1; config.BackgroundColor = [1 1 1];
 
     cg = uigridlayout(config, [5 2]);
-    cg.RowHeight = {40, 40, 40, 40, 36};
+    cg.RowHeight = {40, 40, 40, 40, 34};
     cg.ColumnWidth = {180, '1x'};
     cg.Padding = [16 12 16 12]; cg.RowSpacing = 8; cg.BackgroundColor = [1 1 1];
 
@@ -63,10 +63,11 @@ function BenchmarkScreen(app)
     app.BenchmarkStrategyDropdown = uidropdown(cg, 'Items', stratItems, 'Value', stratDefault);
     app.BenchmarkStrategyDropdown.Layout.Row = 4; app.BenchmarkStrategyDropdown.Layout.Column = 2;
 
-    app.BenchmarkRunButton = uibutton(cg, 'Text', Labels.get('benchmark_btn_run'), ...
+    app.BenchmarkRunButton = uibutton(cg, 'Text', [char(9654) ' ' Labels.get('benchmark_btn_run')], ...
         'ButtonPushedFcn', @(~,~)app.BenchmarkVm.onRunBenchmark());
     app.BenchmarkRunButton.Layout.Row = 5; app.BenchmarkRunButton.Layout.Column = [1 2];
     app.styleBtn(app.BenchmarkRunButton, 'primary');
+    app.BenchmarkRunButton.FontSize = 12;
     app.BenchmarkRunButton.Tooltip = 'Save config and compare transpilation strategies';
 
     % ── Execution Plan (right) ────────────────────────────────────────────────

@@ -29,6 +29,7 @@ classdef BenchmarkViewModel < handle
             if app.State.hasProject() && app.State.hasCircuit()
                 app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config — circuit: %s', ...
                     app.State.currentProjectId, app.State.selectedCircuitId));
+                app.showLoading(Labels.get('loading_benchmark', 'Running benchmark...'));
                 try
                     app.ProjectSvc.saveBenchmarkConfig(app.State.currentProjectId, ...
                         shots, opt, mitig, strategy, app.State.authToken);
@@ -52,7 +53,9 @@ classdef BenchmarkViewModel < handle
                             'Benchmark configuration saved.'});
                     end
                     app.logEvent('API', 'Benchmark config saved and strategies compared successfully');
+                    app.hideLoading();
                 catch ME
+                    app.hideLoading();
                     app.logEvent('ERROR', sprintf('Benchmark API FAILED (project: %s): %s', ...
                         app.State.currentProjectId, ME.message));
                     app.setStatus(app.BenchmarkStatusArea, { ...

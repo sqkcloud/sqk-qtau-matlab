@@ -6,7 +6,7 @@ classdef WelcomeViewModel < handle
     properties
         CurrentPage  double = 1
         TotalItems   double = 0
-        ItemsPerPage double = 10
+        ItemsPerPage double = 15
     end
     methods
         function obj = WelcomeViewModel(app)
@@ -52,9 +52,11 @@ classdef WelcomeViewModel < handle
             end
 
             app.logEvent('API', sprintf('Creating project: "%s"', projName));
+            app.showLoading(Labels.get('loading_creating_project', 'Creating project...'));
             try
                 data = app.ProjectSvc.createProject(char(projName), char(projDesc), tags, app.State.authToken);
                 app.State.currentProjectId = string(JsonHelper.pick(data, {'project_id','id'}));
+                app.Client.ProjectId = app.State.currentProjectId;
                 app.logEvent('API', sprintf('Project created successfully — id: %s  name: %s', ...
                     app.State.currentProjectId, char(projName)));
 
@@ -66,7 +68,9 @@ classdef WelcomeViewModel < handle
 
                 obj.CurrentPage = 1;
                 obj.onFetchProjects();
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 if ~isempty(app.NewProjectDialog) && isvalid(app.NewProjectDialog)
                     app.NewProjStatusLabel.Text = ME.message;
                 end
@@ -87,9 +91,9 @@ classdef WelcomeViewModel < handle
                 if ~isempty(data) && row <= size(data,1)
                     app.State.currentProjectId   = string(data{row, 1});
                     app.State.currentProjectName = string(data{row, 2});
+                    app.Client.ProjectId = app.State.currentProjectId;
                     app.logEvent('UI', sprintf('Project selected: %s', app.State.currentProjectId));
-                    app.UserInfoArea.Text = sprintf('Active project: %s  |  Name: %s', ...
-                        char(app.State.currentProjectId), char(data{row,2}));
+                    app.ActiveProjectLabel.Text = char(app.State.currentProjectName);
                 end
             catch ME
                 Logger.warn('WelcomeViewModel', 'onProjectTableSelect failed: %s', ME.message);
@@ -124,6 +128,7 @@ classdef WelcomeViewModel < handle
                 app.State.currentUser      = string(JsonHelper.pick(data, {'username','user.username','data.username'}));
                 app.State.defaultProjectId = string(JsonHelper.pick(data, {'default_project_id','data.default_project_id'}));
                 app.State.currentProjectId = app.State.defaultProjectId;
+                app.Client.ProjectId = app.State.currentProjectId;
 
                 if strlength(strtrim(app.State.authToken)) == 0
                     app.logEvent('WARN', 'Login response received but no access_token found');
@@ -143,10 +148,10 @@ classdef WelcomeViewModel < handle
                     app.LoginDialog = [];
                 end
 
-                % Update Welcome screen
+                % Update Welcome screen and hide auth overlay
                 app.updateWelcomeAuthButtons();
-                app.UserInfoArea.Text = sprintf('Logged in as: %s  |  Default project: %s', ...
-                    char(app.State.currentUser), char(app.State.defaultProjectId));
+                app.hideAuthOverlay();
+                app.UserInfoArea.Text = sprintf('Logged in as: %s', char(app.State.currentUser));
 
                 % Auto-fetch projects
                 obj.CurrentPage = 1;
@@ -178,7 +183,9 @@ classdef WelcomeViewModel < handle
                 app.State.currentUser = "";
                 app.logEvent('AUTH', sprintf('Logout OK — user: %s', prevUser));
                 app.updateWelcomeAuthButtons();
+                app.showAuthOverlay();
                 app.UserInfoArea.Text = Labels.get('welcome_user_info_hint');
+                app.ActiveProjectLabel.Text = Labels.get('welcome_active_project_none', 'None');
                 app.ProjectsTable.Data = {};
                 app.ProjectsPageLabel.Text = '';
                 app.ProjectsPrevButton.Enable = 'off';
@@ -198,6 +205,7 @@ classdef WelcomeViewModel < handle
             skip  = (obj.CurrentPage - 1) * obj.ItemsPerPage;
             limit = obj.ItemsPerPage;
             app.logEvent('API', sprintf('GET /api/admin/projects — skip=%d  limit=%d', skip, limit));
+            app.showLoading(Labels.get('loading_projects', 'Loading projects...'));
             try
                 data = app.AuthSvc.listProjects(app.State.authToken, skip, limit);
                 rows = JsonHelper.projectsToRows(data);
@@ -212,7 +220,20 @@ classdef WelcomeViewModel < handle
                 nRows = size(rows, 1);
                 app.logEvent('API', sprintf('GET /api/admin/projects → %d row(s) returned (total: %d)', nRows, obj.TotalItems));
                 obj.updatePagination();
+
+                % Resolve active project name from fetched rows
+                if app.State.hasProject() && nRows > 0
+                    for r = 1:nRows
+                        if strcmp(char(rows{r,1}), char(app.State.currentProjectId))
+                            app.State.currentProjectName = string(rows{r,2});
+                            app.ActiveProjectLabel.Text = char(rows{r,2});
+                            break;
+                        end
+                    end
+                end
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.UserInfoArea.Text = sprintf('Project fetch failed: %s', ME.message);
                 app.showError('Fetch Projects', ME);
             end

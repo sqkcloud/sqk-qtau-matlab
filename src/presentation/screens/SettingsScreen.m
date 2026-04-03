@@ -30,7 +30,7 @@ function SettingsScreen(app)
     ibmPanel.Layout.Row = 1; ibmPanel.Layout.Column = 1; ibmPanel.BackgroundColor = [1 1 1];
 
     ig = uigridlayout(ibmPanel, [7 2]);
-    ig.RowHeight = {28,28,28,28,28,28,'1x'};
+    ig.RowHeight = {28,28,28,28,28,34,'1x'};
     ig.ColumnWidth = {160,'1x'};
     ig.Padding = [14 10 14 10]; ig.RowSpacing = 5; ig.BackgroundColor = [1 1 1];
 
@@ -69,7 +69,7 @@ function SettingsScreen(app)
     app.SettingsBaseUrlField.Layout.Row = 5; app.SettingsBaseUrlField.Layout.Column = 2;
     app.SettingsBaseUrlField.ValueChangedFcn = @(src,~)app.SettingsVm.onSettingsUrlChanged(src);
 
-    app.VerifyIbmButton = uibutton(ig, 'Text', Labels.get('settings_btn_verify_ibm'), ...
+    app.VerifyIbmButton = uibutton(ig, 'Text', [char(10003) ' ' Labels.get('settings_btn_verify_ibm')], ...
         'ButtonPushedFcn', @(~,~)app.SettingsVm.onVerifyIbm());
     app.VerifyIbmButton.Layout.Row = 6; app.VerifyIbmButton.Layout.Column = [1 2];
     app.styleBtn(app.VerifyIbmButton, 'secondary');
@@ -115,7 +115,7 @@ function SettingsScreen(app)
         'Value', Labels.get('settings_log_level_default', 'info'));
     app.SettingsLogLevelDropdown.Layout.Row = 4; app.SettingsLogLevelDropdown.Layout.Column = 2;
 
-    app.SaveSettingsButton = uibutton(dg2, 'Text', Labels.get('settings_btn_save_settings'), ...
+    app.SaveSettingsButton = uibutton(dg2, 'Text', [char(10004) ' ' Labels.get('settings_btn_save_settings')], ...
         'ButtonPushedFcn', @(~,~)app.SettingsVm.onSaveSettings());
     app.SaveSettingsButton.Layout.Row = 5; app.SaveSettingsButton.Layout.Column = [1 2];
     app.styleBtn(app.SaveSettingsButton, 'primary');
@@ -192,18 +192,18 @@ function SettingsScreen(app)
     consolePanel.Layout.Row = 3; consolePanel.Layout.Column = [1 3]; consolePanel.BackgroundColor = [1 1 1];
 
     cpg = uigridlayout(consolePanel, [2 3]);
-    cpg.RowHeight = {30,'1x'}; cpg.ColumnWidth = {'1x',120,150};
+    cpg.RowHeight = {34,'1x'}; cpg.ColumnWidth = {'1x',120,150};
     cpg.Padding = [10 8 10 8]; cpg.RowSpacing = 5; cpg.BackgroundColor = [1 1 1];
 
     info = uilabel(cpg, 'Text', Labels.get('settings_console_desc'));
     info.FontSize = 11; info.FontColor = [0.38 0.46 0.58];
     info.Layout.Row = 1; info.Layout.Column = 1; info.WordWrap = 'on';
 
-    clrBtn = uibutton(cpg, 'Text', Labels.get('settings_btn_clear_log'), ...
+    clrBtn = uibutton(cpg, 'Text', [char(10005) ' ' Labels.get('settings_btn_clear_log')], ...
         'ButtonPushedFcn', @(~,~)app.SettingsVm.onClearLog());
     clrBtn.Layout.Row = 1; clrBtn.Layout.Column = 2; app.styleBtn(clrBtn, 'ghost');
 
-    copyBtn = uibutton(cpg, 'Text', Labels.get('settings_btn_copy_log'));
+    copyBtn = uibutton(cpg, 'Text', [char(9112) ' ' Labels.get('settings_btn_copy_log')]);
     copyBtn.Layout.Row = 1; copyBtn.Layout.Column = 3; app.styleBtn(copyBtn, 'ghost');
     copyBtn.ButtonPushedFcn = @(~,~)clipboard('copy', strjoin(app.EventLog, newline));
 
@@ -220,15 +220,15 @@ function SettingsScreen(app)
     bottom.BackgroundColor = [0.94 0.97 1.00]; bottom.BorderType = 'none';
 
     bg = uigridlayout(bottom, [1 3]);
-    bg.RowHeight = {36}; bg.ColumnWidth = {'1x', 170, 190};
+    bg.RowHeight = {34}; bg.ColumnWidth = {'1x', 170, 190};
     bg.Padding = [8 8 8 8]; bg.BackgroundColor = [0.94 0.97 1.00];
     desc = uilabel(bg, 'Text', Labels.get('settings_panel_action_label'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
-    tmp = uibutton(bg, 'Text', Labels.get('settings_btn_reset_defaults'), ...
+    tmp = uibutton(bg, 'Text', [char(8634) ' ' Labels.get('settings_btn_reset_defaults')], ...
         'ButtonPushedFcn', @(~,~)app.SettingsVm.onResetSettings());
     tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'ghost');
-    tmp = uibutton(bg, 'Text', Labels.get('settings_btn_clear_cache'), ...
+    tmp = uibutton(bg, 'Text', [char(10005) ' ' Labels.get('settings_btn_clear_cache')], ...
         'ButtonPushedFcn', @(~,~)app.SettingsVm.onClearServerCache());
     tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'secondary');
     tmp.Tooltip = 'DELETE /api/settings/cache';

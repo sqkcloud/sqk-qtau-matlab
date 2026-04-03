@@ -11,17 +11,23 @@ function PredictionScreen(app)
     t = app.createSectionPage('Prediction');
 
     g = uigridlayout(t, [3 3]);
-    g.RowHeight     = {44, '1x', 72};
+    g.RowHeight     = {34, '1x', 72};
     g.ColumnWidth   = {'1x', 6, '1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
     g.ColumnSpacing = 4;
     g.BackgroundColor = [0.96 0.97 0.99];
 
-    app.PredictButton = uibutton(g, 'Text', Labels.get('prediction_btn_run'), ...
+    toolbar = uigridlayout(g, [1 2]);
+    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
+    toolbar.ColumnWidth = {'1x', 110};
+    toolbar.Padding = [0 0 0 0]; toolbar.BackgroundColor = [0.96 0.97 0.99];
+
+    app.PredictButton = uibutton(toolbar, 'Text', [char(9881) ' ' Labels.get('prediction_btn_run')], ...
         'ButtonPushedFcn', @(~,~)app.PredictionVm.onRunPrediction());
-    app.PredictButton.Layout.Row = 1; app.PredictButton.Layout.Column = [1 3];
+    app.PredictButton.Layout.Row = 1; app.PredictButton.Layout.Column = 2;
     app.styleBtn(app.PredictButton, 'primary');
+    app.PredictButton.FontSize = 12;
     app.PredictButton.Tooltip = 'POST /api/predict with current circuit + backend + benchmark config';
 
     % ── Column divider ────────────────────────────────────────────────────────
@@ -65,14 +71,15 @@ function PredictionScreen(app)
     submitPanel.BackgroundColor = [0.94 0.97 1.00];
 
     sg = uigridlayout(submitPanel, [1 4]);
-    sg.ColumnWidth = {'1x', 140, 165, 155};
+    sg.ColumnWidth = {'1x', 110, 130, 120};
     sg.Padding = [14 8 14 8]; sg.BackgroundColor = [0.94 0.97 1.00];
     desc = uilabel(sg, 'Text', Labels.get('prediction_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
-    tmp = uibutton(sg, 'Text', Labels.get('prediction_btn_submit'), ...
+    tmp = uibutton(sg, 'Text', [char(9654) ' ' Labels.get('prediction_btn_submit')], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Jobs'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'success');
+    tmp.FontSize = 12;
     tmp.Tooltip = 'Navigate to Jobs to submit';
     tmp = uibutton(sg, 'Text', Labels.get('prediction_btn_back'), ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Benchmark'));

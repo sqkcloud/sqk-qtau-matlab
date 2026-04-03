@@ -11,7 +11,7 @@ function JobsScreen(app)
     t = app.createSectionPage('Jobs');
 
     g = uigridlayout(t, [3 3]);
-    g.RowHeight     = {44, '1x', 190};
+    g.RowHeight     = {34, '1x', 190};
     g.ColumnWidth   = {'1.2x', 6, '1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
@@ -19,24 +19,30 @@ function JobsScreen(app)
     g.BackgroundColor = [0.96 0.97 0.99];
 
     % ── Toolbar ──────────────────────────────────────────────────────────────
-    top = uigridlayout(g, [1 3]);
+    top = uigridlayout(g, [1 4]);
     top.Layout.Row = 1; top.Layout.Column = [1 3];
-    top.ColumnWidth = {'1x','1x','1x'};
+    top.ColumnWidth = {'1x', 110, 110, 100};
     top.Padding = [0 0 0 0]; top.BackgroundColor = [0.96 0.97 0.99];
 
-    app.JobsRefreshButton = uibutton(top, 'Text', Labels.get('jobs_btn_refresh'), ...
+    app.JobsRefreshButton = uibutton(top, 'Text', [char(8635) ' ' Labels.get('jobs_btn_refresh')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onRefreshJobs());
+    app.JobsRefreshButton.Layout.Row = 1; app.JobsRefreshButton.Layout.Column = 2;
     app.styleBtn(app.JobsRefreshButton, 'primary');
+    app.JobsRefreshButton.FontSize = 12;
     app.JobsRefreshButton.Tooltip = 'GET /api/jobs';
 
-    app.CancelJobButton = uibutton(top, 'Text', Labels.get('jobs_btn_cancel'), ...
+    app.CancelJobButton = uibutton(top, 'Text', [char(10005) ' ' Labels.get('jobs_btn_cancel')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onCancelJob());
+    app.CancelJobButton.Layout.Row = 1; app.CancelJobButton.Layout.Column = 3;
     app.styleBtn(app.CancelJobButton, 'danger');
+    app.CancelJobButton.FontSize = 12;
     app.CancelJobButton.Tooltip = 'POST /api/jobs/{id}/cancel';
 
-    app.PauseJobButton = uibutton(top, 'Text', Labels.get('jobs_btn_pause'), ...
+    app.PauseJobButton = uibutton(top, 'Text', [char(9208) ' ' Labels.get('jobs_btn_pause')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onPauseJob());
+    app.PauseJobButton.Layout.Row = 1; app.PauseJobButton.Layout.Column = 4;
     app.styleBtn(app.PauseJobButton, 'ghost');
+    app.PauseJobButton.FontSize = 12;
     app.PauseJobButton.Tooltip = 'POST /api/jobs/{id}/pause';
 
     % ── Column divider ────────────────────────────────────────────────────────

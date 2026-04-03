@@ -15,6 +15,7 @@ classdef ResultsViewModel < handle
             end
             jobId = app.State.selectedJobId;
             app.logEvent('API', sprintf('GET /api/jobs/%s/results', jobId));
+            app.showLoading(Labels.get('loading_results', 'Loading results...'));
             try
                 data = app.JobSvc.getResults(jobId, app.State.authToken);
                 rows = JsonHelper.resultsToRows(data);
@@ -32,7 +33,9 @@ classdef ResultsViewModel < handle
                 app.setStatus(app.ResultJsonArea, summary);
                 app.logEvent('API', sprintf('Results loaded — job: %s  status: %s  fidelity: %s  rows: %d', ...
                     jobId, statusStr, fidelity, size(rows,1)));
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Results FAILED (job: %s): %s', jobId, ME.message));
                 app.setStatus(app.ResultJsonArea, {'Results load failed.', ME.message});
                 app.showError('Refresh Results', ME);

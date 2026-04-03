@@ -14,11 +14,14 @@ classdef DetailedAnalysisViewModel < handle
                 obj.plotComparisonDemo(); return;
             end
             app.logEvent('API', sprintf('GET /jobs/%s/results/detailed', app.State.selectedJobId));
+            app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             try
                 data = app.JobSvc.getDetailedResults(app.State.selectedJobId, app.State.authToken);
                 obj.plotComparisonFromData(data);
                 app.logEvent('API', 'Comparison plot updated from live data');
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Detailed results failed: %s', ME.message));
                 obj.plotComparisonDemo();
             end
@@ -30,6 +33,7 @@ classdef DetailedAnalysisViewModel < handle
                 obj.plotTemporalDemo(); return;
             end
             app.logEvent('API', sprintf('GET /jobs/%s/error-trends', app.State.selectedJobId));
+            app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             try
                 data = app.JobSvc.getErrorTrends(app.State.selectedJobId, app.State.authToken);
                 cla(app.TemporalAxes);
@@ -47,9 +51,12 @@ classdef DetailedAnalysisViewModel < handle
                     app.TemporalAxes.XLabel.String = 'Batch index';
                     app.styleAxes(app.TemporalAxes);
                     app.logEvent('API', 'Temporal plot updated from live data');
+                    app.hideLoading();
                     return;
                 end
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Error trends failed: %s', ME.message));
             end
             obj.plotTemporalDemo();
@@ -61,6 +68,7 @@ classdef DetailedAnalysisViewModel < handle
                 obj.plotQubitDemo(); return;
             end
             app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (qubit)', app.State.selectedJobId));
+            app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             try
                 data  = app.JobSvc.getDetailedResults(app.State.selectedJobId, app.State.authToken);
                 items = JsonHelper.extractList(data, 'qubit_fidelities');
@@ -78,9 +86,12 @@ classdef DetailedAnalysisViewModel < handle
                     app.QubitAxes.XLabel.String = 'Qubit index';
                     app.styleAxes(app.QubitAxes);
                     app.logEvent('API', 'Qubit plot updated from live data');
+                    app.hideLoading();
                     return;
                 end
+                app.hideLoading();
             catch ME
+                app.hideLoading();
                 app.logEvent('ERROR', sprintf('Qubit data failed: %s', ME.message));
             end
             obj.plotQubitDemo();

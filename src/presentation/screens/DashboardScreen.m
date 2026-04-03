@@ -15,7 +15,7 @@ function DashboardScreen(app)
     t = app.createSectionPage('Dashboard');
 
     g = uigridlayout(t, [4 3]);
-    g.RowHeight     = {44, 72, '1x', '1x'};
+    g.RowHeight     = {34, 72, '1x', '1x'};
     g.ColumnWidth   = {'1.4x', 6, '1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
@@ -25,7 +25,7 @@ function DashboardScreen(app)
     % ── Toolbar ──────────────────────────────────────────────────────────────
     toolbar = uigridlayout(g, [1 3]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
-    toolbar.ColumnWidth = {'1x', 190, 120};
+    toolbar.ColumnWidth = {'1x', 110, 100};
     toolbar.Padding = [0 0 0 0];
     toolbar.BackgroundColor = [0.96 0.97 0.99];
 
@@ -34,15 +34,17 @@ function DashboardScreen(app)
     desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center';
 
-    app.DashboardRefreshButton = uibutton(toolbar, 'Text', Labels.get('dashboard_btn_refresh'), ...
+    app.DashboardRefreshButton = uibutton(toolbar, 'Text', [char(8635) ' ' Labels.get('dashboard_btn_refresh')], ...
         'ButtonPushedFcn', @(~,~)app.DashboardVm.onRefreshDashboard());
     app.DashboardRefreshButton.Layout.Row = 1; app.DashboardRefreshButton.Layout.Column = 2;
     app.styleBtn(app.DashboardRefreshButton, 'primary');
+    app.DashboardRefreshButton.FontSize = 12;
     app.DashboardRefreshButton.Tooltip = 'Pull live project dashboard data';
 
-    exportBtn = uibutton(toolbar, 'Text', Labels.get('dashboard_btn_export'));
+    exportBtn = uibutton(toolbar, 'Text', [char(8599) ' ' Labels.get('dashboard_btn_export')]);
     exportBtn.Layout.Row = 1; exportBtn.Layout.Column = 3;
     app.styleBtn(exportBtn, 'ghost');
+    exportBtn.FontSize = 12;
 
     % ── KPI card bar ──────────────────────────────────────────────────────────
     kpiBar = uipanel(g, 'Title', '');
