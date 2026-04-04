@@ -57,7 +57,7 @@ function ReportsScreen(app)
         'ButtonPushedFcn', @(~,~)app.ReportsVm.onGenerateReport());
     app.GenerateReportButton.Layout.Row = 4; app.GenerateReportButton.Layout.Column = [1 2];
     app.styleBtn(app.GenerateReportButton, 'primary');
-    app.GenerateReportButton.FontSize = 12;
+    app.GenerateReportButton.FontSize = 14;
     app.GenerateReportButton.Tooltip = 'POST /api/reports/generate (or /api/projects/{id}/reports)';
 
     app.ReportStatusArea = uitextarea(gg, 'Editable', 'off');
@@ -75,7 +75,7 @@ function ReportsScreen(app)
     app.OpenReportButton = uibutton(pvg, 'Text', [char(9654) ' ' Labels.get('reports_btn_open')], ...
         'ButtonPushedFcn', @(~,~)app.ReportsVm.onOpenReport());
     app.styleBtn(app.OpenReportButton, 'ghost');
-    app.OpenReportButton.FontSize = 12;
+    app.OpenReportButton.FontSize = 14;
     app.OpenReportButton.Tooltip = 'GET /api/reports/{id}/download';
 
     app.GeneratedReportList = uilistbox(pvg, 'Items', {}, ...
@@ -93,13 +93,13 @@ function ReportsScreen(app)
     desc.Layout.Row = 1; desc.Layout.Column = 1; desc.WordWrap = 'on';
     b = uibutton(ag, 'Text', [char(8595) ' ' Labels.get('reports_btn_download_pdf')]);
     b.Layout.Row = 1; b.Layout.Column = 2; app.styleBtn(b, 'primary');
-    b.FontSize = 12;
+    b.FontSize = 14;
     b = uibutton(ag, 'Text', [char(9993) ' ' Labels.get('reports_btn_share_email')]);
     b.Layout.Row = 1; b.Layout.Column = 3; app.styleBtn(b, 'secondary');
-    b.FontSize = 12;
+    b.FontSize = 14;
     b = uibutton(ag, 'Text', [char(9113) ' ' Labels.get('reports_btn_print')]);
     b.Layout.Row = 1; b.Layout.Column = 4; app.styleBtn(b, 'ghost');
-    b.FontSize = 12;
+    b.FontSize = 14;
 
     % ── Workflow Complete action bar ───────────────────────────────────────────
     bottom = uipanel(g, 'Title', Labels.get('reports_panel_workflow'));

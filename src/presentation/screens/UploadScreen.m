@@ -42,13 +42,13 @@ function UploadScreen(app)
         'ButtonPushedFcn', @(~,~)app.UploadVm.onBrowseCircuit());
     app.BrowseButton.Layout.Row = 2; app.BrowseButton.Layout.Column = 3;
     app.styleBtn(app.BrowseButton, 'ghost');
-    app.BrowseButton.FontSize = 12;
+    app.BrowseButton.FontSize = 14;
 
     app.UploadButton = uibutton(dg, 'Text', [char(8593) ' ' Labels.get('upload_btn_upload')], ...
         'ButtonPushedFcn', @(~,~)app.UploadVm.onUploadCircuit());
     app.UploadButton.Layout.Row = 2; app.UploadButton.Layout.Column = 4;
     app.styleBtn(app.UploadButton, 'primary');
-    app.UploadButton.FontSize = 12;
+    app.UploadButton.FontSize = 14;
     app.UploadButton.Tooltip = 'POST /api/circuits/upload';
 
     app.CircuitPreviewArea = uitextarea(dg, 'Editable', 'on');

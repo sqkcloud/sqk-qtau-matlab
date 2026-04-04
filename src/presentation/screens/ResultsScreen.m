@@ -43,7 +43,7 @@ function ResultsScreen(app)
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onRefreshResults());
     refreshBtn.Layout.Row = 1; refreshBtn.Layout.Column = 2;
     app.styleBtn(refreshBtn, 'primary');
-    refreshBtn.FontSize = 12;
+    refreshBtn.FontSize = 14;
     refreshBtn.Tooltip = 'GET /api/jobs/{id}/results';
 
     % Cards row: 4 KPI cards

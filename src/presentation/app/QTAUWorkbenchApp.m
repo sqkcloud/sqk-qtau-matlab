@@ -64,6 +64,7 @@ classdef QTAUWorkbenchApp < handle
         PredictionSvc   % PredictionService
         ReportSvc       % ReportService
         SettingsSvc     % SettingsService
+        QecEngine       % QecEngineService (local computation, no HTTP)
     end
 
     % ── Screen callback services ──────────────────────────────────────────────
@@ -78,9 +79,12 @@ classdef QTAUWorkbenchApp < handle
         PredictionVm        % PredictionViewModel
         JobsVm              % JobsViewModel
         ResultsVm           % ResultsViewModel
-        DetailedAnalysisVm  % DetailedAnalysisViewModel
-        ReportsVm           % ReportsViewModel
+        DetailedAnalysisVm       % DetailedAnalysisViewModel
+        BenchmarkDashboardVm     % BenchmarkDashboardViewModel
+        ReportsVm                % ReportsViewModel
         SettingsVm          % SettingsViewModel
+        QecSimulationVm     % QecSimulationViewModel
+        QecVisualizationVm  % QecVisualizationViewModel
     end
 
     % ── Login dialog ──────────────────────────────────────────────────────────
@@ -210,6 +214,53 @@ classdef QTAUWorkbenchApp < handle
         RefreshQubitButton
     end
 
+    % ── Benchmark Dashboard tab ──────────────────────────────────────────────
+    properties
+        BenchmarkBackendDropdown
+        BenchmarkRefreshButton
+        BenchmarkKpiLabels
+        VolumetricAxes
+        ScorecardAxes
+        CalibrationAxes
+        RegressionAxes
+    end
+
+    % ── QEC Simulation tab ────────────────────────────────────────────────────
+    properties
+        QecCodeDropdown
+        QecInitialStateDropdown
+        QecThetaSpinner
+        QecThetaLabel
+        QecPhiSpinner
+        QecPhiLabel
+        QecDistanceSpinner
+        QecDistanceLabel
+        QecNoiseDropdown
+        QecErrorProbSlider
+        QecErrorProbLabel
+        QecRoundsSpinner
+        QecTrialsSpinner
+        QecFidelityAxes
+        QecSyndromeAxes
+        QecSuccessAxes
+        QecResultsTable
+        QecRunButton
+        QecSweepButton
+        QecCompareButton
+        QecClearButton
+    end
+
+    % ── QEC Visualization tab ─────────────────────────────────────────────────
+    properties
+        QecBlochAxes
+        QecLatticeAxes
+        QecDecayAxes
+        QecErrorWeightAxes
+        QecRefreshBlochButton
+        QecRefreshLatticeButton
+        QecAnimateButton
+    end
+
     % ── Reports tab ───────────────────────────────────────────────────────────
     properties
         ReportTitleField
@@ -255,6 +306,7 @@ classdef QTAUWorkbenchApp < handle
             app.PredictionSvc = PredictionService(app.Client);
             app.ReportSvc     = ReportService(app.Client);
             app.SettingsSvc   = SettingsService(app.Client);
+            app.QecEngine     = QecEngineService();
             Logger.info('QTAUWorkbenchApp', 'All services initialized — creating screen callback objects');
             app.WelcomeVm          = WelcomeViewModel(app);
             app.DashboardVm        = DashboardViewModel(app);
@@ -266,9 +318,12 @@ classdef QTAUWorkbenchApp < handle
             app.PredictionVm       = PredictionViewModel(app);
             app.JobsVm             = JobsViewModel(app);
             app.ResultsVm          = ResultsViewModel(app);
-            app.DetailedAnalysisVm = DetailedAnalysisViewModel(app);
-            app.ReportsVm          = ReportsViewModel(app);
+            app.DetailedAnalysisVm    = DetailedAnalysisViewModel(app);
+            app.BenchmarkDashboardVm = BenchmarkDashboardViewModel(app);
+            app.ReportsVm            = ReportsViewModel(app);
             app.SettingsVm         = SettingsViewModel(app);
+            app.QecSimulationVm    = QecSimulationViewModel(app);
+            app.QecVisualizationVm = QecVisualizationViewModel(app);
             Logger.info('QTAUWorkbenchApp', 'Screen callback objects ready — building UI');
             app.buildUI();
             app.logEvent('UI', 'QTAUWorkbenchApp started');
@@ -738,6 +793,9 @@ classdef QTAUWorkbenchApp < handle
             JobsScreen(app);
             ResultsScreen(app);
             DetailedAnalysisScreen(app);
+            BenchmarkDashboardScreen(app);
+            QecSimulationScreen(app);
+            QecVisualizationScreen(app);
             ReportsScreen(app);
             SettingsScreen(app);
             app.buildAuthOverlay();
@@ -839,7 +897,7 @@ classdef QTAUWorkbenchApp < handle
                 'Text', Labels.get('header_btn_login', 'Login'), ...
                 'URL', '', ...
                 'HyperlinkClickedFcn', @(~,~)app.showLoginDialog(), ...
-                'FontSize', 12, 'FontWeight', 'bold', 'FontColor', [0.85 0.92 1.00], ...
+                'FontSize', 14, 'FontWeight', 'bold', 'FontColor', [0.85 0.92 1.00], ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
             app.HeaderLoginButton.Layout.Row = 1; app.HeaderLoginButton.Layout.Column = 2;
             app.HeaderLoginButton.VisitedColor = [0.85 0.92 1.00];
@@ -849,7 +907,7 @@ classdef QTAUWorkbenchApp < handle
                 'Text', '', ...
                 'URL', '', ...
                 'HyperlinkClickedFcn', @(~,~)app.toggleHeaderUserMenu(), ...
-                'FontSize', 12, 'FontWeight', 'bold', 'FontColor', [0.85 0.92 1.00], ...
+                'FontSize', 14, 'FontWeight', 'bold', 'FontColor', [0.85 0.92 1.00], ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
             app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 3;
             app.HeaderUserLabel.Visible = 'off';
@@ -865,13 +923,13 @@ classdef QTAUWorkbenchApp < handle
             mg.BackgroundColor = [1 1 1];
 
             accountBtn = uibutton(mg, 'Text', [char(9881) '  ' Labels.get('header_menu_my_account', 'My Account')], ...
-                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'HorizontalAlignment', 'left', 'FontSize', 15, ...
                 'FontColor', [0.20 0.20 0.25], 'BackgroundColor', [1 1 1], ...
                 'ButtonPushedFcn', @(~,~)app.onHeaderMenuAction('account'));
             accountBtn.Layout.Row = 1; accountBtn.Layout.Column = 1;
 
             logoutBtn = uibutton(mg, 'Text', [char(9211) '  ' Labels.get('header_menu_logout', 'Logout')], ...
-                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'HorizontalAlignment', 'left', 'FontSize', 15, ...
                 'FontColor', [0.70 0.15 0.15], 'BackgroundColor', [1 1 1], ...
                 'ButtonPushedFcn', @(~,~)app.onHeaderMenuAction('logout'));
             logoutBtn.Layout.Row = 2; logoutBtn.Layout.Column = 1;
@@ -946,13 +1004,15 @@ classdef QTAUWorkbenchApp < handle
             navBtnsPanel.BackgroundColor = [0.12 0.19 0.31];
             navBtnsPanel.BorderType = 'none';
 
-            navBtnsGrid = uigridlayout(navBtnsPanel, [13 1]);
-            navBtnsGrid.RowHeight = repmat({32}, 1, 13);
+            navBtnsGrid = uigridlayout(navBtnsPanel, [16 1]);
+            navBtnsGrid.RowHeight = repmat({32}, 1, 16);
             navBtnsGrid.Padding = [0 0 0 0]; navBtnsGrid.RowSpacing = 6;
             navBtnsGrid.BackgroundColor = [0.12 0.19 0.31];
 
             names  = {'Welcome','Dashboard','Notes','Upload','Analysis','Backends', ...
-                      'Benchmark','Prediction','Jobs','Results','Detailed Analysis','Reports','Settings'};
+                      'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
+                      'Benchmark Dashboard', ...
+                      'QEC Simulation','QEC Visualization','Reports','Settings'};
             labels = app.navMenuLabels();
             app.NavButtons = gobjects(1, numel(names));
             for i = 1:numel(names)
@@ -1114,7 +1174,9 @@ classdef QTAUWorkbenchApp < handle
                 'Prediction',      'subtitle_prediction', ...
                 'Jobs',            'subtitle_jobs', ...
                 'Results',         'subtitle_results', ...
-                'DetailedAnalysis','subtitle_detailed_analysis', ...
+                'DetailedAnalysis',  'subtitle_detailed_analysis', ...
+                'QECSimulation',    'subtitle_qec_simulation', ...
+                'QECVisualization', 'subtitle_qec_visualization', ...
                 'Reports',         'subtitle_reports', ...
                 'Settings',        'subtitle_settings');
             safeKey = matlab.lang.makeValidName(char(key));
@@ -1137,9 +1199,12 @@ classdef QTAUWorkbenchApp < handle
                 Labels.get('nav_prediction',        '◇  Prediction'), ...
                 Labels.get('nav_jobs',              '▣  Jobs'), ...
                 Labels.get('nav_results',           '□  Results'), ...
-                Labels.get('nav_detailed_analysis', '△  Detailed Analysis'), ...
-                Labels.get('nav_reports',           '▤  Reports'), ...
-                Labels.get('nav_settings',          '⚙  Settings')};
+                Labels.get('nav_detailed_analysis',      '△  Detailed Analysis'), ...
+                Labels.get('nav_benchmark_dashboard',   '◆  Benchmark Dashboard'), ...
+                Labels.get('nav_qec_simulation',        '◉  QEC Simulation'), ...
+                Labels.get('nav_qec_visualization',     '◈  QEC Visualization'), ...
+                Labels.get('nav_reports',               '▤  Reports'), ...
+                Labels.get('nav_settings',              '⚙  Settings')};
         end
 
         function labels = navCollapsedLabels(~)
@@ -1154,9 +1219,12 @@ classdef QTAUWorkbenchApp < handle
                 Labels.get('nav_short_prediction',        '◇'), ...
                 Labels.get('nav_short_jobs',              '▣'), ...
                 Labels.get('nav_short_results',           '□'), ...
-                Labels.get('nav_short_detailed_analysis', '△'), ...
-                Labels.get('nav_short_reports',           '▤'), ...
-                Labels.get('nav_short_settings',          '⚙')};
+                Labels.get('nav_short_detailed_analysis',      '△'), ...
+                Labels.get('nav_short_benchmark_dashboard',   '◆'), ...
+                Labels.get('nav_short_qec_simulation',        '◉'), ...
+                Labels.get('nav_short_qec_visualization',     '◈'), ...
+                Labels.get('nav_short_reports',               '▤'), ...
+                Labels.get('nav_short_settings',              '⚙')};
         end
 
         function forceInitialLayout(app)
@@ -1170,7 +1238,9 @@ classdef QTAUWorkbenchApp < handle
 
         function updateNavStyles(app, activeKey)
             names = {'Welcome','Dashboard','Notes','Upload','Analysis','Backends', ...
-                'Benchmark','Prediction','Jobs','Results','Detailed Analysis','Reports','Settings'};
+                'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
+                'Benchmark Dashboard', ...
+                'QEC Simulation','QEC Visualization','Reports','Settings'};
             for i = 1:min(numel(app.NavButtons), numel(names))
                 if strcmp(names{i}, activeKey)
                     app.NavButtons(i).BackgroundColor = [0.29 0.49 0.82];
@@ -1343,7 +1413,7 @@ classdef QTAUWorkbenchApp < handle
         %   variant: 'primary' | 'secondary' | 'success' | 'danger' | 'ghost'
         function styleBtn(~, btn, variant)
             % Clean macOS-native button style: white bg, dark text, subtle fill variants
-            btn.FontSize = 12;
+            btn.FontSize = 14;
             btn.FontWeight = 'normal';
             btn.BackgroundColor = [1 1 1];
             btn.FontColor       = [0.15 0.15 0.15];

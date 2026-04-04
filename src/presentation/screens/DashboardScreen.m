@@ -38,13 +38,13 @@ function DashboardScreen(app)
         'ButtonPushedFcn', @(~,~)app.DashboardVm.onRefreshDashboard());
     app.DashboardRefreshButton.Layout.Row = 1; app.DashboardRefreshButton.Layout.Column = 2;
     app.styleBtn(app.DashboardRefreshButton, 'primary');
-    app.DashboardRefreshButton.FontSize = 12;
+    app.DashboardRefreshButton.FontSize = 14;
     app.DashboardRefreshButton.Tooltip = 'Pull live project dashboard data';
 
     exportBtn = uibutton(toolbar, 'Text', [char(8599) ' ' Labels.get('dashboard_btn_export')]);
     exportBtn.Layout.Row = 1; exportBtn.Layout.Column = 3;
     app.styleBtn(exportBtn, 'ghost');
-    exportBtn.FontSize = 12;
+    exportBtn.FontSize = 14;
 
     % ── KPI card bar ──────────────────────────────────────────────────────────
     kpiBar = uipanel(g, 'Title', '');

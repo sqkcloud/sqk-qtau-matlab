@@ -35,22 +35,22 @@ function WelcomeScreen(app)
 
     btn1 = uibutton(hg, 'Text', [char(10010) ' ' Labels.get('welcome_btn_new_project')]);
     btn1.Layout.Row = 3; btn1.Layout.Column = 2; app.styleBtn(btn1, 'primary');
-    btn1.FontSize = 12;
+    btn1.FontSize = 14;
     btn1.ButtonPushedFcn = @(~,~)app.WelcomeVm.onNewProject();
 
     btn2 = uibutton(hg, 'Text', [char(9776) ' ' Labels.get('welcome_btn_load_project')]);
     btn2.Layout.Row = 3; btn2.Layout.Column = 3; app.styleBtn(btn2, 'ghost');
-    btn2.FontSize = 12;
+    btn2.FontSize = 14;
     btn2.ButtonPushedFcn = @(~,~)app.WelcomeVm.onLoadProject();
 
     btn3 = uibutton(hg, 'Text', [char(8505) ' ' Labels.get('welcome_btn_documentation')]);
     btn3.Layout.Row = 3; btn3.Layout.Column = 4; app.styleBtn(btn3, 'ghost');
-    btn3.FontSize = 12;
+    btn3.FontSize = 14;
     btn3.ButtonPushedFcn = @(~,~)web(char(AppConfig.get('docs_url', 'https://docs.quantum.ibm.com')), '-browser');
 
     btn4 = uibutton(hg, 'Text', [char(9881) ' ' Labels.get('welcome_btn_ibm_account')]);
     btn4.Layout.Row = 3; btn4.Layout.Column = 5; app.styleBtn(btn4, 'secondary');
-    btn4.FontSize = 12;
+    btn4.FontSize = 14;
     btn4.ButtonPushedFcn = @(~,~)app.onSelectSection('Settings');
 
     % ── Recent Projects (full width) ─────────────────────────────────────────

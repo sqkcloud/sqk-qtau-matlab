@@ -32,21 +32,21 @@ function NotesScreen(app)
     app.SaveNotesButton = uibutton(topRow, 'Text', [char(10004) ' ' Labels.get('notes_btn_save')], ...
         'ButtonPushedFcn', @(~,~)app.NotesVm.onSaveNotes());
     app.SaveNotesButton.Layout.Row = 1; app.SaveNotesButton.Layout.Column = 2;
-    app.SaveNotesButton.FontSize = 12;
+    app.SaveNotesButton.FontSize = 14;
     app.styleBtn(app.SaveNotesButton, 'primary');
     app.SaveNotesButton.Tooltip = 'Persist notes to server (requires login)';
 
     loadBtn = uibutton(topRow, 'Text', [char(8635) ' ' Labels.get('notes_btn_load')], ...
         'ButtonPushedFcn', @(~,~)app.NotesVm.onLoadNotes());
     loadBtn.Layout.Row = 1; loadBtn.Layout.Column = 3;
-    loadBtn.FontSize = 12;
+    loadBtn.FontSize = 14;
     app.styleBtn(loadBtn, 'secondary');
     loadBtn.Tooltip = 'Fetch notes from server for current project';
 
     app.ClearNotesButton = uibutton(topRow, 'Text', [char(10005) ' ' Labels.get('notes_btn_clear')], ...
         'ButtonPushedFcn', @(~,~)app.NotesVm.onClearNotes());
     app.ClearNotesButton.Layout.Row = 1; app.ClearNotesButton.Layout.Column = 4;
-    app.ClearNotesButton.FontSize = 12;
+    app.ClearNotesButton.FontSize = 14;
     app.styleBtn(app.ClearNotesButton, 'ghost');
 
     % ── Column divider ────────────────────────────────────────────────────────

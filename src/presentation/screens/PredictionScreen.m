@@ -27,7 +27,7 @@ function PredictionScreen(app)
         'ButtonPushedFcn', @(~,~)app.PredictionVm.onRunPrediction());
     app.PredictButton.Layout.Row = 1; app.PredictButton.Layout.Column = 2;
     app.styleBtn(app.PredictButton, 'primary');
-    app.PredictButton.FontSize = 12;
+    app.PredictButton.FontSize = 14;
     app.PredictButton.Tooltip = 'POST /api/predict with current circuit + backend + benchmark config';
 
     % ── Column divider ────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ function PredictionScreen(app)
     tmp = uibutton(sg, 'Text', [char(9654) ' ' Labels.get('prediction_btn_submit')], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Jobs'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'success');
-    tmp.FontSize = 12;
+    tmp.FontSize = 14;
     tmp.Tooltip = 'Navigate to Jobs to submit';
     tmp = uibutton(sg, 'Text', Labels.get('prediction_btn_back'), ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Benchmark'));

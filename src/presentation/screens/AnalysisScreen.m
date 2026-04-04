@@ -40,7 +40,7 @@ function AnalysisScreen(app)
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onAnalyzeCircuit());
     app.AnalyzeButton.Layout.Row = 1; app.AnalyzeButton.Layout.Column = 3;
     app.styleBtn(app.AnalyzeButton, 'primary');
-    app.AnalyzeButton.FontSize = 12;
+    app.AnalyzeButton.FontSize = 14;
     app.AnalyzeButton.Tooltip = 'POST /api/circuits/{id}/analyze + match-benchmarks';
 
     % ── Column divider ────────────────────────────────────────────────────────

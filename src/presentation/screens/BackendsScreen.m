@@ -74,14 +74,14 @@ function BackendsScreen(app)
         'ButtonPushedFcn', @(~,~)app.BackendsVm.onRefreshBackends());
     app.RefreshBackendsButton.Layout.Row = 1; app.RefreshBackendsButton.Layout.Column = 2;
     app.styleBtn(app.RefreshBackendsButton, 'ghost');
-    app.RefreshBackendsButton.FontSize = 12;
+    app.RefreshBackendsButton.FontSize = 14;
     app.RefreshBackendsButton.Tooltip = 'GET /api/backends';
 
     app.SelectBackendButton = uibutton(top, 'Text', [char(9745) ' ' Labels.get('backends_btn_select')], ...
         'ButtonPushedFcn', @(~,~)app.BackendsVm.onSelectBackend());
     app.SelectBackendButton.Layout.Row = 1; app.SelectBackendButton.Layout.Column = 3;
     app.styleBtn(app.SelectBackendButton, 'primary');
-    app.SelectBackendButton.FontSize = 12;
+    app.SelectBackendButton.FontSize = 14;
     app.SelectBackendButton.Tooltip = 'Set as primary target backend';
 
     app.BackendTable = uitable(tg);

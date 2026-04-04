@@ -67,7 +67,7 @@ function BenchmarkScreen(app)
         'ButtonPushedFcn', @(~,~)app.BenchmarkVm.onRunBenchmark());
     app.BenchmarkRunButton.Layout.Row = 5; app.BenchmarkRunButton.Layout.Column = [1 2];
     app.styleBtn(app.BenchmarkRunButton, 'primary');
-    app.BenchmarkRunButton.FontSize = 12;
+    app.BenchmarkRunButton.FontSize = 14;
     app.BenchmarkRunButton.Tooltip = 'Save config and compare transpilation strategies';
 
     % ── Execution Plan (right) ────────────────────────────────────────────────

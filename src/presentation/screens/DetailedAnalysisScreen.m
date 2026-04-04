@@ -36,21 +36,21 @@ function DetailedAnalysisScreen(app)
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotComparison());
     app.RefreshCompareButton.Layout.Row = 1; app.RefreshCompareButton.Layout.Column = 1;
     app.styleBtn(app.RefreshCompareButton, 'ghost');
-    app.RefreshCompareButton.FontSize = 12;
+    app.RefreshCompareButton.FontSize = 14;
     app.RefreshCompareButton.Tooltip = 'GET /jobs/{id}/results/detailed — distribution comparison';
 
     app.RefreshTemporalButton = uibutton(leftBtns, 'Text', [char(8635) ' ' Labels.get('detailed_btn_refresh_temporal')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotTemporal());
     app.RefreshTemporalButton.Layout.Row = 1; app.RefreshTemporalButton.Layout.Column = 2;
     app.styleBtn(app.RefreshTemporalButton, 'ghost');
-    app.RefreshTemporalButton.FontSize = 12;
+    app.RefreshTemporalButton.FontSize = 14;
     app.RefreshTemporalButton.Tooltip = 'GET /jobs/{id}/error-trends — temporal stability';
 
     app.RefreshQubitButton = uibutton(leftBtns, 'Text', [char(8635) ' ' Labels.get('detailed_btn_refresh_qubit')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotQubit());
     app.RefreshQubitButton.Layout.Row = 1; app.RefreshQubitButton.Layout.Column = 3;
     app.styleBtn(app.RefreshQubitButton, 'ghost');
-    app.RefreshQubitButton.FontSize = 12;
+    app.RefreshQubitButton.FontSize = 14;
     app.RefreshQubitButton.Tooltip = 'GET /jobs/{id}/results/detailed — per-qubit fidelity';
 
     tmp = uibutton(toolbar, 'Text', Labels.get('detailed_btn_next'), ...

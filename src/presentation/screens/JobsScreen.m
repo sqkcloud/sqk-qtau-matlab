@@ -28,21 +28,21 @@ function JobsScreen(app)
         'ButtonPushedFcn', @(~,~)app.JobsVm.onRefreshJobs());
     app.JobsRefreshButton.Layout.Row = 1; app.JobsRefreshButton.Layout.Column = 2;
     app.styleBtn(app.JobsRefreshButton, 'primary');
-    app.JobsRefreshButton.FontSize = 12;
+    app.JobsRefreshButton.FontSize = 14;
     app.JobsRefreshButton.Tooltip = 'GET /api/jobs';
 
     app.CancelJobButton = uibutton(top, 'Text', [char(10005) ' ' Labels.get('jobs_btn_cancel')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onCancelJob());
     app.CancelJobButton.Layout.Row = 1; app.CancelJobButton.Layout.Column = 3;
     app.styleBtn(app.CancelJobButton, 'danger');
-    app.CancelJobButton.FontSize = 12;
+    app.CancelJobButton.FontSize = 14;
     app.CancelJobButton.Tooltip = 'POST /api/jobs/{id}/cancel';
 
     app.PauseJobButton = uibutton(top, 'Text', [char(9208) ' ' Labels.get('jobs_btn_pause')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onPauseJob());
     app.PauseJobButton.Layout.Row = 1; app.PauseJobButton.Layout.Column = 4;
     app.styleBtn(app.PauseJobButton, 'ghost');
-    app.PauseJobButton.FontSize = 12;
+    app.PauseJobButton.FontSize = 14;
     app.PauseJobButton.Tooltip = 'POST /api/jobs/{id}/pause';
 
     % ── Column divider ────────────────────────────────────────────────────────

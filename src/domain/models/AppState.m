@@ -62,6 +62,14 @@ classdef AppState < handle
 
         % ── Cached notes ─────────────────────────────────────────────────────
         projectNotes string = ""
+
+        % ── Benchmark dashboard state ────────────────────────────────────────
+        benchmarkScorecardData struct = struct()
+        volumetricData         struct = struct()
+        systemMetrics          struct = struct()
+        regressionData         struct = struct()
+        calibrationData        struct = struct()
+        circuitClassification  struct = struct()
     end
 
     methods
