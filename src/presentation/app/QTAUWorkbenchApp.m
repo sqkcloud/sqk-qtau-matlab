@@ -205,13 +205,17 @@ classdef QTAUWorkbenchApp < handle
 
     % ── Detailed Analysis tab ─────────────────────────────────────────────────
     properties
-        CompareAxes
-        TemporalAxes
-        QubitAxes
+        CompareAxes           % Row 2-Col 1: Measured vs Ideal distribution bar
+        ErrorHeatmapAxes      % Row 2-Col 2: Cross-qubit error rate heatmap
+        TemporalAxes          % Row 2-Col 3: Temporal stability with confidence band
+        QubitAxes             % Row 3-Col 1: Per-qubit T1/T2 coherence scatter
+        RBDecayAxes           % Row 3-Col 2: Randomized benchmarking decay curve
         DetailedInsightArea
         RefreshCompareButton
+        RefreshHeatmapButton
         RefreshTemporalButton
         RefreshQubitButton
+        RefreshRBButton
     end
 
     % ── Benchmark Dashboard tab ──────────────────────────────────────────────

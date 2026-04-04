@@ -133,6 +133,19 @@ classdef JobService < handle
             end
         end
 
+        % Fetch randomized benchmarking decay data for a job.
+        function data = getRBDecay(obj, jobId, token)
+            ep = sprintf('/api/jobs/%s/rb-decay', char(jobId));
+            Logger.info('JobService', 'getRBDecay → GET %s', ep);
+            try
+                data = obj.Client.getAuth(ep, token);
+                Logger.info('JobService', 'getRBDecay → RB decay data received for job: %s', char(jobId));
+            catch ME
+                Logger.error('JobService', 'getRBDecay FAILED (job: %s): %s', char(jobId), ME.message);
+                rethrow(ME);
+            end
+        end
+
         % Project-scoped job list.
         function data = listProjectJobs(obj, projectId, token, skip, limit)
             if nargin < 4; skip  = 0;  end
