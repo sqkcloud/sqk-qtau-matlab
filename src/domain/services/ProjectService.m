@@ -42,6 +42,40 @@ classdef ProjectService < handle
             end
         end
 
+        % Update an existing project (PATCH with all editable fields).
+        function data = updateProject(obj, projectId, name, description, tags, token)
+            ep = sprintf('/api/projects/%s', char(projectId));
+            Logger.info('ProjectService', 'updateProject → PATCH %s (name: %s)', ep, char(name));
+            if nargin < 5; tags = {}; end
+            if isempty(tags); tags = {}; end
+            % Build JSON manually to guarantee tags serializes as an array.
+            % MATLAB jsonencode({'one'}) produces "one" instead of ["one"].
+            tagJson = jsonencode(string(tags));
+            if ~startsWith(tagJson, '['); tagJson = ['[' tagJson ']']; end
+            body = sprintf('{"name":%s,"description":%s,"tags":%s}', ...
+                jsonencode(char(name)), jsonencode(char(description)), tagJson);
+            try
+                data = obj.Client.patchAuthRaw(ep, body, token);
+                Logger.info('ProjectService', 'updateProject → project updated: %s', char(projectId));
+            catch ME
+                Logger.error('ProjectService', 'updateProject FAILED (id: %s): %s', char(projectId), ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Permanently delete a project.
+        function data = deleteProject(obj, projectId, token)
+            ep = sprintf('/api/projects/%s', char(projectId));
+            Logger.info('ProjectService', 'deleteProject → DELETE %s', ep);
+            try
+                data = obj.Client.deleteAuth(ep, token);
+                Logger.info('ProjectService', 'deleteProject → project deleted: %s', char(projectId));
+            catch ME
+                Logger.error('ProjectService', 'deleteProject FAILED (id: %s): %s', char(projectId), ME.message);
+                rethrow(ME);
+            end
+        end
+
         % Fetch a single project record.
         function data = getProject(obj, projectId, token)
             ep = sprintf('/api/projects/%s', char(projectId));

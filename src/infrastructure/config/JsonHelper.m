@@ -59,16 +59,30 @@ classdef JsonHelper
 
         % ── DTO row mappers ───────────────────────────────────────────────────
 
-        % projectsToRows  Map an /admin/projects response → 5-column cell matrix.
-        function rows = projectsToRows(data)
+        % projectsToRows  Map an /admin/projects response → 5-column cell matrix
+        %   + a parallel cell vector of project IDs (stored in table UserData).
+        %   Columns: Name | Tags | Member Count | Created At | Description
+        function [rows, ids] = projectsToRows(data)
             rows  = cell(0, 5);
+            ids   = {};
             items = JsonHelper.extractList(data, 'projects');
             n     = numel(items);
             if n == 0; return; end
             rows  = cell(n, 5);
+            ids   = cell(n, 1);
             for i = 1:n
-                rows{i,1} = char(JsonHelper.pick(items(i), {'project_id','id'}));
-                rows{i,2} = char(JsonHelper.pick(items(i), {'name'}));
+                ids{i}   = char(JsonHelper.pick(items(i), {'project_id','id'}));
+                rows{i,1} = char(JsonHelper.pick(items(i), {'name'}));
+                tags = JsonHelper.safeField(items(i), 'tags', {});
+                if ischar(tags)
+                    rows{i,2} = tags;
+                elseif iscell(tags)
+                    rows{i,2} = char(strjoin(string(tags), ', '));
+                elseif isstring(tags)
+                    rows{i,2} = char(strjoin(tags, ', '));
+                else
+                    rows{i,2} = '';
+                end
                 rows{i,3} = char(JsonHelper.pick(items(i), {'member_count'}));
                 rows{i,4} = char(JsonHelper.pick(items(i), {'created_at'}));
                 rows{i,5} = char(JsonHelper.pick(items(i), {'description'}));
@@ -205,6 +219,15 @@ classdef JsonHelper
 
     % ── Public utility helpers ────────────────────────────────────────────────
     methods (Static)
+
+        % safeField  Return a struct field value or a default if missing.
+        function val = safeField(s, fieldName, default)
+            if isstruct(s) && isfield(s, fieldName)
+                val = s.(fieldName);
+            else
+                val = default;
+            end
+        end
 
         % toDouble  Safely convert any scalar JSON value to a MATLAB double.
         function d = toDouble(v)

@@ -44,6 +44,19 @@ classdef CircuitService < handle
             end
         end
 
+        % List circuits with pagination (skip/limit).
+        function data = listCircuitsPaged(obj, skip, limit, token)
+            ep = sprintf('/api/circuits?skip=%d&limit=%d', skip, limit);
+            Logger.info('CircuitService', 'listCircuitsPaged → GET %s', ep);
+            try
+                data = obj.Client.getAuth(ep, token);
+                Logger.info('CircuitService', 'listCircuitsPaged → response received');
+            catch ME
+                Logger.error('CircuitService', 'listCircuitsPaged FAILED: %s', ME.message);
+                rethrow(ME);
+            end
+        end
+
         % Fetch a single circuit by ID.
         function data = getCircuit(obj, circuitId, token)
             ep = sprintf('/api/circuits/%s', char(circuitId));

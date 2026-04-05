@@ -56,9 +56,16 @@ classdef WelcomeViewModel < handle
             try
                 data = app.ProjectSvc.createProject(char(projName), char(projDesc), tags, app.State.authToken);
                 app.State.currentProjectId = string(JsonHelper.pick(data, {'project_id','id'}));
+                app.State.currentProjectName = string(projName);
                 app.Client.ProjectId = app.State.currentProjectId;
                 app.logEvent('API', sprintf('Project created successfully — id: %s  name: %s', ...
                     app.State.currentProjectId, char(projName)));
+                if ~isempty(app.ActiveProjectLabel) && isvalid(app.ActiveProjectLabel)
+                    app.ActiveProjectLabel.Text = char(projName);
+                end
+                if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                    app.UploadActiveProjectLabel.Text = char(projName);
+                end
 
                 % Close dialog
                 if ~isempty(app.NewProjectDialog) && isvalid(app.NewProjectDialog)
@@ -88,15 +95,155 @@ classdef WelcomeViewModel < handle
             try
                 row = src.Selection(1);
                 data = src.Data;
-                if ~isempty(data) && row <= size(data,1)
-                    app.State.currentProjectId   = string(data{row, 1});
-                    app.State.currentProjectName = string(data{row, 2});
+                ids  = src.UserData;
+                if ~isempty(data) && row <= size(data,1) && ~isempty(ids) && row <= numel(ids)
+                    app.State.currentProjectId   = string(ids{row});
+                    app.State.currentProjectName = string(data{row, 1});
                     app.Client.ProjectId = app.State.currentProjectId;
                     app.logEvent('UI', sprintf('Project selected: %s', app.State.currentProjectId));
                     app.ActiveProjectLabel.Text = char(app.State.currentProjectName);
+                    if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                        app.UploadActiveProjectLabel.Text = char(app.State.currentProjectName);
+                    end
                 end
             catch ME
                 Logger.warn('WelcomeViewModel', 'onProjectTableSelect failed: %s', ME.message);
+            end
+        end
+
+        function onEditProject(obj)
+            app = obj.App;
+            app.hideProjectPopupMenu();
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Edit Project', 'Icon', 'warning'); return;
+            end
+            sel = app.ProjectsTable.Selection;
+            if isempty(sel); return; end
+            row = sel(1);
+            data = app.ProjectsTable.Data;
+            ids  = app.ProjectsTable.UserData;
+            if isempty(data) || row > size(data,1) || isempty(ids) || row > numel(ids)
+                return;
+            end
+            projectId = ids{row};
+            projName  = char(string(data{row, 1}));
+            projTags  = char(string(data{row, 2}));
+            projDesc  = data{row, 5};
+            if isempty(projDesc) || (isnumeric(projDesc) && numel(projDesc)==0)
+                projDesc = '';
+            else
+                projDesc = char(string(projDesc));
+            end
+            app.logEvent('UI', sprintf('Edit project dialog opened for: %s (%s)', projName, projectId));
+            app.showEditProjectDialog(projectId, projName, projDesc, projTags);
+        end
+
+        function onSaveProject(obj)
+            app = obj.App;
+            projectId = app.EditProjId;
+            if isempty(projectId); return; end
+
+            projName = string(app.EditProjNameField.Value);
+            projDesc = string(strjoin(string(app.EditProjDescField.Value), newline));
+            tagsRaw  = string(app.EditProjTagsField.Value);
+
+            if strlength(strtrim(projName)) == 0
+                app.EditProjStatusLabel.Text = Labels.get('edit_proj_error_name_required', 'Project name is required.');
+                return;
+            end
+            if strlength(projName) > 100
+                app.EditProjStatusLabel.Text = Labels.get('edit_proj_error_name_long', 'Project name must be 100 characters or fewer.');
+                return;
+            end
+
+            tags = {};
+            if strlength(tagsRaw) > 0
+                parts = strsplit(char(tagsRaw), ',');
+                tags = strtrim(parts);
+                tags = tags(~cellfun(@isempty, tags));
+            end
+
+            app.logEvent('API', sprintf('Updating project: %s (%s)', projName, projectId));
+            try
+                app.ProjectSvc.updateProject(char(projectId), char(projName), char(projDesc), tags, app.State.authToken);
+                app.logEvent('API', sprintf('Project updated successfully — id: %s', char(projectId)));
+
+                % Update active project name if this was the active project
+                if strcmp(char(app.State.currentProjectId), char(projectId))
+                    app.State.currentProjectName = projName;
+                    app.ActiveProjectLabel.Text = char(projName);
+                    if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                        app.UploadActiveProjectLabel.Text = char(projName);
+                    end
+                end
+
+                if ~isempty(app.EditProjectDialog) && isvalid(app.EditProjectDialog)
+                    delete(app.EditProjectDialog);
+                    app.EditProjectDialog = [];
+                end
+
+                obj.onFetchProjects();
+            catch ME
+                if ~isempty(app.EditProjectDialog) && isvalid(app.EditProjectDialog)
+                    app.EditProjStatusLabel.Text = ME.message;
+                end
+                app.logEvent('ERROR', sprintf('Update project FAILED: %s', ME.message));
+            end
+        end
+
+        function onDeleteProject(obj)
+            app = obj.App;
+            app.hideProjectPopupMenu();
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Delete Project', 'Icon', 'warning'); return;
+            end
+            sel = app.ProjectsTable.Selection;
+            if isempty(sel); return; end
+            row = sel(1);
+            data = app.ProjectsTable.Data;
+            ids  = app.ProjectsTable.UserData;
+            if isempty(data) || row > size(data,1) || isempty(ids) || row > numel(ids)
+                return;
+            end
+            projectId = ids{row};
+            projName  = data{row, 1};
+
+            msg = sprintf(Labels.get('project_delete_confirm_msg', ...
+                'Are you sure you want to delete project "%s"? This action cannot be undone.'), projName);
+            answer = uiconfirm(app.UIFigure, msg, ...
+                Labels.get('project_delete_confirm_title', 'Delete Project'), ...
+                'Options', {[char(10006) ' ' Labels.get('project_delete_btn_delete', 'Delete')], ...
+                            [char(10004) ' ' Labels.get('project_delete_btn_cancel', 'Cancel')]}, ...
+                'DefaultOption', 2, ...
+                'Icon', 'warning');
+
+            if ~startsWith(answer, char(10006))
+                return;
+            end
+
+            app.logEvent('API', sprintf('DELETE /api/projects/%s', projectId));
+            app.showLoading('Deleting project...');
+            try
+                app.ProjectSvc.deleteProject(char(projectId), app.State.authToken);
+                app.logEvent('API', sprintf('Project deleted: %s (%s)', projName, projectId));
+
+                % Clear active project if the deleted one was active
+                if strcmp(char(app.State.currentProjectId), char(projectId))
+                    app.State.currentProjectId   = "";
+                    app.State.currentProjectName = "";
+                    app.Client.ProjectId = "";
+                    app.ActiveProjectLabel.Text = Labels.get('welcome_active_project_none', 'None');
+                    if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                        app.UploadActiveProjectLabel.Text = Labels.get('upload_label_no_project');
+                    end
+                end
+
+                app.hideLoading();
+                obj.onFetchProjects();
+            catch ME
+                app.hideLoading();
+                app.logEvent('ERROR', sprintf('Delete project FAILED: %s', ME.message));
+                app.showError('Delete Project', ME);
             end
         end
 
@@ -186,6 +333,12 @@ classdef WelcomeViewModel < handle
                 app.showAuthOverlay();
                 app.UserInfoArea.Text = Labels.get('welcome_user_info_hint');
                 app.ActiveProjectLabel.Text = Labels.get('welcome_active_project_none', 'None');
+                if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                    app.UploadActiveProjectLabel.Text = Labels.get('upload_label_no_project');
+                end
+                if ~isempty(app.UploadCircuitsTable) && isvalid(app.UploadCircuitsTable)
+                    app.UploadCircuitsTable.Data = {};
+                end
                 app.ProjectsTable.Data = {};
                 app.ProjectsPageLabel.Text = '';
                 app.ProjectsPrevButton.Enable = 'off';
@@ -204,12 +357,13 @@ classdef WelcomeViewModel < handle
             end
             skip  = (obj.CurrentPage - 1) * obj.ItemsPerPage;
             limit = obj.ItemsPerPage;
-            app.logEvent('API', sprintf('GET /api/admin/projects — skip=%d  limit=%d', skip, limit));
+            app.logEvent('API', 'GET /api/projects');
             app.showLoading(Labels.get('loading_projects', 'Loading projects...'));
             try
                 data = app.AuthSvc.listProjects(app.State.authToken, skip, limit);
-                rows = JsonHelper.projectsToRows(data);
+                [rows, ids] = JsonHelper.projectsToRows(data);
                 app.ProjectsTable.Data = rows;
+                app.ProjectsTable.UserData = ids;
 
                 if isstruct(data) && isfield(data, 'total')
                     obj.TotalItems = double(data.total);
@@ -218,15 +372,18 @@ classdef WelcomeViewModel < handle
                 end
 
                 nRows = size(rows, 1);
-                app.logEvent('API', sprintf('GET /api/admin/projects → %d row(s) returned (total: %d)', nRows, obj.TotalItems));
+                app.logEvent('API', sprintf('GET /api/projects → %d row(s) returned (total: %d)', nRows, obj.TotalItems));
                 obj.updatePagination();
 
                 % Resolve active project name from fetched rows
                 if app.State.hasProject() && nRows > 0
                     for r = 1:nRows
-                        if strcmp(char(rows{r,1}), char(app.State.currentProjectId))
-                            app.State.currentProjectName = string(rows{r,2});
-                            app.ActiveProjectLabel.Text = char(rows{r,2});
+                        if strcmp(ids{r}, char(app.State.currentProjectId))
+                            app.State.currentProjectName = string(rows{r,1});
+                            app.ActiveProjectLabel.Text = char(rows{r,1});
+                            if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                                app.UploadActiveProjectLabel.Text = char(rows{r,1});
+                            end
                             break;
                         end
                     end

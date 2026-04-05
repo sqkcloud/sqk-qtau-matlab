@@ -97,10 +97,10 @@ function WelcomeScreen(app)
     % Projects table
     app.ProjectsTable = uitable(pg);
     app.ProjectsTable.ColumnName = Labels.cols('welcome_table_cols_projects', ...
-        {'Project Id','Name','Member Count','Created At','Description'});
+        {'Name','Tags','Member Count','Created At','Description'});
     app.ProjectsTable.Data = {};
     app.ProjectsTable.Layout.Row = 3; app.ProjectsTable.Layout.Column = 1;
-    app.ProjectsTable.ColumnWidth = {180, 220, 120, 220, '1x'};
+    app.ProjectsTable.ColumnWidth = {200, 180, 100, 200, '1x'};
     app.styleTable(app.ProjectsTable);
     % Left-align text columns, centre numeric/date columns
     leftStyle  = uistyle('HorizontalAlignment', 'left');
@@ -108,6 +108,13 @@ function WelcomeScreen(app)
     addStyle(app.ProjectsTable, leftStyle,   'column', [1 2 5]);
     addStyle(app.ProjectsTable, centerStyle, 'column', [3 4]);
     app.ProjectsTable.SelectionChangedFcn = @(src,~)app.WelcomeVm.onProjectTableSelect(src);
+
+    % Custom right-click popup — built lazily, shown via figure mouse handler.
+    % Wire the figure-level click handler to hide popup on outside clicks
+    % and detect right-clicks (alt) on the projects table.
+    app.buildProjectPopupMenu();
+    prevFcn = app.UIFigure.WindowButtonDownFcn;
+    app.UIFigure.WindowButtonDownFcn = @(src, evt) handleWelcomeMouseDown(app, prevFcn, src, evt);
 
     % Pagination bar: Prev | Page X of Y | Next
     pageBar = uigridlayout(pg, [1 3]);
@@ -133,4 +140,43 @@ function WelcomeScreen(app)
     app.ProjectsNextButton.Enable = 'off';
 
     Logger.info('WelcomeScreen', 'Welcome tab UI built successfully');
+end
+
+% ── Local helper: figure-level mouse-down handler for right-click popup ──
+function handleWelcomeMouseDown(app, prevFcn, src, evt)
+    % Forward to any previously registered handler first
+    if ~isempty(prevFcn)
+        try prevFcn(src, evt); catch; end
+    end
+
+    cp = app.UIFigure.CurrentPoint;
+
+    % If the popup is visible, only hide it when clicking OUTSIDE.
+    % Clicking inside (on Edit/Delete buttons) must NOT hide the panel —
+    % otherwise the button's ButtonPushedFcn (mouse-up) is swallowed.
+    if ~isempty(app.ProjectsPopupPanel) && isvalid(app.ProjectsPopupPanel) ...
+            && strcmp(app.ProjectsPopupPanel.Visible, 'on')
+        pp = app.ProjectsPopupPanel.Position;
+        insidePopup = cp(1) >= pp(1) && cp(1) <= pp(1)+pp(3) && ...
+                      cp(2) >= pp(2) && cp(2) <= pp(2)+pp(4);
+        if insidePopup
+            return;  % let the button handle the click
+        end
+        app.hideProjectPopupMenu();
+    end
+
+    % Detect right-click (SelectionType == 'alt') on the projects table
+    try
+        selType = app.UIFigure.SelectionType;
+    catch
+        selType = 'normal';
+    end
+    if ~strcmp(selType, 'alt'); return; end
+
+    % Check the table has a valid selection
+    sel = app.ProjectsTable.Selection;
+    if isempty(sel); return; end
+
+    % Show custom popup at the cursor position
+    app.showProjectPopupMenu(cp(1), cp(2));
 end

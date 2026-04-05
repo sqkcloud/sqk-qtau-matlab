@@ -1,31 +1,60 @@
-% UploadTab  Populates the Upload section panel.
+% UploadScreen  Populates the Upload section panel.
 %
 %   Layout:
-%     Row 1 (flex):  Circuit Upload & Manager — file picker + editable preview.
-%     Row 2 (fixed): Format & Metadata form (left) | Circuit Statistics (right).
-%     Row 3 (fixed): Action bar — Next: Analysis / Back: Welcome.
+%     Row 1 (0px):   Active Project indicator — hidden (state kept internally).
+%     Row 2 (flex):  Circuit Upload & Manager — file picker + editable preview.
+%     Row 3 (200px): Format & Metadata form (left) | Circuit Statistics (right).
+%     Row 4 (180px): Project Circuits table — circuits already in this project.
+%     Row 5 (72px):  Action bar — Next: Analysis / Back: Welcome.
 %
 %   All visible strings come from resources/labels.properties via Labels.
 function UploadScreen(app)
     Logger.info('UploadScreen', 'Building Upload tab UI');
     t = app.createSectionPage('Upload');
 
-    g = uigridlayout(t, [3 3]);
-    g.RowHeight     = {'1x', 200, 72};
+    g = uigridlayout(t, [5 3]);
+    g.RowHeight     = {0, '1x', 200, 0, 72};
     g.ColumnWidth   = {'1.15x', 6, '1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
     g.ColumnSpacing = 4;
     g.BackgroundColor = [0.96 0.97 0.99];
 
-    % ── Circuit upload + preview (full width) ─────────────────────────────────
-    dropPanel = uipanel(g, 'Title', Labels.get('upload_panel_upload_manager'));
-    dropPanel.Layout.Row = 1; dropPanel.Layout.Column = [1 3]; dropPanel.BackgroundColor = [1 1 1];
+    % ── Active Project indicator (full width) — hidden from UI ─────────
+    projPanel = uipanel(g, 'Title', '');
+    projPanel.Layout.Row = 1; projPanel.Layout.Column = [1 3];
+    projPanel.BackgroundColor = [0.91 0.95 1.00];
+    projPanel.BorderType = 'line';
+    projPanel.Visible = 'off';
 
-    dg = uigridlayout(dropPanel, [3 4]);
-    dg.RowHeight   = {26, 34, '1x'};
+    pg = uigridlayout(projPanel, [1 2]);
+    pg.ColumnWidth = {120, '1x'};
+    pg.Padding = [14 4 14 4]; pg.ColumnSpacing = 8;
+    pg.BackgroundColor = [0.91 0.95 1.00];
+
+    lbl = uilabel(pg, 'Text', Labels.get('upload_label_active_project'));
+    lbl.FontSize = 13; lbl.FontWeight = 'bold';
+    lbl.FontColor = [0.20 0.30 0.55];
+    lbl.Layout.Row = 1; lbl.Layout.Column = 1;
+
+    projName = app.State.currentProjectName;
+    if strlength(projName) == 0
+        projName = Labels.get('upload_label_no_project');
+    end
+    app.UploadActiveProjectLabel = uilabel(pg, 'Text', char(projName));
+    app.UploadActiveProjectLabel.FontSize = 13;
+    app.UploadActiveProjectLabel.FontColor = [0.14 0.18 0.26];
+    app.UploadActiveProjectLabel.Layout.Row = 1;
+    app.UploadActiveProjectLabel.Layout.Column = 2;
+
+    % ── Circuit upload + preview (full width) ─────────────────────────────
+    dropPanel = uipanel(g, 'Title', Labels.get('upload_panel_upload_manager'));
+    dropPanel.Layout.Row = 2; dropPanel.Layout.Column = [1 3]; dropPanel.BackgroundColor = [1 1 1];
+
+    dg = uigridlayout(dropPanel, [4 4]);
+    dg.RowHeight   = {26, 34, 4, '1x'};
     dg.ColumnWidth = {110, '1x', 100, 110};
-    dg.Padding = [16 12 16 12]; dg.RowSpacing = 8; dg.BackgroundColor = [1 1 1];
+    dg.Padding = [16 12 16 12]; dg.RowSpacing = 0; dg.BackgroundColor = [1 1 1];
 
     info = uilabel(dg, 'Text', Labels.get('upload_hero_title'));
     info.FontSize = 14; info.FontWeight = 'bold';
@@ -52,7 +81,7 @@ function UploadScreen(app)
     app.UploadButton.Tooltip = 'POST /api/circuits/upload';
 
     app.CircuitPreviewArea = uitextarea(dg, 'Editable', 'on');
-    app.CircuitPreviewArea.Layout.Row = 3; app.CircuitPreviewArea.Layout.Column = [1 4];
+    app.CircuitPreviewArea.Layout.Row = 4; app.CircuitPreviewArea.Layout.Column = [1 4];
     app.CircuitPreviewArea.FontName = 'Courier New'; app.CircuitPreviewArea.FontSize = 13;
     app.CircuitPreviewArea.BackgroundColor = [0.97 0.98 1.00];
     app.CircuitPreviewArea.FontColor = [0.14 0.18 0.26];
@@ -62,14 +91,14 @@ function UploadScreen(app)
         '// Load a circuit file to see its content here.', ...
         'measure q -> c;'};
 
-    % ── Column divider ────────────────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
+    % ── Column divider ────────────────────────────────────────────────────
+    div = uipanel(g, 'Title', ''); div.Layout.Row = 3; div.Layout.Column = 2;
     div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
-    % ── Format and Metadata (left) ────────────────────────────────────────────
+    % ── Format and Metadata (left) ────────────────────────────────────────
     metaPanel = uipanel(g, 'Title', Labels.get('upload_panel_format_meta'));
-    metaPanel.Layout.Row = 2; metaPanel.Layout.Column = 1; metaPanel.BackgroundColor = [1 1 1];
+    metaPanel.Layout.Row = 3; metaPanel.Layout.Column = 1; metaPanel.BackgroundColor = [1 1 1];
 
     mg = uigridlayout(metaPanel, [4 4]);
     mg.RowHeight   = {28, 28, 28, '1x'};
@@ -110,18 +139,51 @@ function UploadScreen(app)
     app.CircuitMetadataArea.FontSize = 12;
     app.CircuitMetadataArea.Layout.Row = [3 4]; app.CircuitMetadataArea.Layout.Column = [2 4];
 
-    % ── Circuit Statistics (right) ────────────────────────────────────────────
+    % ── Circuit Statistics (right) ────────────────────────────────────────
     statsPanel = uipanel(g, 'Title', Labels.get('upload_panel_stats'));
-    statsPanel.Layout.Row = 2; statsPanel.Layout.Column = 3; statsPanel.BackgroundColor = [1 1 1];
+    statsPanel.Layout.Row = 3; statsPanel.Layout.Column = 3; statsPanel.BackgroundColor = [1 1 1];
 
-    pg = uigridlayout(statsPanel, [1 1]);
-    pg.Padding = [12 10 12 10]; pg.BackgroundColor = [1 1 1];
-    app.CircuitStatsArea = uitextarea(pg, 'Editable', 'off'); app.CircuitStatsArea.FontSize = 12;
+    spg = uigridlayout(statsPanel, [1 1]);
+    spg.Padding = [12 10 12 10]; spg.BackgroundColor = [1 1 1];
+    app.CircuitStatsArea = uitextarea(spg, 'Editable', 'off'); app.CircuitStatsArea.FontSize = 12;
     app.CircuitStatsArea.Value = {Labels.get('upload_stats_initial')};
 
-    % ── Action bar ────────────────────────────────────────────────────────────
+    % ── Project Circuits table (full width) — hidden ─────────────────────
+    circPanel = uipanel(g, 'Title', Labels.get('upload_panel_project_circuits'));
+    circPanel.Layout.Row = 4; circPanel.Layout.Column = [1 3];
+    circPanel.BackgroundColor = [1 1 1];
+    circPanel.Visible = 'off';
+
+    cg = uigridlayout(circPanel, [1 2]);
+    cg.ColumnWidth = {'1x', 100};
+    cg.Padding = [10 6 10 6]; cg.ColumnSpacing = 8;
+    cg.BackgroundColor = [1 1 1];
+
+    app.UploadCircuitsTable = uitable(cg, ...
+        'ColumnName', {'Circuit ID', 'Name', 'Format', 'Qubits', 'Depth', 'Valid', 'Created'}, ...
+        'ColumnWidth', {180, 160, 70, 60, 60, 50, 140}, ...
+        'RowName', {});
+    app.UploadCircuitsTable.Layout.Row = 1; app.UploadCircuitsTable.Layout.Column = 1;
+    app.UploadCircuitsTable.FontSize = 11;
+
+    btnGrid = uigridlayout(cg, [3 1]);
+    btnGrid.RowHeight = {30, 30, '1x'};
+    btnGrid.Padding = [0 0 0 0]; btnGrid.RowSpacing = 6;
+    btnGrid.BackgroundColor = [1 1 1];
+
+    app.UploadRefreshCircuitsBtn = uibutton(btnGrid, 'Text', Labels.get('upload_btn_refresh_circuits'), ...
+        'ButtonPushedFcn', @(~,~)app.UploadVm.onRefreshCircuits());
+    app.UploadRefreshCircuitsBtn.Layout.Row = 1; app.UploadRefreshCircuitsBtn.Layout.Column = 1;
+    app.styleBtn(app.UploadRefreshCircuitsBtn, 'ghost');
+
+    app.UploadDeleteCircuitBtn = uibutton(btnGrid, 'Text', Labels.get('upload_btn_delete_circuit'), ...
+        'ButtonPushedFcn', @(~,~)app.UploadVm.onDeleteCircuit());
+    app.UploadDeleteCircuitBtn.Layout.Row = 2; app.UploadDeleteCircuitBtn.Layout.Column = 1;
+    app.styleBtn(app.UploadDeleteCircuitBtn, 'ghost');
+
+    % ── Action bar ────────────────────────────────────────────────────────
     actionPanel = uipanel(g, 'Title', Labels.get('upload_panel_action'));
-    actionPanel.Layout.Row = 3; actionPanel.Layout.Column = [1 3];
+    actionPanel.Layout.Row = 5; actionPanel.Layout.Column = [1 3];
     actionPanel.BackgroundColor = [0.94 0.97 1.00];
 
     ag = uigridlayout(actionPanel, [1 3]); ag.ColumnWidth = {'1x',170,150};

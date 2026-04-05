@@ -71,6 +71,7 @@ classdef QTAUWorkbenchApp < handle
     properties
         WelcomeVm           % WelcomeViewModel
         DashboardVm         % DashboardViewModel
+        CircuitsVm          % CircuitsViewModel
         NotesVm             % NotesViewModel
         UploadVm            % UploadViewModel
         AnalysisVm          % AnalysisViewModel
@@ -108,11 +109,24 @@ classdef QTAUWorkbenchApp < handle
         NewProjStatusLabel          % Status / error label
     end
 
+    % ── Edit Project dialog ──────────────────────────────────────────────────
+    properties
+        EditProjectDialog           % modal uifigure
+        EditProjNameField           % Project name edit field
+        EditProjDescField           % Description text area
+        EditProjTagsField           % Tags edit field (comma-separated)
+        EditProjStatusLabel         % Status / error label
+        EditProjId                  % Project ID being edited
+    end
+
     % ── Welcome tab ───────────────────────────────────────────────────────────
     properties
         UserInfoArea
         ActiveProjectLabel         % Active Project name display in box
         ProjectsTable
+        ProjectsPopupPanel         % Custom right-click popup (uipanel overlay)
+        ProjectsPopupEditBtn       % Edit button inside popup
+        ProjectsPopupDeleteBtn     % Delete button inside popup
         ProjectsPageLabel          % "Page X of Y"
         ProjectsPrevButton
         ProjectsNextButton
@@ -136,6 +150,15 @@ classdef QTAUWorkbenchApp < handle
         ClearNotesButton
     end
 
+    % ── Circuits tab ─────────────────────────────────────────────────────────
+    properties
+        CircuitsTable               % Table showing paginated circuits
+        CircuitsPageLabel           % "Page N" label
+        CircuitsPrevBtn             % Prev page button
+        CircuitsNextBtn             % Next page button
+        CircuitsUploadBtn           % Upload button (navigates to Upload)
+    end
+
     % ── Upload tab ────────────────────────────────────────────────────────────
     properties
         UploadFileField
@@ -147,6 +170,10 @@ classdef QTAUWorkbenchApp < handle
         CircuitMetadataArea
         CircuitPreviewArea
         CircuitStatsArea
+        UploadActiveProjectLabel    % Active project name on Upload screen
+        UploadCircuitsTable         % Table showing circuits in current project
+        UploadRefreshCircuitsBtn    % Refresh button for circuits table
+        UploadDeleteCircuitBtn      % Delete selected circuit button
     end
 
     % ── Analysis tab ──────────────────────────────────────────────────────────
@@ -314,6 +341,7 @@ classdef QTAUWorkbenchApp < handle
             Logger.info('QTAUWorkbenchApp', 'All services initialized — creating screen callback objects');
             app.WelcomeVm          = WelcomeViewModel(app);
             app.DashboardVm        = DashboardViewModel(app);
+            app.CircuitsVm         = CircuitsViewModel(app);
             app.NotesVm            = NotesViewModel(app);
             app.UploadVm           = UploadViewModel(app);
             app.AnalysisVm         = AnalysisViewModel(app);
@@ -711,6 +739,181 @@ classdef QTAUWorkbenchApp < handle
             Logger.info('QTAUWorkbenchApp', 'New Project dialog shown');
         end
 
+        function buildProjectPopupMenu(app)
+            % Create a custom popup panel (context-menu replacement) for the
+            % projects table.  Positioned absolutely inside the UIFigure so
+            % we have full control over text alignment and styling.
+            popW = 160; popH = 72;
+            app.ProjectsPopupPanel = uipanel(app.UIFigure, ...
+                'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', [1 1 1], ...
+                'BorderColor', [0.78 0.80 0.84], ...
+                'Position', [0 0 popW popH], ...
+                'Visible', 'off');
+
+            pg = uigridlayout(app.ProjectsPopupPanel, [2 1]);
+            pg.RowHeight   = {'1x', '1x'};
+            pg.ColumnWidth = {'1x'};
+            pg.Padding     = [4 4 4 4];
+            pg.RowSpacing  = 2;
+            pg.BackgroundColor = [1 1 1];
+
+            app.ProjectsPopupEditBtn = uibutton(pg, 'Text', ...
+                [' ' char(9999) '  ' Labels.get('project_ctx_edit', 'Edit')], ...
+                'HorizontalAlignment', 'left', ...
+                'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onEditProject());
+            app.ProjectsPopupEditBtn.Layout.Row = 1;
+            app.ProjectsPopupEditBtn.BackgroundColor = [1 1 1];
+            app.ProjectsPopupEditBtn.FontColor = [0.15 0.18 0.24];
+
+            app.ProjectsPopupDeleteBtn = uibutton(pg, 'Text', ...
+                [' ' char(10005) '  ' Labels.get('project_ctx_delete', 'Delete')], ...
+                'HorizontalAlignment', 'left', ...
+                'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onDeleteProject());
+            app.ProjectsPopupDeleteBtn.Layout.Row = 2;
+            app.ProjectsPopupDeleteBtn.BackgroundColor = [1 1 1];
+            app.ProjectsPopupDeleteBtn.FontColor = [0.70 0.15 0.15];
+        end
+
+        function showProjectPopupMenu(app, x, y)
+            % Show the custom popup at the given figure-relative position.
+            if isempty(app.ProjectsPopupPanel) || ~isvalid(app.ProjectsPopupPanel)
+                app.buildProjectPopupMenu();
+            end
+            popW = 160; popH = 72;
+            % Clamp to figure bounds
+            figPos = app.UIFigure.Position;
+            px = min(x, figPos(3) - popW - 4);
+            py = max(y - popH, 4);
+            app.ProjectsPopupPanel.Position = [px py popW popH];
+            app.ProjectsPopupPanel.Visible = 'on';
+        end
+
+        function hideProjectPopupMenu(app)
+            if ~isempty(app.ProjectsPopupPanel) && isvalid(app.ProjectsPopupPanel)
+                app.ProjectsPopupPanel.Visible = 'off';
+            end
+        end
+
+        function onFigureMouseDown(app)
+            % Hide the project popup on any left-click outside it.
+            if ~isempty(app.ProjectsPopupPanel) && isvalid(app.ProjectsPopupPanel) ...
+                    && strcmp(app.ProjectsPopupPanel.Visible, 'on')
+                cp = app.UIFigure.CurrentPoint;
+                pp = app.ProjectsPopupPanel.Position;
+                if cp(1) < pp(1) || cp(1) > pp(1)+pp(3) || ...
+                   cp(2) < pp(2) || cp(2) > pp(2)+pp(4)
+                    app.hideProjectPopupMenu();
+                end
+            end
+        end
+
+        function showEditProjectDialog(app, projectId, projName, projDesc, projTags)
+            % Create modal Edit Project dialog pre-filled with existing data
+            app.EditProjId = projectId;
+            figPos = app.UIFigure.Position;
+            dlgW = 480; dlgH = 520;
+            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
+            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
+
+            app.EditProjectDialog = uifigure( ...
+                'Name', Labels.get('edit_proj_dlg_title', 'Edit Project'), ...
+                'Position', [dlgX dlgY dlgW dlgH], ...
+                'WindowStyle', 'modal', ...
+                'Resize', 'off', ...
+                'Color', [0.95 0.96 0.98]);
+
+            outerGrid = uigridlayout(app.EditProjectDialog, [3 3]);
+            outerGrid.RowHeight     = {16, '1x', 16};
+            outerGrid.ColumnWidth   = {24, '1x', 24};
+            outerGrid.Padding       = [0 0 0 0];
+            outerGrid.RowSpacing    = 0;
+            outerGrid.ColumnSpacing = 0;
+            outerGrid.BackgroundColor = [0.95 0.96 0.98];
+
+            card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', [1 1 1], ...
+                'HighlightColor', [0.88 0.89 0.92], ...
+                'BorderColor', [0.88 0.89 0.92]);
+            card.Layout.Row = 2; card.Layout.Column = 2;
+
+            cg = uigridlayout(card, [12 1]);
+            cg.RowHeight = {28, 18, 10, ...
+                            16, 34, 16, 90, ...
+                            16, 34, 14, ...
+                            42, 20};
+            cg.ColumnWidth = {'1x'};
+            cg.Padding     = [36 24 36 20];
+            cg.RowSpacing  = 2;
+            cg.BackgroundColor = [1 1 1];
+
+            titleLbl = uilabel(cg, 'Text', Labels.get('edit_proj_dlg_heading', 'Edit Project'), ...
+                'FontSize', 19, 'FontWeight', 'bold', ...
+                'FontColor', [0.15 0.18 0.24], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
+            titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
+
+            subLbl = uilabel(cg, 'Text', Labels.get('edit_proj_dlg_subtitle', 'Update project information'), ...
+                'FontSize', 11, 'FontColor', [0.45 0.50 0.58], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
+            subLbl.Layout.Row = 2; subLbl.Layout.Column = 1;
+
+            nameLbl = uilabel(cg, 'Text', Labels.get('edit_proj_label_name', 'Project Name'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            nameLbl.Layout.Row = 4; nameLbl.Layout.Column = 1;
+
+            app.EditProjNameField = uieditfield(cg, 'text', 'Value', char(projName), ...
+                'FontSize', 13);
+            app.EditProjNameField.Layout.Row = 5; app.EditProjNameField.Layout.Column = 1;
+
+            descLbl = uilabel(cg, 'Text', Labels.get('edit_proj_label_desc', 'Description'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            descLbl.Layout.Row = 6; descLbl.Layout.Column = 1;
+
+            app.EditProjDescField = uitextarea(cg, 'Value', char(projDesc), ...
+                'FontSize', 13);
+            app.EditProjDescField.Layout.Row = 7; app.EditProjDescField.Layout.Column = 1;
+
+            tagsLbl = uilabel(cg, 'Text', Labels.get('edit_proj_label_tags', 'Tags (comma-separated)'), ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], ...
+                'VerticalAlignment', 'bottom');
+            tagsLbl.Layout.Row = 8; tagsLbl.Layout.Column = 1;
+
+            app.EditProjTagsField = uieditfield(cg, 'text', 'Value', char(projTags), ...
+                'FontSize', 13);
+            app.EditProjTagsField.Layout.Row = 9; app.EditProjTagsField.Layout.Column = 1;
+
+            btnBar = uigridlayout(cg, [1 2]);
+            btnBar.Layout.Row = 11; btnBar.Layout.Column = 1;
+            btnBar.ColumnWidth = {'1x', '1x'};
+            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
+            btnBar.BackgroundColor = [1 1 1];
+
+            cancelBtn = uibutton(btnBar, 'Text', [char(10006) ' ' Labels.get('edit_proj_btn_cancel', 'Cancel')], ...
+                'ButtonPushedFcn', @(~,~)delete(app.EditProjectDialog));
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+            app.styleBtn(cancelBtn, 'ghost');
+
+            saveBtn = uibutton(btnBar, 'Text', [char(10004) ' ' Labels.get('edit_proj_btn_save', 'Save')], ...
+                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onSaveProject());
+            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 2;
+            app.styleBtn(saveBtn, 'primary');
+
+            app.EditProjStatusLabel = uilabel(cg, 'Text', '', ...
+                'FontSize', 11, 'FontColor', [0.84 0.18 0.18], ...
+                'WordWrap', 'on', 'HorizontalAlignment', 'center');
+            app.EditProjStatusLabel.Layout.Row = 12; app.EditProjStatusLabel.Layout.Column = 1;
+
+            Logger.info('QTAUWorkbenchApp', 'Edit Project dialog shown for: %s', char(projectId));
+        end
+
         function onPasswordChanging(app, evt)
             if app.LoginDlgPasswordVisible
                 % Plain-text mode — store the value directly
@@ -788,6 +991,7 @@ classdef QTAUWorkbenchApp < handle
             WelcomeScreen(app);
             app.updateWelcomeAuthButtons();
             DashboardScreen(app);
+            CircuitsScreen(app);
             NotesScreen(app);
             UploadScreen(app);
             AnalysisScreen(app);
@@ -1008,12 +1212,12 @@ classdef QTAUWorkbenchApp < handle
             navBtnsPanel.BackgroundColor = [0.12 0.19 0.31];
             navBtnsPanel.BorderType = 'none';
 
-            navBtnsGrid = uigridlayout(navBtnsPanel, [16 1]);
-            navBtnsGrid.RowHeight = repmat({32}, 1, 16);
+            navBtnsGrid = uigridlayout(navBtnsPanel, [17 1]);
+            navBtnsGrid.RowHeight = repmat({32}, 1, 17);
             navBtnsGrid.Padding = [0 0 0 0]; navBtnsGrid.RowSpacing = 6;
             navBtnsGrid.BackgroundColor = [0.12 0.19 0.31];
 
-            names  = {'Welcome','Dashboard','Notes','Upload','Analysis','Backends', ...
+            names  = {'Welcome','Dashboard','Circuits','Notes','Upload','Analysis','Backends', ...
                       'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
                       'Benchmark Dashboard', ...
                       'QEC Simulation','QEC Visualization','Reports','Settings'};
@@ -1170,6 +1374,7 @@ classdef QTAUWorkbenchApp < handle
             keyMap = struct( ...
                 'Welcome',         'subtitle_welcome', ...
                 'Dashboard',       'subtitle_dashboard', ...
+                'Circuits',        'subtitle_circuits', ...
                 'Notes',           'subtitle_notes', ...
                 'Upload',          'subtitle_upload', ...
                 'Analysis',        'subtitle_analysis', ...
@@ -1195,6 +1400,7 @@ classdef QTAUWorkbenchApp < handle
             labels = { ...
                 Labels.get('nav_welcome',           '⌂  Welcome'), ...
                 Labels.get('nav_dashboard',         '◫  Dashboard'), ...
+                Labels.get('nav_circuits',          '☰  Circuits'), ...
                 Labels.get('nav_notes',             '✎  Notes'), ...
                 Labels.get('nav_upload',            '⤴  Upload'), ...
                 Labels.get('nav_analysis',          '⌕  Analysis'), ...
@@ -1215,6 +1421,7 @@ classdef QTAUWorkbenchApp < handle
             labels = { ...
                 Labels.get('nav_short_welcome',           '⌂'), ...
                 Labels.get('nav_short_dashboard',         '◫'), ...
+                Labels.get('nav_short_circuits',          '☰'), ...
                 Labels.get('nav_short_notes',             '✎'), ...
                 Labels.get('nav_short_upload',            '⤴'), ...
                 Labels.get('nav_short_analysis',          '⌕'), ...
@@ -1241,7 +1448,7 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function updateNavStyles(app, activeKey)
-            names = {'Welcome','Dashboard','Notes','Upload','Analysis','Backends', ...
+            names = {'Welcome','Dashboard','Circuits','Notes','Upload','Analysis','Backends', ...
                 'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
                 'Benchmark Dashboard', ...
                 'QEC Simulation','QEC Visualization','Reports','Settings'};
@@ -1509,6 +1716,22 @@ classdef QTAUWorkbenchApp < handle
                 case 'Welcome'
                     if ~isempty(app.WelcomeVm) && app.State.isAuthenticated()
                         app.WelcomeVm.onFetchProjects();
+                    end
+                case 'Upload'
+                    if ~isempty(app.UploadVm)
+                        % Sync active project label and refresh circuits list
+                        if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                            projName = app.State.currentProjectName;
+                            if strlength(projName) == 0
+                                projName = Labels.get('upload_label_no_project');
+                            end
+                            app.UploadActiveProjectLabel.Text = char(projName);
+                        end
+                        app.UploadVm.onRefreshCircuits();
+                    end
+                case 'Circuits'
+                    if ~isempty(app.CircuitsVm) && app.State.hasProject()
+                        app.CircuitsVm.onLoadCircuits();
                     end
                 case 'Dashboard'
                     if ~isempty(app.DashboardVm)

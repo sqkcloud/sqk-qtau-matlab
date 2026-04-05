@@ -75,8 +75,8 @@ classdef FastAPIClient < handle
             data = obj.postAuthJson('/api/auth/logout', struct(), token);
         end
 
-        function data = listProjects(obj, token, skip, limit)
-            ep = sprintf('/api/admin/projects?skip=%d&limit=%d', round(skip), round(limit));
+        function data = listProjects(obj, token, ~, ~)
+            ep = '/api/projects';
             Logger.debug('FastAPIClient', 'listProjects → GET %s', ep);
             data = obj.getAuth(ep, token);
         end
@@ -169,6 +169,46 @@ classdef FastAPIClient < handle
             end
         end
 
+        % PATCH with a pre-encoded JSON string body and Bearer token.
+        % Use this when the payload contains arrays that jsonencode would
+        % flatten (e.g. single-element cell arrays).
+        function data = patchAuthRaw(obj, endpoint, jsonBody, token)
+            url = char(obj.BaseUrl + string(endpoint));
+            Logger.http('PATCH', url);
+            import matlab.net.http.*
+            import matlab.net.http.field.*
+            import matlab.net.http.io.*
+            import matlab.net.*
+
+            hdrs = [GenericField('Authorization', ['Bearer ' char(token)]), ...
+                    GenericField('Accept', 'application/json'), ...
+                    ContentTypeField(MediaType('application/json'))];
+            if strlength(string(obj.ProjectId)) > 0
+                hdrs = [hdrs, GenericField('X-Project-Id', char(obj.ProjectId))];
+            end
+            provider = StringProvider(jsonBody, 'UTF-8');
+            req  = RequestMessage(RequestMethod('PATCH'), hdrs, provider);
+            opts = HTTPOptions('ConnectTimeout', obj.Timeout);
+            try
+                resp = req.send(URI(url), opts);
+                httpStatus = double(resp.StatusCode);
+                bodyData = resp.Body.Data;
+                if isa(bodyData, 'uint8')
+                    bodyData = char(bodyData');
+                end
+                if httpStatus >= 400
+                    errMsg = FastAPIClient.extractErrorMessage(bodyData, httpStatus);
+                    Logger.error('FastAPIClient', 'PATCH %s FAILED (HTTP %d): %s', endpoint, httpStatus, errMsg);
+                    error('FastAPIClient:httpError', 'HTTP %d: %s', httpStatus, errMsg);
+                end
+                data = FastAPIClient.normalizeJsonResponse(bodyData);
+                Logger.debug('FastAPIClient', 'PATCH %s → OK', endpoint);
+            catch ME
+                Logger.error('FastAPIClient', 'PATCH %s FAILED: %s', endpoint, ME.message);
+                rethrow(ME);
+            end
+        end
+
         % DELETE with Bearer token — treats 204 No Content as success
         function data = deleteAuth(obj, endpoint, token)
             url = char(obj.BaseUrl + string(endpoint));
@@ -239,6 +279,35 @@ classdef FastAPIClient < handle
                  contains(ME.identifier, 'URLREAD');
         end
 
+        function msg = extractErrorMessage(bodyData, httpStatus)
+            % Try to extract a human-readable message from a JSON error body.
+            % bodyData may be a char array (raw JSON), a struct (auto-parsed
+            % by matlab.net.http), or uint8.
+            msg = sprintf('Request failed with status %d', httpStatus);
+            try
+                if isstruct(bodyData)
+                    parsed = bodyData;
+                elseif ischar(bodyData) && ~isempty(strtrim(bodyData))
+                    parsed = jsondecode(strtrim(bodyData));
+                elseif isstring(bodyData)
+                    parsed = jsondecode(char(bodyData));
+                else
+                    return;
+                end
+                if isstruct(parsed) && isfield(parsed, 'detail')
+                    detail = parsed.detail;
+                    if ischar(detail)
+                        msg = detail;
+                    elseif isstring(detail)
+                        msg = char(detail);
+                    elseif iscell(detail) && ~isempty(detail)
+                        msg = char(jsonencode(detail));
+                    end
+                end
+            catch
+            end
+        end
+
         function data = normalizeJsonResponse(raw)
             data = raw;
             try
@@ -271,9 +340,14 @@ classdef FastAPIClient < handle
             opts    = HTTPOptions('ConnectTimeout', timeout);
             resp    = req.send(URI(url), opts);
 
+            httpStatus = double(resp.StatusCode);
             bodyData = resp.Body.Data;
             if isa(bodyData, 'uint8')
                 bodyData = char(bodyData');
+            end
+            if httpStatus >= 400
+                errMsg = FastAPIClient.extractErrorMessage(bodyData, httpStatus);
+                error('FastAPIClient:httpError', 'HTTP %d: %s', httpStatus, errMsg);
             end
             data = FastAPIClient.normalizeJsonResponse(bodyData);
         end
@@ -320,9 +394,14 @@ classdef FastAPIClient < handle
             opts     = HTTPOptions('ConnectTimeout', timeout);
             resp     = req.send(URI(url), opts);
 
+            httpStatus = double(resp.StatusCode);
             bodyData = resp.Body.Data;
             if isa(bodyData, 'uint8')
                 bodyData = char(bodyData');
+            end
+            if httpStatus >= 400
+                errMsg = FastAPIClient.extractErrorMessage(bodyData, httpStatus);
+                error('FastAPIClient:httpError', 'HTTP %d: %s', httpStatus, errMsg);
             end
             data = FastAPIClient.normalizeJsonResponse(bodyData);
         end

@@ -66,9 +66,9 @@ classdef AuthService < handle
     end
 
     methods
-        % Fetch paginated admin project list.
+        % Fetch projects accessible by the authenticated user.
         function data = listProjects(obj, token, skip, limit)
-            Logger.debug('AuthService', 'listProjects → skip=%d  limit=%d', round(skip), round(limit));
+            Logger.debug('AuthService', 'listProjects');
             try
                 data = obj.Client.listProjects(token, skip, limit);
                 Logger.debug('AuthService', 'listProjects OK');
