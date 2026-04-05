@@ -2,11 +2,13 @@ classdef CircuitsViewModel < handle
     % CircuitsViewModel  Callbacks for the Circuits screen.
     %
     %   Loads a paginated list of circuits from the API and populates the
-    %   CircuitsTable.  Supports Prev / Next page navigation and a quick
-    %   jump to the Upload screen.
+    %   CircuitsTable.  Supports Prev / Next page navigation, row selection,
+    %   right-click context menu (Edit / Delete), and a quick jump to Upload.
 
     properties (Access = private)
         App
+        RowCircuitIds  cell = {}   % maps table row index → circuit_id
+        RowCircuits    cell = {}   % maps table row index → full circuit struct
     end
 
     properties
@@ -23,6 +25,8 @@ classdef CircuitsViewModel < handle
             app = obj.App;
             if ~app.State.isAuthenticated() || ~app.State.hasProject()
                 app.CircuitsTable.Data = {};
+                obj.RowCircuitIds = {};
+                obj.RowCircuits   = {};
                 obj.updatePageLabel();
                 return;
             end
@@ -34,6 +38,8 @@ classdef CircuitsViewModel < handle
                 circuits = JsonHelper.extractList(data, 'circuits');
                 if isempty(circuits)
                     app.CircuitsTable.Data = {};
+                    obj.RowCircuitIds = {};
+                    obj.RowCircuits   = {};
                     obj.updatePageLabel();
                     return;
                 end
@@ -42,14 +48,18 @@ classdef CircuitsViewModel < handle
                 end
                 n = numel(circuits);
                 tableData = cell(n, 8);
+                ids   = cell(1, n);
+                cdata = cell(1, n);
                 for i = 1:n
                     c = circuits{i};
+                    tableData{i,1} = obj.PageSkip + i;  % row index
                     if isstruct(c)
-                        tableData{i,1} = char(string(JsonHelper.pick(c, {'circuit_id','id'})));
+                        cid = char(string(JsonHelper.pick(c, {'circuit_id','id'})));
+                        ids{i}   = cid;
+                        cdata{i} = c;
                         tableData{i,2} = char(string(JsonHelper.pick(c, {'name','circuit_name'})));
                         fmt = JsonHelper.safeField(c, 'format', '');
                         tableData{i,3} = char(string(fmt));
-                        % Derive OpenQASM version from format field
                         fmtStr = lower(char(string(fmt)));
                         if contains(fmtStr, '3')
                             tableData{i,4} = '3.0';
@@ -67,6 +77,8 @@ classdef CircuitsViewModel < handle
                         tableData{i,8} = char(string(JsonHelper.safeField(c, 'created_at', '')));
                     end
                 end
+                obj.RowCircuitIds = ids;
+                obj.RowCircuits   = cdata;
                 app.CircuitsTable.Data = tableData;
                 app.logEvent('API', sprintf('listCircuitsPaged → %d circuits loaded', n));
             catch ME
@@ -88,9 +100,284 @@ classdef CircuitsViewModel < handle
         function onGoToUpload(obj)
             obj.App.onSelectSection('Upload');
         end
+
+        function onCellSelected(obj, src, evt)
+            % Select the entire row when any cell is clicked
+            if isempty(evt.Indices); return; end
+            row = evt.Indices(1,1);
+            src.Selection = row;
+        end
+
+        function onContextEdit(obj)
+            % Triggered from context menu — edit the selected row
+            row = obj.getSelectedRow();
+            if row > 0; obj.onEditCircuit(row); end
+        end
+
+        function onContextDelete(obj)
+            % Triggered from context menu — delete the selected row
+            row = obj.getSelectedRow();
+            if row > 0; obj.onDeleteCircuit(row); end
+        end
+
+        function onEditCircuit(obj, row)
+            % Show professional edit dialog (matches Edit Project style)
+            app = obj.App;
+            if row > numel(obj.RowCircuits); return; end
+            c   = obj.RowCircuits{row};
+            cid = obj.RowCircuitIds{row};
+
+            curName = char(string(JsonHelper.pick(c, {'name','circuit_name'})));
+            curCat  = char(string(JsonHelper.safeField(c, 'category', '')));
+            curSrc  = char(string(JsonHelper.safeField(c, 'source', '')));
+            curFmt  = char(string(JsonHelper.safeField(c, 'format', '')));
+            curQb   = JsonHelper.safeField(c, 'num_qubits', '');
+            if isnumeric(curQb); curQb = num2str(curQb); else; curQb = char(string(curQb)); end
+            curDp   = JsonHelper.safeField(c, 'depth', '');
+            if isnumeric(curDp); curDp = num2str(curDp); else; curDp = char(string(curDp)); end
+
+            % Fetch full circuit record (includes raw_content)
+            curContent = '';
+            try
+                full = app.CircuitSvc.getCircuit(cid, app.State.authToken);
+                curContent = char(string(JsonHelper.safeField(full, 'raw_content', '')));
+            catch
+                % raw_content not available — leave empty
+            end
+
+            % ── Build modal dialog ───────────────────────────────────
+            figPos = app.UIFigure.Position;
+            dlgW = 560; dlgH = 680;
+            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
+            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
+
+            dlg = uifigure( ...
+                'Name', 'Edit Circuit', ...
+                'Position', [dlgX dlgY dlgW dlgH], ...
+                'WindowStyle', 'modal', ...
+                'Resize', 'off', ...
+                'Color', [0.95 0.96 0.98]);
+
+            outerGrid = uigridlayout(dlg, [3 3]);
+            outerGrid.RowHeight     = {16, '1x', 16};
+            outerGrid.ColumnWidth   = {24, '1x', 24};
+            outerGrid.Padding       = [0 0 0 0];
+            outerGrid.RowSpacing    = 0;
+            outerGrid.ColumnSpacing = 0;
+            outerGrid.BackgroundColor = [0.95 0.96 0.98];
+
+            card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', [1 1 1], ...
+                'HighlightColor', [0.88 0.89 0.92], ...
+                'BorderColor', [0.88 0.89 0.92]);
+            card.Layout.Row = 2; card.Layout.Column = 2;
+
+            cg = uigridlayout(card, [14 1]);
+            cg.RowHeight = {28, 18, 10, ...
+                            16, 34, ...
+                            16, 34, ...
+                            16, 34, ...
+                            28, ...
+                            16, '1x', ...
+                            42, 18};
+            cg.ColumnWidth = {'1x'};
+            cg.Padding     = [36 24 36 20];
+            cg.RowSpacing  = 2;
+            cg.BackgroundColor = [1 1 1];
+
+            % Title + subtitle
+            tmp = uilabel(cg, 'Text', 'Edit Circuit', ...
+                'FontSize', 19, 'FontWeight', 'bold', ...
+                'FontColor', [0.15 0.18 0.24], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
+            tmp.Layout.Row = 1;
+
+            tmp = uilabel(cg, 'Text', 'Update circuit metadata and QASM content', ...
+                'FontSize', 11, 'FontColor', [0.45 0.50 0.58], ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
+            tmp.Layout.Row = 2;
+
+            % Circuit Name
+            tmp = uilabel(cg, 'Text', 'Circuit Name', ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+            tmp.Layout.Row = 4;
+            nameField = uieditfield(cg, 'text', 'Value', curName, 'FontSize', 13);
+            nameField.Layout.Row = 5;
+
+            % Category + Format (side by side — labels row)
+            cfLblGrid = uigridlayout(cg, [1 2]);
+            cfLblGrid.Layout.Row = 6;
+            cfLblGrid.ColumnWidth = {'1x', '1x'}; cfLblGrid.Padding = [0 0 0 0];
+            cfLblGrid.ColumnSpacing = 12; cfLblGrid.BackgroundColor = [1 1 1];
+            uilabel(cfLblGrid, 'Text', 'Category', ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+            uilabel(cfLblGrid, 'Text', 'Format', ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+
+            % Category + Format (side by side — fields row)
+            cfGrid = uigridlayout(cg, [1 2]);
+            cfGrid.Layout.Row = 7;
+            cfGrid.ColumnWidth = {'1x', '1x'}; cfGrid.Padding = [0 0 0 0];
+            cfGrid.ColumnSpacing = 12; cfGrid.BackgroundColor = [1 1 1];
+
+            catItems = {'Oracle', 'Fourier', 'Sampling', 'Optimization', ...
+                'Search', 'Simulation', 'Entanglement', 'Arithmetic', ...
+                'QEC', 'ML', 'Other'};
+            catField = uidropdown(cfGrid, 'Items', catItems, 'Editable', 'on', 'FontSize', 13);
+            if ~isempty(curCat); catField.Value = curCat; end
+
+            fmtItems     = {'OpenQASM 2.0', 'OpenQASM 3', 'Qiskit JSON', 'MATLAB struct'};
+            fmtItemsData = {'qasm2',        'qasm3',      'json',        'matlab'};
+            fmtField = uidropdown(cfGrid, ...
+                'Items', fmtItems, 'ItemsData', fmtItemsData, 'FontSize', 13);
+            if ismember(curFmt, fmtItemsData)
+                fmtField.Value = curFmt;
+            else
+                fmtField.Value = 'qasm2';
+            end
+
+            % Source
+            tmp = uilabel(cg, 'Text', 'Source', ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+            tmp.Layout.Row = 8;
+            srcField = uieditfield(cg, 'text', 'Value', curSrc, 'FontSize', 13);
+            srcField.Layout.Row = 9;
+
+            % Read-only info: Qubits / Depth
+            infoGrid = uigridlayout(cg, [1 4]);
+            infoGrid.Layout.Row = 10;
+            infoGrid.ColumnWidth = {'fit', 'fit', 'fit', '1x'};
+            infoGrid.Padding = [0 0 0 0]; infoGrid.ColumnSpacing = 6;
+            infoGrid.BackgroundColor = [1 1 1];
+            uilabel(infoGrid, 'Text', 'Qubits', 'FontSize', 11, 'FontColor', [0.45 0.50 0.58]);
+            uilabel(infoGrid, 'Text', curQb, 'FontSize', 11, 'FontColor', [0.20 0.40 0.75], 'FontWeight', 'bold');
+            uilabel(infoGrid, 'Text', 'Depth', 'FontSize', 11, 'FontColor', [0.45 0.50 0.58]);
+            uilabel(infoGrid, 'Text', curDp, 'FontSize', 11, 'FontColor', [0.20 0.40 0.75], 'FontWeight', 'bold');
+
+            % Circuit Content (QASM editor)
+            tmp = uilabel(cg, 'Text', 'Circuit Content (OpenQASM)', ...
+                'FontSize', 11, 'FontWeight', 'bold', ...
+                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+            tmp.Layout.Row = 11;
+            contentField = uitextarea(cg, 'Value', curContent, ...
+                'FontSize', 12, 'FontName', 'Courier New');
+            contentField.Layout.Row = 12;
+
+            % Button bar
+            btnBar = uigridlayout(cg, [1 2]);
+            btnBar.Layout.Row = 13;
+            btnBar.ColumnWidth = {'1x', '1x'};
+            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
+            btnBar.BackgroundColor = [1 1 1];
+
+            cancelBtn = uibutton(btnBar, 'Text', [char(10006) ' Cancel'], ...
+                'ButtonPushedFcn', @(~,~)delete(dlg));
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+            app.styleBtn(cancelBtn, 'ghost');
+
+            saveBtn = uibutton(btnBar, 'Text', [char(10004) ' Save'], ...
+                'ButtonPushedFcn', @(~,~)obj.doSaveCircuit( ...
+                    dlg, statusLbl, cid, nameField, catField, srcField, ...
+                    fmtField, contentField, row));
+            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 2;
+            app.styleBtn(saveBtn, 'primary');
+
+            % Status label
+            statusLbl = uilabel(cg, 'Text', '', ...
+                'FontSize', 11, 'FontColor', [0.84 0.18 0.18], ...
+                'WordWrap', 'on', 'HorizontalAlignment', 'center');
+            statusLbl.Layout.Row = 14;
+        end
+
+        function onDeleteCircuit(obj, row)
+            % Show delete confirmation dialog
+            app = obj.App;
+            if row > numel(obj.RowCircuitIds); return; end
+            cid  = obj.RowCircuitIds{row};
+            cname = '';
+            if row <= numel(obj.RowCircuits)
+                cname = char(string(JsonHelper.pick(obj.RowCircuits{row}, {'name','circuit_name'})));
+            end
+
+            answer = uiconfirm(app.UIFigure, ...
+                sprintf('Delete circuit "%s"?\n\nThis action cannot be undone.', cname), ...
+                'Delete Circuit', ...
+                'Options', {'Cancel', 'Delete'}, ...
+                'DefaultOption', 'Cancel', ...
+                'CancelOption', 'Cancel', ...
+                'Icon', 'warning');
+            if strcmp(answer, 'Delete')
+                obj.doDeleteCircuit(cid, row);
+            end
+        end
     end
 
     methods (Access = private)
+        function row = getSelectedRow(obj)
+            % Return the currently selected table row, or 0 if none
+            app = obj.App;
+            sel = app.CircuitsTable.Selection;
+            if isempty(sel)
+                row = 0;
+            else
+                row = sel(1);
+            end
+        end
+
+        function doSaveCircuit(obj, dlg, statusLbl, cid, nameField, catField, srcField, fmtField, contentField, row)
+            app = obj.App;
+            patch = struct();
+            patch.name     = char(strtrim(nameField.Value));
+            patch.category = char(strtrim(catField.Value));
+            patch.source   = char(strtrim(srcField.Value));
+            patch.format   = char(fmtField.Value);
+            % Join textarea lines into single string
+            cVal = contentField.Value;
+            if iscell(cVal)
+                patch.raw_content = char(strjoin(string(cVal), newline));
+            else
+                patch.raw_content = char(cVal);
+            end
+
+            if isempty(patch.name)
+                statusLbl.Text = 'Circuit name cannot be empty.';
+                return;
+            end
+
+            try
+                statusLbl.Text = 'Saving...';
+                statusLbl.FontColor = [0.3 0.3 0.6];
+                drawnow;
+                app.CircuitSvc.updateCircuit(cid, patch, app.State.authToken);
+                app.logEvent('API', sprintf('Circuit updated: %s', cid));
+                delete(dlg);
+                obj.onLoadCircuits();
+            catch ME
+                statusLbl.Text = sprintf('Save failed: %s', ME.message);
+                statusLbl.FontColor = [0.7 0.15 0.15];
+                app.logEvent('ERROR', sprintf('updateCircuit FAILED: %s', ME.message));
+            end
+        end
+
+        function doDeleteCircuit(obj, cid, row)
+            app = obj.App;
+            try
+                app.showLoading('Deleting circuit...');
+                app.CircuitSvc.deleteCircuit(cid, app.State.authToken);
+                app.logEvent('API', sprintf('Circuit deleted: %s', cid));
+                app.hideLoading();
+                obj.onLoadCircuits();
+            catch ME
+                app.hideLoading();
+                app.logEvent('ERROR', sprintf('deleteCircuit FAILED: %s', ME.message));
+                app.showError('Delete Circuit', ME);
+            end
+        end
+
         function updatePageLabel(obj)
             app = obj.App;
             if isempty(app.CircuitsPageLabel) || ~isvalid(app.CircuitsPageLabel)
@@ -98,11 +385,9 @@ classdef CircuitsViewModel < handle
             end
             pageNum = floor(obj.PageSkip / obj.PageLimit) + 1;
             app.CircuitsPageLabel.Text = sprintf('Page %d', pageNum);
-            % Enable/disable prev button
             if ~isempty(app.CircuitsPrevBtn) && isvalid(app.CircuitsPrevBtn)
                 app.CircuitsPrevBtn.Enable = obj.PageSkip > 0;
             end
-            % Disable next if fewer rows than limit
             if ~isempty(app.CircuitsNextBtn) && isvalid(app.CircuitsNextBtn)
                 tData = app.CircuitsTable.Data;
                 if isempty(tData)

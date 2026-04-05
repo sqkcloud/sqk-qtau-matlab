@@ -1,18 +1,19 @@
 % AnalysisTab  Populates the Analysis section panel.
 %
 %   Layout:
-%     Row 1 (44 px):   Full-width Analyze Circuit button.
+%     Row 1 (34 px):   Circuit selector + Analyze button.
 %     Row 2 ('1x'):    Extracted Features tree + annotation (left) |
 %                      QASMBench Similarity table + comparison notes (right).
-%     Row 3 (72 px):   Action bar — Next: Backends / Back: Upload.
+%     Row 3 ('1x'):    Quantum Volume heatmap (full width).
+%     Row 4 (72 px):   Action bar — Next: Backends / Back: Upload.
 %
 %   All visible strings come from resources/labels.properties via Labels.
 function AnalysisScreen(app)
     Logger.info('AnalysisScreen', 'Building Analysis tab UI');
     t = app.createSectionPage('Analysis');
 
-    g = uigridlayout(t, [3 3]);
-    g.RowHeight     = {34, '1x', 72};
+    g = uigridlayout(t, [4 3]);
+    g.RowHeight     = {34, '1x', '1x', 72};
     g.ColumnWidth   = {'1x', 6, '1.15x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
@@ -69,8 +70,8 @@ function AnalysisScreen(app)
     p2 = uipanel(g, 'Title', Labels.get('analysis_panel_similarity'));
     p2.Layout.Row = 2; p2.Layout.Column = 3; p2.BackgroundColor = [1 1 1];
 
-    g2 = uigridlayout(p2, [2 1]);
-    g2.RowHeight = {'1x', 96}; g2.Padding = [12 10 12 10]; g2.BackgroundColor = [1 1 1];
+    g2 = uigridlayout(p2, [1 1]);
+    g2.RowHeight = {'1x'}; g2.Padding = [12 10 12 10]; g2.BackgroundColor = [1 1 1];
 
     app.SimilarityTable = uitable(g2);
     app.SimilarityTable.ColumnName = Labels.cols('analysis_table_cols_similarity', ...
@@ -79,13 +80,36 @@ function AnalysisScreen(app)
     app.SimilarityTable.Layout.Row = 1; app.SimilarityTable.Layout.Column = 1;
     app.styleTable(app.SimilarityTable);
 
-    app.AnalysisCompareArea = uitextarea(g2, 'Editable', 'off');
-    app.AnalysisCompareArea.Layout.Row = 2; app.AnalysisCompareArea.FontSize = 12;
-    app.AnalysisCompareArea.Value = {Labels.get('analysis_similarity_initial')};
+    % ── Quantum Volume heatmap (full width) ──────────────────────────────────
+    qvPanel = uipanel(g, 'Title', Labels.get('analysis_panel_qv', ...
+        'Quantum Volume — Circuit Depth vs Width'));
+    qvPanel.Layout.Row = 3; qvPanel.Layout.Column = [1 3];
+    qvPanel.BackgroundColor = [1 1 1];
+    qvPanel.Scrollable = 'on';
+
+    qvGrid = uigridlayout(qvPanel, [1 2]);
+    qvGrid.ColumnWidth = {'1x', 160};
+    qvGrid.RowHeight   = {520};
+    qvGrid.Padding = [10 8 10 8]; qvGrid.BackgroundColor = [1 1 1];
+
+    app.QVHeatmapAxes = uiaxes(qvGrid);
+    app.QVHeatmapAxes.Layout.Row = 1; app.QVHeatmapAxes.Layout.Column = 1;
+    app.styleAxes(app.QVHeatmapAxes);
+    title(app.QVHeatmapAxes, Labels.get('analysis_qv_title', ...
+        'Circuit Depth vs Width (Avg Result Fidelity)'));
+    xlabel(app.QVHeatmapAxes, Labels.get('analysis_qv_xlabel', 'Circuit Depth'));
+    ylabel(app.QVHeatmapAxes, Labels.get('analysis_qv_ylabel', 'Circuit Width (Qubits)'));
+
+    app.QVInfoLabel = uilabel(qvGrid, ...
+        'Text', Labels.get('analysis_qv_initial', ...
+            'Run analysis to populate the Quantum Volume chart.'), ...
+        'FontSize', 12, 'FontColor', [0.45 0.50 0.58], ...
+        'WordWrap', 'on', 'VerticalAlignment', 'top');
+    app.QVInfoLabel.Layout.Row = 1; app.QVInfoLabel.Layout.Column = 2;
 
     % ── Action bar ────────────────────────────────────────────────────────────
     exportPanel = uipanel(g, 'Title', Labels.get('analysis_panel_decision'));
-    exportPanel.Layout.Row = 3; exportPanel.Layout.Column = [1 3];
+    exportPanel.Layout.Row = 4; exportPanel.Layout.Column = [1 3];
     exportPanel.BackgroundColor = [0.94 0.97 1.00];
 
     eg = uigridlayout(exportPanel, [1 3]);

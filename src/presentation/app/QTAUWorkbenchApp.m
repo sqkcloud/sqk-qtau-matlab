@@ -157,6 +157,9 @@ classdef QTAUWorkbenchApp < handle
         CircuitsPrevBtn             % Prev page button
         CircuitsNextBtn             % Next page button
         CircuitsUploadBtn           % Upload button (navigates to Upload)
+        CircuitsPopupPanel          % Custom right-click popup panel
+        CircuitsPopupEditBtn        % Edit button inside popup
+        CircuitsPopupDeleteBtn      % Delete button inside popup
     end
 
     % ── Upload tab ────────────────────────────────────────────────────────────
@@ -184,6 +187,8 @@ classdef QTAUWorkbenchApp < handle
         AnalysisFeatureArea     % annotation text beside the tree
         SimilarityTable
         AnalysisCompareArea     % detailed comparison notes
+        QVHeatmapAxes              % Quantum Volume heatmap axes (Depth x Width)
+        QVInfoLabel                % QV summary annotation label
     end
 
     % ── Backends tab ──────────────────────────────────────────────────────────
@@ -798,7 +803,7 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function onFigureMouseDown(app)
-            % Hide the project popup on any left-click outside it.
+            % Hide popup menus on any left-click outside them.
             if ~isempty(app.ProjectsPopupPanel) && isvalid(app.ProjectsPopupPanel) ...
                     && strcmp(app.ProjectsPopupPanel.Visible, 'on')
                 cp = app.UIFigure.CurrentPoint;
@@ -808,6 +813,79 @@ classdef QTAUWorkbenchApp < handle
                     app.hideProjectPopupMenu();
                 end
             end
+            if ~isempty(app.CircuitsPopupPanel) && isvalid(app.CircuitsPopupPanel) ...
+                    && strcmp(app.CircuitsPopupPanel.Visible, 'on')
+                cp = app.UIFigure.CurrentPoint;
+                pp = app.CircuitsPopupPanel.Position;
+                if cp(1) < pp(1) || cp(1) > pp(1)+pp(3) || ...
+                   cp(2) < pp(2) || cp(2) > pp(2)+pp(4)
+                    app.hideCircuitsPopupMenu();
+                end
+            end
+        end
+
+        % ── Circuits popup (same pattern as Projects popup) ─────────────
+        function buildCircuitsPopupMenu(app)
+            popW = 160; popH = 72;
+            app.CircuitsPopupPanel = uipanel(app.UIFigure, ...
+                'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', [1 1 1], ...
+                'BorderColor', [0.78 0.80 0.84], ...
+                'Position', [0 0 popW popH], ...
+                'Visible', 'off');
+
+            pg = uigridlayout(app.CircuitsPopupPanel, [2 1]);
+            pg.RowHeight   = {'1x', '1x'};
+            pg.ColumnWidth = {'1x'};
+            pg.Padding     = [4 4 4 4];
+            pg.RowSpacing  = 2;
+            pg.BackgroundColor = [1 1 1];
+
+            app.CircuitsPopupEditBtn = uibutton(pg, 'Text', ...
+                [' ' char(9999) '  ' Labels.get('circuit_ctx_edit', 'Edit')], ...
+                'HorizontalAlignment', 'left', ...
+                'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~)app.onCircuitsPopupEdit());
+            app.CircuitsPopupEditBtn.Layout.Row = 1;
+            app.CircuitsPopupEditBtn.BackgroundColor = [1 1 1];
+            app.CircuitsPopupEditBtn.FontColor = [0.15 0.18 0.24];
+
+            app.CircuitsPopupDeleteBtn = uibutton(pg, 'Text', ...
+                [' ' char(10005) '  ' Labels.get('circuit_ctx_delete', 'Delete')], ...
+                'HorizontalAlignment', 'left', ...
+                'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~)app.onCircuitsPopupDelete());
+            app.CircuitsPopupDeleteBtn.Layout.Row = 2;
+            app.CircuitsPopupDeleteBtn.BackgroundColor = [1 1 1];
+            app.CircuitsPopupDeleteBtn.FontColor = [0.70 0.15 0.15];
+        end
+
+        function showCircuitsPopupMenu(app, x, y)
+            if isempty(app.CircuitsPopupPanel) || ~isvalid(app.CircuitsPopupPanel)
+                app.buildCircuitsPopupMenu();
+            end
+            popW = 160; popH = 72;
+            figPos = app.UIFigure.Position;
+            px = min(x, figPos(3) - popW - 4);
+            py = max(y - popH, 4);
+            app.CircuitsPopupPanel.Position = [px py popW popH];
+            app.CircuitsPopupPanel.Visible = 'on';
+        end
+
+        function hideCircuitsPopupMenu(app)
+            if ~isempty(app.CircuitsPopupPanel) && isvalid(app.CircuitsPopupPanel)
+                app.CircuitsPopupPanel.Visible = 'off';
+            end
+        end
+
+        function onCircuitsPopupEdit(app)
+            app.hideCircuitsPopupMenu();
+            app.CircuitsVm.onContextEdit();
+        end
+
+        function onCircuitsPopupDelete(app)
+            app.hideCircuitsPopupMenu();
+            app.CircuitsVm.onContextDelete();
         end
 
         function showEditProjectDialog(app, projectId, projName, projDesc, projTags)

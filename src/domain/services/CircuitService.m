@@ -122,6 +122,19 @@ classdef CircuitService < handle
             end
         end
 
+        % Update circuit metadata (name, category, source).
+        function data = updateCircuit(obj, circuitId, patch, token)
+            ep = sprintf('/api/circuits/%s', char(circuitId));
+            Logger.info('CircuitService', 'updateCircuit → PATCH %s', ep);
+            try
+                data = obj.Client.patchAuthJson(ep, patch, token);
+                Logger.info('CircuitService', 'updateCircuit → circuit updated: %s', char(circuitId));
+            catch ME
+                Logger.error('CircuitService', 'updateCircuit FAILED (circuit: %s): %s', char(circuitId), ME.message);
+                rethrow(ME);
+            end
+        end
+
         % Permanently delete a circuit.
         function data = deleteCircuit(obj, circuitId, token)
             ep = sprintf('/api/circuits/%s', char(circuitId));

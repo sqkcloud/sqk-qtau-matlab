@@ -13,7 +13,7 @@ function WelcomeScreen(app)
 
     % ── Root grid: 2 rows × 1 col ───────────────────────────────────────────
     g = uigridlayout(t, [2 1]);
-    g.RowHeight     = {136, '1x'};
+    g.RowHeight     = {72, '1x'};
     g.ColumnWidth   = {'1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
@@ -23,33 +23,33 @@ function WelcomeScreen(app)
     hero = uipanel(g, 'Title', Labels.get('welcome_panel_project_launch'));
     hero.Layout.Row = 1; hero.Layout.Column = 1;
     hero.BackgroundColor = [1 1 1];
-    hero.FontWeight = 'bold';
-    hg = uigridlayout(hero, [3 5]);
-    hg.RowHeight   = {30, 24, 34};
+    hg = uigridlayout(hero, [1 5]);
+    hg.RowHeight   = {34};
     hg.ColumnWidth = {'1x', 110, 110, 110, 110};
-    hg.Padding     = [18 14 18 14]; hg.RowSpacing = 0; hg.BackgroundColor = [1 1 1];
+    hg.Padding     = [18 10 18 10]; hg.ColumnSpacing = 8; hg.BackgroundColor = [1 1 1];
 
     titleLabel = uilabel(hg, 'Text', Labels.get('welcome_hero_title'));
-    titleLabel.FontSize = 17; titleLabel.FontWeight = 'bold';
-    titleLabel.Layout.Row = 1; titleLabel.Layout.Column = [1 5]; titleLabel.WordWrap = 'on';
+    titleLabel.FontSize = 14;
+    titleLabel.Layout.Row = 1; titleLabel.Layout.Column = 1;
+    titleLabel.VerticalAlignment = 'center'; titleLabel.WordWrap = 'on';
 
     btn1 = uibutton(hg, 'Text', [char(10010) ' ' Labels.get('welcome_btn_new_project')]);
-    btn1.Layout.Row = 3; btn1.Layout.Column = 2; app.styleBtn(btn1, 'primary');
+    btn1.Layout.Row = 1; btn1.Layout.Column = 2; app.styleBtn(btn1, 'primary');
     btn1.FontSize = 14;
     btn1.ButtonPushedFcn = @(~,~)app.WelcomeVm.onNewProject();
 
     btn2 = uibutton(hg, 'Text', [char(9776) ' ' Labels.get('welcome_btn_load_project')]);
-    btn2.Layout.Row = 3; btn2.Layout.Column = 3; app.styleBtn(btn2, 'ghost');
+    btn2.Layout.Row = 1; btn2.Layout.Column = 3; app.styleBtn(btn2, 'ghost');
     btn2.FontSize = 14;
     btn2.ButtonPushedFcn = @(~,~)app.WelcomeVm.onLoadProject();
 
     btn3 = uibutton(hg, 'Text', [char(8505) ' ' Labels.get('welcome_btn_documentation')]);
-    btn3.Layout.Row = 3; btn3.Layout.Column = 4; app.styleBtn(btn3, 'ghost');
+    btn3.Layout.Row = 1; btn3.Layout.Column = 4; app.styleBtn(btn3, 'ghost');
     btn3.FontSize = 14;
     btn3.ButtonPushedFcn = @(~,~)web(char(AppConfig.get('docs_url', 'https://docs.quantum.ibm.com')), '-browser');
 
     btn4 = uibutton(hg, 'Text', [char(9881) ' ' Labels.get('welcome_btn_ibm_account')]);
-    btn4.Layout.Row = 3; btn4.Layout.Column = 5; app.styleBtn(btn4, 'secondary');
+    btn4.Layout.Row = 1; btn4.Layout.Column = 5; app.styleBtn(btn4, 'secondary');
     btn4.FontSize = 14;
     btn4.ButtonPushedFcn = @(~,~)app.onSelectSection('Settings');
 
@@ -57,10 +57,9 @@ function WelcomeScreen(app)
     projPanel = uipanel(g, 'Title', Labels.get('welcome_panel_recent_projects'));
     projPanel.Layout.Row = 2; projPanel.Layout.Column = 1;
     projPanel.BackgroundColor = [1 1 1];
-    projPanel.FontWeight = 'bold';
 
     pg = uigridlayout(projPanel, [4 1]);
-    pg.RowHeight = {42, 34, '1x', 34};
+    pg.RowHeight = {42, '1x', 34};
     pg.ColumnWidth = {'1x'};
     pg.Padding = [16 12 16 12]; pg.RowSpacing = 8;
     pg.BackgroundColor = [1 1 1];
@@ -69,7 +68,7 @@ function WelcomeScreen(app)
     activeBox = uipanel(pg, 'Title', '');
     activeBox.Layout.Row = 1; activeBox.Layout.Column = 1;
     activeBox.BackgroundColor = [0.93 0.96 1.00];
-    activeBox.BorderType = 'line';
+    activeBox.BorderType = 'none';
     abg = uigridlayout(activeBox, [1 2]);
     abg.ColumnWidth = {'fit', '1x'};
     abg.Padding = [12 6 12 6]; abg.ColumnSpacing = 8;
@@ -83,23 +82,12 @@ function WelcomeScreen(app)
     app.ActiveProjectLabel.Layout.Row = 1; app.ActiveProjectLabel.Layout.Column = 2;
     app.ActiveProjectLabel.VerticalAlignment = 'center';
 
-    % Top bar: user info (full width)
-    topBar = uigridlayout(pg, [1 1]);
-    topBar.Layout.Row = 2; topBar.Layout.Column = 1;
-    topBar.ColumnWidth = {'1x'};
-    topBar.Padding = [0 0 0 0]; topBar.BackgroundColor = [1 1 1];
-
-    app.UserInfoArea = uilabel(topBar, 'Text', Labels.get('welcome_user_info_hint'), ...
-        'FontSize', 12, 'FontColor', [0.38 0.46 0.58], 'WordWrap', 'on');
-    app.UserInfoArea.Layout.Row = 1; app.UserInfoArea.Layout.Column = 1;
-    app.UserInfoArea.VerticalAlignment = 'center';
-
     % Projects table
     app.ProjectsTable = uitable(pg);
     app.ProjectsTable.ColumnName = Labels.cols('welcome_table_cols_projects', ...
         {'Name','Tags','Member Count','Created At','Description'});
     app.ProjectsTable.Data = {};
-    app.ProjectsTable.Layout.Row = 3; app.ProjectsTable.Layout.Column = 1;
+    app.ProjectsTable.Layout.Row = 2; app.ProjectsTable.Layout.Column = 1;
     app.ProjectsTable.ColumnWidth = {200, 180, 100, 200, '1x'};
     app.styleTable(app.ProjectsTable);
     % Left-align text columns, centre numeric/date columns
@@ -118,7 +106,7 @@ function WelcomeScreen(app)
 
     % Pagination bar: Prev | Page X of Y | Next
     pageBar = uigridlayout(pg, [1 3]);
-    pageBar.Layout.Row = 4; pageBar.Layout.Column = 1;
+    pageBar.Layout.Row = 3; pageBar.Layout.Column = 1;
     pageBar.ColumnWidth = {90, '1x', 90};
     pageBar.Padding = [0 0 0 0]; pageBar.BackgroundColor = [1 1 1];
 

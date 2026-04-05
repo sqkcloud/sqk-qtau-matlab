@@ -25,7 +25,7 @@ function CircuitsScreen(app)
 
     app.CircuitsTable = uitable(tg, ...
         'ColumnName', { ...
-            Labels.get('circuits_col_id',       'Circuit ID'), ...
+            '', ...
             Labels.get('circuits_col_name',     'Circuit Name'), ...
             Labels.get('circuits_col_format',   'Format'), ...
             Labels.get('circuits_col_version',  'OpenQASM'), ...
@@ -33,11 +33,19 @@ function CircuitsScreen(app)
             Labels.get('circuits_col_qubits',   'Qubits'), ...
             Labels.get('circuits_col_depth',    'Depth'), ...
             Labels.get('circuits_col_created',  'Created')}, ...
-        'ColumnWidth', {'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'}, ...
-        'RowName', {});
+        'ColumnWidth', {36, 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'}, ...
+        'RowName', {}, ...
+        'SelectionType', 'row', ...
+        'CellSelectionCallback', @(src,evt)app.CircuitsVm.onCellSelected(src, evt));
     app.CircuitsTable.Layout.Row = 1; app.CircuitsTable.Layout.Column = 1;
     app.CircuitsTable.FontSize = 12;
     app.CircuitsTable.ColumnSortable = true;
+    addStyle(app.CircuitsTable, uistyle('HorizontalAlignment','center'), 'column', 1);
+
+    % Custom right-click popup (same pattern as Welcome/Projects)
+    app.buildCircuitsPopupMenu();
+    prevFcn = app.UIFigure.WindowButtonDownFcn;
+    app.UIFigure.WindowButtonDownFcn = @(src, evt) handleCircuitsMouseDown(app, prevFcn, src, evt);
 
     % ── Pagination + Upload bar ───────────────────────────────────────────
     barPanel = uipanel(g, 'Title', '');
@@ -86,4 +94,41 @@ function CircuitsScreen(app)
     app.CircuitsUploadBtn.Tooltip = 'Navigate to Upload screen';
 
     Logger.info('CircuitsScreen', 'Circuits tab UI built successfully');
+end
+
+% ── Local helper: figure-level mouse-down handler for right-click popup ──
+function handleCircuitsMouseDown(app, prevFcn, src, evt)
+    % Forward to any previously registered handler first
+    if ~isempty(prevFcn)
+        try prevFcn(src, evt); catch; end
+    end
+
+    cp = app.UIFigure.CurrentPoint;
+
+    % If the popup is visible, only hide it when clicking OUTSIDE
+    if ~isempty(app.CircuitsPopupPanel) && isvalid(app.CircuitsPopupPanel) ...
+            && strcmp(app.CircuitsPopupPanel.Visible, 'on')
+        pp = app.CircuitsPopupPanel.Position;
+        insidePopup = cp(1) >= pp(1) && cp(1) <= pp(1)+pp(3) && ...
+                      cp(2) >= pp(2) && cp(2) <= pp(2)+pp(4);
+        if insidePopup
+            return;  % let the button handle the click
+        end
+        app.hideCircuitsPopupMenu();
+    end
+
+    % Detect right-click (SelectionType == 'alt') on the circuits table
+    try
+        selType = app.UIFigure.SelectionType;
+    catch
+        selType = 'normal';
+    end
+    if ~strcmp(selType, 'alt'); return; end
+
+    % Check the table has a valid selection
+    sel = app.CircuitsTable.Selection;
+    if isempty(sel); return; end
+
+    % Show custom popup at the cursor position
+    app.showCircuitsPopupMenu(cp(1), cp(2));
 end

@@ -298,7 +298,7 @@ classdef WelcomeViewModel < handle
                 % Update Welcome screen and hide auth overlay
                 app.updateWelcomeAuthButtons();
                 app.hideAuthOverlay();
-                app.UserInfoArea.Text = sprintf('Logged in as: %s', char(app.State.currentUser));
+                if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
 
                 % Auto-fetch projects
                 obj.CurrentPage = 1;
@@ -331,7 +331,7 @@ classdef WelcomeViewModel < handle
                 app.logEvent('AUTH', sprintf('Logout OK — user: %s', prevUser));
                 app.updateWelcomeAuthButtons();
                 app.showAuthOverlay();
-                app.UserInfoArea.Text = Labels.get('welcome_user_info_hint');
+                if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
                 app.ActiveProjectLabel.Text = Labels.get('welcome_active_project_none', 'None');
                 if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
                     app.UploadActiveProjectLabel.Text = Labels.get('upload_label_no_project');
@@ -391,7 +391,7 @@ classdef WelcomeViewModel < handle
                 app.hideLoading();
             catch ME
                 app.hideLoading();
-                app.UserInfoArea.Text = sprintf('Project fetch failed: %s', ME.message);
+                if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
                 app.showError('Fetch Projects', ME);
             end
         end
