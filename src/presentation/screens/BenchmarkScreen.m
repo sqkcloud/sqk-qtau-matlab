@@ -14,24 +14,24 @@ function BenchmarkScreen(app)
     g = uigridlayout(t, [3 3]);
     g.RowHeight     = {280, '1x', 72};
     g.ColumnWidth   = {'1.05x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Column divider (row 1) ────────────────────────────────────────────────
     div = uipanel(g, 'Title', ''); div.Layout.Row = 1; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Configuration form (left) ─────────────────────────────────────────────
     config = uipanel(g, 'Title', Labels.get('benchmark_panel_config'));
-    config.Layout.Row = 1; config.Layout.Column = 1; config.BackgroundColor = [1 1 1];
+    config.Layout.Row = 1; config.Layout.Column = 1; config.BackgroundColor = Theme.COLOR_CARD;
 
     cg = uigridlayout(config, [5 2]);
     cg.RowHeight = {40, 40, 40, 40, 34};
     cg.ColumnWidth = {180, '1x'};
-    cg.Padding = [16 12 16 12]; cg.RowSpacing = 8; cg.BackgroundColor = [1 1 1];
+    cg.Padding = [16 12 16 12]; cg.RowSpacing = 8; cg.BackgroundColor = Theme.COLOR_CARD;
 
     lbl = uilabel(cg, 'Text', Labels.get('benchmark_label_shots'));
     lbl.FontColor = [0.35 0.42 0.52];
@@ -72,20 +72,20 @@ function BenchmarkScreen(app)
 
     % ── Execution Plan (right) ────────────────────────────────────────────────
     estimate = uipanel(g, 'Title', Labels.get('benchmark_panel_plan'));
-    estimate.Layout.Row = 1; estimate.Layout.Column = 3; estimate.BackgroundColor = [1 1 1];
+    estimate.Layout.Row = 1; estimate.Layout.Column = 3; estimate.BackgroundColor = Theme.COLOR_CARD;
 
     eg = uigridlayout(estimate, [1 1]);
-    eg.Padding = [16 12 16 12]; eg.BackgroundColor = [1 1 1];
+    eg.Padding = [16 12 16 12]; eg.BackgroundColor = Theme.COLOR_CARD;
     app.BenchmarkStatusArea = uitextarea(eg, 'Editable', 'off'); app.BenchmarkStatusArea.FontSize = 12;
     app.BenchmarkStatusArea.Value = {Labels.get('benchmark_status_initial')};
 
     % ── Strategy comparison table (full width) ────────────────────────────────
     comparePanel = uipanel(g, 'Title', Labels.get('benchmark_panel_compare'));
-    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = [1 3]; comparePanel.BackgroundColor = [1 1 1];
+    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = [1 3]; comparePanel.BackgroundColor = Theme.COLOR_CARD;
     comparePanel.Scrollable = 'on';
 
     comp = uigridlayout(comparePanel, [1 1]);
-    comp.Padding = [12 10 12 10]; comp.BackgroundColor = [1 1 1];
+    comp.Padding = [12 10 12 10]; comp.BackgroundColor = Theme.COLOR_CARD;
     app.BenchmarkStrategyTable = uitable(comp);
     app.BenchmarkStrategyTable.ColumnName = Labels.cols('benchmark_table_cols_strategy', ...
         {'Strategy','Depth','2Q gates','Predicted fidelity','Comment'});

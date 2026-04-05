@@ -15,10 +15,10 @@ function UploadScreen(app)
     g = uigridlayout(t, [5 3]);
     g.RowHeight     = {0, '1x', 200, 0, 72};
     g.ColumnWidth   = {'1.15x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Active Project indicator (full width) — hidden from UI ─────────
     projPanel = uipanel(g, 'Title', '');
@@ -49,12 +49,12 @@ function UploadScreen(app)
 
     % ── Circuit upload + preview (full width) ─────────────────────────────
     dropPanel = uipanel(g, 'Title', Labels.get('upload_panel_upload_manager'));
-    dropPanel.Layout.Row = 2; dropPanel.Layout.Column = [1 3]; dropPanel.BackgroundColor = [1 1 1];
+    dropPanel.Layout.Row = 2; dropPanel.Layout.Column = [1 3]; dropPanel.BackgroundColor = Theme.COLOR_CARD;
 
     dg = uigridlayout(dropPanel, [4 4]);
     dg.RowHeight   = {26, 34, 4, '1x'};
     dg.ColumnWidth = {110, '1x', 100, 110};
-    dg.Padding = [16 12 16 12]; dg.RowSpacing = 0; dg.BackgroundColor = [1 1 1];
+    dg.Padding = [16 12 16 12]; dg.RowSpacing = 0; dg.BackgroundColor = Theme.COLOR_CARD;
 
     info = uilabel(dg, 'Text', Labels.get('upload_hero_title'));
     info.FontSize = 14; info.FontWeight = 'bold';
@@ -93,18 +93,18 @@ function UploadScreen(app)
 
     % ── Column divider ────────────────────────────────────────────────────
     div = uipanel(g, 'Title', ''); div.Layout.Row = 3; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Format and Metadata (left) ────────────────────────────────────────
     metaPanel = uipanel(g, 'Title', Labels.get('upload_panel_format_meta'));
-    metaPanel.Layout.Row = 3; metaPanel.Layout.Column = 1; metaPanel.BackgroundColor = [1 1 1];
+    metaPanel.Layout.Row = 3; metaPanel.Layout.Column = 1; metaPanel.BackgroundColor = Theme.COLOR_CARD;
 
     mg = uigridlayout(metaPanel, [4 4]);
     mg.RowHeight   = {28, 28, 28, '1x'};
     mg.ColumnWidth = {100, '1x', 80, '1x'};
     mg.Padding = [16 12 16 12]; mg.RowSpacing = 6; mg.ColumnSpacing = 8;
-    mg.BackgroundColor = [1 1 1];
+    mg.BackgroundColor = Theme.COLOR_CARD;
 
     % Row 1 — Input Format (left) + Category (right)
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_format'));
@@ -142,23 +142,23 @@ function UploadScreen(app)
 
     % ── Circuit Statistics (right) ────────────────────────────────────────
     statsPanel = uipanel(g, 'Title', Labels.get('upload_panel_stats'));
-    statsPanel.Layout.Row = 3; statsPanel.Layout.Column = 3; statsPanel.BackgroundColor = [1 1 1];
+    statsPanel.Layout.Row = 3; statsPanel.Layout.Column = 3; statsPanel.BackgroundColor = Theme.COLOR_CARD;
 
     spg = uigridlayout(statsPanel, [1 1]);
-    spg.Padding = [12 10 12 10]; spg.BackgroundColor = [1 1 1];
+    spg.Padding = [12 10 12 10]; spg.BackgroundColor = Theme.COLOR_CARD;
     app.CircuitStatsArea = uitextarea(spg, 'Editable', 'off'); app.CircuitStatsArea.FontSize = 12;
     app.CircuitStatsArea.Value = {Labels.get('upload_stats_initial')};
 
     % ── Project Circuits table (full width) — hidden ─────────────────────
     circPanel = uipanel(g, 'Title', Labels.get('upload_panel_project_circuits'));
     circPanel.Layout.Row = 4; circPanel.Layout.Column = [1 3];
-    circPanel.BackgroundColor = [1 1 1];
+    circPanel.BackgroundColor = Theme.COLOR_CARD;
     circPanel.Visible = 'off';
 
     cg = uigridlayout(circPanel, [1 2]);
     cg.ColumnWidth = {'1x', 100};
     cg.Padding = [10 6 10 6]; cg.ColumnSpacing = 8;
-    cg.BackgroundColor = [1 1 1];
+    cg.BackgroundColor = Theme.COLOR_CARD;
 
     app.UploadCircuitsTable = uitable(cg, ...
         'ColumnName', {'Circuit ID', 'Name', 'Format', 'Qubits', 'Depth', 'Valid', 'Created'}, ...
@@ -170,7 +170,7 @@ function UploadScreen(app)
     btnGrid = uigridlayout(cg, [3 1]);
     btnGrid.RowHeight = {30, 30, '1x'};
     btnGrid.Padding = [0 0 0 0]; btnGrid.RowSpacing = 6;
-    btnGrid.BackgroundColor = [1 1 1];
+    btnGrid.BackgroundColor = Theme.COLOR_CARD;
 
     app.UploadRefreshCircuitsBtn = uibutton(btnGrid, 'Text', Labels.get('upload_btn_refresh_circuits'), ...
         'ButtonPushedFcn', @(~,~)app.UploadVm.onRefreshCircuits());

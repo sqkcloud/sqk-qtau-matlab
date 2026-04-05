@@ -19,15 +19,18 @@
 % If a script fails, the orchestrator continues with the next one.
 % ──────────────────────────────────────────────────────────────────────────────
 
-fprintf('\n');
-fprintf('╔══════════════════════════════════════════════════════════════╗\n');
-fprintf('║         QTAU Seed — Full Data Population                    ║\n');
-fprintf('║         Target: http://34.42.87.190:5715                    ║\n');
-fprintf('╚══════════════════════════════════════════════════════════════╝\n');
-
 % Resolve the scripts directory
 thisFile   = mfilename('fullpath');
 scriptsDir = fileparts(thisFile);
+
+% Load config to display target URL
+cfg = seed_helpers.loadConfig();
+
+fprintf('\n');
+fprintf('╔══════════════════════════════════════════════════════════════╗\n');
+fprintf('║         QTAU Seed — Full Data Population                    ║\n');
+fprintf('║         Target: %-43s║\n', cfg.base_url);
+fprintf('╚══════════════════════════════════════════════════════════════╝\n');
 
 seedScripts = { ...
     'seed_projects',    'Welcome screen (projects)'; ...

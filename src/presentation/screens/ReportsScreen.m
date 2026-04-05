@@ -16,7 +16,7 @@ function ReportsScreen(app)
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = 12;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Column divider (rows 1) ───────────────────────────────────────────────
     div = uipanel(g, 'Title', ''); div.Layout.Row = 1; div.Layout.Column = 2;
@@ -25,12 +25,12 @@ function ReportsScreen(app)
 
     % ── Report Generator (left) ───────────────────────────────────────────────
     genPanel = uipanel(g, 'Title', Labels.get('reports_panel_generator'));
-    genPanel.Layout.Row = 1; genPanel.Layout.Column = 1; genPanel.BackgroundColor = [1 1 1];
+    genPanel.Layout.Row = 1; genPanel.Layout.Column = 1; genPanel.BackgroundColor = Theme.COLOR_CARD;
 
     gg = uigridlayout(genPanel, [5 2]);
     gg.RowHeight = {34, 34, 34, 34, '1x'};
     gg.ColumnWidth = {160,'1x'};
-    gg.Padding = [16 12 16 12]; gg.RowSpacing = 8; gg.BackgroundColor = [1 1 1];
+    gg.Padding = [16 12 16 12]; gg.RowSpacing = 8; gg.BackgroundColor = Theme.COLOR_CARD;
 
     lbl = uilabel(gg, 'Text', Labels.get('reports_label_title'));
     lbl.FontColor = [0.35 0.42 0.52];
@@ -67,10 +67,10 @@ function ReportsScreen(app)
 
     % ── Report Preview (right) ────────────────────────────────────────────────
     previewPanel = uipanel(g, 'Title', Labels.get('reports_panel_preview'));
-    previewPanel.Layout.Row = 1; previewPanel.Layout.Column = 3; previewPanel.BackgroundColor = [1 1 1];
+    previewPanel.Layout.Row = 1; previewPanel.Layout.Column = 3; previewPanel.BackgroundColor = Theme.COLOR_CARD;
 
     pvg = uigridlayout(previewPanel, [2 1]);
-    pvg.RowHeight = {34,'1x'}; pvg.Padding = [12 10 12 10]; pvg.BackgroundColor = [1 1 1];
+    pvg.RowHeight = {34,'1x'}; pvg.Padding = [12 10 12 10]; pvg.BackgroundColor = Theme.COLOR_CARD;
 
     app.OpenReportButton = uibutton(pvg, 'Text', [char(9654) ' ' Labels.get('reports_btn_open')], ...
         'ButtonPushedFcn', @(~,~)app.ReportsVm.onOpenReport());
@@ -83,11 +83,11 @@ function ReportsScreen(app)
 
     % ── Distribution actions (full width) ────────────────────────────────────
     actionPanel = uipanel(g, 'Title', Labels.get('reports_panel_distribute'));
-    actionPanel.Layout.Row = 2; actionPanel.Layout.Column = [1 3]; actionPanel.BackgroundColor = [1 1 1];
+    actionPanel.Layout.Row = 2; actionPanel.Layout.Column = [1 3]; actionPanel.BackgroundColor = Theme.COLOR_CARD;
 
     ag = uigridlayout(actionPanel, [1 4]);
     ag.RowHeight = {34}; ag.ColumnWidth = {'1x', 110, 110, 100};
-    ag.Padding = [14 10 14 10]; ag.BackgroundColor = [1 1 1];
+    ag.Padding = [14 10 14 10]; ag.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(ag, 'Text', Labels.get('reports_distribute_desc'));
     desc.FontSize = 13; desc.FontColor = [0.28 0.36 0.48];
     desc.Layout.Row = 1; desc.Layout.Column = 1; desc.WordWrap = 'on';

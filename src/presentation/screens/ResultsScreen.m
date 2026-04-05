@@ -14,25 +14,25 @@ function ResultsScreen(app)
     g = uigridlayout(t, [3 3]);
     g.RowHeight     = {120, '1x', 72};
     g.ColumnWidth   = {'1.15x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Results KPI cards (full width, toolbar-style) ─────────────────────────
     hero = uipanel(g, 'Title', Labels.get('results_panel_hero'));
-    hero.Layout.Row = 1; hero.Layout.Column = [1 3]; hero.BackgroundColor = [1 1 1];
+    hero.Layout.Row = 1; hero.Layout.Column = [1 3]; hero.BackgroundColor = Theme.COLOR_CARD;
 
     hg = uigridlayout(hero, [2 1]);
     hg.RowHeight = {34, '1x'};
     hg.Padding = [16 12 16 12]; hg.RowSpacing = 8;
-    hg.BackgroundColor = [1 1 1];
+    hg.BackgroundColor = Theme.COLOR_CARD;
 
     % Header row: title (left) + button (right)
     headerRow = uigridlayout(hg, [1 2]);
     headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
     headerRow.ColumnWidth = {'1x', 110};
-    headerRow.Padding = [0 0 0 0]; headerRow.BackgroundColor = [1 1 1];
+    headerRow.Padding = [0 0 0 0]; headerRow.BackgroundColor = Theme.COLOR_CARD;
 
     titleLabel = uilabel(headerRow, 'Text', Labels.get('results_hero_title'));
     titleLabel.FontSize = 15; titleLabel.FontWeight = 'bold';
@@ -51,23 +51,23 @@ function ResultsScreen(app)
     cardsRow.Layout.Row = 2; cardsRow.Layout.Column = 1;
     cardsRow.ColumnWidth = {'1x','1x','1x','1x'};
     cardsRow.Padding = [0 0 0 0]; cardsRow.ColumnSpacing = 12;
-    cardsRow.BackgroundColor = [1 1 1];
+    cardsRow.BackgroundColor = Theme.COLOR_CARD;
 
     cards = { ...
-        Labels.get('results_kpi_measured',   'Measured fidelity'),   '—', [0.18 0.45 0.82]; ...
-        Labels.get('results_kpi_predicted',  'Predicted fidelity'),  '—', [0.10 0.54 0.36]; ...
-        Labels.get('results_kpi_ideal',      'Ideal overlap'),       '—', [0.62 0.38 0.82]; ...
-        Labels.get('results_kpi_validation', 'Validation status'),   '—', [0.75 0.48 0.10]};
+        Labels.get('results_kpi_measured',   'Measured fidelity'),   '—', Theme.COLOR_PRIMARY; ...
+        Labels.get('results_kpi_predicted',  'Predicted fidelity'),  '—', Theme.COLOR_SUCCESS; ...
+        Labels.get('results_kpi_ideal',      'Ideal overlap'),       '—', Theme.COLOR_PURPLE; ...
+        Labels.get('results_kpi_validation', 'Validation status'),   '—', Theme.COLOR_AMBER};
     for i = 1:4
         p = uipanel(cardsRow, 'Title', ''); p.Layout.Row = 1; p.Layout.Column = i;
-        p.BackgroundColor = [0.96 0.97 0.99];
+        p.BackgroundColor = Theme.COLOR_BG;
         pg = uigridlayout(p, [1 2]); pg.ColumnWidth = {5,'1x'}; pg.Padding = [0 0 0 0];
-        pg.ColumnSpacing = 0; pg.BackgroundColor = [0.96 0.97 0.99];
+        pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_BG;
         strip = uipanel(pg, 'Title', ''); strip.Layout.Row = 1; strip.Layout.Column = 1;
         strip.BackgroundColor = cards{i,3};
         inner = uigridlayout(pg, [2 1]); inner.Layout.Row = 1; inner.Layout.Column = 2;
-        inner.RowHeight = {18,'1x'}; inner.Padding = [8 8 8 8]; inner.BackgroundColor = [0.96 0.97 0.99];
-        l1 = uilabel(inner, 'Text', cards{i,1}, 'FontSize', 11, 'FontColor', [0.38 0.46 0.58]);
+        inner.RowHeight = {18,'1x'}; inner.Padding = [8 8 8 8]; inner.BackgroundColor = Theme.COLOR_BG;
+        l1 = uilabel(inner, 'Text', cards{i,1}, 'FontSize', 11, 'FontColor', Theme.COLOR_MUTED);
         l1.Layout.Row = 1; l1.Layout.Column = 1;
         l2 = uilabel(inner, 'Text', cards{i,2}, 'FontWeight', 'bold', 'FontSize', 17, 'WordWrap', 'on');
         l2.Layout.Row = 2; l2.Layout.Column = 1;
@@ -75,15 +75,15 @@ function ResultsScreen(app)
 
     % ── Column divider ────────────────────────────────────────────────────────
     div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Measured vs Predicted Summary (left) ──────────────────────────────────
     summaryPanel = uipanel(g, 'Title', Labels.get('results_panel_summary'));
-    summaryPanel.Layout.Row = 2; summaryPanel.Layout.Column = 1; summaryPanel.BackgroundColor = [1 1 1];
+    summaryPanel.Layout.Row = 2; summaryPanel.Layout.Column = 1; summaryPanel.BackgroundColor = Theme.COLOR_CARD;
 
     sg = uigridlayout(summaryPanel, [2 1]);
-    sg.RowHeight = {'1x',120}; sg.Padding = [12 10 12 10]; sg.BackgroundColor = [1 1 1];
+    sg.RowHeight = {'1x',120}; sg.Padding = [12 10 12 10]; sg.BackgroundColor = Theme.COLOR_CARD;
 
     app.ResultsTable = uitable(sg);
     app.ResultsTable.ColumnName = Labels.cols('results_table_cols_summary', {'Metric','Measured','Predicted','Ideal','Notes'});
@@ -96,10 +96,10 @@ function ResultsScreen(app)
 
     % ── Distribution Review (right) ───────────────────────────────────────────
     comparePanel = uipanel(g, 'Title', Labels.get('results_panel_dist'));
-    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 3; comparePanel.BackgroundColor = [1 1 1];
+    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 3; comparePanel.BackgroundColor = Theme.COLOR_CARD;
 
     cg = uigridlayout(comparePanel, [2 1]);
-    cg.RowHeight = {'1x',100}; cg.Padding = [12 10 12 10]; cg.BackgroundColor = [1 1 1];
+    cg.RowHeight = {'1x',100}; cg.Padding = [12 10 12 10]; cg.BackgroundColor = Theme.COLOR_CARD;
 
     app.ResultsDistTable = uitable(cg);
     app.ResultsDistTable.ColumnName = Labels.cols('results_table_cols_dist', {'State','Measured','Predicted','Ideal'});

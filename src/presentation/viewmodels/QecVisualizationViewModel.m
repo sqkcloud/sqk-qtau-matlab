@@ -29,7 +29,7 @@ classdef QecVisualizationViewModel < handle
                     result.blochVector(1), result.blochVector(2), result.blochVector(3)));
             catch ME
                 app.logEvent('ERROR', sprintf('Bloch refresh failed: %s', ME.message));
-                uialert(app.UIFigure, ME.message, 'Bloch Sphere Error');
+                app.showError('Bloch Sphere', ME);
             end
         end
 
@@ -62,7 +62,7 @@ classdef QecVisualizationViewModel < handle
                     distance, result.logicalErrorRate));
             catch ME
                 app.logEvent('ERROR', sprintf('Lattice refresh failed: %s', ME.message));
-                uialert(app.UIFigure, ME.message, 'Lattice Error');
+                app.showError('Surface Code Lattice', ME);
             end
         end
 
@@ -102,7 +102,7 @@ classdef QecVisualizationViewModel < handle
                 app.logEvent('QEC', 'Animation complete');
             catch ME
                 app.logEvent('ERROR', sprintf('Animation failed: %s', ME.message));
-                uialert(app.UIFigure, ME.message, 'Animation Error');
+                app.showError('Bloch Animation', ME);
             end
         end
     end

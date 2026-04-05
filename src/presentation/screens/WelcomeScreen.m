@@ -15,18 +15,18 @@ function WelcomeScreen(app)
     g = uigridlayout(t, [2 1]);
     g.RowHeight     = {72, '1x'};
     g.ColumnWidth   = {'1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Hero banner (full width) ─────────────────────────────────────────────
     hero = uipanel(g, 'Title', Labels.get('welcome_panel_project_launch'));
     hero.Layout.Row = 1; hero.Layout.Column = 1;
-    hero.BackgroundColor = [1 1 1];
+    hero.BackgroundColor = Theme.COLOR_CARD;
     hg = uigridlayout(hero, [1 5]);
     hg.RowHeight   = {34};
     hg.ColumnWidth = {'1x', 110, 110, 110, 110};
-    hg.Padding     = [18 10 18 10]; hg.ColumnSpacing = 8; hg.BackgroundColor = [1 1 1];
+    hg.Padding     = [18 10 18 10]; hg.ColumnSpacing = 8; hg.BackgroundColor = Theme.COLOR_CARD;
 
     titleLabel = uilabel(hg, 'Text', Labels.get('welcome_hero_title'));
     titleLabel.FontSize = 14;
@@ -56,13 +56,13 @@ function WelcomeScreen(app)
     % ── Recent Projects (full width) ─────────────────────────────────────────
     projPanel = uipanel(g, 'Title', Labels.get('welcome_panel_recent_projects'));
     projPanel.Layout.Row = 2; projPanel.Layout.Column = 1;
-    projPanel.BackgroundColor = [1 1 1];
+    projPanel.BackgroundColor = Theme.COLOR_CARD;
 
     pg = uigridlayout(projPanel, [5 1]);
     pg.RowHeight = {42, 32, '1x', 34};
     pg.ColumnWidth = {'1x'};
     pg.Padding = [16 12 16 12]; pg.RowSpacing = 8;
-    pg.BackgroundColor = [1 1 1];
+    pg.BackgroundColor = Theme.COLOR_CARD;
 
     % Active Project box
     activeBox = uipanel(pg, 'Title', '');
@@ -87,7 +87,7 @@ function WelcomeScreen(app)
     searchGrid.Layout.Row = 2; searchGrid.Layout.Column = 1;
     searchGrid.ColumnWidth = {'1x', 90};
     searchGrid.Padding = [0 0 0 0]; searchGrid.ColumnSpacing = 6;
-    searchGrid.BackgroundColor = [1 1 1];
+    searchGrid.BackgroundColor = Theme.COLOR_CARD;
     app.ProjectsSearchField = uieditfield(searchGrid, 'text', ...
         'Placeholder', 'Search by name, tags, description...', ...
         'ValueChangedFcn', @(src,~)app.WelcomeVm.onSearchProjects(src.Value));
@@ -122,7 +122,7 @@ function WelcomeScreen(app)
     pageBar = uigridlayout(pg, [1 3]);
     pageBar.Layout.Row = 4; pageBar.Layout.Column = 1;
     pageBar.ColumnWidth = {90, '1x', 90};
-    pageBar.Padding = [0 0 0 0]; pageBar.BackgroundColor = [1 1 1];
+    pageBar.Padding = [0 0 0 0]; pageBar.BackgroundColor = Theme.COLOR_CARD;
 
     app.ProjectsPrevButton = uibutton(pageBar, 'Text', Labels.get('welcome_btn_prev', '< Previous'), ...
         'ButtonPushedFcn', @(~,~)app.WelcomeVm.onPrevPage());
@@ -131,7 +131,7 @@ function WelcomeScreen(app)
     app.ProjectsPrevButton.Enable = 'off';
 
     app.ProjectsPageLabel = uilabel(pageBar, 'Text', '', ...
-        'HorizontalAlignment', 'center', 'FontSize', 12, 'FontColor', [0.38 0.46 0.58]);
+        'HorizontalAlignment', 'center', 'FontSize', 12, 'FontColor', Theme.COLOR_MUTED);
     app.ProjectsPageLabel.Layout.Row = 1; app.ProjectsPageLabel.Layout.Column = 2;
     app.ProjectsPageLabel.VerticalAlignment = 'center';
 

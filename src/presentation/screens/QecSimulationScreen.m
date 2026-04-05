@@ -14,23 +14,23 @@ function QecSimulationScreen(app)
     g = uigridlayout(t, [4 3]);
     g.RowHeight     = {34, 260, '1.4x', '0.8x'};
     g.ColumnWidth   = {'1x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────
     toolbar = uigridlayout(g, [1 2]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
     toolbar.ColumnWidth = {'1x', 180};
     toolbar.Padding = [0 0 0 0];
-    toolbar.BackgroundColor = [0.96 0.97 0.99];
+    toolbar.BackgroundColor = Theme.COLOR_BG;
 
     leftBtns = uigridlayout(toolbar, [1 4]);
     leftBtns.Layout.Row = 1; leftBtns.Layout.Column = 1;
     leftBtns.ColumnWidth = {130, 140, 130, 70};
     leftBtns.Padding = [0 0 0 0]; leftBtns.ColumnSpacing = 8;
-    leftBtns.BackgroundColor = [0.96 0.97 0.99];
+    leftBtns.BackgroundColor = Theme.COLOR_BG;
 
     app.QecRunButton = uibutton(leftBtns, 'Text', Labels.get('qec_sim_btn_run', 'Run Simulation'), ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onRunSimulation());
@@ -64,19 +64,19 @@ function QecSimulationScreen(app)
     % ── Column divider (rows 2-4) ────────────────────────────────────────
     div = uipanel(g, 'Title', '');
     div.Layout.Row = [2 4]; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Code Configuration Panel (left, row 2) ──────────────────────────
     codePanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_code', 'Code Configuration'));
     codePanel.Layout.Row = 2; codePanel.Layout.Column = 1;
-    codePanel.BackgroundColor = [1 1 1];
+    codePanel.BackgroundColor = Theme.COLOR_CARD;
     codePanel.FontWeight = 'bold';
     cpg = uigridlayout(codePanel, [5 2]);
     cpg.RowHeight = {28, 28, 28, 28, 28};
     cpg.ColumnWidth = {140, '1x'};
     cpg.Padding = [12 10 12 10]; cpg.RowSpacing = 8;
-    cpg.BackgroundColor = [1 1 1];
+    cpg.BackgroundColor = Theme.COLOR_CARD;
 
     uilabel(cpg, 'Text', Labels.get('qec_sim_label_code_type', 'QEC Code'), ...
         'FontWeight', 'bold', 'FontSize', 12);
@@ -124,13 +124,13 @@ function QecSimulationScreen(app)
     % ── Noise Configuration Panel (right, row 2) ─────────────────────────
     noisePanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_noise', 'Noise Configuration'));
     noisePanel.Layout.Row = 2; noisePanel.Layout.Column = 3;
-    noisePanel.BackgroundColor = [1 1 1];
+    noisePanel.BackgroundColor = Theme.COLOR_CARD;
     noisePanel.FontWeight = 'bold';
     npg = uigridlayout(noisePanel, [4 2]);
     npg.RowHeight = {28, 36, 28, 28};
     npg.ColumnWidth = {140, '1x'};
     npg.Padding = [12 10 12 10]; npg.RowSpacing = 8;
-    npg.BackgroundColor = [1 1 1];
+    npg.BackgroundColor = Theme.COLOR_CARD;
 
     uilabel(npg, 'Text', Labels.get('qec_sim_label_noise_model', 'Noise Model'), ...
         'FontWeight', 'bold', 'FontSize', 12);
@@ -147,7 +147,7 @@ function QecSimulationScreen(app)
     sliderGrid = uigridlayout(npg, [1 2]);
     sliderGrid.ColumnWidth = {'1x', 50};
     sliderGrid.Padding = [0 0 0 0]; sliderGrid.ColumnSpacing = 6;
-    sliderGrid.BackgroundColor = [1 1 1];
+    sliderGrid.BackgroundColor = Theme.COLOR_CARD;
     app.QecErrorProbSlider = uislider(sliderGrid, 'Limits', [0 0.5], ...
         'Value', AppConfig.getDouble('qec_default_error_prob', 0.05), ...
         'ValueChangedFcn', @(src,~)set(app.QecErrorProbLabel, 'Text', sprintf('%.3f', src.Value)));
@@ -170,14 +170,14 @@ function QecSimulationScreen(app)
     % ── Fidelity vs Error Rate chart (left, row 3) ───────────────────────
     fidPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_fidelity', 'Fidelity vs Error Rate'));
     fidPanel.Layout.Row = 3; fidPanel.Layout.Column = 1;
-    fidPanel.BackgroundColor = [1 1 1];
+    fidPanel.BackgroundColor = Theme.COLOR_CARD;
     fpg = uigridlayout(fidPanel, [1 1]);
-    fpg.Padding = [10 10 10 10]; fpg.BackgroundColor = [1 1 1];
+    fpg.Padding = [10 10 10 10]; fpg.BackgroundColor = Theme.COLOR_CARD;
     app.QecFidelityAxes = uiaxes(fpg);
     % Demo data
     pDemo = linspace(0, 0.5, 30);
     fDemo = 1 - 1.5*pDemo.^2;
-    plot(app.QecFidelityAxes, pDemo, fDemo, '-o', 'Color', [0.18 0.45 0.82], ...
+    plot(app.QecFidelityAxes, pDemo, fDemo, '-o', 'Color', Theme.COLOR_PRIMARY, ...
         'LineWidth', 1.6, 'MarkerSize', 3);
     app.styleAxes(app.QecFidelityAxes);
     app.QecFidelityAxes.Title.String  = Labels.get('qec_sim_plot_fidelity_title', 'Fidelity vs Physical Error Rate (demo)');
@@ -187,9 +187,9 @@ function QecSimulationScreen(app)
     % ── Syndrome Distribution chart (right, row 3) ───────────────────────
     synPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_syndrome', 'Syndrome Distribution'));
     synPanel.Layout.Row = 3; synPanel.Layout.Column = 3;
-    synPanel.BackgroundColor = [1 1 1];
+    synPanel.BackgroundColor = Theme.COLOR_CARD;
     spg = uigridlayout(synPanel, [1 1]);
-    spg.Padding = [10 10 10 10]; spg.BackgroundColor = [1 1 1];
+    spg.Padding = [10 10 10 10]; spg.BackgroundColor = Theme.COLOR_CARD;
     app.QecSyndromeAxes = uiaxes(spg);
     % Demo data
     bar(app.QecSyndromeAxes, 1:4, [65 20 10 5], 'FaceColor', [0.56 0.27 0.68]);
@@ -201,11 +201,11 @@ function QecSimulationScreen(app)
     % ── Correction Success (left, row 4) ──────────────────────────────────
     successPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_success', 'Correction Success Rate'));
     successPanel.Layout.Row = 4; successPanel.Layout.Column = 1;
-    successPanel.BackgroundColor = [1 1 1];
+    successPanel.BackgroundColor = Theme.COLOR_CARD;
     scpg = uigridlayout(successPanel, [1 1]);
-    scpg.Padding = [10 10 10 10]; scpg.BackgroundColor = [1 1 1];
+    scpg.Padding = [10 10 10 10]; scpg.BackgroundColor = Theme.COLOR_CARD;
     app.QecSuccessAxes = uiaxes(scpg);
-    barh(app.QecSuccessAxes, 1, 0.95, 'FaceColor', [0.10 0.54 0.36]);
+    barh(app.QecSuccessAxes, 1, 0.95, 'FaceColor', Theme.COLOR_SUCCESS);
     app.QecSuccessAxes.XLim = [0 1];
     app.QecSuccessAxes.YTickLabel = {'Success Rate'};
     app.styleAxes(app.QecSuccessAxes);
@@ -214,9 +214,9 @@ function QecSimulationScreen(app)
     % ── Results Table (right, row 4) ──────────────────────────────────────
     resultsPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_results', 'Simulation Results'));
     resultsPanel.Layout.Row = 4; resultsPanel.Layout.Column = 3;
-    resultsPanel.BackgroundColor = [1 1 1];
+    resultsPanel.BackgroundColor = Theme.COLOR_CARD;
     rpg = uigridlayout(resultsPanel, [1 1]);
-    rpg.Padding = [10 10 10 10]; rpg.BackgroundColor = [1 1 1];
+    rpg.Padding = [10 10 10 10]; rpg.BackgroundColor = Theme.COLOR_CARD;
     app.QecResultsTable = uitable(rpg, ...
         'ColumnName', {'Code', 'Noise', 'p', 'Fidelity', 'Success%', 'Bloch [x,y,z]'}, ...
         'ColumnWidth', {100, 90, 50, 70, 70, 120}, ...

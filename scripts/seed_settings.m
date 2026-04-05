@@ -11,36 +11,20 @@
 fprintf('\n=== QTAU Seed: Configuring user settings ===\n\n');
 
 % ── Configuration ────────────────────────────────────────────────────────────
-BASE_URL   = 'http://localhost:5715';
-LOGIN_PATH = '/api/auth/login';
-USERNAME   = 'admin';
-PASSWORD   = 'passw0rd';
+cfg      = seed_helpers.loadConfig();
+BASE_URL = cfg.base_url;
 
 % ── Step 1: Authenticate ────────────────────────────────────────────────────
-fprintf('[1/2] Logging in as "%s" ... ', USERNAME);
+fprintf('[1/2] Logging in as "%s" ... ', cfg.username);
 try
-    import matlab.net.http.*
-    import matlab.net.http.field.*
-    import matlab.net.http.io.*
-    body = FormProvider('username', USERNAME, 'password', PASSWORD);
-    req  = RequestMessage('POST', ...
-        [ContentTypeField(MediaType('application/x-www-form-urlencoded'))], body);
-    resp = req.send(matlab.net.URI([BASE_URL LOGIN_PATH]));
-    if resp.StatusCode ~= 200
-        error('Login failed with status %d', int32(resp.StatusCode));
-    end
-    token = string(resp.Body.Data.access_token);
+    token = seed_helpers.login(BASE_URL, cfg.login_path, cfg.username, cfg.password);
     fprintf('OK\n');
 catch ME
     fprintf('FAILED\n  %s\n', ME.message);
     return;
 end
 
-postOpts = weboptions( ...
-    'Timeout',      30, ...
-    'MediaType',    'application/json', ...
-    'ContentType',  'json', ...
-    'HeaderFields', {'Authorization', char("Bearer " + token)});
+postOpts = seed_helpers.postOpts(token);
 
 % ── Step 2: Save preferences ─────────────────────────────────────────────────
 fprintf('[2/2] Saving preferences ...\n');
@@ -82,8 +66,7 @@ end
 
 % 2c. Read back current preferences to verify
 fprintf('  Verifying saved preferences ... ');
-getOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
-    'HeaderFields', {'Authorization', char("Bearer " + token)});
+getOpts = seed_helpers.getOpts(token);
 try
     savedPrefs = webread([BASE_URL '/api/settings/preferences'], getOpts);
     fprintf('OK (shots=%d, opt=%d)\n', ...

@@ -13,23 +13,23 @@ function QecVisualizationScreen(app)
     g = uigridlayout(t, [3 3]);
     g.RowHeight     = {34, '1.6x', '1x'};
     g.ColumnWidth   = {'1x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────
     toolbar = uigridlayout(g, [1 2]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
     toolbar.ColumnWidth = {'1x', 150};
     toolbar.Padding = [0 0 0 0];
-    toolbar.BackgroundColor = [0.96 0.97 0.99];
+    toolbar.BackgroundColor = Theme.COLOR_BG;
 
     leftBtns = uigridlayout(toolbar, [1 3]);
     leftBtns.Layout.Row = 1; leftBtns.Layout.Column = 1;
     leftBtns.ColumnWidth = {120, 120, 120};
     leftBtns.Padding = [0 0 0 0]; leftBtns.ColumnSpacing = 8;
-    leftBtns.BackgroundColor = [0.96 0.97 0.99];
+    leftBtns.BackgroundColor = Theme.COLOR_BG;
 
     app.QecRefreshBlochButton = uibutton(leftBtns, 'Text', ...
         [char(8635) ' ' Labels.get('qec_viz_btn_refresh_bloch', 'Refresh Bloch')], ...
@@ -60,15 +60,15 @@ function QecVisualizationScreen(app)
     % ── Column divider (rows 2-3) ────────────────────────────────────────
     div = uipanel(g, 'Title', '');
     div.Layout.Row = [2 3]; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Bloch Sphere 3D (left, row 2) ────────────────────────────────────
     blochPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_bloch', 'Logical Qubit Bloch Sphere'));
     blochPanel.Layout.Row = 2; blochPanel.Layout.Column = 1;
-    blochPanel.BackgroundColor = [1 1 1];
+    blochPanel.BackgroundColor = Theme.COLOR_CARD;
     bpg = uigridlayout(blochPanel, [1 1]);
-    bpg.Padding = [6 6 6 6]; bpg.BackgroundColor = [1 1 1];
+    bpg.Padding = [6 6 6 6]; bpg.BackgroundColor = Theme.COLOR_CARD;
     app.QecBlochAxes = uiaxes(bpg);
     % Render initial demo Bloch sphere
     drawBlochSphereDemo(app.QecBlochAxes, [0 0 1]);
@@ -76,9 +76,9 @@ function QecVisualizationScreen(app)
     % ── Surface Code Lattice (right, row 2) ──────────────────────────────
     latticePanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_lattice', 'Surface Code Lattice'));
     latticePanel.Layout.Row = 2; latticePanel.Layout.Column = 3;
-    latticePanel.BackgroundColor = [1 1 1];
+    latticePanel.BackgroundColor = Theme.COLOR_CARD;
     lpg = uigridlayout(latticePanel, [1 1]);
-    lpg.Padding = [6 6 6 6]; lpg.BackgroundColor = [1 1 1];
+    lpg.Padding = [6 6 6 6]; lpg.BackgroundColor = Theme.COLOR_CARD;
     app.QecLatticeAxes = uiaxes(lpg);
     % Render initial demo lattice
     drawSurfaceCodeDemo(app.QecLatticeAxes, 3);
@@ -86,15 +86,15 @@ function QecVisualizationScreen(app)
     % ── Fidelity Decay Over Rounds (left, row 3) ─────────────────────────
     decayPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_decay', 'Fidelity Decay Over Rounds'));
     decayPanel.Layout.Row = 3; decayPanel.Layout.Column = 1;
-    decayPanel.BackgroundColor = [1 1 1];
+    decayPanel.BackgroundColor = Theme.COLOR_CARD;
     dpg = uigridlayout(decayPanel, [1 1]);
-    dpg.Padding = [10 10 10 10]; dpg.BackgroundColor = [1 1 1];
+    dpg.Padding = [10 10 10 10]; dpg.BackgroundColor = Theme.COLOR_CARD;
     app.QecDecayAxes = uiaxes(dpg);
     % Demo decay
     rounds = 1:10;
     decayDemo = 1 - 0.02*(rounds-1) - 0.005*randn(1,10);
-    plot(app.QecDecayAxes, rounds, decayDemo, '-s', 'Color', [0.10 0.54 0.36], ...
-        'LineWidth', 1.8, 'MarkerSize', 5, 'MarkerFaceColor', [0.10 0.54 0.36]);
+    plot(app.QecDecayAxes, rounds, decayDemo, '-s', 'Color', Theme.COLOR_SUCCESS, ...
+        'LineWidth', 1.8, 'MarkerSize', 5, 'MarkerFaceColor', Theme.COLOR_SUCCESS);
     app.styleAxes(app.QecDecayAxes);
     app.QecDecayAxes.Title.String  = Labels.get('qec_viz_plot_decay_title', 'Fidelity vs Correction Round (demo)');
     app.QecDecayAxes.XLabel.String = Labels.get('qec_viz_plot_decay_x', 'Correction Round');
@@ -104,9 +104,9 @@ function QecVisualizationScreen(app)
     % ── Error Weight Distribution (right, row 3) ─────────────────────────
     ewPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_errweight', 'Error Weight Distribution'));
     ewPanel.Layout.Row = 3; ewPanel.Layout.Column = 3;
-    ewPanel.BackgroundColor = [1 1 1];
+    ewPanel.BackgroundColor = Theme.COLOR_CARD;
     ewpg = uigridlayout(ewPanel, [1 1]);
-    ewpg.Padding = [10 10 10 10]; ewpg.BackgroundColor = [1 1 1];
+    ewpg.Padding = [10 10 10 10]; ewpg.BackgroundColor = Theme.COLOR_CARD;
     app.QecErrorWeightAxes = uiaxes(ewpg);
     % Demo error weight
     weights = 0:3;
@@ -184,7 +184,7 @@ function drawSurfaceCodeDemo(ax, distance)
     % Data qubits on grid vertices
     for row = 1:distance
         for col = 1:distance
-            scatter(ax, col, row, 100, [0.18 0.45 0.82], 'filled', ...
+            scatter(ax, col, row, 100, Theme.COLOR_PRIMARY, 'filled', ...
                 'MarkerEdgeColor', [0.08 0.25 0.52], 'LineWidth', 1.2);
         end
     end

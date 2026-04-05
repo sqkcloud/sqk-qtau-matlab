@@ -1,5 +1,8 @@
 classdef AnalysisViewModel < handle
     % AnalysisViewModel  Callback handlers for the Analysis screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
@@ -47,6 +50,7 @@ classdef AnalysisViewModel < handle
                 end
                 app.logEvent('API', sprintf('Circuit list loaded — %d circuit(s), selected: %s', ...
                     n, char(app.AnalysisCircuitDropdown.Value)));
+                obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME
                 app.hideLoading();
@@ -80,22 +84,29 @@ classdef AnalysisViewModel < handle
             app.logEvent('API', sprintf('POST /api/circuits/%s/analyze — circuit: %s  name: %s', ...
                 cid, cid, app.State.selectedCircuitName));
             app.showLoading(Labels.get('loading_analyzing', 'Analyzing circuit...'));
-            try
-                data = app.CircuitSvc.analyzeCircuit(cid, app.State.authToken);
-                obj.applyAnalysisData(data);
-                obj.applyBenchmarkMatches(data);
-                obj.buildQVHeatmap(data);
-                app.logEvent('API', sprintf('Circuit analysis complete — circuit: %s', cid));
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Analysis FAILED (circuit: %s): %s', cid, ME.message));
-                app.showError('Analyze Circuit', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.CircuitSvc.analyzeCircuit(cid, app.State.authToken), ...
+                @(data) obj.onAnalyzeComplete(app, cid, data), ...
+                @(ME) obj.onAnalyzeError(app, cid, ME));
         end
     end
 
     methods (Access = private)
+        function onAnalyzeComplete(obj, app, cid, data)
+            obj.applyAnalysisData(data);
+            obj.applyBenchmarkMatches(data);
+            obj.buildQVHeatmap(data);
+            app.logEvent('API', sprintf('Circuit analysis complete — circuit: %s', cid));
+            app.hideLoading();
+            obj.LastRefresh = tic;
+        end
+
+        function onAnalyzeError(~, app, cid, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Analysis FAILED (circuit: %s): %s', cid, ME.message));
+            app.showError('Analyze Circuit', ME);
+        end
+
         function applyAnalysisData(obj, data)
             app = obj.App;
             delete(app.FeatureTree.Children);
@@ -362,7 +373,7 @@ classdef AnalysisViewModel < handle
             % Try real API
             if app.State.hasProject() && app.State.isAuthenticated()
                 try
-                    svc  = BenchmarkService(app.Client);
+                    svc  = app.BenchmarkSvc;
                     vdat = svc.getVolumetricData( ...
                         app.State.currentProjectId, app.State.authToken);
                     pts  = JsonHelper.extractList(vdat, 'data_points');

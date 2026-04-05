@@ -1,5 +1,8 @@
 classdef DashboardViewModel < handle
     % DashboardViewModel  Callback handlers for the Dashboard screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
@@ -19,6 +22,7 @@ classdef DashboardViewModel < handle
                     data = app.ProjectSvc.getDashboard(app.State.currentProjectId, app.State.authToken);
                     obj.applyDashboardData(data);
                     app.logEvent('API', sprintf('Dashboard data loaded for project: %s', app.State.currentProjectId));
+                    obj.LastRefresh = tic;
                     app.hideLoading();
                     return;
                 catch ME

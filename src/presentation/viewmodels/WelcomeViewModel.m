@@ -1,5 +1,8 @@
 classdef WelcomeViewModel < handle
     % WelcomeViewModel  Callback handlers for the Welcome screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
         FullProjectRows  cell = {}   % unfiltered table rows
@@ -291,6 +294,9 @@ classdef WelcomeViewModel < handle
                 app.logEvent('AUTH', sprintf('Login OK — user: %s  token_type: %s  default_project: %s', ...
                     app.State.currentUser, app.State.tokenType, app.State.defaultProjectId));
 
+                % Clear password from memory
+                app.LoginDlgPasswordReal = '';
+
                 % Close the login dialog
                 if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
                     delete(app.LoginDialog);
@@ -399,6 +405,7 @@ classdef WelcomeViewModel < handle
                         end
                     end
                 end
+                obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME
                 app.hideLoading();

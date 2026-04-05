@@ -1,5 +1,8 @@
 classdef BackendsViewModel < handle
     % BackendsViewModel  Callback handlers for the Backends screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
@@ -28,6 +31,7 @@ classdef BackendsViewModel < handle
                 end
                 app.setStatus(app.BackendStatusArea, {sprintf('Loaded %d backend(s).', size(rows,1))});
                 app.logEvent('API', sprintf('Backends loaded — %d rows returned', size(rows,1)));
+                obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME
                 app.hideLoading();

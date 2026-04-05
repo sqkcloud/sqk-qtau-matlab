@@ -11,35 +11,22 @@
 fprintf('\n=== QTAU Seed: Submitting quantum jobs ===\n\n');
 
 % ── Configuration ────────────────────────────────────────────────────────────
-BASE_URL   = 'http://34.42.87.190:5715';
-LOGIN_PATH = '/api/auth/login';
-USERNAME   = 'admin';
-PASSWORD   = 'passw0rd';
+cfg      = seed_helpers.loadConfig();
+BASE_URL = cfg.base_url;
 
 % ── Step 1: Authenticate ────────────────────────────────────────────────────
-fprintf('[1/4] Logging in as "%s" ... ', USERNAME);
+fprintf('[1/4] Logging in as "%s" ... ', cfg.username);
 try
-    import matlab.net.http.*
-    import matlab.net.http.field.*
-    import matlab.net.http.io.*
-    body = FormProvider('username', USERNAME, 'password', PASSWORD);
-    req  = RequestMessage('POST', ...
-        [ContentTypeField(MediaType('application/x-www-form-urlencoded'))], body);
-    resp = req.send(matlab.net.URI([BASE_URL LOGIN_PATH]));
-    if resp.StatusCode ~= 200
-        error('Login failed with status %d', int32(resp.StatusCode));
-    end
-    token = string(resp.Body.Data.access_token);
+    token = seed_helpers.login(BASE_URL, cfg.login_path, cfg.username, cfg.password);
     fprintf('OK\n');
 catch ME
     fprintf('FAILED\n  %s\n', ME.message);
     return;
 end
 
-authHeader = {'Authorization', char("Bearer " + token)};
-getOpts  = weboptions('Timeout', 30, 'ContentType', 'json', 'HeaderFields', authHeader);
-postOpts = weboptions('Timeout', 60, 'MediaType', 'application/json', ...
-    'ContentType', 'json', 'HeaderFields', authHeader);
+getOpts  = seed_helpers.getOpts(token);
+postOpts = seed_helpers.postOpts(token);
+postOpts.Timeout = 60;  % Jobs may take longer
 
 % ── Step 2: Fetch circuits ───────────────────────────────────────────────────
 fprintf('[2/4] Fetching circuits ... ');

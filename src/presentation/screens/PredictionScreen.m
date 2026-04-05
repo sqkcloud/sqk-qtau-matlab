@@ -13,15 +13,15 @@ function PredictionScreen(app)
     g = uigridlayout(t, [3 3]);
     g.RowHeight     = {34, '1x', 72};
     g.ColumnWidth   = {'1x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     toolbar = uigridlayout(g, [1 2]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
     toolbar.ColumnWidth = {'1x', 110};
-    toolbar.Padding = [0 0 0 0]; toolbar.BackgroundColor = [0.96 0.97 0.99];
+    toolbar.Padding = [0 0 0 0]; toolbar.BackgroundColor = Theme.COLOR_BG;
 
     app.PredictButton = uibutton(toolbar, 'Text', [char(9881) ' ' Labels.get('prediction_btn_run')], ...
         'ButtonPushedFcn', @(~,~)app.PredictionVm.onRunPrediction());
@@ -32,15 +32,15 @@ function PredictionScreen(app)
 
     % ── Column divider ────────────────────────────────────────────────────────
     div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Prediction Summary table (left) ──────────────────────────────────────
     metricPanel = uipanel(g, 'Title', Labels.get('prediction_panel_summary'));
-    metricPanel.Layout.Row = 2; metricPanel.Layout.Column = 1; metricPanel.BackgroundColor = [1 1 1];
+    metricPanel.Layout.Row = 2; metricPanel.Layout.Column = 1; metricPanel.BackgroundColor = Theme.COLOR_CARD;
 
     mpg = uigridlayout(metricPanel, [1 1]);
-    mpg.Padding = [12 10 12 10]; mpg.BackgroundColor = [1 1 1];
+    mpg.Padding = [12 10 12 10]; mpg.BackgroundColor = Theme.COLOR_CARD;
     app.PredictionTable = uitable(mpg);
     app.PredictionTable.ColumnName = Labels.cols('prediction_table_cols', {'Metric','Value'});
     app.PredictionTable.Data = { ...
@@ -54,10 +54,10 @@ function PredictionScreen(app)
 
     % ── Distribution and Error Budget (right) ─────────────────────────────────
     detailPanel = uipanel(g, 'Title', Labels.get('prediction_panel_detail'));
-    detailPanel.Layout.Row = 2; detailPanel.Layout.Column = 3; detailPanel.BackgroundColor = [1 1 1];
+    detailPanel.Layout.Row = 2; detailPanel.Layout.Column = 3; detailPanel.BackgroundColor = Theme.COLOR_CARD;
 
     dpg = uigridlayout(detailPanel, [1 1]);
-    dpg.Padding = [12 10 12 10]; dpg.BackgroundColor = [1 1 1];
+    dpg.Padding = [12 10 12 10]; dpg.BackgroundColor = Theme.COLOR_CARD;
     app.PredictionTextArea = uitextarea(dpg, 'Editable', 'off'); app.PredictionTextArea.FontSize = 12;
     app.PredictionTextArea.Value = { ...
         'Run prediction to see:', ...

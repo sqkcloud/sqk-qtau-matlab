@@ -1,5 +1,8 @@
 classdef UploadViewModel < handle
     % UploadViewModel  Callback handlers for the Upload screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
         ParsedQubits double = 0
@@ -72,34 +75,11 @@ classdef UploadViewModel < handle
             app.logEvent('API', sprintf('POST /api/circuits/upload — file: %s  name: %s  format: %s  category: %s  qubits: %d  depth: %d  project: %s', ...
                 filePath, name, format, category, nQubits, depth, char(app.State.currentProjectId)));
             app.showLoading(Labels.get('loading_uploading', 'Uploading circuit...'));
-            try
-                data = app.CircuitSvc.uploadCircuit(filePath, name, format, category, ...
-                    nQubits, depth, app.State.authToken);
-                app.State.selectedCircuitId   = string(JsonHelper.pick(data, {'circuit_id','id'}));
-                app.State.selectedCircuitName = string(name);
-                app.logEvent('API', sprintf('Circuit uploaded successfully — id: %s  name: %s  format: %s  project: %s', ...
-                    app.State.selectedCircuitId, name, format, char(app.State.currentProjectId)));
-                app.setStatus(app.CircuitStatsArea, { ...
-                    sprintf('Circuit ID: %s', app.State.selectedCircuitId), ...
-                    sprintf('Name: %s', name), ...
-                    sprintf('Format: %s', format), ...
-                    sprintf('Category: %s', category), ...
-                    sprintf('Project: %s', char(app.State.currentProjectName)), ...
-                    'Status: Uploaded successfully'});
-                if ~silent
-                    uialert(app.UIFigure, ...
-                        sprintf('Circuit "%s" uploaded successfully.\n\nCircuit ID: %s\nFormat: %s\nCategory: %s\nProject: %s', ...
-                            name, char(app.State.selectedCircuitId), format, category, char(app.State.currentProjectName)), ...
-                        Labels.get('upload_success_title', 'Upload Successful'), 'Icon', 'success');
-                end
-                app.hideLoading();
-                obj.onRefreshCircuits();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Upload FAILED (file: %s): %s', filePath, ME.message));
-                app.setStatus(app.CircuitStatsArea, {'Upload failed.', ME.message});
-                app.showError('Upload Circuit', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.CircuitSvc.uploadCircuit(filePath, name, format, category, ...
+                    nQubits, depth, app.State.authToken), ...
+                @(data) obj.onUploadComplete(app, data, name, format, category, silent), ...
+                @(ME) obj.onUploadError(app, filePath, ME));
         end
 
         function onGoToAnalyze(obj)
@@ -187,6 +167,7 @@ classdef UploadViewModel < handle
                 end
                 app.UploadCircuitsTable.Data = tableData;
                 app.logEvent('API', sprintf('listCircuits → %d circuits loaded for project %s', n, char(app.State.currentProjectId)));
+                obj.LastRefresh = tic;
             catch ME
                 app.logEvent('ERROR', sprintf('listCircuits FAILED: %s', ME.message));
             end
@@ -224,6 +205,35 @@ classdef UploadViewModel < handle
     end
 
     methods (Access = private)
+        function onUploadComplete(obj, app, data, name, format, category, silent)
+            app.State.selectedCircuitId   = string(JsonHelper.pick(data, {'circuit_id','id'}));
+            app.State.selectedCircuitName = string(name);
+            app.logEvent('API', sprintf('Circuit uploaded successfully — id: %s  name: %s  format: %s  project: %s', ...
+                app.State.selectedCircuitId, name, format, char(app.State.currentProjectId)));
+            app.setStatus(app.CircuitStatsArea, { ...
+                sprintf('Circuit ID: %s', app.State.selectedCircuitId), ...
+                sprintf('Name: %s', name), ...
+                sprintf('Format: %s', format), ...
+                sprintf('Category: %s', category), ...
+                sprintf('Project: %s', char(app.State.currentProjectName)), ...
+                'Status: Uploaded successfully'});
+            if ~silent
+                uialert(app.UIFigure, ...
+                    sprintf('Circuit "%s" uploaded successfully.\n\nCircuit ID: %s\nFormat: %s\nCategory: %s\nProject: %s', ...
+                        name, char(app.State.selectedCircuitId), format, category, char(app.State.currentProjectName)), ...
+                    Labels.get('upload_success_title', 'Upload Successful'), 'Icon', 'success');
+            end
+            app.hideLoading();
+            obj.onRefreshCircuits();
+        end
+
+        function onUploadError(~, app, filePath, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Upload FAILED (file: %s): %s', filePath, ME.message));
+            app.setStatus(app.CircuitStatsArea, {'Upload failed.', ME.message});
+            app.showError('Upload Circuit', ME);
+        end
+
         function extractCircuitStats(obj, content)
             % Extract qubit count and estimated depth from raw QASM text.
             nq = 0; gates = 0;

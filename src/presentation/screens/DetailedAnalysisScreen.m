@@ -17,13 +17,13 @@ function DetailedAnalysisScreen(app)
     Logger.info('DetailedAnalysisScreen', 'Building Detailed Analysis tab UI');
     t = app.createSectionPage('Detailed Analysis');
 
-    BG = [0.96 0.97 0.99];   % page background
-    PW = [1.00 1.00 1.00];   % panel white
+    BG = Theme.COLOR_BG;       % page background
+    PW = Theme.COLOR_CARD;     % panel white
 
     g = uigridlayout(t, [3 3]);
     g.RowHeight     = {42, '1x', '0.82x'};
     g.ColumnWidth   = {'1x', '1x', '1x'};
-    g.Padding       = [16 16 16 16];
+    g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = 10;
     g.ColumnSpacing = 10;
     g.BackgroundColor = BG;
@@ -95,7 +95,7 @@ function DetailedAnalysisScreen(app)
     comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 1;
     comparePanel.BackgroundColor = PW;
     cpg = uigridlayout(comparePanel, [1 1]);
-    cpg.Padding = [10 8 10 8]; cpg.BackgroundColor = PW;
+    cpg.Padding = Theme.KPI_INNER_PAD; cpg.BackgroundColor = PW;
     app.CompareAxes = uiaxes(cpg);
 
     x  = 1:10;
@@ -124,7 +124,7 @@ function DetailedAnalysisScreen(app)
     heatmapPanel.Layout.Row = 2; heatmapPanel.Layout.Column = 2;
     heatmapPanel.BackgroundColor = PW;
     hpg = uigridlayout(heatmapPanel, [1 1]);
-    hpg.Padding = [10 8 10 8]; hpg.BackgroundColor = PW;
+    hpg.Padding = Theme.KPI_INNER_PAD; hpg.BackgroundColor = PW;
     app.ErrorHeatmapAxes = uiaxes(hpg);
 
     nQ     = 8;
@@ -151,13 +151,13 @@ function DetailedAnalysisScreen(app)
     temporalPanel.Layout.Row = 2; temporalPanel.Layout.Column = 3;
     temporalPanel.BackgroundColor = PW;
     tpg = uigridlayout(temporalPanel, [1 1]);
-    tpg.Padding = [10 8 10 8]; tpg.BackgroundColor = PW;
+    tpg.Padding = Theme.KPI_INNER_PAD; tpg.BackgroundColor = PW;
     app.TemporalAxes = uiaxes(tpg);
 
     t2   = 1:40;
     conf = 0.940 + 0.018*randn(1,40);
     sig  = 0.012 + 0.004*rand(1,40);
-    GRN  = [0.10 0.54 0.36];
+    GRN  = Theme.COLOR_SUCCESS;
     fill(app.TemporalAxes, ...
         [t2 fliplr(t2)], [conf+sig fliplr(conf-sig)], ...
         GRN, 'FaceAlpha', 0.14, 'EdgeColor', 'none');
@@ -166,7 +166,7 @@ function DetailedAnalysisScreen(app)
     plot(app.TemporalAxes, t2, conf, 'o', 'Color', GRN, ...
         'MarkerSize', 3.5, 'MarkerFaceColor', GRN);
     yline(app.TemporalAxes, 0.94, '--', ...
-        'Color', [0.62 0.38 0.82], 'LineWidth', 1.2, ...
+        'Color', Theme.COLOR_PURPLE, 'LineWidth', 1.2, ...
         'Label', 'Threshold', 'LabelHorizontalAlignment', 'left');
     hold(app.TemporalAxes, 'off');
     app.styleAxes(app.TemporalAxes);
@@ -186,7 +186,7 @@ function DetailedAnalysisScreen(app)
     qubitPanel.Layout.Row = 3; qubitPanel.Layout.Column = 1;
     qubitPanel.BackgroundColor = PW;
     qpg = uigridlayout(qubitPanel, [1 1]);
-    qpg.Padding = [10 8 10 8]; qpg.BackgroundColor = PW;
+    qpg.Padding = Theme.KPI_INNER_PAD; qpg.BackgroundColor = PW;
     app.QubitAxes = uiaxes(qpg);
 
     nQb = 27;
@@ -217,7 +217,7 @@ function DetailedAnalysisScreen(app)
     rbPanel.Layout.Row = 3; rbPanel.Layout.Column = 2;
     rbPanel.BackgroundColor = PW;
     rpg = uigridlayout(rbPanel, [1 1]);
-    rpg.Padding = [10 8 10 8]; rpg.BackgroundColor = PW;
+    rpg.Padding = Theme.KPI_INNER_PAD; rpg.BackgroundColor = PW;
     app.RBDecayAxes = uiaxes(rpg);
 
     mPts  = [1 2 4 8 16 32 64 128 256];
@@ -226,8 +226,8 @@ function DetailedAnalysisScreen(app)
     pMea  = pFit + 0.008*randn(size(pFit));
     pErr  = 0.007 + 0.003*rand(size(pFit));
     mDns  = 1:256;
-    PURP  = [0.62 0.38 0.82];
-    BLU   = [0.18 0.45 0.82];
+    PURP  = Theme.COLOR_PURPLE;
+    BLU   = Theme.COLOR_PRIMARY;
     hold(app.RBDecayAxes, 'on');
     fill(app.RBDecayAxes, ...
         [mDns fliplr(mDns)], ...

@@ -1,5 +1,8 @@
 classdef NotesViewModel < handle
     % NotesViewModel  Callback handlers for the Notes screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
@@ -51,6 +54,7 @@ classdef NotesViewModel < handle
                 else
                     app.logEvent('API', 'Notes loaded — response empty, no content to display');
                 end
+                obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME
                 app.hideLoading();

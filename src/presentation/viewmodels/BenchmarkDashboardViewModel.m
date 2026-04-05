@@ -56,7 +56,7 @@ classdef BenchmarkDashboardViewModel < handle
                 return;
             end
             try
-                svc = BenchmarkService(app.Client);
+                svc = app.BenchmarkSvc;
                 data = svc.getSystemMetrics(backendName, app.State.bearerHeader());
                 qv = JsonHelper.pick(data, 'quantum_volume', '--');
                 clops = JsonHelper.pick(data, 'clops', '--');
@@ -94,7 +94,7 @@ classdef BenchmarkDashboardViewModel < handle
             app = obj.App;
             if ~app.State.hasProject(); return; end
             try
-                svc = BenchmarkService(app.Client);
+                svc = app.BenchmarkSvc;
                 data = svc.getVolumetricData(app.State.currentProjectId, ...
                     app.State.bearerHeader());
                 points = JsonHelper.pick(data, 'data_points', {});
@@ -132,7 +132,7 @@ classdef BenchmarkDashboardViewModel < handle
             if isempty(char(backendName)); backendName = app.State.selectedBackend; end
             if isempty(char(backendName)) || ~app.State.hasProject(); return; end
             try
-                svc = BenchmarkService(app.Client);
+                svc = app.BenchmarkSvc;
                 data = svc.getBackendScorecard(app.State.currentProjectId, ...
                     backendName, app.State.bearerHeader());
 
@@ -146,7 +146,7 @@ classdef BenchmarkDashboardViewModel < handle
                 angles = linspace(0, 2*pi, 5);
                 values = [cap scl acc rtm cap];
                 polarplot(ax, angles, values, '-o', 'LineWidth', 2, ...
-                    'Color', [0.18 0.45 0.82], 'MarkerFaceColor', [0.18 0.45 0.82]);
+                    'Color', Theme.COLOR_PRIMARY, 'MarkerFaceColor', Theme.COLOR_PRIMARY);
                 ax.ThetaTick = [0 90 180 270];
                 ax.ThetaTickLabel = {'Capacity','Scalability','Accuracy','Runtime'};
                 ax.RLim = [0 10];
@@ -161,7 +161,7 @@ classdef BenchmarkDashboardViewModel < handle
             app = obj.App;
             if ~app.State.hasProject(); return; end
             try
-                svc = BenchmarkService(app.Client);
+                svc = app.BenchmarkSvc;
                 data = svc.getPredictionCalibration(app.State.currentProjectId, ...
                     app.State.bearerHeader());
                 points = JsonHelper.pick(data, 'data_points', {});
@@ -180,9 +180,9 @@ classdef BenchmarkDashboardViewModel < handle
                 preds   = cellfun(@(p) JsonHelper.pick(p, 'predicted_fidelity', 0), points);
                 actuals = cellfun(@(p) JsonHelper.pick(p, 'actual_fidelity', 0), points);
 
-                scatter(ax, preds, actuals, 36, [0.18 0.45 0.82], 'filled');
+                scatter(ax, preds, actuals, 36, Theme.COLOR_PRIMARY, 'filled');
                 hold(ax, 'on');
-                plot(ax, [0 1], [0 1], '--', 'Color', [0.62 0.38 0.82], 'LineWidth', 1.2);
+                plot(ax, [0 1], [0 1], '--', 'Color', Theme.COLOR_PURPLE, 'LineWidth', 1.2);
                 hold(ax, 'off');
                 title(ax, sprintf('Pred vs Actual (MAE=%.3f, r=%.2f)', mae, corr));
                 xlabel(ax, 'Predicted Fidelity');
@@ -201,7 +201,7 @@ classdef BenchmarkDashboardViewModel < handle
             if isempty(char(backendName)); backendName = app.State.selectedBackend; end
             if isempty(char(backendName)) || ~app.State.hasProject(); return; end
             try
-                svc = BenchmarkService(app.Client);
+                svc = app.BenchmarkSvc;
                 data = svc.getBenchmarkRegression(app.State.currentProjectId, ...
                     backendName, app.State.bearerHeader());
                 points = JsonHelper.pick(data, 'data_points', {});

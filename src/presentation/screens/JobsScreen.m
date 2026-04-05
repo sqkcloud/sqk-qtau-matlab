@@ -13,16 +13,16 @@ function JobsScreen(app)
     g = uigridlayout(t, [3 3]);
     g.RowHeight     = {34, '1x', 190};
     g.ColumnWidth   = {'1.2x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────────
     top = uigridlayout(g, [1 4]);
     top.Layout.Row = 1; top.Layout.Column = [1 3];
     top.ColumnWidth = {'1x', 110, 110, 100};
-    top.Padding = [0 0 0 0]; top.BackgroundColor = [0.96 0.97 0.99];
+    top.Padding = [0 0 0 0]; top.BackgroundColor = Theme.COLOR_BG;
 
     app.JobsRefreshButton = uibutton(top, 'Text', [char(8635) ' ' Labels.get('jobs_btn_refresh')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onRefreshJobs());
@@ -47,15 +47,15 @@ function JobsScreen(app)
 
     % ── Column divider ────────────────────────────────────────────────────────
     div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Job Monitoring table (left) ───────────────────────────────────────────
     jobPanel = uipanel(g, 'Title', Labels.get('jobs_panel_monitoring'));
-    jobPanel.Layout.Row = 2; jobPanel.Layout.Column = 1; jobPanel.BackgroundColor = [1 1 1];
+    jobPanel.Layout.Row = 2; jobPanel.Layout.Column = 1; jobPanel.BackgroundColor = Theme.COLOR_CARD;
 
     jg = uigridlayout(jobPanel, [1 1]);
-    jg.Padding = [12 10 12 10]; jg.BackgroundColor = [1 1 1];
+    jg.Padding = [12 10 12 10]; jg.BackgroundColor = Theme.COLOR_CARD;
     app.JobsTable = uitable(jg);
     app.JobsTable.ColumnName = Labels.cols('jobs_table_cols', {'Job ID','Backend','Status','Progress','Created'});
     app.JobsTable.Data = {};
@@ -64,10 +64,10 @@ function JobsScreen(app)
 
     % ── Live Monitor Notes (right) ────────────────────────────────────────────
     trendPanel = uipanel(g, 'Title', Labels.get('jobs_panel_live_notes'));
-    trendPanel.Layout.Row = 2; trendPanel.Layout.Column = 3; trendPanel.BackgroundColor = [1 1 1];
+    trendPanel.Layout.Row = 2; trendPanel.Layout.Column = 3; trendPanel.BackgroundColor = Theme.COLOR_CARD;
 
     tg = uigridlayout(trendPanel, [1 1]);
-    tg.Padding = [12 10 12 10]; tg.BackgroundColor = [1 1 1];
+    tg.Padding = [12 10 12 10]; tg.BackgroundColor = Theme.COLOR_CARD;
     app.JobStatusArea = uitextarea(tg, 'Editable', 'off'); app.JobStatusArea.FontSize = 12;
     app.JobStatusArea.Value = { ...
         Labels.get('jobs_status_initial'), ...

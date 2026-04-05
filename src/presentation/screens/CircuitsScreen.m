@@ -11,25 +11,25 @@ function CircuitsScreen(app)
 
     g = uigridlayout(t, [2 1]);
     g.RowHeight     = {'1x', 48};
-    g.Padding       = [16 16 16 16];
+    g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = 10;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Circuits table (full width) ───────────────────────────────────────
     tablePanel = uipanel(g, 'Title', Labels.get('circuits_panel_table', 'Project Circuits'));
     tablePanel.Layout.Row = 1; tablePanel.Layout.Column = 1;
-    tablePanel.BackgroundColor = [1 1 1];
+    tablePanel.BackgroundColor = Theme.COLOR_CARD;
 
     tg = uigridlayout(tablePanel, [2 1]);
     tg.RowHeight = {32, '1x'};
-    tg.Padding = [10 8 10 8]; tg.RowSpacing = 6; tg.BackgroundColor = [1 1 1];
+    tg.Padding = Theme.KPI_INNER_PAD; tg.RowSpacing = 6; tg.BackgroundColor = Theme.COLOR_CARD;
 
     % Search bar
     searchGrid = uigridlayout(tg, [1 2]);
     searchGrid.Layout.Row = 1; searchGrid.Layout.Column = 1;
     searchGrid.ColumnWidth = {'1x', 90};
     searchGrid.Padding = [0 0 0 0]; searchGrid.ColumnSpacing = 6;
-    searchGrid.BackgroundColor = [1 1 1];
+    searchGrid.BackgroundColor = Theme.COLOR_CARD;
     app.CircuitsSearchField = uieditfield(searchGrid, 'text', ...
         'Placeholder', 'Search by name, category, format...', ...
         'ValueChangedFcn', @(src,~)app.CircuitsVm.onSearch(src.Value));

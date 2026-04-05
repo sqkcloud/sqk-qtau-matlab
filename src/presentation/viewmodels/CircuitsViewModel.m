@@ -5,6 +5,10 @@ classdef CircuitsViewModel < handle
     %   CircuitsTable.  Supports Prev / Next page navigation, row selection,
     %   right-click context menu (Edit / Delete), and a quick jump to Upload.
 
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
+
     properties (Access = private)
         App
         RowCircuitIds  cell = {}   % maps table row index → circuit_id
@@ -94,6 +98,7 @@ classdef CircuitsViewModel < handle
                     end
                 end
                 app.logEvent('API', sprintf('listCircuitsPaged → %d circuits loaded', n));
+                obj.LastRefresh = tic;
             catch ME
                 app.logEvent('ERROR', sprintf('listCircuitsPaged FAILED: %s', ME.message));
             end
@@ -409,12 +414,12 @@ classdef CircuitsViewModel < handle
             end
 
             if isempty(patch.name)
-                statusLbl.Text = 'Circuit name cannot be empty.';
+                statusLbl.Text = Labels.get('circuits_error_name_empty', 'Circuit name cannot be empty.');
                 return;
             end
 
             try
-                statusLbl.Text = 'Saving...';
+                statusLbl.Text = Labels.get('circuits_status_saving', 'Saving...');
                 statusLbl.FontColor = [0.3 0.3 0.6];
                 drawnow;
                 app.CircuitSvc.updateCircuit(cid, patch, app.State.authToken);
@@ -422,7 +427,7 @@ classdef CircuitsViewModel < handle
                 delete(dlg);
                 obj.onLoadCircuits();
             catch ME
-                statusLbl.Text = sprintf('Save failed: %s', ME.message);
+                statusLbl.Text = sprintf('%s %s', Labels.get('circuits_error_save_failed', 'Save failed:'), ME.message);
                 statusLbl.FontColor = [0.7 0.15 0.15];
                 app.logEvent('ERROR', sprintf('updateCircuit FAILED: %s', ME.message));
             end

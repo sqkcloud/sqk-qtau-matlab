@@ -1,5 +1,8 @@
 classdef ResultsViewModel < handle
     % ResultsViewModel  Callback handlers for the Results screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
@@ -33,6 +36,7 @@ classdef ResultsViewModel < handle
                 app.setStatus(app.ResultJsonArea, summary);
                 app.logEvent('API', sprintf('Results loaded — job: %s  status: %s  fidelity: %s  rows: %d', ...
                     jobId, statusStr, fidelity, size(rows,1)));
+                obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME
                 app.hideLoading();

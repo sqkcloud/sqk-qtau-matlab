@@ -27,7 +27,7 @@ classdef QecSimulationViewModel < handle
             catch ME
                 app.hideLoading();
                 app.logEvent('ERROR', sprintf('QEC simulation failed: %s', ME.message));
-                uialert(app.UIFigure, ME.message, 'Simulation Error');
+                app.showError('QEC Simulation', ME);
             end
         end
 
@@ -49,7 +49,7 @@ classdef QecSimulationViewModel < handle
             catch ME
                 app.hideLoading();
                 app.logEvent('ERROR', sprintf('QEC sweep failed: %s', ME.message));
-                uialert(app.UIFigure, ME.message, 'Sweep Error');
+                app.showError('QEC Sweep', ME);
             end
         end
 
@@ -73,7 +73,7 @@ classdef QecSimulationViewModel < handle
             catch ME
                 app.hideLoading();
                 app.logEvent('ERROR', sprintf('QEC compare failed: %s', ME.message));
-                uialert(app.UIFigure, ME.message, 'Compare Error');
+                app.showError('QEC Compare', ME);
             end
         end
 

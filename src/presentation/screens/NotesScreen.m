@@ -13,20 +13,20 @@ function NotesScreen(app)
     g = uigridlayout(t, [2 3]);
     g.RowHeight     = {34, '1x'};
     g.ColumnWidth   = {'1.2x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────────
     topRow = uigridlayout(g, [1 4]);
     topRow.Layout.Row = 1; topRow.Layout.Column = [1 3];
     topRow.ColumnWidth = {'1x', 90, 100, 80};
     topRow.Padding = [0 0 0 0];
-    topRow.BackgroundColor = [0.96 0.97 0.99];
+    topRow.BackgroundColor = Theme.COLOR_BG;
 
     heading = uilabel(topRow, 'Text', Labels.get('notes_toolbar_title'));
-    heading.FontSize = 16; heading.FontWeight = 'bold'; heading.FontColor = [0.18 0.26 0.40];
+    heading.FontSize = 16; heading.FontWeight = 'bold'; heading.FontColor = Theme.COLOR_HEADING;
     heading.Layout.Row = 1; heading.Layout.Column = 1;
 
     app.SaveNotesButton = uibutton(topRow, 'Text', [char(10004) ' ' Labels.get('notes_btn_save')], ...
@@ -51,18 +51,18 @@ function NotesScreen(app)
 
     % ── Column divider ────────────────────────────────────────────────────────
     div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Markdown notes editor (left) ─────────────────────────────────────────
     editorPanel = uipanel(g, 'Title', Labels.get('notes_panel_editor'));
-    editorPanel.Layout.Row = 2; editorPanel.Layout.Column = 1; editorPanel.BackgroundColor = [1 1 1];
+    editorPanel.Layout.Row = 2; editorPanel.Layout.Column = 1; editorPanel.BackgroundColor = Theme.COLOR_CARD;
 
     eg = uigridlayout(editorPanel, [1 1]);
-    eg.Padding = [12 10 12 10]; eg.BackgroundColor = [1 1 1];
+    eg.Padding = [12 10 12 10]; eg.BackgroundColor = Theme.COLOR_CARD;
     app.NotesArea = uitextarea(eg, 'Editable', 'on');
     app.NotesArea.FontSize = 13; app.NotesArea.FontName = 'Courier New';
-    app.NotesArea.BackgroundColor = [1 1 1];
+    app.NotesArea.BackgroundColor = Theme.COLOR_CARD;
     app.NotesArea.Value = { ...
         '# Run Notes', '', ...
         '## Objective', '', ...
@@ -76,11 +76,11 @@ function NotesScreen(app)
 
     % ── Pre-submission Runbook (right) ────────────────────────────────────────
     checkPanel = uipanel(g, 'Title', Labels.get('notes_panel_runbook'));
-    checkPanel.Layout.Row = 2; checkPanel.Layout.Column = 3; checkPanel.BackgroundColor = [1 1 1];
+    checkPanel.Layout.Row = 2; checkPanel.Layout.Column = 3; checkPanel.BackgroundColor = Theme.COLOR_CARD;
 
     cpg = uigridlayout(checkPanel, [2 1]);
     cpg.RowHeight = {'1x', 60};
-    cpg.Padding = [12 10 12 10]; cpg.BackgroundColor = [1 1 1];
+    cpg.Padding = [12 10 12 10]; cpg.BackgroundColor = Theme.COLOR_CARD;
 
     app.NotesRunbookTable = uitable(cpg);
     app.NotesRunbookTable.ColumnName = Labels.cols('notes_table_cols_runbook', {'Check','Done'});

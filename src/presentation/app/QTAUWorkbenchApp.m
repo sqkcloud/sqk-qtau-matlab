@@ -55,7 +55,8 @@ classdef QTAUWorkbenchApp < handle
     % ── Shared services ───────────────────────────────────────────────────────
     properties
         State           % AppState
-        Client          % FastAPIClient
+        Services        % ServiceContainer (owns Client + all domain services)
+        Client          % FastAPIClient  (shortcut → Services.Client)
         AuthSvc         % AuthService
         CircuitSvc      % CircuitService
         BackendSvc      % BackendService
@@ -65,6 +66,7 @@ classdef QTAUWorkbenchApp < handle
         ReportSvc       % ReportService
         SettingsSvc     % SettingsService
         QecEngine       % QecEngineService (local computation, no HTTP)
+        BenchmarkSvc    % BenchmarkService
     end
 
     % ── Screen callback services ──────────────────────────────────────────────
@@ -335,35 +337,26 @@ classdef QTAUWorkbenchApp < handle
             Logger.info('QTAUWorkbenchApp', '=== QTAUWorkbenchApp initializing ===');
             app.State         = AppState();
             Logger.info('QTAUWorkbenchApp', 'AppState created — baseUrl: %s', char(app.State.baseUrl));
-            app.Client        = FastAPIClient(app.State.baseUrl);
-            app.AuthSvc       = AuthService(app.Client);
-            app.CircuitSvc    = CircuitService(app.Client);
-            app.BackendSvc    = BackendService(app.Client);
-            app.JobSvc        = JobService(app.Client);
-            app.ProjectSvc    = ProjectService(app.Client);
-            app.PredictionSvc = PredictionService(app.Client);
-            app.ReportSvc     = ReportService(app.Client);
-            app.SettingsSvc   = SettingsService(app.Client);
-            app.QecEngine     = QecEngineService();
-            Logger.info('QTAUWorkbenchApp', 'All services initialized — creating screen callback objects');
-            app.WelcomeVm          = WelcomeViewModel(app);
-            app.DashboardVm        = DashboardViewModel(app);
-            app.CircuitsVm         = CircuitsViewModel(app);
-            app.NotesVm            = NotesViewModel(app);
-            app.UploadVm           = UploadViewModel(app);
-            app.AnalysisVm         = AnalysisViewModel(app);
-            app.BackendsVm         = BackendsViewModel(app);
-            app.BenchmarkVm        = BenchmarkViewModel(app);
-            app.PredictionVm       = PredictionViewModel(app);
-            app.JobsVm             = JobsViewModel(app);
-            app.ResultsVm          = ResultsViewModel(app);
-            app.DetailedAnalysisVm    = DetailedAnalysisViewModel(app);
-            app.BenchmarkDashboardVm = BenchmarkDashboardViewModel(app);
-            app.ReportsVm            = ReportsViewModel(app);
-            app.SettingsVm         = SettingsViewModel(app);
-            app.QecSimulationVm    = QecSimulationViewModel(app);
-            app.QecVisualizationVm = QecVisualizationViewModel(app);
-            Logger.info('QTAUWorkbenchApp', 'Screen callback objects ready — building UI');
+
+            % Service initialization (delegated to ServiceContainer)
+            app.Services      = ServiceContainer(app.State.baseUrl);
+            app.Client        = app.Services.Client;
+            app.AuthSvc       = app.Services.AuthSvc;
+            app.CircuitSvc    = app.Services.CircuitSvc;
+            app.BackendSvc    = app.Services.BackendSvc;
+            app.JobSvc        = app.Services.JobSvc;
+            app.ProjectSvc    = app.Services.ProjectSvc;
+            app.PredictionSvc = app.Services.PredictionSvc;
+            app.ReportSvc     = app.Services.ReportSvc;
+            app.SettingsSvc   = app.Services.SettingsSvc;
+            app.QecEngine     = app.Services.QecEngine;
+            app.BenchmarkSvc  = BenchmarkService(app.Client);
+
+            % Only WelcomeVm is created eagerly (handles login dialog).
+            % All other ViewModels are created lazily via ensureVm().
+            Logger.info('QTAUWorkbenchApp', 'Services ready — creating WelcomeVm (lazy init for others)');
+            app.WelcomeVm = WelcomeViewModel(app);
+
             app.buildUI();
             app.logEvent('UI', 'QTAUWorkbenchApp started');
             app.forceInitialLayout();
@@ -417,333 +410,11 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function showLoginDialog(app)
-            % Create modal login dialog — Google-inspired professional layout
-            figPos = app.UIFigure.Position;
-            dlgW = 480; dlgH = 520;
-            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
-            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
-
-            % Google-inspired color palette
-            bgColor     = [0.965 0.969 0.976];   % #f7f8f9 — page background
-            cardBg      = [1 1 1];                % white card
-            cardBorder  = [0.855 0.863 0.878];    % #dadce0
-            titleColor  = [0.125 0.129 0.141];    % #202124
-            subtColor   = [0.373 0.392 0.424];    % #5f6368
-            labelColor  = [0.373 0.392 0.424];    % #5f6368
-            fieldColor  = [0.125 0.129 0.141];    % #202124
-            accentBlue  = [0.102 0.451 0.910];    % #1a73e8
-            errorRed    = [0.851 0.188 0.145];    % #d93025
-            footerColor = [0.584 0.604 0.643];    % #959aa4
-
-            app.LoginDialog = uifigure( ...
-                'Name', Labels.get('login_dlg_title', 'Sign In'), ...
-                'Position', [dlgX dlgY dlgW dlgH], ...
-                'WindowStyle', 'modal', ...
-                'Resize', 'off', ...
-                'Color', bgColor);
-
-            % ── Outer grid: top spacer + card + footer ───────────────────────
-            outerGrid = uigridlayout(app.LoginDialog, [3 3]);
-            outerGrid.RowHeight   = {16, '1x', 28};
-            outerGrid.ColumnWidth = {36, '1x', 36};
-            outerGrid.Padding     = [0 0 0 0];
-            outerGrid.RowSpacing  = 0;
-            outerGrid.ColumnSpacing = 0;
-            outerGrid.BackgroundColor = bgColor;
-
-            % ── Card panel ───────────────────────────────────────────────────
-            card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
-                'BackgroundColor', cardBg, ...
-                'HighlightColor', cardBorder, ...
-                'BorderColor', cardBorder);
-            card.Layout.Row = 2; card.Layout.Column = 2;
-
-            % Card inner grid — generous spacing for Google-like airiness
-            % logo | title | subtitle | gap1 |
-            % url-lbl | url-field | gap2 | user-lbl | user-field |
-            % gap3 | pass-lbl | pass-row | forgot | gap4 |
-            % sign-in | status
-            cg = uigridlayout(card, [15 1]);
-            cg.RowHeight = {32, ...     %  1: "Sign in" title
-                            20, ...     %  2: subtitle
-                            12, ...     %  3: gap
-                            16, ...     %  4: Server URL label
-                            36, ...     %  5: Server URL field
-                            8, ...      %  6: gap
-                            16, ...     %  7: Username label
-                            36, ...     %  8: Username field
-                            8, ...      %  9: gap
-                            16, ...     % 10: Password label
-                            36, ...     % 11: Password row
-                            20, ...     % 12: Forgot link
-                            12, ...     % 13: gap
-                            40, ...     % 14: Sign In button
-                            20};        % 15: Status / error
-            cg.ColumnWidth = {'1x'};
-            cg.Padding     = [32 24 32 18];
-            cg.RowSpacing  = 2;
-            cg.BackgroundColor = cardBg;
-
-            % Row 1 — "Sign in" title
-            titleLbl = uilabel(cg, 'Text', Labels.get('login_dlg_sign_in', 'Sign in'), ...
-                'FontSize', 24, 'FontWeight', 'bold', ...
-                'FontColor', titleColor, ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
-            titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
-
-            % Row 2 — Subtitle
-            subLbl = uilabel(cg, ...
-                'Text', Labels.get('login_dlg_subtitle', 'to continue to QTAU Connector'), ...
-                'FontSize', 13, 'FontColor', subtColor, ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
-            subLbl.Layout.Row = 2; subLbl.Layout.Column = 1;
-
-            % Row 3 — gap
-
-            % Row 4 — Server URL label
-            urlLbl = uilabel(cg, ...
-                'Text', Labels.get('welcome_label_base_url', 'Server URL'), ...
-                'FontSize', 12, 'FontColor', labelColor, ...
-                'VerticalAlignment', 'bottom');
-            urlLbl.Layout.Row = 4; urlLbl.Layout.Column = 1;
-
-            % Row 5 — Server URL field
-            app.LoginDlgBaseUrlField = uieditfield(cg, 'text', ...
-                'Value', char(app.State.baseUrl), ...
-                'Placeholder', Labels.get('login_dlg_placeholder_url', 'https://your-server:port'), ...
-                'FontSize', 14, 'FontColor', fieldColor);
-            app.LoginDlgBaseUrlField.Layout.Row = 5;
-            app.LoginDlgBaseUrlField.Layout.Column = 1;
-
-            % Row 6 — gap
-
-            % Row 7 — Username label
-            userLbl = uilabel(cg, ...
-                'Text', Labels.get('welcome_label_username', 'Username'), ...
-                'FontSize', 12, 'FontColor', labelColor, ...
-                'VerticalAlignment', 'bottom');
-            userLbl.Layout.Row = 7; userLbl.Layout.Column = 1;
-
-            % Row 8 — Username field
-            app.LoginDlgUsernameField = uieditfield(cg, 'text', 'Value', '', ...
-                'Placeholder', Labels.get('login_dlg_placeholder_user', 'Enter your username'), ...
-                'FontSize', 14, 'FontColor', fieldColor);
-            app.LoginDlgUsernameField.Layout.Row = 8;
-            app.LoginDlgUsernameField.Layout.Column = 1;
-
-            % Row 9 — gap
-
-            % Row 10 — Password label
-            passLbl = uilabel(cg, ...
-                'Text', Labels.get('welcome_label_password', 'Password'), ...
-                'FontSize', 12, 'FontColor', labelColor, ...
-                'VerticalAlignment', 'bottom');
-            passLbl.Layout.Row = 10; passLbl.Layout.Column = 1;
-
-            % Row 11 — Password field + Show/Hide toggle
-            app.LoginDlgPasswordReal    = '';
-            app.LoginDlgPasswordVisible = false;
-            passRow = uigridlayout(cg, [1 2]);
-            passRow.Layout.Row = 11; passRow.Layout.Column = 1;
-            passRow.ColumnWidth = {'1x', 34};
-            passRow.Padding = [0 0 0 0]; passRow.ColumnSpacing = 8;
-            passRow.BackgroundColor = cardBg;
-
-            app.LoginDlgPasswordField = uieditfield(passRow, 'text', 'Value', '', ...
-                'Placeholder', Labels.get('login_dlg_placeholder_pass', 'Enter your password'), ...
-                'FontSize', 14, 'FontColor', fieldColor);
-            app.LoginDlgPasswordField.Layout.Row = 1;
-            app.LoginDlgPasswordField.Layout.Column = 1;
-            app.LoginDlgPasswordField.ValueChangingFcn = ...
-                @(~, evt) app.onPasswordChanging(evt);
-
-            eyeSvgOpen  = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#FIL" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>';
-            eyeSvgSlash = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#FIL" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C11.74 7.13 12.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>';
-            eyeColor = '6B7280';
-            htmlTpl = [ ...
-                '<html><head><style>' ...
-                'body{margin:0;display:flex;align-items:center;justify-content:center;height:100%%;' ...
-                'cursor:pointer;background:BGC;user-select:none;box-sizing:border-box;' ...
-                'border:1px solid #dadce0;border-radius:6px;}' ...
-                'div:hover{opacity:0.7;}' ...
-                '</style></head><body>' ...
-                '<div id="eyeBtn" title="Show or hide password">SVG</div>' ...
-                '<script>' ...
-                'function setup(comp){document.getElementById("eyeBtn").addEventListener("click",function(){comp.Data=Date.now();});}' ...
-                '</script></body></html>'];
-            openSvg  = strrep(eyeSvgOpen,  '#FIL', ['#' eyeColor]);
-            slashSvg = strrep(eyeSvgSlash, '#FIL', ['#' eyeColor]);
-            app.LoginDlgEyeButton = uihtml(passRow);
-            app.LoginDlgEyeButton.Layout.Row = 1;
-            app.LoginDlgEyeButton.Layout.Column = 2;
-            app.LoginDlgEyeButton.HTMLSource = strrep(strrep(htmlTpl, 'SVG', slashSvg), 'BGC', '#f8f9fc');
-            app.LoginDlgEyeButton.DataChangedFcn = @(~,~)app.onTogglePasswordVisibility();
-            app.LoginDlgEyeButton.UserData = struct( ...
-                'hiddenHtml', strrep(strrep(htmlTpl, 'SVG', slashSvg), 'BGC', '#f8f9fc'), ...
-                'visibleHtml', strrep(strrep(htmlTpl, 'SVG', openSvg), 'BGC', '#f8f9fc'));
-
-            % Row 12 — Forgot credentials link (blue, left-aligned)
-            helpLbl = uilabel(cg, ...
-                'Text', Labels.get('login_dlg_forgot', 'Forgot credentials? Contact your admin.'), ...
-                'FontSize', 11, 'FontColor', accentBlue, ...
-                'HorizontalAlignment', 'left', 'VerticalAlignment', 'center');
-            helpLbl.Layout.Row = 12; helpLbl.Layout.Column = 1;
-
-            % Row 13 — gap
-
-            % Row 14 — Sign In button (Google blue, bold)
-            loginBtn = uibutton(cg, ...
-                'Text', Labels.get('welcome_btn_login', 'Sign In'), ...
-                'FontSize', 15, 'FontWeight', 'bold', ...
-                'FontColor', [1 1 1], ...
-                'BackgroundColor', accentBlue, ...
-                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onLogin());
-            loginBtn.Layout.Row = 14; loginBtn.Layout.Column = 1;
-
-            % Row 15 — Status / error label
-            app.LoginDlgStatusLabel = uilabel(cg, 'Text', '', ...
-                'FontSize', 11, 'FontColor', errorRed, ...
-                'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.LoginDlgStatusLabel.Layout.Row = 15;
-            app.LoginDlgStatusLabel.Layout.Column = 1;
-
-            % ── Version footer below card ────────────────────────────────────
-            verLbl = uilabel(outerGrid, ...
-                'Text', Labels.get('login_dlg_version', 'QTAU Connector Workspace v2026'), ...
-                'FontSize', 9, 'FontColor', footerColor, ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
-            verLbl.Layout.Row = 3; verLbl.Layout.Column = 2;
-
-            % Enter key triggers login from anywhere in the dialog
-            app.LoginDialog.KeyPressFcn = @(~, evt) app.onLoginKeyPress(evt);
-
-            Logger.info('QTAUWorkbenchApp', 'Login dialog shown');
+            DialogBuilder.buildLoginDialog(app);
         end
 
         function showNewProjectDialog(app)
-            % Create modal New Project dialog — modern card layout matching login style
-            figPos = app.UIFigure.Position;
-            dlgW = 480; dlgH = 520;
-            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
-            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
-
-            app.NewProjectDialog = uifigure( ...
-                'Name', Labels.get('new_proj_dlg_title', 'New Project'), ...
-                'Position', [dlgX dlgY dlgW dlgH], ...
-                'WindowStyle', 'modal', ...
-                'Resize', 'off', ...
-                'Color', [0.95 0.96 0.98]);
-
-            % ── Outer grid: centres the card ────────────────────────────────
-            outerGrid = uigridlayout(app.NewProjectDialog, [3 3]);
-            outerGrid.RowHeight     = {16, '1x', 16};
-            outerGrid.ColumnWidth   = {24, '1x', 24};
-            outerGrid.Padding       = [0 0 0 0];
-            outerGrid.RowSpacing    = 0;
-            outerGrid.ColumnSpacing = 0;
-            outerGrid.BackgroundColor = [0.95 0.96 0.98];
-
-            % ── Card panel ──────────────────────────────────────────────────
-            card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
-                'BackgroundColor', [1 1 1], ...
-                'HighlightColor', [0.88 0.89 0.92], ...
-                'BorderColor', [0.88 0.89 0.92]);
-            card.Layout.Row = 2; card.Layout.Column = 2;
-
-            % 11 rows: title | subtitle | spacer |
-            %          name label | name field | desc label | desc area |
-            %          tags label | tags field | spacer |
-            %          button bar | status
-            cg = uigridlayout(card, [12 1]);
-            cg.RowHeight = {28, 18, 10, ...          % title, subtitle, spacer
-                            16, 34, 16, 90, ...      % name lbl, name field, desc lbl, desc area
-                            16, 34, 14, ...           % tags lbl, tags field, spacer
-                            42, 20};                  % button bar, status
-            cg.ColumnWidth = {'1x'};
-            cg.Padding     = [36 24 36 20];
-            cg.RowSpacing  = 2;
-            cg.BackgroundColor = [1 1 1];
-
-            % Row 1 — Title
-            titleLbl = uilabel(cg, 'Text', Labels.get('new_proj_dlg_heading', 'Create New Project'), ...
-                'FontSize', 19, 'FontWeight', 'bold', ...
-                'FontColor', [0.15 0.18 0.24], ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
-            titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
-
-            % Row 2 — Subtitle
-            subLbl = uilabel(cg, 'Text', Labels.get('new_proj_dlg_subtitle', 'Set up a new quantum experiment workspace'), ...
-                'FontSize', 11, 'FontColor', [0.45 0.50 0.58], ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
-            subLbl.Layout.Row = 2; subLbl.Layout.Column = 1;
-
-            % Row 3 — spacer
-
-            % Row 4 — Project Name label
-            nameLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_name', 'Project Name'), ...
-                'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], ...
-                'VerticalAlignment', 'bottom');
-            nameLbl.Layout.Row = 4; nameLbl.Layout.Column = 1;
-
-            % Row 5 — Project Name field
-            app.NewProjNameField = uieditfield(cg, 'text', 'Value', '', ...
-                'Placeholder', Labels.get('new_proj_placeholder_name', 'e.g. BV-27 Fidelity Study'), ...
-                'FontSize', 13);
-            app.NewProjNameField.Layout.Row = 5; app.NewProjNameField.Layout.Column = 1;
-
-            % Row 6 — Description label
-            descLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_desc', 'Description'), ...
-                'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], ...
-                'VerticalAlignment', 'bottom');
-            descLbl.Layout.Row = 6; descLbl.Layout.Column = 1;
-
-            % Row 7 — Description text area
-            app.NewProjDescField = uitextarea(cg, 'Value', '', ...
-                'Placeholder', Labels.get('new_proj_placeholder_desc', 'Describe the purpose and scope of this project...'), ...
-                'FontSize', 13);
-            app.NewProjDescField.Layout.Row = 7; app.NewProjDescField.Layout.Column = 1;
-
-            % Row 8 — Tags label
-            tagsLbl = uilabel(cg, 'Text', Labels.get('new_proj_label_tags', 'Tags (comma-separated)'), ...
-                'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], ...
-                'VerticalAlignment', 'bottom');
-            tagsLbl.Layout.Row = 8; tagsLbl.Layout.Column = 1;
-
-            % Row 9 — Tags field
-            app.NewProjTagsField = uieditfield(cg, 'text', 'Value', '', ...
-                'Placeholder', Labels.get('new_proj_placeholder_tags', 'e.g. calibration, 27-qubit, fidelity'), ...
-                'FontSize', 13);
-            app.NewProjTagsField.Layout.Row = 9; app.NewProjTagsField.Layout.Column = 1;
-
-            % Row 10 — spacer
-
-            % Row 11 — Button bar (Create + Cancel)
-            btnBar = uigridlayout(cg, [1 2]);
-            btnBar.Layout.Row = 11; btnBar.Layout.Column = 1;
-            btnBar.ColumnWidth = {'1x', '1x'};
-            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
-            btnBar.BackgroundColor = [1 1 1];
-
-            cancelBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_cancel', 'Cancel'), ...
-                'ButtonPushedFcn', @(~,~)delete(app.NewProjectDialog));
-            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
-            app.styleBtn(cancelBtn, 'ghost');
-
-            createBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_create', 'Create'), ...
-                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onCreateProject());
-            createBtn.Layout.Row = 1; createBtn.Layout.Column = 2;
-            app.styleBtn(createBtn, 'primary');
-
-            % Row 12 — Status label
-            app.NewProjStatusLabel = uilabel(cg, 'Text', '', ...
-                'FontSize', 11, 'FontColor', [0.84 0.18 0.18], ...
-                'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.NewProjStatusLabel.Layout.Row = 12; app.NewProjStatusLabel.Layout.Column = 1;
-
-            Logger.info('QTAUWorkbenchApp', 'New Project dialog shown');
+            DialogBuilder.buildNewProjectDialog(app);
         end
 
         function buildProjectPopupMenu(app)
@@ -905,107 +576,7 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function showEditProjectDialog(app, projectId, projName, projDesc, projTags)
-            % Create modal Edit Project dialog pre-filled with existing data
-            app.EditProjId = projectId;
-            figPos = app.UIFigure.Position;
-            dlgW = 480; dlgH = 520;
-            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
-            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
-
-            app.EditProjectDialog = uifigure( ...
-                'Name', Labels.get('edit_proj_dlg_title', 'Edit Project'), ...
-                'Position', [dlgX dlgY dlgW dlgH], ...
-                'WindowStyle', 'modal', ...
-                'Resize', 'off', ...
-                'Color', [0.95 0.96 0.98]);
-
-            outerGrid = uigridlayout(app.EditProjectDialog, [3 3]);
-            outerGrid.RowHeight     = {16, '1x', 16};
-            outerGrid.ColumnWidth   = {24, '1x', 24};
-            outerGrid.Padding       = [0 0 0 0];
-            outerGrid.RowSpacing    = 0;
-            outerGrid.ColumnSpacing = 0;
-            outerGrid.BackgroundColor = [0.95 0.96 0.98];
-
-            card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
-                'BackgroundColor', [1 1 1], ...
-                'HighlightColor', [0.88 0.89 0.92], ...
-                'BorderColor', [0.88 0.89 0.92]);
-            card.Layout.Row = 2; card.Layout.Column = 2;
-
-            cg = uigridlayout(card, [12 1]);
-            cg.RowHeight = {28, 18, 10, ...
-                            16, 34, 16, 90, ...
-                            16, 34, 14, ...
-                            42, 20};
-            cg.ColumnWidth = {'1x'};
-            cg.Padding     = [36 24 36 20];
-            cg.RowSpacing  = 2;
-            cg.BackgroundColor = [1 1 1];
-
-            titleLbl = uilabel(cg, 'Text', Labels.get('edit_proj_dlg_heading', 'Edit Project'), ...
-                'FontSize', 19, 'FontWeight', 'bold', ...
-                'FontColor', [0.15 0.18 0.24], ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
-            titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
-
-            subLbl = uilabel(cg, 'Text', Labels.get('edit_proj_dlg_subtitle', 'Update project information'), ...
-                'FontSize', 11, 'FontColor', [0.45 0.50 0.58], ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
-            subLbl.Layout.Row = 2; subLbl.Layout.Column = 1;
-
-            nameLbl = uilabel(cg, 'Text', Labels.get('edit_proj_label_name', 'Project Name'), ...
-                'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], ...
-                'VerticalAlignment', 'bottom');
-            nameLbl.Layout.Row = 4; nameLbl.Layout.Column = 1;
-
-            app.EditProjNameField = uieditfield(cg, 'text', 'Value', char(projName), ...
-                'FontSize', 13);
-            app.EditProjNameField.Layout.Row = 5; app.EditProjNameField.Layout.Column = 1;
-
-            descLbl = uilabel(cg, 'Text', Labels.get('edit_proj_label_desc', 'Description'), ...
-                'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], ...
-                'VerticalAlignment', 'bottom');
-            descLbl.Layout.Row = 6; descLbl.Layout.Column = 1;
-
-            app.EditProjDescField = uitextarea(cg, 'Value', char(projDesc), ...
-                'FontSize', 13);
-            app.EditProjDescField.Layout.Row = 7; app.EditProjDescField.Layout.Column = 1;
-
-            tagsLbl = uilabel(cg, 'Text', Labels.get('edit_proj_label_tags', 'Tags (comma-separated)'), ...
-                'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], ...
-                'VerticalAlignment', 'bottom');
-            tagsLbl.Layout.Row = 8; tagsLbl.Layout.Column = 1;
-
-            app.EditProjTagsField = uieditfield(cg, 'text', 'Value', char(projTags), ...
-                'FontSize', 13);
-            app.EditProjTagsField.Layout.Row = 9; app.EditProjTagsField.Layout.Column = 1;
-
-            btnBar = uigridlayout(cg, [1 2]);
-            btnBar.Layout.Row = 11; btnBar.Layout.Column = 1;
-            btnBar.ColumnWidth = {'1x', '1x'};
-            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
-            btnBar.BackgroundColor = [1 1 1];
-
-            cancelBtn = uibutton(btnBar, 'Text', [char(10006) ' ' Labels.get('edit_proj_btn_cancel', 'Cancel')], ...
-                'ButtonPushedFcn', @(~,~)delete(app.EditProjectDialog));
-            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
-            app.styleBtn(cancelBtn, 'ghost');
-
-            saveBtn = uibutton(btnBar, 'Text', [char(10004) ' ' Labels.get('edit_proj_btn_save', 'Save')], ...
-                'ButtonPushedFcn', @(~,~)app.WelcomeVm.onSaveProject());
-            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 2;
-            app.styleBtn(saveBtn, 'primary');
-
-            app.EditProjStatusLabel = uilabel(cg, 'Text', '', ...
-                'FontSize', 11, 'FontColor', [0.84 0.18 0.18], ...
-                'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.EditProjStatusLabel.Layout.Row = 12; app.EditProjStatusLabel.Layout.Column = 1;
-
-            Logger.info('QTAUWorkbenchApp', 'Edit Project dialog shown for: %s', char(projectId));
+            DialogBuilder.buildEditProjectDialog(app, projectId, projName, projDesc, projTags);
         end
 
         function onPasswordChanging(app, evt)
@@ -1126,7 +697,8 @@ classdef QTAUWorkbenchApp < handle
 
             try
                 t = timer('ExecutionMode','singleShot','StartDelay',0.15, ...
-                    'TimerFcn', @(~,~)app.forceInitialLayout());
+                    'TimerFcn', @(~,~)app.forceInitialLayout(), ...
+                    'StopFcn', @(tObj,~)delete(tObj));
                 start(t);
             catch ME; Logger.debug('QTAUWorkbenchApp', 'Layout timer init: %s', ME.message); end
 
@@ -1780,6 +1352,63 @@ classdef QTAUWorkbenchApp < handle
         end
     end
 
+    % ── Lazy ViewModel initialization ────────────────────────────────────────
+    methods
+        function ensureVm(app, key)
+            % Create the ViewModel for the given screen key if it doesn't
+            % exist yet.  Called by autoLoadScreen before data-fetching.
+            switch key
+                case 'Dashboard'
+                    if isempty(app.DashboardVm); app.DashboardVm = DashboardViewModel(app); end
+                case 'Circuits'
+                    if isempty(app.CircuitsVm); app.CircuitsVm = CircuitsViewModel(app); end
+                case 'Notes'
+                    if isempty(app.NotesVm); app.NotesVm = NotesViewModel(app); end
+                case 'Upload'
+                    if isempty(app.UploadVm); app.UploadVm = UploadViewModel(app); end
+                case 'Analysis'
+                    if isempty(app.AnalysisVm); app.AnalysisVm = AnalysisViewModel(app); end
+                case 'Backends'
+                    if isempty(app.BackendsVm); app.BackendsVm = BackendsViewModel(app); end
+                case 'Benchmark'
+                    if isempty(app.BenchmarkVm); app.BenchmarkVm = BenchmarkViewModel(app); end
+                case 'Prediction'
+                    if isempty(app.PredictionVm); app.PredictionVm = PredictionViewModel(app); end
+                case 'Jobs'
+                    if isempty(app.JobsVm); app.JobsVm = JobsViewModel(app); end
+                case 'Results'
+                    if isempty(app.ResultsVm); app.ResultsVm = ResultsViewModel(app); end
+                case 'DetailedAnalysis'
+                    if isempty(app.DetailedAnalysisVm); app.DetailedAnalysisVm = DetailedAnalysisViewModel(app); end
+                case 'BenchmarkDashboard'
+                    if isempty(app.BenchmarkDashboardVm); app.BenchmarkDashboardVm = BenchmarkDashboardViewModel(app); end
+                case 'Reports'
+                    if isempty(app.ReportsVm); app.ReportsVm = ReportsViewModel(app); end
+                case 'Settings'
+                    if isempty(app.SettingsVm); app.SettingsVm = SettingsViewModel(app); end
+                case 'QECSimulation'
+                    if isempty(app.QecSimulationVm); app.QecSimulationVm = QecSimulationViewModel(app); end
+                case 'QECVisualization'
+                    if isempty(app.QecVisualizationVm); app.QecVisualizationVm = QecVisualizationViewModel(app); end
+            end
+        end
+
+        function fresh = isScreenFresh(~, vm, ttlSeconds)
+            % Return true if the ViewModel was refreshed within ttlSeconds.
+            % VMs that support caching have a LastRefresh property (tic value).
+            fresh = false;
+            if isempty(vm); return; end
+            try
+                lr = vm.LastRefresh;
+                if ~isempty(lr) && lr > 0
+                    fresh = toc(lr) < ttlSeconds;
+                end
+            catch
+                % VM doesn't have LastRefresh — always stale
+            end
+        end
+    end
+
     % ── Navigation + resize callbacks ─────────────────────────────────────────
     methods
         function onSelectSection(app, key)
@@ -1805,15 +1434,18 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function autoLoadScreen(app, key)
-            % Trigger the appropriate ViewModel data-load for each screen.
+            % Ensure the ViewModel exists (lazy init), then trigger
+            % data-load only if the screen data is stale (> 30 s).
+            app.ensureVm(key);
+            ttl = AppConfig.getDouble('screen_cache_ttl', 30);
+
             switch key
                 case 'Welcome'
-                    if ~isempty(app.WelcomeVm) && app.State.isAuthenticated()
+                    if app.State.isAuthenticated() && ~app.isScreenFresh(app.WelcomeVm, ttl)
                         app.WelcomeVm.onFetchProjects();
                     end
                 case 'Upload'
                     if ~isempty(app.UploadVm)
-                        % Sync active project label and refresh circuits list
                         if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
                             projName = app.State.currentProjectName;
                             if strlength(projName) == 0
@@ -1821,34 +1453,41 @@ classdef QTAUWorkbenchApp < handle
                             end
                             app.UploadActiveProjectLabel.Text = char(projName);
                         end
-                        app.UploadVm.onRefreshCircuits();
+                        if ~app.isScreenFresh(app.UploadVm, ttl)
+                            app.UploadVm.onRefreshCircuits();
+                        end
                     end
                 case 'Circuits'
-                    if ~isempty(app.CircuitsVm) && app.State.hasProject()
+                    if ~isempty(app.CircuitsVm) && app.State.hasProject() ...
+                            && ~app.isScreenFresh(app.CircuitsVm, ttl)
                         app.CircuitsVm.onLoadCircuits();
                     end
                 case 'Dashboard'
-                    if ~isempty(app.DashboardVm)
+                    if ~isempty(app.DashboardVm) && ~app.isScreenFresh(app.DashboardVm, ttl)
                         app.DashboardVm.onRefreshDashboard();
                     end
                 case 'Notes'
-                    if ~isempty(app.NotesVm) && app.State.hasProject()
+                    if ~isempty(app.NotesVm) && app.State.hasProject() ...
+                            && ~app.isScreenFresh(app.NotesVm, ttl)
                         app.NotesVm.onLoadNotes();
                     end
                 case 'Analysis'
-                    if ~isempty(app.AnalysisVm)
+                    if ~isempty(app.AnalysisVm) && ~app.isScreenFresh(app.AnalysisVm, ttl)
                         app.AnalysisVm.onEnter();
                     end
                 case 'Backends'
-                    if ~isempty(app.BackendsVm) && app.State.isAuthenticated()
+                    if ~isempty(app.BackendsVm) && app.State.isAuthenticated() ...
+                            && ~app.isScreenFresh(app.BackendsVm, ttl)
                         app.BackendsVm.onRefreshBackends();
                     end
                 case 'Jobs'
-                    if ~isempty(app.JobsVm) && app.State.hasProject()
+                    if ~isempty(app.JobsVm) && app.State.hasProject() ...
+                            && ~app.isScreenFresh(app.JobsVm, ttl)
                         app.JobsVm.onRefreshJobs();
                     end
                 case 'Results'
-                    if ~isempty(app.ResultsVm) && app.State.hasProject()
+                    if ~isempty(app.ResultsVm) && app.State.hasProject() ...
+                            && ~app.isScreenFresh(app.ResultsVm, ttl)
                         app.ResultsVm.onRefreshResults();
                     end
             end

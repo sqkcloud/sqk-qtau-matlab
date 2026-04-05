@@ -1,5 +1,8 @@
 classdef JobsViewModel < handle
     % JobsViewModel  Callback handlers for the Jobs screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
@@ -25,6 +28,7 @@ classdef JobsViewModel < handle
                 end
                 app.setStatus(app.JobStatusArea, {sprintf('Jobs loaded: %d', size(rows,1))});
                 app.logEvent('API', sprintf('Jobs loaded — %d rows returned', size(rows,1)));
+                obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME
                 app.hideLoading();

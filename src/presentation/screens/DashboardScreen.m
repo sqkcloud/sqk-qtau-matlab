@@ -15,22 +15,22 @@ function DashboardScreen(app)
     t = app.createSectionPage('Dashboard');
 
     g = uigridlayout(t, [4 3]);
-    g.RowHeight     = {34, 72, '1x', '1x'};
-    g.ColumnWidth   = {'1.4x', 6, '1x'};
-    g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
+    g.RowHeight     = {Theme.BTN_ROW_HEIGHT, Theme.ACTION_BAR_HEIGHT, '1x', '1x'};
+    g.ColumnWidth   = {'1.4x', Theme.DIVIDER_WIDTH, '1x'};
+    g.Padding       = Theme.GRID_PADDING;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = 4;
-    g.BackgroundColor = [0.96 0.97 0.99];
+    g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────────
     toolbar = uigridlayout(g, [1 3]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
-    toolbar.ColumnWidth = {'1x', 110, 100};
+    toolbar.ColumnWidth = {'1x', Theme.BTN_WIDTH, 100};
     toolbar.Padding = [0 0 0 0];
-    toolbar.BackgroundColor = [0.96 0.97 0.99];
+    toolbar.BackgroundColor = Theme.COLOR_BG;
 
     desc = uilabel(toolbar, 'Text', Labels.get('dashboard_toolbar_desc'));
-    desc.FontSize = 13; desc.FontColor = [0.38 0.46 0.58];
+    desc.FontSize = Theme.FONT_SIZE_MD; desc.FontColor = Theme.COLOR_MUTED;
     desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center';
 
@@ -38,24 +38,24 @@ function DashboardScreen(app)
         'ButtonPushedFcn', @(~,~)app.DashboardVm.onRefreshDashboard());
     app.DashboardRefreshButton.Layout.Row = 1; app.DashboardRefreshButton.Layout.Column = 2;
     app.styleBtn(app.DashboardRefreshButton, 'primary');
-    app.DashboardRefreshButton.FontSize = 14;
+    app.DashboardRefreshButton.FontSize = Theme.FONT_SIZE_LG;
     app.DashboardRefreshButton.Tooltip = 'Pull live project dashboard data';
 
     exportBtn = uibutton(toolbar, 'Text', [char(8599) ' ' Labels.get('dashboard_btn_export')]);
     exportBtn.Layout.Row = 1; exportBtn.Layout.Column = 3;
     app.styleBtn(exportBtn, 'ghost');
-    exportBtn.FontSize = 14;
+    exportBtn.FontSize = Theme.FONT_SIZE_LG;
 
     % ── KPI card bar ──────────────────────────────────────────────────────────
     kpiBar = uipanel(g, 'Title', '');
     kpiBar.Layout.Row = 2; kpiBar.Layout.Column = [1 3];
-    kpiBar.BackgroundColor = [0.96 0.97 0.99];
+    kpiBar.BackgroundColor = Theme.COLOR_BG;
     kpiBar.BorderType = 'none';
 
     kb = uigridlayout(kpiBar, [1 4]);
     kb.ColumnWidth = {'1x','1x','1x','1x'};
-    kb.Padding = [0 0 0 0]; kb.ColumnSpacing = 12;
-    kb.BackgroundColor = [0.96 0.97 0.99];
+    kb.Padding = [0 0 0 0]; kb.ColumnSpacing = Theme.GRID_ROW_SPACING;
+    kb.BackgroundColor = Theme.COLOR_BG;
 
     kpiTitles  = { ...
         Labels.get('dashboard_kpi_active_project',  'Active Project'), ...
@@ -67,21 +67,21 @@ function DashboardScreen(app)
         Labels.get('dashboard_kpi_default_circuit',  '—'), ...
         Labels.get('dashboard_kpi_default_backend',  '—'), ...
         Labels.get('dashboard_kpi_default_stage',    'Ready for upload')};
-    kpiAccents = {[0.18 0.45 0.82],[0.10 0.54 0.36],[0.62 0.38 0.82],[0.75 0.48 0.10]};
+    kpiAccents = {Theme.COLOR_PRIMARY, Theme.COLOR_SUCCESS, Theme.COLOR_PURPLE, Theme.COLOR_AMBER};
 
     app.DashKpiLabels = cell(1, 4);
     for i = 1:4
-        p = uipanel(kb, 'Title', ''); p.Layout.Row = 1; p.Layout.Column = i; p.BackgroundColor = [1 1 1];
-        pg = uigridlayout(p, [1 2]); pg.ColumnWidth = {6,'1x'}; pg.Padding = [0 0 0 0];
-        pg.ColumnSpacing = 0; pg.BackgroundColor = [1 1 1];
+        p = uipanel(kb, 'Title', ''); p.Layout.Row = 1; p.Layout.Column = i; p.BackgroundColor = Theme.COLOR_CARD;
+        pg = uigridlayout(p, [1 2]); pg.ColumnWidth = {Theme.DIVIDER_WIDTH,'1x'}; pg.Padding = [0 0 0 0];
+        pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_CARD;
         strip = uipanel(pg, 'Title', ''); strip.Layout.Row = 1; strip.Layout.Column = 1;
         strip.BackgroundColor = kpiAccents{i};
         inner = uigridlayout(pg, [2 1]); inner.Layout.Row = 1; inner.Layout.Column = 2;
-        inner.RowHeight = {18,'1x'}; inner.Padding = [10 8 10 8]; inner.BackgroundColor = [1 1 1];
+        inner.RowHeight = {18,'1x'}; inner.Padding = Theme.KPI_INNER_PAD; inner.BackgroundColor = Theme.COLOR_CARD;
         l1 = uilabel(inner, 'Text', kpiTitles{i});
-        l1.FontColor = [0.38 0.46 0.58]; l1.FontSize = 12; l1.Layout.Row = 1; l1.Layout.Column = 1;
+        l1.FontColor = Theme.COLOR_MUTED; l1.FontSize = Theme.FONT_SIZE; l1.Layout.Row = 1; l1.Layout.Column = 1;
         l2 = uilabel(inner, 'Text', kpiDefault{i});
-        l2.FontSize = 15; l2.FontWeight = 'bold'; l2.WordWrap = 'on';
+        l2.FontSize = Theme.FONT_SIZE_TITLE; l2.FontWeight = 'bold'; l2.WordWrap = 'on';
         l2.Layout.Row = 2; l2.Layout.Column = 1;
         app.DashKpiLabels{i} = l2;
     end
