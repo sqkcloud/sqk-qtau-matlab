@@ -58,8 +58,8 @@ function WelcomeScreen(app)
     projPanel.Layout.Row = 2; projPanel.Layout.Column = 1;
     projPanel.BackgroundColor = [1 1 1];
 
-    pg = uigridlayout(projPanel, [4 1]);
-    pg.RowHeight = {42, '1x', 34};
+    pg = uigridlayout(projPanel, [5 1]);
+    pg.RowHeight = {42, 32, '1x', 34};
     pg.ColumnWidth = {'1x'};
     pg.Padding = [16 12 16 12]; pg.RowSpacing = 8;
     pg.BackgroundColor = [1 1 1];
@@ -82,12 +82,26 @@ function WelcomeScreen(app)
     app.ActiveProjectLabel.Layout.Row = 1; app.ActiveProjectLabel.Layout.Column = 2;
     app.ActiveProjectLabel.VerticalAlignment = 'center';
 
+    % Search bar
+    searchGrid = uigridlayout(pg, [1 2]);
+    searchGrid.Layout.Row = 2; searchGrid.Layout.Column = 1;
+    searchGrid.ColumnWidth = {'1x', 90};
+    searchGrid.Padding = [0 0 0 0]; searchGrid.ColumnSpacing = 6;
+    searchGrid.BackgroundColor = [1 1 1];
+    app.ProjectsSearchField = uieditfield(searchGrid, 'text', ...
+        'Placeholder', 'Search by name, tags, description...', ...
+        'ValueChangedFcn', @(src,~)app.WelcomeVm.onSearchProjects(src.Value));
+    app.ProjectsSearchField.FontSize = 12;
+    searchBtn = uibutton(searchGrid, 'Text', [char(8981) ' Search'], ...
+        'ButtonPushedFcn', @(~,~)app.WelcomeVm.onSearchProjects(app.ProjectsSearchField.Value));
+    app.styleBtn(searchBtn, 'ghost');
+
     % Projects table
     app.ProjectsTable = uitable(pg);
     app.ProjectsTable.ColumnName = Labels.cols('welcome_table_cols_projects', ...
         {'Name','Tags','Member Count','Created At','Description'});
     app.ProjectsTable.Data = {};
-    app.ProjectsTable.Layout.Row = 2; app.ProjectsTable.Layout.Column = 1;
+    app.ProjectsTable.Layout.Row = 3; app.ProjectsTable.Layout.Column = 1;
     app.ProjectsTable.ColumnWidth = {200, 180, 100, 200, '1x'};
     app.styleTable(app.ProjectsTable);
     % Left-align text columns, centre numeric/date columns
@@ -106,7 +120,7 @@ function WelcomeScreen(app)
 
     % Pagination bar: Prev | Page X of Y | Next
     pageBar = uigridlayout(pg, [1 3]);
-    pageBar.Layout.Row = 3; pageBar.Layout.Column = 1;
+    pageBar.Layout.Row = 4; pageBar.Layout.Column = 1;
     pageBar.ColumnWidth = {90, '1x', 90};
     pageBar.Padding = [0 0 0 0]; pageBar.BackgroundColor = [1 1 1];
 

@@ -11,7 +11,7 @@
 fprintf('\n=== QTAU Seed: Saving backend selections for projects ===\n\n');
 
 % ── Configuration ────────────────────────────────────────────────────────────
-BASE_URL   = 'http://34.42.87.190:5715';
+BASE_URL   = 'http://localhost:5715';
 LOGIN_PATH = '/api/auth/login';
 USERNAME   = 'admin';
 PASSWORD   = 'passw0rd';

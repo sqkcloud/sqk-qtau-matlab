@@ -123,6 +123,7 @@ classdef QTAUWorkbenchApp < handle
     properties
         UserInfoArea
         ActiveProjectLabel         % Active Project name display in box
+        ProjectsSearchField        % Search input for projects
         ProjectsTable
         ProjectsPopupPanel         % Custom right-click popup (uipanel overlay)
         ProjectsPopupEditBtn       % Edit button inside popup
@@ -153,6 +154,7 @@ classdef QTAUWorkbenchApp < handle
     % ── Circuits tab ─────────────────────────────────────────────────────────
     properties
         CircuitsTable               % Table showing paginated circuits
+        CircuitsSearchField         % Search input field
         CircuitsPageLabel           % "Page N" label
         CircuitsPrevBtn             % Prev page button
         CircuitsNextBtn             % Next page button
@@ -826,7 +828,7 @@ classdef QTAUWorkbenchApp < handle
 
         % ── Circuits popup (same pattern as Projects popup) ─────────────
         function buildCircuitsPopupMenu(app)
-            popW = 160; popH = 72;
+            popW = 160; popH = 108;
             app.CircuitsPopupPanel = uipanel(app.UIFigure, ...
                 'Title', '', 'BorderType', 'line', ...
                 'BackgroundColor', [1 1 1], ...
@@ -834,19 +836,28 @@ classdef QTAUWorkbenchApp < handle
                 'Position', [0 0 popW popH], ...
                 'Visible', 'off');
 
-            pg = uigridlayout(app.CircuitsPopupPanel, [2 1]);
-            pg.RowHeight   = {'1x', '1x'};
+            pg = uigridlayout(app.CircuitsPopupPanel, [3 1]);
+            pg.RowHeight   = {'1x', '1x', '1x'};
             pg.ColumnWidth = {'1x'};
             pg.Padding     = [4 4 4 4];
             pg.RowSpacing  = 2;
             pg.BackgroundColor = [1 1 1];
+
+            analyzeBtn = uibutton(pg, 'Text', ...
+                [' ' char(8981) '  ' Labels.get('circuit_ctx_analyze', 'Analyze')], ...
+                'HorizontalAlignment', 'left', ...
+                'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~)app.onCircuitsPopupAnalyze());
+            analyzeBtn.Layout.Row = 1;
+            analyzeBtn.BackgroundColor = [1 1 1];
+            analyzeBtn.FontColor = [0.13 0.33 0.73];
 
             app.CircuitsPopupEditBtn = uibutton(pg, 'Text', ...
                 [' ' char(9999) '  ' Labels.get('circuit_ctx_edit', 'Edit')], ...
                 'HorizontalAlignment', 'left', ...
                 'FontSize', 13, ...
                 'ButtonPushedFcn', @(~,~)app.onCircuitsPopupEdit());
-            app.CircuitsPopupEditBtn.Layout.Row = 1;
+            app.CircuitsPopupEditBtn.Layout.Row = 2;
             app.CircuitsPopupEditBtn.BackgroundColor = [1 1 1];
             app.CircuitsPopupEditBtn.FontColor = [0.15 0.18 0.24];
 
@@ -855,7 +866,7 @@ classdef QTAUWorkbenchApp < handle
                 'HorizontalAlignment', 'left', ...
                 'FontSize', 13, ...
                 'ButtonPushedFcn', @(~,~)app.onCircuitsPopupDelete());
-            app.CircuitsPopupDeleteBtn.Layout.Row = 2;
+            app.CircuitsPopupDeleteBtn.Layout.Row = 3;
             app.CircuitsPopupDeleteBtn.BackgroundColor = [1 1 1];
             app.CircuitsPopupDeleteBtn.FontColor = [0.70 0.15 0.15];
         end
@@ -864,7 +875,7 @@ classdef QTAUWorkbenchApp < handle
             if isempty(app.CircuitsPopupPanel) || ~isvalid(app.CircuitsPopupPanel)
                 app.buildCircuitsPopupMenu();
             end
-            popW = 160; popH = 72;
+            popW = 160; popH = 108;
             figPos = app.UIFigure.Position;
             px = min(x, figPos(3) - popW - 4);
             py = max(y - popH, 4);
@@ -876,6 +887,11 @@ classdef QTAUWorkbenchApp < handle
             if ~isempty(app.CircuitsPopupPanel) && isvalid(app.CircuitsPopupPanel)
                 app.CircuitsPopupPanel.Visible = 'off';
             end
+        end
+
+        function onCircuitsPopupAnalyze(app)
+            app.hideCircuitsPopupMenu();
+            app.CircuitsVm.onContextAnalyze();
         end
 
         function onCircuitsPopupEdit(app)

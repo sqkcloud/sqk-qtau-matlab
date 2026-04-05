@@ -9,6 +9,9 @@ classdef CircuitsViewModel < handle
         App
         RowCircuitIds  cell = {}   % maps table row index → circuit_id
         RowCircuits    cell = {}   % maps table row index → full circuit struct
+        FullTableData  cell = {}   % unfiltered table data for search
+        FullRowIds     cell = {}   % unfiltered circuit IDs for search
+        FullRowData    cell = {}   % unfiltered circuit structs for search
     end
 
     properties
@@ -79,7 +82,17 @@ classdef CircuitsViewModel < handle
                 end
                 obj.RowCircuitIds = ids;
                 obj.RowCircuits   = cdata;
+                obj.FullTableData = tableData;
+                obj.FullRowIds    = ids;
+                obj.FullRowData   = cdata;
                 app.CircuitsTable.Data = tableData;
+                % Re-apply active search filter if any
+                if ~isempty(app.CircuitsSearchField) && isvalid(app.CircuitsSearchField)
+                    q = strtrim(app.CircuitsSearchField.Value);
+                    if strlength(q) > 0
+                        obj.onSearch(char(q));
+                    end
+                end
                 app.logEvent('API', sprintf('listCircuitsPaged → %d circuits loaded', n));
             catch ME
                 app.logEvent('ERROR', sprintf('listCircuitsPaged FAILED: %s', ME.message));
@@ -101,11 +114,63 @@ classdef CircuitsViewModel < handle
             obj.App.onSelectSection('Upload');
         end
 
+        function onSearch(obj, query)
+            % Filter the table rows by search query (matches any column)
+            app = obj.App;
+            if isempty(obj.FullTableData); return; end
+            q = lower(strtrim(query));
+            if isempty(q)
+                % Restore full data
+                app.CircuitsTable.Data = obj.FullTableData;
+                obj.RowCircuitIds = obj.FullRowIds;
+                obj.RowCircuits   = obj.FullRowData;
+                return;
+            end
+            nRows = size(obj.FullTableData, 1);
+            keep = false(nRows, 1);
+            for i = 1:nRows
+                for j = 1:size(obj.FullTableData, 2)
+                    val = obj.FullTableData{i, j};
+                    if ischar(val) && contains(lower(val), q)
+                        keep(i) = true; break;
+                    elseif isnumeric(val) && contains(num2str(val), q)
+                        keep(i) = true; break;
+                    end
+                end
+            end
+            app.CircuitsTable.Data = obj.FullTableData(keep, :);
+            idx = find(keep);
+            obj.RowCircuitIds = obj.FullRowIds(idx);
+            obj.RowCircuits   = obj.FullRowData(idx);
+        end
+
         function onCellSelected(obj, src, evt)
             % Select the entire row when any cell is clicked
             if isempty(evt.Indices); return; end
             row = evt.Indices(1,1);
             src.Selection = row;
+        end
+
+        function onContextAnalyze(obj)
+            % Triggered from context menu — analyze the selected circuit
+            app = obj.App;
+            row = obj.getSelectedRow();
+            if row < 1 || row > numel(obj.RowCircuitIds); return; end
+            cid   = obj.RowCircuitIds{row};
+            cname = char(string(JsonHelper.pick(obj.RowCircuits{row}, {'name','circuit_name'})));
+            app.State.selectedCircuitId   = string(cid);
+            app.State.selectedCircuitName = string(cname);
+            app.onSelectSection('Analysis');
+            drawnow;
+            if ~isempty(app.AnalysisVm)
+                items = app.AnalysisCircuitDropdown.ItemsData;
+                idx = find(strcmp(items, cid), 1);
+                if ~isempty(idx)
+                    app.AnalysisCircuitDropdown.Value = cid;
+                    app.AnalysisVm.onCircuitSelected(cid);
+                end
+                app.AnalysisVm.onAnalyzeCircuit();
+            end
         end
 
         function onContextEdit(obj)

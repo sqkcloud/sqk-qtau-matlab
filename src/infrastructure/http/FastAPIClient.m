@@ -422,7 +422,7 @@ classdef FastAPIClient < handle
             if nargin >= 5 && strlength(string(projectId)) > 0
                 projHdr = sprintf(' -H %s', esc(['X-Project-Id: ' char(projectId)]));
             end
-            cmd = sprintf('curl -s -X POST -H %s -H %s%s -F %s%s %s', ...
+            cmd = sprintf('curl -s -w "\\n%%{http_code}" -X POST -H %s -H %s%s -F %s%s %s', ...
                 esc(['Authorization: Bearer ' char(token)]), ...
                 esc('Accept: application/json'), ...
                 projHdr, ...
@@ -433,7 +433,15 @@ classdef FastAPIClient < handle
             if status ~= 0
                 error('FastAPIClient:curlFailed', 'curl upload failed (exit %d): %s', status, out);
             end
-            data = FastAPIClient.normalizeJsonResponse(out);
+            % Split response body and HTTP status code
+            lines = strsplit(strtrim(out), newline);
+            httpCode = str2double(lines{end});
+            body = strjoin(lines(1:end-1), newline);
+            if ~isnan(httpCode) && httpCode >= 400
+                errMsg = FastAPIClient.extractErrorMessage(body, httpCode);
+                error('FastAPIClient:httpError', 'HTTP %d: %s', httpCode, errMsg);
+            end
+            data = FastAPIClient.normalizeJsonResponse(body);
         end
     end
 end

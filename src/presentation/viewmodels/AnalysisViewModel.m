@@ -35,10 +35,18 @@ classdef AnalysisViewModel < handle
                 end
                 app.AnalysisCircuitDropdown.Items     = names;
                 app.AnalysisCircuitDropdown.ItemsData = ids;
-                % Auto-select the first circuit
-                app.AnalysisCircuitDropdown.Value = ids{1};
-                obj.onCircuitSelected(ids{1});
-                app.logEvent('API', sprintf('Circuit list loaded — %d circuit(s), auto-selected: %s', n, names{1}));
+                % Prefer the already-selected circuit (e.g. from Upload); fall back to first
+                selId = char(app.State.selectedCircuitId);
+                idx   = find(strcmp(ids, selId), 1);
+                if ~isempty(idx)
+                    app.AnalysisCircuitDropdown.Value = ids{idx};
+                    obj.onCircuitSelected(ids{idx});
+                else
+                    app.AnalysisCircuitDropdown.Value = ids{1};
+                    obj.onCircuitSelected(ids{1});
+                end
+                app.logEvent('API', sprintf('Circuit list loaded — %d circuit(s), selected: %s', ...
+                    n, char(app.AnalysisCircuitDropdown.Value)));
                 app.hideLoading();
             catch ME
                 app.hideLoading();

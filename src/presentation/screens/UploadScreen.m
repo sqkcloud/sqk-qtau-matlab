@@ -112,7 +112,8 @@ function UploadScreen(app)
     lbl.Layout.Row = 1; lbl.Layout.Column = 1;
     app.UploadFormatDropdown = uidropdown(mg, ...
         'Items', {'OpenQASM 2.0','OpenQASM 3','Qiskit JSON','MATLAB struct'}, ...
-        'Value', 'OpenQASM 2.0');
+        'ItemsData', {'qasm2','qasm3','json','matlab'}, ...
+        'Value', 'qasm2');
     app.UploadFormatDropdown.Layout.Row = 1; app.UploadFormatDropdown.Layout.Column = 2;
 
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_category'));
@@ -191,10 +192,10 @@ function UploadScreen(app)
     msg = uilabel(ag, 'Text', Labels.get('upload_action_msg'));
     msg.FontSize = 13; msg.FontWeight = 'bold'; msg.Layout.Row = 1; msg.Layout.Column = 1;
     msg.VerticalAlignment = 'center'; msg.WordWrap = 'on';
-    tmp = uibutton(ag, 'Text', Labels.get('upload_btn_next'), ...
-        'ButtonPushedFcn', @(~,~)app.onSelectSection('Analysis'));
+    tmp = uibutton(ag, 'Text', [char(8981) ' ' Labels.get('upload_btn_next')], ...
+        'ButtonPushedFcn', @(~,~)app.UploadVm.onGoToAnalyze());
     tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'primary');
-    tmp = uibutton(ag, 'Text', Labels.get('upload_btn_back'), ...
+    tmp = uibutton(ag, 'Text', [char(8962) ' ' Labels.get('upload_btn_back')], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Welcome'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'ghost');
 

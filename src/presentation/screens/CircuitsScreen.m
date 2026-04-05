@@ -20,8 +20,23 @@ function CircuitsScreen(app)
     tablePanel.Layout.Row = 1; tablePanel.Layout.Column = 1;
     tablePanel.BackgroundColor = [1 1 1];
 
-    tg = uigridlayout(tablePanel, [1 1]);
-    tg.Padding = [10 8 10 8]; tg.BackgroundColor = [1 1 1];
+    tg = uigridlayout(tablePanel, [2 1]);
+    tg.RowHeight = {32, '1x'};
+    tg.Padding = [10 8 10 8]; tg.RowSpacing = 6; tg.BackgroundColor = [1 1 1];
+
+    % Search bar
+    searchGrid = uigridlayout(tg, [1 2]);
+    searchGrid.Layout.Row = 1; searchGrid.Layout.Column = 1;
+    searchGrid.ColumnWidth = {'1x', 90};
+    searchGrid.Padding = [0 0 0 0]; searchGrid.ColumnSpacing = 6;
+    searchGrid.BackgroundColor = [1 1 1];
+    app.CircuitsSearchField = uieditfield(searchGrid, 'text', ...
+        'Placeholder', 'Search by name, category, format...', ...
+        'ValueChangedFcn', @(src,~)app.CircuitsVm.onSearch(src.Value));
+    app.CircuitsSearchField.FontSize = 12;
+    searchBtn = uibutton(searchGrid, 'Text', [char(8981) ' Search'], ...
+        'ButtonPushedFcn', @(~,~)app.CircuitsVm.onSearch(app.CircuitsSearchField.Value));
+    app.styleBtn(searchBtn, 'ghost');
 
     app.CircuitsTable = uitable(tg, ...
         'ColumnName', { ...
@@ -37,7 +52,7 @@ function CircuitsScreen(app)
         'RowName', {}, ...
         'SelectionType', 'row', ...
         'CellSelectionCallback', @(src,evt)app.CircuitsVm.onCellSelected(src, evt));
-    app.CircuitsTable.Layout.Row = 1; app.CircuitsTable.Layout.Column = 1;
+    app.CircuitsTable.Layout.Row = 2; app.CircuitsTable.Layout.Column = 1;
     app.CircuitsTable.FontSize = 12;
     app.CircuitsTable.ColumnSortable = true;
     addStyle(app.CircuitsTable, uistyle('HorizontalAlignment','center'), 'column', 1);

@@ -89,7 +89,7 @@ function AnalysisScreen(app)
 
     qvGrid = uigridlayout(qvPanel, [1 2]);
     qvGrid.ColumnWidth = {'1x', 160};
-    qvGrid.RowHeight   = {520};
+    qvGrid.RowHeight   = {190};
     qvGrid.Padding = [10 8 10 8]; qvGrid.BackgroundColor = [1 1 1];
 
     app.QVHeatmapAxes = uiaxes(qvGrid);

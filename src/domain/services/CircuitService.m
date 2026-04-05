@@ -15,16 +15,18 @@ classdef CircuitService < handle
         end
 
         % Upload a circuit file.  Returns the created circuit record struct.
-        function data = uploadCircuit(obj, filePath, name, format, category, token)
-            Logger.info('CircuitService', 'uploadCircuit → POST /api/circuits/upload');
-            Logger.info('CircuitService', '  file: %s  name: %s  format: %s  category: %s', ...
-                filePath, char(name), char(format), char(category));
+        function data = uploadCircuit(obj, filePath, name, format, category, numQubits, depth, token)
+            Logger.info('CircuitService', 'uploadCircuit → POST /api/circuits/upload/file');
+            Logger.info('CircuitService', '  file: %s  name: %s  format: %s  category: %s  qubits: %d  depth: %d', ...
+                filePath, char(name), char(format), char(category), numQubits, depth);
             fields = struct( ...
                 'circuit_name', char(name), ...
                 'format',       char(format), ...
-                'category',     char(category));
+                'category',     char(category), ...
+                'num_qubits',   num2str(numQubits), ...
+                'depth',        num2str(depth));
             try
-                data = obj.Client.uploadFileAuth('/api/circuits/upload', filePath, fields, token);
+                data = obj.Client.uploadFileAuth('/api/circuits/upload/file', filePath, fields, token);
                 Logger.info('CircuitService', 'uploadCircuit → upload complete');
             catch ME
                 Logger.error('CircuitService', 'uploadCircuit FAILED: %s', ME.message);

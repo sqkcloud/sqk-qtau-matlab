@@ -2,6 +2,8 @@ classdef WelcomeViewModel < handle
     % WelcomeViewModel  Callback handlers for the Welcome screen.
     properties (Access = private)
         App  % QTAUWorkbenchApp
+        FullProjectRows  cell = {}   % unfiltered table rows
+        FullProjectIds   cell = {}   % unfiltered project IDs
     end
     properties
         CurrentPage  double = 1
@@ -362,8 +364,17 @@ classdef WelcomeViewModel < handle
             try
                 data = app.AuthSvc.listProjects(app.State.authToken, skip, limit);
                 [rows, ids] = JsonHelper.projectsToRows(data);
+                obj.FullProjectRows = rows;
+                obj.FullProjectIds  = ids;
                 app.ProjectsTable.Data = rows;
                 app.ProjectsTable.UserData = ids;
+                % Re-apply active search filter if any
+                if ~isempty(app.ProjectsSearchField) && isvalid(app.ProjectsSearchField)
+                    q = strtrim(app.ProjectsSearchField.Value);
+                    if strlength(q) > 0
+                        obj.onSearchProjects(char(q));
+                    end
+                end
 
                 if isstruct(data) && isfield(data, 'total')
                     obj.TotalItems = double(data.total);
@@ -394,6 +405,32 @@ classdef WelcomeViewModel < handle
                 if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
                 app.showError('Fetch Projects', ME);
             end
+        end
+
+        function onSearchProjects(obj, query)
+            % Filter the projects table by search query (matches any column)
+            app = obj.App;
+            if isempty(obj.FullProjectRows); return; end
+            q = lower(strtrim(query));
+            if isempty(q)
+                app.ProjectsTable.Data     = obj.FullProjectRows;
+                app.ProjectsTable.UserData = obj.FullProjectIds;
+                return;
+            end
+            nRows = size(obj.FullProjectRows, 1);
+            keep = false(nRows, 1);
+            for i = 1:nRows
+                for j = 1:size(obj.FullProjectRows, 2)
+                    val = obj.FullProjectRows{i, j};
+                    if ischar(val) && contains(lower(val), q)
+                        keep(i) = true; break;
+                    elseif isnumeric(val) && contains(num2str(val), q)
+                        keep(i) = true; break;
+                    end
+                end
+            end
+            app.ProjectsTable.Data     = obj.FullProjectRows(keep, :);
+            app.ProjectsTable.UserData = obj.FullProjectIds(keep);
         end
 
         function onPrevPage(obj)
