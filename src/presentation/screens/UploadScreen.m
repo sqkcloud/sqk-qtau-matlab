@@ -13,7 +13,7 @@ function UploadScreen(app)
     t = app.createSectionPage('Upload');
 
     g = uigridlayout(t, [5 3]);
-    g.RowHeight     = {0, '1x', 200, 0, 72};
+    g.RowHeight     = {0, '1x', 150, 0, 72};
     g.ColumnWidth   = {'1.15x', 6, '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -100,8 +100,8 @@ function UploadScreen(app)
     metaPanel = uipanel(g, 'Title', Labels.get('upload_panel_format_meta'));
     metaPanel.Layout.Row = 3; metaPanel.Layout.Column = 1; metaPanel.BackgroundColor = Theme.COLOR_CARD;
 
-    mg = uigridlayout(metaPanel, [4 4]);
-    mg.RowHeight   = {28, 28, 28, '1x'};
+    mg = uigridlayout(metaPanel, [3 4]);
+    mg.RowHeight   = {28, 28, 28};
     mg.ColumnWidth = {100, '1x', 80, '1x'};
     mg.Padding = [16 12 16 12]; mg.RowSpacing = 6; mg.ColumnSpacing = 8;
     mg.BackgroundColor = Theme.COLOR_CARD;
@@ -136,18 +136,18 @@ function UploadScreen(app)
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_metadata'));
     lbl.FontColor = [0.35 0.42 0.52];
     lbl.Layout.Row = 3; lbl.Layout.Column = 1;
-    app.CircuitMetadataArea = uitextarea(mg, 'Value', {'Source: QASMBench', 'Owner: '});
+    app.CircuitMetadataArea = uieditfield(mg, 'text', 'Value', 'QASMBench');
     app.CircuitMetadataArea.FontSize = 12;
-    app.CircuitMetadataArea.Layout.Row = [3 4]; app.CircuitMetadataArea.Layout.Column = [2 4];
+    app.CircuitMetadataArea.Layout.Row = 3; app.CircuitMetadataArea.Layout.Column = [2 4];
 
     % ── Circuit Statistics (right) ────────────────────────────────────────
     statsPanel = uipanel(g, 'Title', Labels.get('upload_panel_stats'));
     statsPanel.Layout.Row = 3; statsPanel.Layout.Column = 3; statsPanel.BackgroundColor = Theme.COLOR_CARD;
 
     spg = uigridlayout(statsPanel, [1 1]);
-    spg.Padding = [12 10 12 10]; spg.BackgroundColor = Theme.COLOR_CARD;
-    app.CircuitStatsArea = uitextarea(spg, 'Editable', 'off'); app.CircuitStatsArea.FontSize = 12;
-    app.CircuitStatsArea.Value = {Labels.get('upload_stats_initial')};
+    spg.Padding = [4 4 4 4]; spg.BackgroundColor = Theme.COLOR_CARD;
+    app.CircuitStatsArea = uihtml(spg);
+    app.CircuitStatsArea.HTMLSource = CircuitDiagram.wrapHtml(Labels.get('upload_stats_initial'));
 
     % ── Project Circuits table (full width) — hidden ─────────────────────
     circPanel = uipanel(g, 'Title', Labels.get('upload_panel_project_circuits'));

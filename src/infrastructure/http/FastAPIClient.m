@@ -51,7 +51,7 @@ classdef FastAPIClient < handle
             if loginPath(1) ~= '/'
                 loginPath = ['/' loginPath];
             end
-            maskedUser = FastAPIClient.maskUsername(username);
+            maskedUser = Logger.maskUsername(username);
             Logger.info('FastAPIClient', 'login → POST %s (user: %s)', loginPath, maskedUser);
             url = char(obj.BaseUrl + string(loginPath));
             try
@@ -257,16 +257,6 @@ classdef FastAPIClient < handle
     % ── Private static helpers ────────────────────────────────────────────────
     methods (Static, Access = private)
 
-        function masked = maskUsername(username)
-            % Mask username for safe logging: show first char + '***'.
-            u = char(username);
-            if isempty(u)
-                masked = '***';
-            else
-                masked = [u(1) '***'];
-            end
-        end
-
         function hdrs = authHeaders(token, projectId)
             hdrs = {'Authorization', ['Bearer ' char(token)]; 'Accept', 'application/json'};
             if nargin >= 2 && strlength(string(projectId)) > 0
@@ -275,7 +265,12 @@ classdef FastAPIClient < handle
         end
 
         function tf = isNoContent(ME)
-            tf = contains(ME.message, '204') || contains(ME.message, 'No Content') || ...
+            % Detect HTTP 204 No Content responses.  MATLAB webread throws on
+            % empty responses, so we inspect both the error identifier and
+            % message.  We use regexp to match the status code as a whole
+            % number (avoiding false positives like port 2040).
+            tf = ~isempty(regexp(ME.message, '\b204\b', 'once')) || ...
+                 contains(ME.message, 'No Content', 'IgnoreCase', true) || ...
                  contains(ME.identifier, 'URLREAD');
         end
 

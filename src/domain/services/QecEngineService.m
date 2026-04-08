@@ -47,7 +47,7 @@ classdef QecEngineService < handle
             % Syndrome histogram accumulator
             syndromeMap = containers.Map('KeyType', 'char', 'ValueType', 'double');
             nSuccess    = 0;
-            nTrials     = 100;
+            nTrials     = AppConfig.getDouble('qec_default_trials', 100);
 
             for trial = 1:nTrials
                 rho = rhoEncoded;

@@ -30,6 +30,7 @@ classdef UploadViewModel < handle
             info = dir(fullp);
             app.logEvent('UI', sprintf('Circuit file selected: %s  path: %s  size: %d bytes', ...
                 file, path, info.bytes));
+            content = '';
             try
                 content = fileread(fullp);
                 app.CircuitPreviewArea.Value = strsplit(content, newline);
@@ -45,12 +46,12 @@ classdef UploadViewModel < handle
             catch ME
                 app.logEvent('WARN', sprintf('Could not read file for preview: %s', ME.message));
             end
-            app.setStatus(app.CircuitStatsArea, { ...
-                sprintf('File: %s', file), ...
-                sprintf('Path: %s', path), ...
-                sprintf('Size: %d bytes', info.bytes), ...
-                sprintf('Qubits: %d  Depth: %d', obj.ParsedQubits, obj.ParsedDepth), ...
-                'Status: ready for upload'});
+            % Build colored HTML circuit diagram
+            diagramHtml = '';
+            try
+                diagramHtml = CircuitDiagram.renderHtml(content);
+            catch; end
+            app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, diagramHtml);
         end
 
         function onUploadCircuit(obj, silent)
@@ -83,15 +84,37 @@ classdef UploadViewModel < handle
         end
 
         function onGoToAnalyze(obj)
-            % Upload the circuit if not yet saved, then navigate to
-            % Analysis and auto-analyze.
+            % Upload the circuit synchronously if not yet saved, then
+            % navigate to Analysis and auto-analyze.
             app = obj.App;
 
-            % Upload silently if needed (file selected but no circuit ID yet)
+            % Upload synchronously if needed (file selected but no circuit ID yet)
             if strlength(app.State.selectedCircuitId) == 0
                 filePath = char(app.State.selectedFile);
                 if ~isempty(filePath) && isfile(filePath)
-                    obj.onUploadCircuit(true);
+                    if ~app.State.isAuthenticated()
+                        uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Upload', 'Icon', 'warning'); return;
+                    end
+                    if ~app.State.hasProject()
+                        uialert(app.UIFigure, Labels.get('upload_error_no_project'), 'Upload', 'Icon', 'warning'); return;
+                    end
+                    name     = char(app.CircuitNameField.Value);
+                    format   = 'auto';
+                    category = char(app.CircuitCategoryDropdown.Value);
+                    app.showLoading(Labels.get('loading_uploading', 'Uploading circuit...'));
+                    try
+                        data = app.CircuitSvc.uploadCircuit(filePath, name, format, category, ...
+                            obj.ParsedQubits, obj.ParsedDepth, app.State.authToken);
+                        app.State.selectedCircuitId   = string(JsonHelper.pick(data, {'circuit_id','id'}));
+                        app.State.selectedCircuitName = string(name);
+                        app.logEvent('API', sprintf('Circuit uploaded (for analyze) — id: %s', app.State.selectedCircuitId));
+                        app.hideLoading();
+                    catch ME
+                        app.hideLoading();
+                        app.logEvent('ERROR', sprintf('Upload for analyze FAILED: %s', ME.message));
+                        app.showError('Upload Circuit', ME);
+                        return;
+                    end
                 end
             end
 
@@ -210,13 +233,14 @@ classdef UploadViewModel < handle
             app.State.selectedCircuitName = string(name);
             app.logEvent('API', sprintf('Circuit uploaded successfully — id: %s  name: %s  format: %s  project: %s', ...
                 app.State.selectedCircuitId, name, format, char(app.State.currentProjectId)));
-            app.setStatus(app.CircuitStatsArea, { ...
-                sprintf('Circuit ID: %s', app.State.selectedCircuitId), ...
-                sprintf('Name: %s', name), ...
-                sprintf('Format: %s', format), ...
-                sprintf('Category: %s', category), ...
-                sprintf('Project: %s', char(app.State.currentProjectName)), ...
-                'Status: Uploaded successfully'});
+            diagramHtml = '';
+            filePath2 = char(app.State.selectedFile);
+            if ~isempty(filePath2) && isfile(filePath2)
+                try
+                    diagramHtml = CircuitDiagram.renderHtml(fileread(filePath2));
+                catch; end
+            end
+            app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, diagramHtml);
             if ~silent
                 uialert(app.UIFigure, ...
                     sprintf('Circuit "%s" uploaded successfully.\n\nCircuit ID: %s\nFormat: %s\nCategory: %s\nProject: %s', ...
@@ -230,7 +254,7 @@ classdef UploadViewModel < handle
         function onUploadError(~, app, filePath, ME)
             app.hideLoading();
             app.logEvent('ERROR', sprintf('Upload FAILED (file: %s): %s', filePath, ME.message));
-            app.setStatus(app.CircuitStatsArea, {'Upload failed.', ME.message});
+            app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({'Upload failed.', ME.message}, '');
             app.showError('Upload Circuit', ME);
         end
 

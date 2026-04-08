@@ -177,6 +177,22 @@ classdef JsonHelper
             end
         end
 
+        % activityToRows  Map recent_activity array → 3-column cell matrix
+        %   Time | Action | Status
+        function rows = activityToRows(data)
+            rows  = cell(0, 3);
+            items = JsonHelper.extractList(data, 'recent_activity');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0; return; end
+            rows = cell(n, 3);
+            for i = 1:n
+                rows{i,1} = char(JsonHelper.pick(items(i), {'timestamp','time','created_at'}));
+                rows{i,2} = char(JsonHelper.pick(items(i), {'description','action','type'}));
+                rows{i,3} = char(JsonHelper.pick(items(i), {'status'}));
+            end
+        end
+
         % predictionToLines  Map a prediction struct to display lines for uitextarea.
         function lines = predictionToLines(data)
             lines = {};

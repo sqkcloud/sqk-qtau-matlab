@@ -16,7 +16,7 @@ classdef AuthService < handle
 
         % Authenticate with username/password. Returns token response struct.
         function data = login(obj, username, password)
-            maskedUser = AuthService.maskUsername(username);
+            maskedUser = Logger.maskUsername(username);
             Logger.info('AuthService', 'login → user: %s', maskedUser);
             try
                 data = obj.Client.login(username, password);
@@ -51,18 +51,6 @@ classdef AuthService < handle
             end
         end
 
-    end
-
-    methods (Static, Access = private)
-        function masked = maskUsername(username)
-            % Mask username for safe logging: show first char + '***'.
-            u = char(username);
-            if isempty(u)
-                masked = '***';
-            else
-                masked = [u(1) '***'];
-            end
-        end
     end
 
     methods

@@ -91,6 +91,11 @@ classdef test_ServiceContainer < matlab.unittest.TestCase
                 'QecEngine should not be empty after construction');
         end
 
+        function testBenchmarkSvcNotEmpty(testCase)
+            testCase.verifyNotEmpty(testCase.Container.BenchmarkSvc, ...
+                'BenchmarkSvc should not be empty after construction');
+        end
+
         % -- Service types are correct -----------------------------------------
 
         function testClientIsFastAPIClient(testCase)
@@ -107,6 +112,10 @@ classdef test_ServiceContainer < matlab.unittest.TestCase
 
         function testQecEngineIsQecEngineService(testCase)
             testCase.verifyTrue(isa(testCase.Container.QecEngine, 'QecEngineService'));
+        end
+
+        function testBenchmarkSvcIsBenchmarkService(testCase)
+            testCase.verifyTrue(isa(testCase.Container.BenchmarkSvc, 'BenchmarkService'));
         end
 
         % -- syncClient updates BaseUrl ----------------------------------------

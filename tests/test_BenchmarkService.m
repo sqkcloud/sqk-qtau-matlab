@@ -33,7 +33,11 @@ classdef test_BenchmarkService < matlab.unittest.TestCase
 
         function testConstructorSetsClient(testCase)
             testCase.verifyTrue(isa(testCase.Service, 'BenchmarkService'));
-            testCase.verifyEqual(testCase.Service.Client, testCase.Stub);
+        end
+
+        function testServiceIsHandle(testCase)
+            testCase.verifyTrue(isa(testCase.Service, 'handle'), ...
+                'BenchmarkService should be a handle class');
         end
 
         % ── getVolumetricData ────────────────────────────────────────────

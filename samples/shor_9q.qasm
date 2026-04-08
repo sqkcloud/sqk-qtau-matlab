@@ -17,7 +17,7 @@ OPENQASM 3.0;
 qubit[9] data;
 qubit[8] syndrome;
 bit[8] syn_result;
-bit[1] output;
+bit output;
 
 // Prepare logical state on qubit 0
 h data[0];

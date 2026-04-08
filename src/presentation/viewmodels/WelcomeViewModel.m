@@ -7,6 +7,8 @@ classdef WelcomeViewModel < handle
         App  % QTAUWorkbenchApp
         FullProjectRows  cell = {}   % unfiltered table rows
         FullProjectIds   cell = {}   % unfiltered project IDs
+        FilteredRows     cell = {}   % after search filter (or same as Full)
+        FilteredIds      cell = {}
     end
     properties
         CurrentPage  double = 1
@@ -272,6 +274,14 @@ classdef WelcomeViewModel < handle
             app.State.baseUrl = strtrim(baseUrl);
             app.syncClient();
 
+            % Warn if connecting over plain HTTP (credentials travel unencrypted)
+            if startsWith(app.State.baseUrl, 'http://') && ~contains(app.State.baseUrl, 'localhost')
+                Logger.warn('WelcomeViewModel', 'Login over plain HTTP — credentials are not encrypted');
+                app.LoginDlgStatusLabel.Text = Labels.get('login_warn_http', ...
+                    'Warning: Connection is not encrypted (HTTP). Use HTTPS for production.');
+                app.LoginDlgStatusLabel.FontColor = [0.75 0.48 0.10];
+            end
+
             app.logEvent('AUTH', sprintf('Login attempt — user: %s  url: %s', username, app.State.baseUrl));
             try
                 data = app.AuthSvc.login(username, password);
@@ -314,10 +324,15 @@ classdef WelcomeViewModel < handle
 
             catch ME
                 if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                    app.LoginDlgStatusLabel.FontColor = [0.851 0.188 0.145];
                     if contains(ME.message, '401')
-                        app.LoginDlgStatusLabel.Text = Labels.get('error_login_unauthorized', 'Invalid credentials.');
+                        app.LoginDlgStatusLabel.Text = Labels.get('error_login_unauthorized', 'The Username or Password is incorrect.');
+                    elseif contains(ME.message, {'connection','connect','timeout','Timeout','Send failure','Broken pipe','refused'}, 'IgnoreCase', true)
+                        app.LoginDlgStatusLabel.Text = Labels.get('error_login_connection', ...
+                            'Unable to connect to server. Please check the Base URL and try again.');
                     else
-                        app.LoginDlgStatusLabel.Text = ME.message;
+                        app.LoginDlgStatusLabel.Text = Labels.get('error_login_generic', ...
+                            'Login failed. Please try again.');
                     end
                 end
                 app.logEvent('ERROR', sprintf('Login FAILED (user: %s): %s', username, ME.message));
@@ -363,34 +378,20 @@ classdef WelcomeViewModel < handle
             if ~app.State.isAuthenticated()
                 return;
             end
-            skip  = (obj.CurrentPage - 1) * obj.ItemsPerPage;
-            limit = obj.ItemsPerPage;
             app.logEvent('API', 'GET /api/projects');
             app.showLoading(Labels.get('loading_projects', 'Loading projects...'));
             try
-                data = app.AuthSvc.listProjects(app.State.authToken, skip, limit);
+                data = app.AuthSvc.listProjects(app.State.authToken, 0, 0);
                 [rows, ids] = JsonHelper.projectsToRows(data);
                 obj.FullProjectRows = rows;
                 obj.FullProjectIds  = ids;
-                app.ProjectsTable.Data = rows;
-                app.ProjectsTable.UserData = ids;
-                % Re-apply active search filter if any
-                if ~isempty(app.ProjectsSearchField) && isvalid(app.ProjectsSearchField)
-                    q = strtrim(app.ProjectsSearchField.Value);
-                    if strlength(q) > 0
-                        obj.onSearchProjects(char(q));
-                    end
-                end
+                obj.FilteredRows    = rows;
+                obj.FilteredIds     = ids;
 
-                if isstruct(data) && isfield(data, 'total')
-                    obj.TotalItems = double(data.total);
-                else
-                    obj.TotalItems = size(rows, 1);
-                end
+                obj.TotalItems = size(rows, 1);
 
                 nRows = size(rows, 1);
                 app.logEvent('API', sprintf('GET /api/projects → %d row(s) returned (total: %d)', nRows, obj.TotalItems));
-                obj.updatePagination();
 
                 % Resolve active project name from fetched rows
                 if app.State.hasProject() && nRows > 0
@@ -405,6 +406,8 @@ classdef WelcomeViewModel < handle
                         end
                     end
                 end
+
+                obj.displayCurrentPage();
                 obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME
@@ -416,34 +419,36 @@ classdef WelcomeViewModel < handle
 
         function onSearchProjects(obj, query)
             % Filter the projects table by search query (matches any column)
-            app = obj.App;
             if isempty(obj.FullProjectRows); return; end
             q = lower(strtrim(query));
             if isempty(q)
-                app.ProjectsTable.Data     = obj.FullProjectRows;
-                app.ProjectsTable.UserData = obj.FullProjectIds;
-                return;
-            end
-            nRows = size(obj.FullProjectRows, 1);
-            keep = false(nRows, 1);
-            for i = 1:nRows
-                for j = 1:size(obj.FullProjectRows, 2)
-                    val = obj.FullProjectRows{i, j};
-                    if ischar(val) && contains(lower(val), q)
-                        keep(i) = true; break;
-                    elseif isnumeric(val) && contains(num2str(val), q)
-                        keep(i) = true; break;
+                obj.FilteredRows = obj.FullProjectRows;
+                obj.FilteredIds  = obj.FullProjectIds;
+            else
+                nRows = size(obj.FullProjectRows, 1);
+                keep = false(nRows, 1);
+                for i = 1:nRows
+                    for j = 1:size(obj.FullProjectRows, 2)
+                        val = obj.FullProjectRows{i, j};
+                        if ischar(val) && contains(lower(val), q)
+                            keep(i) = true; break;
+                        elseif isnumeric(val) && contains(num2str(val), q)
+                            keep(i) = true; break;
+                        end
                     end
                 end
+                obj.FilteredRows = obj.FullProjectRows(keep, :);
+                obj.FilteredIds  = obj.FullProjectIds(keep);
             end
-            app.ProjectsTable.Data     = obj.FullProjectRows(keep, :);
-            app.ProjectsTable.UserData = obj.FullProjectIds(keep);
+            obj.TotalItems  = size(obj.FilteredRows, 1);
+            obj.CurrentPage = 1;
+            obj.displayCurrentPage();
         end
 
         function onPrevPage(obj)
             if obj.CurrentPage > 1
                 obj.CurrentPage = obj.CurrentPage - 1;
-                obj.onFetchProjects();
+                obj.displayCurrentPage();
             end
         end
 
@@ -451,12 +456,28 @@ classdef WelcomeViewModel < handle
             totalPages = ceil(obj.TotalItems / obj.ItemsPerPage);
             if obj.CurrentPage < totalPages
                 obj.CurrentPage = obj.CurrentPage + 1;
-                obj.onFetchProjects();
+                obj.displayCurrentPage();
             end
         end
     end
 
     methods (Access = private)
+        function displayCurrentPage(obj)
+            app = obj.App;
+            startIdx = (obj.CurrentPage - 1) * obj.ItemsPerPage + 1;
+            endIdx   = min(obj.CurrentPage * obj.ItemsPerPage, obj.TotalItems);
+
+            if startIdx > obj.TotalItems
+                app.ProjectsTable.Data     = {};
+                app.ProjectsTable.UserData = {};
+            else
+                app.ProjectsTable.Data     = obj.FilteredRows(startIdx:endIdx, :);
+                app.ProjectsTable.UserData = obj.FilteredIds(startIdx:endIdx);
+            end
+
+            obj.updatePagination();
+        end
+
         function updatePagination(obj)
             app = obj.App;
             totalPages = max(1, ceil(obj.TotalItems / obj.ItemsPerPage));

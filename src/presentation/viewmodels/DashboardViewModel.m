@@ -63,6 +63,12 @@ classdef DashboardViewModel < handle
                     app.setStatus(app.DashboardSummaryArea, {summary});
                 end
                 app.setStatus(app.DashboardStatusArea, {JsonHelper.pretty(data)});
+
+                % Populate Recent Activity table
+                actRows = JsonHelper.activityToRows(data);
+                if ~isempty(actRows) && ~isempty(app.DashActivityTable) && isvalid(app.DashActivityTable)
+                    app.DashActivityTable.Data = actRows;
+                end
             catch ME
                 Logger.warn('DashboardViewModel', 'applyDashboardData failed: %s', ME.message);
             end

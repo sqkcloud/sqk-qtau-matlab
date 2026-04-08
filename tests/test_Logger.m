@@ -109,5 +109,45 @@ classdef test_Logger < matlab.unittest.TestCase
                 'Second vararg should be formatted');
         end
 
+        % ── Log-level filtering ──────────────────────────────────────────
+
+        function testSetAndGetLevel(testCase)
+            Logger.setLevel('WARN');
+            testCase.verifyEqual(Logger.getLevel(), 'WARN');
+            Logger.setLevel('DEBUG');  % reset
+        end
+
+        function testDebugSuppressedAtInfoLevel(testCase)
+            Logger.setLevel('INFO');
+            output = evalc("Logger.debug('Test', 'should be hidden')");
+            testCase.verifyTrue(isempty(strtrim(output)), ...
+                'DEBUG messages should be suppressed when level is INFO');
+            Logger.setLevel('DEBUG');
+        end
+
+        function testInfoShownAtInfoLevel(testCase)
+            Logger.setLevel('INFO');
+            output = evalc("Logger.info('Test', 'visible')");
+            testCase.verifyTrue(contains(output, 'visible'), ...
+                'INFO messages should show when level is INFO');
+            Logger.setLevel('DEBUG');
+        end
+
+        function testErrorAlwaysShown(testCase)
+            Logger.setLevel('ERROR');
+            output = evalc("Logger.error('Test', 'critical')");
+            testCase.verifyTrue(contains(output, 'critical'), ...
+                'ERROR messages should always show');
+            Logger.setLevel('DEBUG');
+        end
+
+        function testWarnSuppressedAtErrorLevel(testCase)
+            Logger.setLevel('ERROR');
+            output = evalc("Logger.warn('Test', 'should hide')");
+            testCase.verifyTrue(isempty(strtrim(output)), ...
+                'WARN messages should be suppressed when level is ERROR');
+            Logger.setLevel('DEBUG');
+        end
+
     end
 end

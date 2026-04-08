@@ -1,4 +1,4 @@
-classdef BenchmarkService
+classdef BenchmarkService < handle
     % BenchmarkService  Domain service for quantum benchmarking features.
     %
     %   Wraps the /api/benchmark/* endpoints exposed by the FastAPI backend.
@@ -9,7 +9,7 @@ classdef BenchmarkService
     %   All methods delegate HTTP work to FastAPIClient and return raw structs
     %   (decoded JSON) so the presentation layer can pick the fields it needs.
 
-    properties
+    properties (Access = private)
         Client  % FastAPIClient instance
     end
 
@@ -17,6 +17,7 @@ classdef BenchmarkService
         function obj = BenchmarkService(client)
             % BenchmarkService  Construct with a configured FastAPIClient.
             obj.Client = client;
+            Logger.info('BenchmarkService', 'Initialized');
         end
 
         % ── Volumetric Fidelity Map ──────────────────────────────────────────

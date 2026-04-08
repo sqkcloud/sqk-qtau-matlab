@@ -22,6 +22,7 @@ classdef ServiceContainer < handle
         ReportSvc       % ReportService
         SettingsSvc     % SettingsService
         QecEngine       % QecEngineService (local computation, no HTTP)
+        BenchmarkSvc    % BenchmarkService
     end
 
     methods
@@ -37,6 +38,7 @@ classdef ServiceContainer < handle
             obj.ReportSvc     = ReportService(obj.Client);
             obj.SettingsSvc   = SettingsService(obj.Client);
             obj.QecEngine     = QecEngineService();
+            obj.BenchmarkSvc  = BenchmarkService(obj.Client);
             Logger.info('ServiceContainer', 'All services initialized');
         end
 

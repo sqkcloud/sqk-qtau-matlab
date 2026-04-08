@@ -52,7 +52,7 @@ classdef DialogBuilder
             card.Layout.Row = 2; card.Layout.Column = 2;
 
             cg = uigridlayout(card, [15 1]);
-            cg.RowHeight = {32, 20, 12, 16, 36, 8, 16, 36, 8, 16, 36, 20, 12, 40, 20};
+            cg.RowHeight = {32, 20, 12, 16, 36, 8, 16, 36, 8, 16, 36, 20, 12, 40, 'fit'};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [32 24 32 18];
             cg.RowSpacing  = 2;

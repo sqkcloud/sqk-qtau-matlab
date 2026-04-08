@@ -112,18 +112,21 @@ function AnalysisScreen(app)
     exportPanel.Layout.Row = 4; exportPanel.Layout.Column = [1 3];
     exportPanel.BackgroundColor = [0.94 0.97 1.00];
 
-    eg = uigridlayout(exportPanel, [1 3]);
-    eg.ColumnWidth = {'1x', 160, 150};
+    eg = uigridlayout(exportPanel, [1 4]);
+    eg.ColumnWidth = {'1x', 150, 170, 120};
     eg.Padding = [14 8 14 8]; eg.BackgroundColor = [0.94 0.97 1.00];
     desc = uilabel(eg, 'Text', Labels.get('analysis_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
-    tmp = uibutton(eg, 'Text', Labels.get('analysis_btn_next'), ...
+    tmp = uibutton(eg, 'Text', [char(9638) ' Visualize'], ...
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onVisualizeSimilarity());
+    tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'secondary');
+    tmp = uibutton(eg, 'Text', [char(9004) ' ' Labels.get('analysis_btn_next')], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Backends'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'primary');
-    tmp = uibutton(eg, 'Text', Labels.get('analysis_btn_back'), ...
+    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'primary');
+    tmp = uibutton(eg, 'Text', [char(10548) ' ' Labels.get('analysis_btn_back')], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Upload'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'ghost');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'ghost');
 
     Logger.info('AnalysisScreen', 'Analysis tab UI built successfully');
 end
