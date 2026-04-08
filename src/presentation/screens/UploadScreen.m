@@ -13,7 +13,7 @@ function UploadScreen(app)
     t = app.createSectionPage('Upload');
 
     g = uigridlayout(t, [5 3]);
-    g.RowHeight     = {0, '1x', 150, 0, 72};
+    g.RowHeight     = {0, '1x', 200, 0, 72};
     g.ColumnWidth   = {'1.15x', 6, '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;

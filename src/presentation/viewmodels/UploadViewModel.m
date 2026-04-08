@@ -49,7 +49,7 @@ classdef UploadViewModel < handle
             % Build colored HTML circuit diagram
             diagramHtml = '';
             try
-                diagramHtml = CircuitDiagram.renderHtml(content);
+                diagramHtml = CircuitDiagram.renderSvg(content);
             catch; end
             app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, diagramHtml);
         end
@@ -237,7 +237,7 @@ classdef UploadViewModel < handle
             filePath2 = char(app.State.selectedFile);
             if ~isempty(filePath2) && isfile(filePath2)
                 try
-                    diagramHtml = CircuitDiagram.renderHtml(fileread(filePath2));
+                    diagramHtml = CircuitDiagram.renderSvg(fileread(filePath2));
                 catch; end
             end
             app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, diagramHtml);
@@ -254,7 +254,8 @@ classdef UploadViewModel < handle
         function onUploadError(~, app, filePath, ME)
             app.hideLoading();
             app.logEvent('ERROR', sprintf('Upload FAILED (file: %s): %s', filePath, ME.message));
-            app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({'Upload failed.', ME.message}, '');
+            app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
+                sprintf('<p style="color:#DC2626;font-family:sans-serif">Upload failed: %s</p>', ME.message));
             app.showError('Upload Circuit', ME);
         end
 

@@ -37,6 +37,22 @@ classdef CircuitDiagram
             end
         end
 
+        function svg = renderSvg(content)
+            % renderSvg  Parse QASM and produce a graphical SVG circuit diagram
+            %            with colored gate boxes, wires, control dots, and measurements.
+            try
+                [nQubits, gates] = CircuitDiagram.parseGates(content);
+                if nQubits == 0 || isempty(gates)
+                    svg = '<p style="color:#888;font-family:sans-serif">(No gates detected)</p>';
+                    return;
+                end
+                svg = CircuitDiagram.drawSvgDiagram(nQubits, gates);
+            catch ME
+                Logger.warn('CircuitDiagram', 'renderSvg failed: %s', ME.message);
+                svg = '<p style="color:#888;font-family:sans-serif">(Unable to render diagram)</p>';
+            end
+        end
+
         function src = wrapHtml(text)
             % wrapHtml  Wrap plain text or HTML body in a styled HTML page
             %           suitable for uihtml.HTMLSource.
@@ -55,19 +71,14 @@ classdef CircuitDiagram
         end
 
         function src = buildStatsHtml(infoLines, diagramHtml)
-            % buildStatsHtml  Combine info lines + colored diagram into HTML.
-            escaped = cell(size(infoLines));
-            for i = 1:numel(infoLines)
-                escaped{i} = strrep(strrep(char(infoLines{i}), '&', '&amp;'), '<', '&lt;');
-            end
-            body = strjoin(escaped, newline);
-            if ~isempty(diagramHtml)
-                if ~isempty(body)
-                    body = [body, newline, newline];
-                end
-                body = [body, diagramHtml];
-            end
-            src = CircuitDiagram.wrapHtml(body);
+            % buildStatsHtml  Wrap SVG or HTML diagram for uihtml display.
+            src = [ ...
+                '<html><head><style>' ...
+                'html,body{height:100%;margin:0;padding:0;overflow:auto;}' ...
+                'body{display:flex;align-items:center;justify-content:center;}' ...
+                '</style></head><body>' ...
+                char(diagramHtml) ...
+                '</body></html>'];
         end
 
     end
@@ -363,6 +374,143 @@ classdef CircuitDiagram
                         if isempty(grid{qi, col}); grid{qi, col} = '|'; end
                     end
                 end
+            end
+        end
+
+        function svg = drawSvgDiagram(nQubits, gates)
+            % drawSvgDiagram  Render a graphical SVG circuit with gate boxes,
+            %   wires, control dots, CNOT targets, and measurement symbols.
+
+            % Layout constants
+            gateW   = 36;   % gate box width
+            gateH   = 30;   % gate box height
+            colW    = 48;   % column spacing
+            rowH    = 50;   % row spacing (qubit wire spacing)
+            labelW  = 70;   % left margin for qubit labels
+            padR    = 20;   % right padding
+            padT    = 10;   % top padding
+            maxCols = 25;   % max gate columns to display
+
+            % Build the grid using existing buildGrid
+            [grid, ~, displayCols, ~, truncated, ~] = ...
+                CircuitDiagram.buildGrid(nQubits, gates);
+
+            svgW = labelW + displayCols * colW + padR;
+            svgH = padT + nQubits * rowH + 10;
+
+            parts = {};
+            parts{end+1} = sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">', ...
+                svgW, svgH, svgW, svgH);
+            parts{end+1} = '<style>text{font-family:"Segoe UI",Arial,sans-serif;}</style>';
+
+            % Draw qubit wires (horizontal lines)
+            for qi = 1:nQubits
+                wy = padT + (qi - 0.5) * rowH;
+                parts{end+1} = sprintf('<line x1="%d" y1="%.0f" x2="%d" y2="%.0f" stroke="#444" stroke-width="1.5"/>', ...
+                    labelW - 5, wy, svgW - padR, wy);
+                % Qubit label
+                parts{end+1} = sprintf('<text x="%d" y="%.0f" font-size="12" font-weight="bold" fill="#333" text-anchor="end" dominant-baseline="middle">q[%d] |0&#x27E9;</text>', ...
+                    labelW - 10, wy, qi - 1);
+            end
+
+            % Draw gates
+            for ci = 1:displayCols
+                cx = labelW + (ci - 0.5) * colW;  % center x of this column
+                for qi = 1:nQubits
+                    sym = grid{qi, ci};
+                    if isempty(sym); continue; end
+                    cy = padT + (qi - 0.5) * rowH;  % center y of this qubit
+
+                    if strcmp(sym, '@')
+                        % Control dot
+                        parts{end+1} = sprintf('<circle cx="%.0f" cy="%.0f" r="5" fill="#2196F3"/>', cx, cy);
+                    elseif strcmp(sym, '|')
+                        % Vertical connector (drawn below with multi-qubit lines)
+                    elseif strcmp(sym, 'X') && CircuitDiagram.isTarget(grid, qi, ci)
+                        % CNOT target — circled plus
+                        parts{end+1} = sprintf('<circle cx="%.0f" cy="%.0f" r="12" fill="#2196F3" stroke="#1976D2" stroke-width="1.5"/>', cx, cy);
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="white" stroke-width="2"/>', cx-7, cy, cx+7, cy);
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="white" stroke-width="2"/>', cx, cy-7, cx, cy+7);
+                    elseif strcmp(sym, 'M')
+                        % Measurement — dark box with meter icon
+                        bx = cx - gateW/2; by = cy - gateH/2;
+                        parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="3" fill="#37474F" stroke="#263238" stroke-width="1"/>', ...
+                            bx, by, gateW, gateH);
+                        % Meter arc
+                        parts{end+1} = sprintf('<path d="M%.0f,%.0f A8,8 0 0,1 %.0f,%.0f" fill="none" stroke="white" stroke-width="1.5"/>', ...
+                            cx-7, cy+4, cx+7, cy+4);
+                        % Meter needle
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="white" stroke-width="1.5"/>', ...
+                            cx, cy+4, cx+5, cy-6);
+                    elseif strcmp(sym, 'x')
+                        % SWAP — X mark
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="#FF6D00" stroke-width="2.5"/>', cx-7, cy-7, cx+7, cy+7);
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="#FF6D00" stroke-width="2.5"/>', cx+7, cy-7, cx-7, cy+7);
+                    else
+                        % Standard gate box
+                        clr = CircuitDiagram.svgGateColor(sym);
+                        txtClr = 'white';
+                        bx = cx - gateW/2; by = cy - gateH/2;
+                        parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="4" fill="%s" stroke="%s" stroke-width="1"/>', ...
+                            bx, by, gateW, gateH, clr.bg, clr.border);
+                        fs = 13;
+                        if length(sym) > 2; fs = 10; end
+                        if length(sym) > 3; fs = 9; end
+                        parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" font-weight="bold" fill="%s" text-anchor="middle" dominant-baseline="central">%s</text>', ...
+                            cx, cy, fs, txtClr, sym);
+                    end
+                end
+
+                % Draw vertical connectors for multi-qubit gates in this column
+                qubitsInCol = [];
+                for qi = 1:nQubits
+                    sym = grid{qi, ci};
+                    if ~isempty(sym)
+                        qubitsInCol(end+1) = qi; %#ok<AGROW>
+                    end
+                end
+                if numel(qubitsInCol) >= 2
+                    minQ = min(qubitsInCol); maxQ = max(qubitsInCol);
+                    y1 = padT + (minQ - 0.5) * rowH;
+                    y2 = padT + (maxQ - 0.5) * rowH;
+                    parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="#2196F3" stroke-width="2"/>', ...
+                        cx, y1, cx, y2);
+                end
+            end
+
+            if truncated
+                tx = svgW - padR - 5;
+                ty = padT + nQubits * rowH - 5;
+                parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="10" fill="#999" text-anchor="end">(...truncated)</text>', tx, ty);
+            end
+
+            parts{end+1} = '</svg>';
+            svg = strjoin(parts, newline);
+        end
+
+        function tf = isTarget(grid, qi, ci)
+            % Check if there is a control dot (@) in the same column on another qubit
+            tf = false;
+            for r = 1:size(grid, 1)
+                if r ~= qi && strcmp(grid{r, ci}, '@')
+                    tf = true; return;
+                end
+            end
+        end
+
+        function clr = svgGateColor(sym)
+            % Return background and border colors for SVG gate boxes.
+            switch sym
+                case {'H','S','T','SDG','TDG','ID','SX'}
+                    clr = struct('bg', '#4CAF50', 'border', '#388E3C');  % green
+                case {'X','Y','Z'}
+                    clr = struct('bg', '#4CAF50', 'border', '#388E3C');  % green (Pauli)
+                case {'RX','RY','RZ'}
+                    clr = struct('bg', '#2196F3', 'border', '#1976D2');  % blue (rotation)
+                case {'U1','U2','U3'}
+                    clr = struct('bg', '#2196F3', 'border', '#1976D2');  % blue
+                otherwise
+                    clr = struct('bg', '#2196F3', 'border', '#1976D2');  % blue default
             end
         end
 
