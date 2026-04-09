@@ -44,6 +44,7 @@ classdef ReportsViewModel < handle
                 end
                 app.logEvent('API', sprintf('Report generated — id: %s  file: %s  format: %s', ...
                     app.State.reportId, reportFile, fmt));
+                app.State.logActivity(sprintf('Generate report — %s', fmt), 'Success');
                 app.hideLoading();
             catch ME
                 app.hideLoading();

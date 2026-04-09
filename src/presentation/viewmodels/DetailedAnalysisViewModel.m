@@ -26,6 +26,7 @@ classdef DetailedAnalysisViewModel < handle
                 data = app.JobSvc.getDetailedResults(app.State.selectedJobId, app.State.authToken);
                 obj.plotComparisonFromData(data);
                 app.logEvent('API', 'Comparison plot updated from live data');
+                app.State.logActivity('Detailed analysis — comparison plot', 'Success');
                 app.hideLoading();
             catch ME
                 app.hideLoading();

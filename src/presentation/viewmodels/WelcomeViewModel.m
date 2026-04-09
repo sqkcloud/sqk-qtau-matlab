@@ -67,6 +67,7 @@ classdef WelcomeViewModel < handle
                 app.Client.ProjectId = app.State.currentProjectId;
                 app.logEvent('API', sprintf('Project created successfully — id: %s  name: %s', ...
                     app.State.currentProjectId, char(projName)));
+                app.State.logActivity(sprintf('Create project — %s', char(projName)), 'Success');
                 if ~isempty(app.ActiveProjectLabel) && isvalid(app.ActiveProjectLabel)
                     app.ActiveProjectLabel.Text = char(projName);
                 end
@@ -174,6 +175,7 @@ classdef WelcomeViewModel < handle
             try
                 app.ProjectSvc.updateProject(char(projectId), char(projName), char(projDesc), tags, app.State.authToken);
                 app.logEvent('API', sprintf('Project updated successfully — id: %s', char(projectId)));
+                app.State.logActivity(sprintf('Edit project — %s', char(projName)), 'Success');
 
                 % Update active project name if this was the active project
                 if strcmp(char(app.State.currentProjectId), char(projectId))
@@ -233,6 +235,7 @@ classdef WelcomeViewModel < handle
             try
                 app.ProjectSvc.deleteProject(char(projectId), app.State.authToken);
                 app.logEvent('API', sprintf('Project deleted: %s (%s)', projName, projectId));
+                app.State.logActivity(sprintf('Delete project — %s', projName), 'Success');
 
                 % Clear active project if the deleted one was active
                 if strcmp(char(app.State.currentProjectId), char(projectId))
@@ -261,8 +264,8 @@ classdef WelcomeViewModel < handle
             if isempty(app.LoginDialog) || ~isvalid(app.LoginDialog)
                 return;
             end
-            baseUrl  = string(app.LoginDlgBaseUrlField.Value);
-            username = string(app.LoginDlgUsernameField.Value);
+            baseUrl  = string(app.LoginDlgBaseUrlValue);
+            username = string(app.LoginDlgUsernameValue);
             password = string(app.LoginDlgPasswordReal);
 
             if strlength(strtrim(username)) == 0 || strlength(password) == 0
@@ -303,9 +306,13 @@ classdef WelcomeViewModel < handle
 
                 app.logEvent('AUTH', sprintf('Login OK — user: %s  token_type: %s  default_project: %s', ...
                     app.State.currentUser, app.State.tokenType, app.State.defaultProjectId));
+                app.State.logActivity(sprintf('Login — user: %s', app.State.currentUser), 'Success');
 
                 % Clear password from memory
                 app.LoginDlgPasswordReal = '';
+                if ~isempty(app.LoginDlgPasswordField) && isvalid(app.LoginDlgPasswordField)
+                    app.LoginDlgPasswordField.Data = struct('a', 'clear');
+                end
 
                 % Close the login dialog
                 if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
@@ -352,6 +359,7 @@ classdef WelcomeViewModel < handle
                 app.State.authToken = "";
                 app.State.currentUser = "";
                 app.logEvent('AUTH', sprintf('Logout OK — user: %s', prevUser));
+                app.State.logActivity(sprintf('Logout — user: %s', prevUser), 'Success');
                 app.updateWelcomeAuthButtons();
                 app.showAuthOverlay();
                 if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end

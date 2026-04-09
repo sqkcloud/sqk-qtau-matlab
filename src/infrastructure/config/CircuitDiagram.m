@@ -39,14 +39,31 @@ classdef CircuitDiagram
 
         function svg = renderSvg(content)
             % renderSvg  Parse QASM and produce a graphical SVG circuit diagram
-            %            with colored gate boxes, wires, control dots, and measurements.
+            %            with colored gate boxes, wires, control dots, measurements,
+            %            per-qubit probabilities, and a probability distribution chart.
             try
                 [nQubits, gates] = CircuitDiagram.parseGates(content);
                 if nQubits == 0 || isempty(gates)
                     svg = '<p style="color:#888;font-family:sans-serif">(No gates detected)</p>';
                     return;
                 end
-                svg = CircuitDiagram.drawSvgDiagram(nQubits, gates);
+                % Simulate circuit to get state vector and probabilities
+                stateVec = [];
+                if nQubits <= 16
+                    try
+                        stateVec = CircuitDiagram.simulateCircuit(nQubits, gates);
+                    catch ME2
+                        Logger.warn('CircuitDiagram', 'simulation failed: %s', ME2.message);
+                    end
+                end
+                circuitSvg = CircuitDiagram.drawSvgDiagram(nQubits, gates, stateVec);
+                if ~isempty(stateVec)
+                    probSvg = CircuitDiagram.drawProbDistSvg(nQubits, stateVec);
+                    svg = ['<div style="display:flex;flex-direction:column;align-items:center;gap:16px;">' ...
+                           circuitSvg probSvg '</div>'];
+                else
+                    svg = circuitSvg;
+                end
             catch ME
                 Logger.warn('CircuitDiagram', 'renderSvg failed: %s', ME.message);
                 svg = '<p style="color:#888;font-family:sans-serif">(Unable to render diagram)</p>';
@@ -74,8 +91,9 @@ classdef CircuitDiagram
             % buildStatsHtml  Wrap SVG or HTML diagram for uihtml display.
             src = [ ...
                 '<html><head><style>' ...
-                'html,body{height:100%;margin:0;padding:0;overflow:auto;}' ...
-                'body{display:flex;align-items:center;justify-content:center;}' ...
+                'html,body{min-height:100%;margin:0;padding:0;overflow:auto;}' ...
+                'body{display:flex;align-items:center;justify-content:center;' ...
+                'background:#111827;padding:12px 0;}' ...
                 '</style></head><body>' ...
                 char(diagramHtml) ...
                 '</body></html>'];
@@ -110,19 +128,26 @@ classdef CircuitDiagram
                 end
 
                 % Single-qubit gates: h q[0]; rx(0.5) q[1]; measure q[0] -> c[0];
-                tok1 = regexp(ln, '^\s*(h|x|y|z|s|t|sdg|tdg|rx|ry|rz|u[123]?|id|sx|measure)\s*(?:\([^)]*\))?\s+\w+\[(\d+)\]', 'tokens');
+                tok1 = regexp(ln, '^\s*(h|x|y|z|s|t|sdg|tdg|rx|ry|rz|u[123]?|id|sx|measure)\s*(?:\(([^)]*)\))?\s+\w+\[(\d+)\]', 'tokens');
                 if ~isempty(tok1)
-                    gName = upper(tok1{1}{1});
-                    qIdx = str2double(tok1{1}{2});
+                    toks = tok1{1};
+                    gName = upper(toks{1});
+                    if numel(toks) == 3
+                        paramStr = toks{2};
+                        qIdx = str2double(toks{3});
+                    else
+                        paramStr = '';
+                        qIdx = str2double(toks{2});
+                    end
                     if strcmp(gName, 'MEASURE'); gName = 'M'; end
-                    gates{end+1} = struct('name', gName, 'qubits', qIdx); %#ok<AGROW>
+                    gates{end+1} = struct('name', gName, 'qubits', qIdx, 'params', paramStr); %#ok<AGROW>
                     continue;
                 end
 
                 % Bulk measure: c = measure q;
                 if ~isempty(regexp(ln, '=\s*measure\s+\w+\s*;', 'once'))
                     for qi = 0:max(nQubits-1, 0)
-                        gates{end+1} = struct('name', 'M', 'qubits', qi); %#ok<AGROW>
+                        gates{end+1} = struct('name', 'M', 'qubits', qi, 'params', ''); %#ok<AGROW>
                     end
                     continue;
                 end
@@ -134,7 +159,7 @@ classdef CircuitDiagram
                     q1 = str2double(tok3{1}{2});
                     q2 = str2double(tok3{1}{3});
                     q3 = str2double(tok3{1}{4});
-                    gates{end+1} = struct('name', gName, 'qubits', [q1, q2, q3]); %#ok<AGROW>
+                    gates{end+1} = struct('name', gName, 'qubits', [q1, q2, q3], 'params', ''); %#ok<AGROW>
                     continue;
                 end
 
@@ -144,7 +169,7 @@ classdef CircuitDiagram
                     gName = upper(tok2{1}{1});
                     q1 = str2double(tok2{1}{2});
                     q2 = str2double(tok2{1}{3});
-                    gates{end+1} = struct('name', gName, 'qubits', [q1, q2]); %#ok<AGROW>
+                    gates{end+1} = struct('name', gName, 'qubits', [q1, q2], 'params', ''); %#ok<AGROW>
                     continue;
                 end
             end
@@ -377,40 +402,111 @@ classdef CircuitDiagram
             end
         end
 
-        function svg = drawSvgDiagram(nQubits, gates)
-            % drawSvgDiagram  Render a graphical SVG circuit with gate boxes,
-            %   wires, control dots, CNOT targets, and measurement symbols.
+        function svg = drawSvgDiagram(nQubits, gates, stateVec)
+            % drawSvgDiagram  Render a graphical SVG circuit diagram
+            %   with dark theme, blue gate boxes, wires, control dots, measurements,
+            %   and per-qubit measurement probabilities.
+            if nargin < 3, stateVec = []; end
 
             % Layout constants
-            gateW   = 36;   % gate box width
-            gateH   = 30;   % gate box height
-            colW    = 48;   % column spacing
-            rowH    = 50;   % row spacing (qubit wire spacing)
-            labelW  = 70;   % left margin for qubit labels
-            padR    = 20;   % right padding
-            padT    = 10;   % top padding
+            gateW   = 38;   % gate box width
+            gateH   = 32;   % gate box height
+            colW    = 52;   % column spacing
+            rowH    = 54;   % row spacing (qubit wire spacing)
+            labelW  = 80;   % left margin for qubit labels
+            padR    = 24;   % right padding
+            padT    = 16;   % top padding
+            padB    = 16;   % bottom padding
             maxCols = 25;   % max gate columns to display
+            probW   = 110;  % width reserved for probability labels on the right
+
+            % Dark theme colors
+            bgColor     = '#111827';  % dark charcoal background
+            wireColor   = '#4B5563';  % subtle gray wires
+            labelColor  = '#D1D5DB';  % light gray labels
+            ctrlDot     = '#93C5FD';  % light blue control dot
+            ctrlLine    = '#60A5FA';  % blue connector lines
+            cnotFill    = '#2563EB';  % blue CNOT target
+            cnotStroke  = '#3B82F6';
+            swapColor   = '#F59E0B';  % amber SWAP
+            measFill    = '#1E293B';  % dark slate measurement box
+            measStroke  = '#475569';
+            truncColor  = '#6B7280';  % muted text
+            probColor   = '#34D399';  % emerald green for probability text
+            probBarBg   = '#1F2937';  % dark bar background
+            probBarFill = '#10B981';  % emerald bar fill
+
+            hasProbs = ~isempty(stateVec);
 
             % Build the grid using existing buildGrid
             [grid, ~, displayCols, ~, truncated, ~] = ...
                 CircuitDiagram.buildGrid(nQubits, gates);
 
-            svgW = labelW + displayCols * colW + padR;
-            svgH = padT + nQubits * rowH + 10;
+            % Compute per-qubit P(|1>) if we have state vector
+            qubitProbs = zeros(1, nQubits);
+            if hasProbs
+                N = length(stateVec);
+                probs = abs(stateVec).^2;
+                allIdx = (0:N-1);
+                for qi = 0:nQubits-1
+                    mask1 = bitand(allIdx, (2^qi)) > 0;
+                    qubitProbs(qi+1) = sum(probs(mask1));
+                end
+            end
+
+            circuitEndX = labelW + displayCols * colW;
+            extraRight = 0;
+            if hasProbs; extraRight = probW; end
+            svgW = circuitEndX + padR + extraRight;
+            svgH = padT + nQubits * rowH + padB;
 
             parts = {};
             parts{end+1} = sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">', ...
                 svgW, svgH, svgW, svgH);
             parts{end+1} = '<style>text{font-family:"Segoe UI",Arial,sans-serif;}</style>';
 
-            % Draw qubit wires (horizontal lines)
+            % Dark background
+            parts{end+1} = sprintf('<rect width="%d" height="%d" rx="8" fill="%s"/>', svgW, svgH, bgColor);
+
+            % Draw qubit wires and per-qubit probability labels
+            wireEndX = circuitEndX + 5;
+            if hasProbs
+                % Draw a dashed separator line before probability section
+                sepX = circuitEndX + 12;
+                parts{end+1} = sprintf('<line x1="%.0f" y1="%d" x2="%.0f" y2="%.0f" stroke="%s" stroke-width="1" stroke-dasharray="4,4"/>', ...
+                    sepX, padT + 4, sepX, padT + nQubits * rowH - 4, '#374151');
+            end
             for qi = 1:nQubits
                 wy = padT + (qi - 0.5) * rowH;
-                parts{end+1} = sprintf('<line x1="%d" y1="%.0f" x2="%d" y2="%.0f" stroke="#444" stroke-width="1.5"/>', ...
-                    labelW - 5, wy, svgW - padR, wy);
+                parts{end+1} = sprintf('<line x1="%d" y1="%.0f" x2="%.0f" y2="%.0f" stroke="%s" stroke-width="1.2"/>', ...
+                    labelW - 5, wy, wireEndX, wy, wireColor);
                 % Qubit label
-                parts{end+1} = sprintf('<text x="%d" y="%.0f" font-size="12" font-weight="bold" fill="#333" text-anchor="end" dominant-baseline="middle">q[%d] |0&#x27E9;</text>', ...
-                    labelW - 10, wy, qi - 1);
+                parts{end+1} = sprintf('<text x="%d" y="%.0f" font-size="12" font-weight="600" fill="%s" text-anchor="end" dominant-baseline="middle">q[%d]</text>', ...
+                    labelW - 12, wy, labelColor, qi - 1);
+                % Ket label (right side of qubit name)
+                parts{end+1} = sprintf('<text x="%d" y="%.0f" font-size="10" fill="%s" text-anchor="end" dominant-baseline="middle" opacity="0.5">|0&#x27E9;</text>', ...
+                    labelW - 1, wy, labelColor);
+
+                % Per-qubit probability bar + label
+                if hasProbs
+                    pVal = qubitProbs(qi) * 100;
+                    barX = circuitEndX + 20;
+                    barW = 52;
+                    barH = 12;
+                    barY = wy - barH/2;
+                    % Background bar
+                    parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="3" fill="%s"/>', ...
+                        barX, barY, barW, barH, probBarBg);
+                    % Filled bar (proportional to probability)
+                    fillW = max(round(barW * qubitProbs(qi)), 0);
+                    if fillW > 0
+                        parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="3" fill="%s" opacity="0.8"/>', ...
+                            barX, barY, fillW, barH, probBarFill);
+                    end
+                    % Percentage text
+                    parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="10" font-weight="600" fill="%s" dominant-baseline="middle">%.1f%%</text>', ...
+                        barX + barW + 6, wy, probColor, pVal);
+                end
             end
 
             % Draw gates
@@ -422,42 +518,43 @@ classdef CircuitDiagram
                     cy = padT + (qi - 0.5) * rowH;  % center y of this qubit
 
                     if strcmp(sym, '@')
-                        % Control dot
-                        parts{end+1} = sprintf('<circle cx="%.0f" cy="%.0f" r="5" fill="#2196F3"/>', cx, cy);
+                        % Control dot — light blue filled circle
+                        parts{end+1} = sprintf('<circle cx="%.0f" cy="%.0f" r="6" fill="%s" stroke="%s" stroke-width="1.5"/>', ...
+                            cx, cy, ctrlDot, bgColor);
                     elseif strcmp(sym, '|')
                         % Vertical connector (drawn below with multi-qubit lines)
                     elseif strcmp(sym, 'X') && CircuitDiagram.isTarget(grid, qi, ci)
                         % CNOT target — circled plus
-                        parts{end+1} = sprintf('<circle cx="%.0f" cy="%.0f" r="12" fill="#2196F3" stroke="#1976D2" stroke-width="1.5"/>', cx, cy);
-                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="white" stroke-width="2"/>', cx-7, cy, cx+7, cy);
-                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="white" stroke-width="2"/>', cx, cy-7, cx, cy+7);
+                        parts{end+1} = sprintf('<circle cx="%.0f" cy="%.0f" r="13" fill="%s" stroke="%s" stroke-width="1.5"/>', ...
+                            cx, cy, cnotFill, cnotStroke);
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="white" stroke-width="2"/>', cx-8, cy, cx+8, cy);
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="white" stroke-width="2"/>', cx, cy-8, cx, cy+8);
                     elseif strcmp(sym, 'M')
-                        % Measurement — dark box with meter icon
+                        % Measurement — dark slate box with meter icon
                         bx = cx - gateW/2; by = cy - gateH/2;
-                        parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="3" fill="#37474F" stroke="#263238" stroke-width="1"/>', ...
-                            bx, by, gateW, gateH);
+                        parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="4" fill="%s" stroke="%s" stroke-width="1.2"/>', ...
+                            bx, by, gateW, gateH, measFill, measStroke);
                         % Meter arc
-                        parts{end+1} = sprintf('<path d="M%.0f,%.0f A8,8 0 0,1 %.0f,%.0f" fill="none" stroke="white" stroke-width="1.5"/>', ...
+                        parts{end+1} = sprintf('<path d="M%.0f,%.0f A8,8 0 0,1 %.0f,%.0f" fill="none" stroke="#93C5FD" stroke-width="1.5"/>', ...
                             cx-7, cy+4, cx+7, cy+4);
                         % Meter needle
-                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="white" stroke-width="1.5"/>', ...
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="#93C5FD" stroke-width="1.5"/>', ...
                             cx, cy+4, cx+5, cy-6);
                     elseif strcmp(sym, 'x')
-                        % SWAP — X mark
-                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="#FF6D00" stroke-width="2.5"/>', cx-7, cy-7, cx+7, cy+7);
-                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="#FF6D00" stroke-width="2.5"/>', cx+7, cy-7, cx-7, cy+7);
+                        % SWAP — X mark in amber
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="%s" stroke-width="2.5"/>', cx-7, cy-7, cx+7, cy+7, swapColor);
+                        parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="%s" stroke-width="2.5"/>', cx+7, cy-7, cx-7, cy+7, swapColor);
                     else
-                        % Standard gate box
+                        % Standard gate box — blue theme
                         clr = CircuitDiagram.svgGateColor(sym);
-                        txtClr = 'white';
                         bx = cx - gateW/2; by = cy - gateH/2;
-                        parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="4" fill="%s" stroke="%s" stroke-width="1"/>', ...
+                        parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="5" fill="%s" stroke="%s" stroke-width="1.2"/>', ...
                             bx, by, gateW, gateH, clr.bg, clr.border);
                         fs = 13;
                         if length(sym) > 2; fs = 10; end
                         if length(sym) > 3; fs = 9; end
-                        parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" font-weight="bold" fill="%s" text-anchor="middle" dominant-baseline="central">%s</text>', ...
-                            cx, cy, fs, txtClr, sym);
+                        parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">%s</text>', ...
+                            cx, cy, fs, sym);
                     end
                 end
 
@@ -473,15 +570,15 @@ classdef CircuitDiagram
                     minQ = min(qubitsInCol); maxQ = max(qubitsInCol);
                     y1 = padT + (minQ - 0.5) * rowH;
                     y2 = padT + (maxQ - 0.5) * rowH;
-                    parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="#2196F3" stroke-width="2"/>', ...
-                        cx, y1, cx, y2);
+                    parts{end+1} = sprintf('<line x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f" stroke="%s" stroke-width="2"/>', ...
+                        cx, y1, cx, y2, ctrlLine);
                 end
             end
 
             if truncated
                 tx = svgW - padR - 5;
-                ty = padT + nQubits * rowH - 5;
-                parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="10" fill="#999" text-anchor="end">(...truncated)</text>', tx, ty);
+                ty = padT + nQubits * rowH + 2;
+                parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="10" fill="%s" text-anchor="end">(...truncated)</text>', tx, ty, truncColor);
             end
 
             parts{end+1} = '</svg>';
@@ -499,18 +596,20 @@ classdef CircuitDiagram
         end
 
         function clr = svgGateColor(sym)
-            % Return background and border colors for SVG gate boxes.
+            % Return background and border colors for SVG gate boxes (dark theme).
             switch sym
                 case {'H','S','T','SDG','TDG','ID','SX'}
-                    clr = struct('bg', '#4CAF50', 'border', '#388E3C');  % green
+                    clr = struct('bg', '#1D4ED8', 'border', '#3B82F6');  % blue — basis gates
                 case {'X','Y','Z'}
-                    clr = struct('bg', '#4CAF50', 'border', '#388E3C');  % green (Pauli)
+                    clr = struct('bg', '#1E40AF', 'border', '#2563EB');  % deep blue — Pauli
                 case {'RX','RY','RZ'}
-                    clr = struct('bg', '#2196F3', 'border', '#1976D2');  % blue (rotation)
+                    clr = struct('bg', '#1E3A8A', 'border', '#3B82F6');  % navy — rotation
                 case {'U1','U2','U3'}
-                    clr = struct('bg', '#2196F3', 'border', '#1976D2');  % blue
+                    clr = struct('bg', '#1E3A8A', 'border', '#3B82F6');  % navy — unitary
+                case {'CCX','CSWAP'}
+                    clr = struct('bg', '#312E81', 'border', '#6366F1');  % indigo — 3-qubit
                 otherwise
-                    clr = struct('bg', '#2196F3', 'border', '#1976D2');  % blue default
+                    clr = struct('bg', '#1D4ED8', 'border', '#3B82F6');  % blue default
             end
         end
 
@@ -534,6 +633,310 @@ classdef CircuitDiagram
                 otherwise
                     clr = '#2563EB';  % blue — default gate
             end
+        end
+
+        % ── Statevector simulator ─────────────────────────────────────
+
+        function stateVec = simulateCircuit(nQubits, gates)
+            % simulateCircuit  Lightweight statevector simulation of a quantum circuit.
+            %   Returns the state vector (complex column, length 2^nQubits).
+            %   Skips measurement gates; supports up to 16 qubits.
+            N = 2^nQubits;
+            sv = zeros(N, 1);
+            sv(1) = 1;  % |00...0>
+
+            for gi = 1:numel(gates)
+                g = gates{gi};
+                if strcmp(g.name, 'M'); continue; end  % skip measurements
+
+                qs = g.qubits;  % 0-based qubit indices
+                if numel(qs) == 1
+                    U = CircuitDiagram.gateMatrix(g.name, g.params);
+                    if ~isempty(U)
+                        sv = CircuitDiagram.applySingleGate(sv, nQubits, qs(1), U);
+                    end
+                elseif numel(qs) == 2
+                    sv = CircuitDiagram.applyTwoQubitGate(sv, nQubits, qs, g.name);
+                elseif numel(qs) == 3
+                    sv = CircuitDiagram.applyThreeQubitGate(sv, nQubits, qs, g.name);
+                end
+            end
+            stateVec = sv;
+        end
+
+        function sv = applySingleGate(sv, nQubits, q, U)
+            % Apply a 2x2 unitary U to qubit q (0-based) in the state vector.
+            N = 2^nQubits;
+            allIdx = (0:N-1);
+            mask0 = bitand(allIdx, (2^q)) == 0;
+            idx0 = find(mask0);        % 1-based indices where qubit q = 0
+            idx1 = idx0 + (2^q); % corresponding indices where qubit q = 1
+            a = sv(idx0);
+            b = sv(idx1);
+            sv(idx0) = U(1,1)*a + U(1,2)*b;
+            sv(idx1) = U(2,1)*a + U(2,2)*b;
+        end
+
+        function sv = applyTwoQubitGate(sv, nQubits, qs, name)
+            % Apply a two-qubit gate. qs = [control, target] (0-based).
+            ctrl = qs(1); tgt = qs(2);
+            N = 2^nQubits;
+            allIdx = (0:N-1);
+
+            switch name
+                case 'CX'
+                    % CNOT: flip target when control = 1
+                    mask = (bitand(allIdx, (2^ctrl)) > 0) & ...
+                           (bitand(allIdx, (2^tgt)) == 0);
+                    idx0 = find(mask);
+                    idx1 = idx0 + (2^tgt);
+                    temp = sv(idx0); sv(idx0) = sv(idx1); sv(idx1) = temp;
+                case 'CZ'
+                    % CZ: phase-flip when both qubits = 1
+                    mask = (bitand(allIdx, (2^ctrl)) > 0) & ...
+                           (bitand(allIdx, (2^tgt)) > 0);
+                    idxBoth = find(mask);
+                    sv(idxBoth) = -sv(idxBoth);
+                case 'CY'
+                    % CY: apply Y to target when control = 1
+                    Y = [0 -1i; 1i 0];
+                    mask = (bitand(allIdx, (2^ctrl)) > 0) & ...
+                           (bitand(allIdx, (2^tgt)) == 0);
+                    idx0 = find(mask);
+                    idx1 = idx0 + (2^tgt);
+                    a = sv(idx0); b = sv(idx1);
+                    sv(idx0) = Y(1,1)*a + Y(1,2)*b;
+                    sv(idx1) = Y(2,1)*a + Y(2,2)*b;
+                case 'CH'
+                    % CH: apply H to target when control = 1
+                    H = [1 1; 1 -1]/sqrt(2);
+                    mask = (bitand(allIdx, (2^ctrl)) > 0) & ...
+                           (bitand(allIdx, (2^tgt)) == 0);
+                    idx0 = find(mask);
+                    idx1 = idx0 + (2^tgt);
+                    a = sv(idx0); b = sv(idx1);
+                    sv(idx0) = H(1,1)*a + H(1,2)*b;
+                    sv(idx1) = H(2,1)*a + H(2,2)*b;
+                case 'SWAP'
+                    % SWAP: swap two qubits
+                    q1 = qs(1); q2 = qs(2);
+                    mask = (bitand(allIdx, (2^q1)) > 0) & ...
+                           (bitand(allIdx, (2^q2)) == 0);
+                    idx_10 = find(mask);   % q1=1, q2=0
+                    idx_01 = idx_10 - (2^q1) + (2^q2);  % q1=0, q2=1
+                    temp = sv(idx_10); sv(idx_10) = sv(idx_01); sv(idx_01) = temp;
+                otherwise
+                    % Controlled-U variants (CU1, CU2, CU3): skip for now
+            end
+        end
+
+        function sv = applyThreeQubitGate(sv, nQubits, qs, name)
+            % Apply a three-qubit gate. For CCX (Toffoli): flip target when both controls = 1.
+            N = 2^nQubits;
+            allIdx = (0:N-1);
+            if strcmp(name, 'CCX')
+                c1 = qs(1); c2 = qs(2); tgt = qs(3);
+                mask = (bitand(allIdx, (2^c1)) > 0) & ...
+                       (bitand(allIdx, (2^c2)) > 0) & ...
+                       (bitand(allIdx, (2^tgt)) == 0);
+                idx0 = find(mask);
+                idx1 = idx0 + (2^tgt);
+                temp = sv(idx0); sv(idx0) = sv(idx1); sv(idx1) = temp;
+            end
+            % CSWAP: skip for simplicity
+        end
+
+        function U = gateMatrix(name, paramStr)
+            % Return 2x2 unitary matrix for single-qubit gates.
+            if nargin < 2, paramStr = ''; end
+            switch name
+                case 'H';   U = [1 1; 1 -1]/sqrt(2);
+                case 'X';   U = [0 1; 1 0];
+                case 'Y';   U = [0 -1i; 1i 0];
+                case 'Z';   U = [1 0; 0 -1];
+                case 'S';   U = [1 0; 0 1i];
+                case 'SDG'; U = [1 0; 0 -1i];
+                case 'T';   U = [1 0; 0 exp(1i*pi/4)];
+                case 'TDG'; U = [1 0; 0 exp(-1i*pi/4)];
+                case 'SX';  U = [1+1i 1-1i; 1-1i 1+1i]/2;
+                case 'ID';  U = eye(2);
+                case 'RX'
+                    theta = CircuitDiagram.parseParam(paramStr);
+                    U = [cos(theta/2), -1i*sin(theta/2); -1i*sin(theta/2), cos(theta/2)];
+                case 'RY'
+                    theta = CircuitDiagram.parseParam(paramStr);
+                    U = [cos(theta/2), -sin(theta/2); sin(theta/2), cos(theta/2)];
+                case 'RZ'
+                    theta = CircuitDiagram.parseParam(paramStr);
+                    U = [exp(-1i*theta/2), 0; 0, exp(1i*theta/2)];
+                case 'U1'
+                    lam = CircuitDiagram.parseParam(paramStr);
+                    U = [1 0; 0 exp(1i*lam)];
+                otherwise
+                    U = [];  % unknown gate — skip
+            end
+        end
+
+        function val = parseParam(paramStr)
+            % Parse a numeric parameter string, supporting pi expressions.
+            val = 0;
+            if isempty(paramStr); return; end
+            paramStr = strtrim(char(paramStr));
+            % Handle common expressions: pi, pi/2, -pi/4, 2*pi, etc.
+            paramStr = strrep(paramStr, 'pi', num2str(pi, '%.15g'));
+            try
+                val = eval(paramStr);
+            catch
+                val = 0;
+            end
+        end
+
+        % ── Probability distribution bar chart ────────────────────────
+
+        function svg = drawProbDistSvg(nQubits, stateVec)
+            % drawProbDistSvg  Render an SVG bar chart of measurement probabilities.
+            %   X-axis: computational basis states
+            %   Y-axis: measurement probability (%)
+
+            bgColor    = '#111827';
+            barFill    = '#3B82F6';
+            barHover   = '#60A5FA';
+            gridColor  = '#1F2937';
+            axisColor  = '#374151';
+            textColor  = '#9CA3AF';
+            labelColor = '#D1D5DB';
+            titleColor = '#E5E7EB';
+
+            probs = abs(stateVec).^2;
+            N = length(probs);
+
+            % For large state spaces, show only top-K most probable states
+            maxBars = 32;
+            if N > maxBars
+                [sortedP, sortedI] = sort(probs, 'descend');
+                showIdx = sort(sortedI(1:maxBars));  % keep sorted by index
+                showProbs = probs(showIdx);
+                showLabels = cell(1, maxBars);
+                for k = 1:maxBars
+                    showLabels{k} = CircuitDiagram.basisLabel(showIdx(k)-1, nQubits);
+                end
+                isFiltered = true;
+            else
+                showIdx = 1:N;
+                showProbs = probs(:)';
+                showLabels = cell(1, N);
+                for k = 1:N
+                    showLabels{k} = CircuitDiagram.basisLabel(k-1, nQubits);
+                end
+                isFiltered = false;
+            end
+
+            nBars = numel(showProbs);
+            maxProb = max(showProbs) * 100;
+            if maxProb == 0; maxProb = 1; end
+            % Round up y-axis max to nice value
+            if maxProb <= 5;      yMax = 5;
+            elseif maxProb <= 10; yMax = 10;
+            elseif maxProb <= 25; yMax = 25;
+            elseif maxProb <= 50; yMax = 50;
+            else;                 yMax = 100;
+            end
+
+            % Chart dimensions
+            marginL = 65;   % left margin for y-axis labels
+            marginR = 20;
+            marginT = 40;   % top margin for title
+            marginB = 55;   % bottom for x-axis labels
+            barSpacing = 2;
+            minBarW = 12;
+            maxBarW = 36;
+            barW = max(minBarW, min(maxBarW, floor(600 / nBars) - barSpacing));
+            chartAreaW = nBars * (barW + barSpacing);
+            chartH = 180;
+            svgW = marginL + chartAreaW + marginR;
+            svgH = marginT + chartH + marginB;
+
+            parts = {};
+            parts{end+1} = sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">', ...
+                svgW, svgH, svgW, svgH);
+            parts{end+1} = '<style>text{font-family:"Segoe UI",Arial,sans-serif;}</style>';
+            parts{end+1} = sprintf('<rect width="%d" height="%d" rx="8" fill="%s"/>', svgW, svgH, bgColor);
+
+            % Title
+            titleStr = 'Measurement Probability Distribution';
+            if isFiltered
+                titleStr = sprintf('Measurement Probability Distribution (top %d of %d states)', maxBars, N);
+            end
+            parts{end+1} = sprintf('<text x="%.0f" y="%d" font-size="13" font-weight="600" fill="%s" text-anchor="middle">%s</text>', ...
+                svgW/2, 22, titleColor, titleStr);
+
+            % Y-axis gridlines and labels
+            nYTicks = 5;
+            for k = 0:nYTicks
+                yVal = yMax * k / nYTicks;
+                yPos = marginT + chartH - (chartH * k / nYTicks);
+                % Grid line
+                parts{end+1} = sprintf('<line x1="%d" y1="%.0f" x2="%.0f" y2="%.0f" stroke="%s" stroke-width="0.5"/>', ...
+                    marginL, yPos, marginL + chartAreaW, yPos, gridColor);
+                % Label
+                parts{end+1} = sprintf('<text x="%d" y="%.0f" font-size="10" fill="%s" text-anchor="end" dominant-baseline="middle">%.0f%%</text>', ...
+                    marginL - 8, yPos, textColor, yVal);
+            end
+
+            % Y-axis title (rotated)
+            parts{end+1} = sprintf('<text x="14" y="%.0f" font-size="10" fill="%s" text-anchor="middle" transform="rotate(-90, 14, %.0f)">Probability (%%)</text>', ...
+                marginT + chartH/2, textColor, marginT + chartH/2);
+
+            % X-axis line
+            parts{end+1} = sprintf('<line x1="%d" y1="%.0f" x2="%.0f" y2="%.0f" stroke="%s" stroke-width="1"/>', ...
+                marginL, marginT + chartH, marginL + chartAreaW, marginT + chartH, axisColor);
+
+            % Bars and x-axis labels
+            for k = 1:nBars
+                bx = marginL + (k-1) * (barW + barSpacing);
+                pct = showProbs(k) * 100;
+                bh = max(round(chartH * pct / yMax), 0);
+                by = marginT + chartH - bh;
+
+                if bh > 0
+                    parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="2" fill="%s"><title>%s: %.2f%%</title></rect>', ...
+                        bx, by, barW, bh, barFill, showLabels{k}, pct);
+                end
+
+                % Value label above bar (only if significant)
+                if pct >= 1
+                    parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="8" fill="%s" text-anchor="middle">%.1f</text>', ...
+                        bx + barW/2, by - 4, labelColor, pct);
+                end
+
+                % X-axis label (basis state)
+                lx = bx + barW/2;
+                ly = marginT + chartH + 10;
+                labelStr = showLabels{k};
+                fs = 9;
+                if nQubits > 4; fs = 7; end
+                if nBars > 20
+                    % Rotate labels for many bars
+                    parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" fill="%s" text-anchor="end" transform="rotate(-45, %.0f, %.0f)">%s</text>', ...
+                        lx, ly, fs, textColor, lx, ly, labelStr);
+                else
+                    parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" fill="%s" text-anchor="middle">%s</text>', ...
+                        lx, ly + 2, fs, textColor, labelStr);
+                end
+            end
+
+            % X-axis title
+            parts{end+1} = sprintf('<text x="%.0f" y="%d" font-size="10" fill="%s" text-anchor="middle">Computational basis states</text>', ...
+                marginL + chartAreaW/2, svgH - 6, textColor);
+
+            parts{end+1} = '</svg>';
+            svg = strjoin(parts, newline);
+        end
+
+        function lbl = basisLabel(idx, nQubits)
+            % Format a basis state label: |001&#x27E9; for index in SVG text.
+            bits = dec2bin(idx, nQubits);
+            lbl = ['|' bits '&#x27E9;'];
         end
 
     end

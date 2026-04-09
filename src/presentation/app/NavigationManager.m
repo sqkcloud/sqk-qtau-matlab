@@ -60,6 +60,9 @@ classdef NavigationManager
                 case 'Dashboard'
                     if ~isempty(app.DashboardVm) && ~NavigationManager.isScreenFresh(app.DashboardVm, ttl)
                         app.DashboardVm.onRefreshDashboard();
+                    elseif ~isempty(app.DashboardVm)
+                        % Screen is fresh but activities may have changed from other screens
+                        app.DashboardVm.refreshActivityTable();
                     end
                 case 'Notes'
                     if ~isempty(app.NotesVm) && app.State.hasProject() ...

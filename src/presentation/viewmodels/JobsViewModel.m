@@ -50,6 +50,7 @@ classdef JobsViewModel < handle
                 app.JobSvc.cancelJob(jobId, app.State.authToken);
                 app.setStatus(app.JobStatusArea, {sprintf('Cancel request sent for job: %s', jobId)});
                 app.logEvent('API', sprintf('Cancel request sent — job: %s', jobId));
+                app.State.logActivity(sprintf('Cancel job — %s', char(jobId)), 'Success');
                 app.hideLoading();
                 obj.onRefreshJobs();
             catch ME

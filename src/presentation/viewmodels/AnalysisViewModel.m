@@ -139,15 +139,30 @@ classdef AnalysisViewModel < handle
 
                 % Create popup dialog — large, centered
                 figPos = app.UIFigure.Position;
-                dlgW = 1100; dlgH = 750;
+                dlgW = 1100; dlgH = 650;
                 dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
                 dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
-                dlg = uifigure('Name', 'QASMBench Similarity Analysis', ...
+                dlg = uifigure('Name', 'QASMBench Similarity Visualization', ...
                     'Position', [dlgX dlgY dlgW dlgH], ...
                     'Resize', 'on', 'Color', [1 1 1]);
 
-                dg = uigridlayout(dlg, [3 2]);
-                dg.RowHeight = {'1x', '1x', 40};
+                rootGrid = uigridlayout(dlg, [3 1]);
+                rootGrid.RowHeight = {'1x', 1, 40};
+                rootGrid.Padding = [0 0 0 0]; rootGrid.RowSpacing = 0;
+                rootGrid.BackgroundColor = [1 1 1];
+
+                % ── Tab group ───────────────────────────────────────────────
+                tg = uitabgroup(rootGrid);
+                tg.Layout.Row = 1; tg.Layout.Column = 1;
+
+                % ══════════════════════════════════════════════════════════════
+                % Tab 1: QASMBench Similarity Visualization
+                % ══════════════════════════════════════════════════════════════
+                tab1 = uitab(tg, 'Title', 'QASMBench Similarity Visualization');
+                tab1.BackgroundColor = [1 1 1];
+
+                dg = uigridlayout(tab1, [2 2]);
+                dg.RowHeight = {'1x', '1x'};
                 dg.ColumnWidth = {'1.2x', '1x'};
                 dg.Padding = [16 14 16 10]; dg.RowSpacing = 10; dg.ColumnSpacing = 12;
                 dg.BackgroundColor = [1 1 1];
@@ -222,15 +237,53 @@ classdef AnalysisViewModel < handle
                 ax4.Layout.Row = 2; ax4.Layout.Column = 2;
                 obj.drawCategoryDonut(ax4, cats, sims, uniqueCats, palette);
 
-                % ── Close button (centered, standard size) ──────────────────
-                btnGrid = uigridlayout(dg, [1 3]);
-                btnGrid.Layout.Row = 3; btnGrid.Layout.Column = [1 2];
-                btnGrid.ColumnWidth = {'1x', 140, '1x'};
-                btnGrid.Padding = [0 0 0 0]; btnGrid.BackgroundColor = [1 1 1];
+                % ══════════════════════════════════════════════════════════════
+                % Tab 2: Circuit Diagram
+                % ══════════════════════════════════════════════════════════════
+                tab2 = uitab(tg, 'Title', 'Circuit Diagram');
+                tab2.BackgroundColor = [1 1 1];
+
+                tab2Grid = uigridlayout(tab2, [1 1]);
+                tab2Grid.Padding = [16 14 16 10]; tab2Grid.BackgroundColor = [1 1 1];
+                diagramHtml = uihtml(tab2Grid);
+                diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
+
+                % Fetch circuit content and render SVG diagram
+                svgContent = '<p style="color:#888;font-family:sans-serif">Loading circuit diagram...</p>';
+                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
+                try
+                    if app.State.hasCircuit() && app.State.isAuthenticated()
+                        circData = app.CircuitSvc.getCircuit( ...
+                            app.State.selectedCircuitId, app.State.authToken);
+                        qasmText = char(JsonHelper.pick(circData, {'content','raw_content','qasm_content','source'}));
+                        if ~isempty(qasmText)
+                            svgContent = CircuitDiagram.renderSvg(qasmText);
+                        else
+                            svgContent = '<p style="color:#888;font-family:sans-serif">No circuit content available.</p>';
+                        end
+                    else
+                        svgContent = '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>';
+                    end
+                catch ME
+                    svgContent = sprintf('<p style="color:#DC2626;font-family:sans-serif">Failed to load diagram: %s</p>', ME.message);
+                end
+                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
+
+                % ── Separator line ─────────────────────────────────────────
+                sep = uipanel(rootGrid, 'Title', '', 'BorderType', 'none');
+                sep.Layout.Row = 2; sep.Layout.Column = 1;
+                sep.BackgroundColor = [0.85 0.87 0.90];
+
+                % ── Close button (right-aligned) ───────────────────────────
+                btnGrid = uigridlayout(rootGrid, [1 2]);
+                btnGrid.Layout.Row = 3; btnGrid.Layout.Column = 1;
+                btnGrid.ColumnWidth = {'1x', 140};
+                btnGrid.Padding = [16 4 16 4]; btnGrid.BackgroundColor = [1 1 1];
                 closeBtn = uibutton(btnGrid, 'Text', 'Close', ...
                     'FontSize', 13, ...
                     'ButtonPushedFcn', @(~,~) delete(dlg));
                 closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 2;
+                app.State.logActivity('Visualize similarity', 'Success');
             catch ME
                 Logger.warn('AnalysisViewModel', 'onVisualizeSimilarity failed: %s', ME.message);
             end
@@ -365,6 +418,7 @@ classdef AnalysisViewModel < handle
             obj.applyBenchmarkMatches(data);
             obj.buildQVHeatmap(data);
             app.logEvent('API', sprintf('Circuit analysis complete — circuit: %s', cid));
+            app.State.logActivity(sprintf('Analyze circuit — %s', char(app.State.selectedCircuitName)), 'Success');
             app.hideLoading();
             obj.LastRefresh = tic;
         end

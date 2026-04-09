@@ -100,6 +100,7 @@ classdef QecVisualizationViewModel < handle
                 end
 
                 app.logEvent('QEC', 'Animation complete');
+                app.State.logActivity('QEC visualize — Bloch decay animation', 'Success');
             catch ME
                 app.logEvent('ERROR', sprintf('Animation failed: %s', ME.message));
                 app.showError('Bloch Animation', ME);

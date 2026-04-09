@@ -29,6 +29,7 @@ classdef BenchmarkDashboardViewModel < handle
                 obj.refreshCalibration();
                 obj.refreshRegression();
                 app.logEvent('BENCH', 'All benchmark data refreshed');
+                app.State.logActivity('Refresh benchmark dashboard', 'Success');
             catch ex
                 app.logEvent('ERROR', ['Benchmark refresh failed: ' ex.message]);
                 app.showError('Benchmark Refresh', ex);

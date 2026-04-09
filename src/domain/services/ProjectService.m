@@ -102,6 +102,19 @@ classdef ProjectService < handle
             end
         end
 
+        % Fetch paginated activity log for a project.
+        function data = getActivities(obj, projectId, skip, limit, token)
+            ep = sprintf('/api/projects/%s/activities?skip=%d&limit=%d', char(projectId), skip, limit);
+            Logger.info('ProjectService', 'getActivities → GET %s', ep);
+            try
+                data = obj.Client.getAuth(ep, token);
+                Logger.info('ProjectService', 'getActivities → response received');
+            catch ME
+                Logger.error('ProjectService', 'getActivities FAILED: %s', ME.message);
+                rethrow(ME);
+            end
+        end
+
         % Fetch the markdown notes for a project.
         function data = getNotes(obj, projectId, token)
             ep = sprintf('/api/projects/%s/notes', char(projectId));

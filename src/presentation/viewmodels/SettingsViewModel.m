@@ -34,6 +34,7 @@ classdef SettingsViewModel < handle
                         'log_level',          logLevel);
                     app.SettingsSvc.savePreferences(prefs, app.State.authToken);
                     app.logEvent('API', 'Preferences saved to server successfully');
+                    app.State.logActivity('Save settings', 'Success');
                     app.hideLoading();
                 catch ME
                     app.hideLoading();

@@ -53,6 +53,7 @@ classdef BenchmarkViewModel < handle
                             'Benchmark configuration saved.'});
                     end
                     app.logEvent('API', 'Benchmark config saved and strategies compared successfully');
+                    app.State.logActivity('Run benchmark', 'Success');
                     app.hideLoading();
                 catch ME
                     app.hideLoading();

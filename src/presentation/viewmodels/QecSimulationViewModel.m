@@ -23,6 +23,7 @@ classdef QecSimulationViewModel < handle
                 obj.plotSingleResult(result);
                 obj.updateResultsTable(result);
                 app.logEvent('QEC', sprintf('Simulation complete — Fidelity: %.4f', result.fidelity));
+                app.State.logActivity(sprintf('QEC simulation — fidelity: %.4f', result.fidelity), 'Success');
                 app.hideLoading();
             catch ME
                 app.hideLoading();
@@ -69,6 +70,7 @@ classdef QecSimulationViewModel < handle
 
                 obj.plotComparison(results, codeLabels, pRange);
                 app.logEvent('QEC', sprintf('Comparison complete — %d codes evaluated', numel(codes)));
+                app.State.logActivity(sprintf('QEC compare — %d codes', numel(codes)), 'Success');
                 app.hideLoading();
             catch ME
                 app.hideLoading();

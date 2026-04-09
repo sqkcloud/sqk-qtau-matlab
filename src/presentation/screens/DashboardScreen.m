@@ -123,11 +123,39 @@ function DashboardScreen(app)
     % ── Recent Activity (right, row 4) ───────────────────────────────────────
     activity = uipanel(g, 'Title', Labels.get('dashboard_panel_recent_activity'));
     activity.Layout.Row = 4; activity.Layout.Column = 3; activity.BackgroundColor = [1 1 1];
-    ag = uigridlayout(activity, [1 1]); ag.Padding = [14 12 14 12]; ag.BackgroundColor = [1 1 1];
+    ag = uigridlayout(activity, [2 1]); ag.RowHeight = {'1x', 30};
+    ag.Padding = [14 12 14 12]; ag.RowSpacing = 6; ag.BackgroundColor = [1 1 1];
     app.DashActivityTable = uitable(ag);
+    app.DashActivityTable.Layout.Row = 1; app.DashActivityTable.Layout.Column = 1;
     app.DashActivityTable.ColumnName = Labels.cols('dashboard_table_cols_activity', {'Time','Action','Status'});
     app.DashActivityTable.Data = {};
     app.styleTable(app.DashActivityTable);
+
+    % Pagination row
+    pgRow = uigridlayout(ag, [1 4]); pgRow.Layout.Row = 2; pgRow.Layout.Column = 1;
+    pgRow.ColumnWidth = {'1x', 70, 80, 70}; pgRow.Padding = [0 0 0 0];
+    pgRow.ColumnSpacing = 4; pgRow.BackgroundColor = [1 1 1];
+
+    uilabel(pgRow, 'Text', ''); % spacer
+
+    app.DashActivityPrevBtn = uibutton(pgRow, 'Text', ...
+        [char(9664) ' ' Labels.get('dashboard_btn_prev_activity', 'Prev')], ...
+        'ButtonPushedFcn', @(~,~)app.DashboardVm.onActivityPrevPage());
+    app.DashActivityPrevBtn.Layout.Row = 1; app.DashActivityPrevBtn.Layout.Column = 2;
+    app.styleBtn(app.DashActivityPrevBtn, 'ghost');
+    app.DashActivityPrevBtn.Enable = false;
+
+    app.DashActivityPageLabel = uilabel(pgRow, 'Text', 'Page 1');
+    app.DashActivityPageLabel.Layout.Row = 1; app.DashActivityPageLabel.Layout.Column = 3;
+    app.DashActivityPageLabel.HorizontalAlignment = 'center';
+    app.DashActivityPageLabel.FontSize = 13; app.DashActivityPageLabel.FontWeight = 'bold';
+    app.DashActivityPageLabel.FontColor = [0.20 0.30 0.55];
+
+    app.DashActivityNextBtn = uibutton(pgRow, 'Text', ...
+        [Labels.get('dashboard_btn_next_activity', 'Next') ' ' char(9654)], ...
+        'ButtonPushedFcn', @(~,~)app.DashboardVm.onActivityNextPage());
+    app.DashActivityNextBtn.Layout.Row = 1; app.DashActivityNextBtn.Layout.Column = 4;
+    app.styleBtn(app.DashActivityNextBtn, 'ghost');
 
     Logger.info('DashboardScreen', 'Dashboard tab UI built successfully');
 end

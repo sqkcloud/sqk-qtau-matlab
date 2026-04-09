@@ -60,6 +60,10 @@ classdef AppState < handle
         defaultTimeout      double = 120
         logLevel            string = "info"
 
+        % ── Activity log ─────────────────────────────────────────────────────
+        % Cell array of {timestamp, action, status} rows for Recent Activity.
+        ActivityLog cell = {}
+
         % ── Cached notes ─────────────────────────────────────────────────────
         projectNotes string = ""
 
@@ -100,6 +104,18 @@ classdef AppState < handle
         % Returns the formatted Authorization header value.
         function hdr = bearerHeader(obj)
             hdr = ['Bearer ' char(obj.authToken)];
+        end
+
+        function logActivity(obj, action, status)
+            % logActivity  Record a user-facing activity for Recent Activity display.
+            %   obj.logActivity('Upload circuit', 'Success')
+            ts = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+            row = {ts, char(action), char(status)};
+            obj.ActivityLog = [row; obj.ActivityLog];
+            % Cap at 500 entries
+            if size(obj.ActivityLog, 1) > 500
+                obj.ActivityLog = obj.ActivityLog(1:500, :);
+            end
         end
 
         % Resets all pipeline IDs without touching auth so the user can start a

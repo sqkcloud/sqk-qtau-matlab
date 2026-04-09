@@ -36,6 +36,7 @@ classdef ResultsViewModel < handle
                 app.setStatus(app.ResultJsonArea, summary);
                 app.logEvent('API', sprintf('Results loaded — job: %s  status: %s  fidelity: %s  rows: %d', ...
                     jobId, statusStr, fidelity, size(rows,1)));
+                app.State.logActivity(sprintf('View results — job: %s', char(jobId)), 'Success');
                 obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME

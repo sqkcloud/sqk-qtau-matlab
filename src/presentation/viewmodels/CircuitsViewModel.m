@@ -439,6 +439,7 @@ classdef CircuitsViewModel < handle
                 app.showLoading('Deleting circuit...');
                 app.CircuitSvc.deleteCircuit(cid, app.State.authToken);
                 app.logEvent('API', sprintf('Circuit deleted: %s', cid));
+                app.State.logActivity(sprintf('Delete circuit — %s', char(cid)), 'Success');
                 app.hideLoading();
                 obj.onLoadCircuits();
             catch ME

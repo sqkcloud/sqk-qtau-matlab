@@ -69,3 +69,4 @@ fprintf('  ╚══════════════════════
 fprintf('  Starting application...\n\n');
 
 QTAUWorkbenchApp;
+Is 

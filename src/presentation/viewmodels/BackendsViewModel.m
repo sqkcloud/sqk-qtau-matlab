@@ -31,6 +31,7 @@ classdef BackendsViewModel < handle
                 end
                 app.setStatus(app.BackendStatusArea, {sprintf('Loaded %d backend(s).', size(rows,1))});
                 app.logEvent('API', sprintf('Backends loaded — %d rows returned', size(rows,1)));
+                app.State.logActivity(sprintf('Refresh backends — %d loaded', size(rows,1)), 'Success');
                 obj.LastRefresh = tic;
                 app.hideLoading();
             catch ME
@@ -63,6 +64,7 @@ classdef BackendsViewModel < handle
                         app.State.selectedBackend, app.State.backupBackend, app.State.authToken);
                     app.logEvent('API', sprintf('Backend selection saved to server — project: %s  backend: %s', ...
                         app.State.currentProjectId, sel));
+                    app.State.logActivity(sprintf('Select backend — %s', sel), 'Success');
                     app.hideLoading();
                 catch ME
                     app.hideLoading();

@@ -32,6 +32,7 @@ classdef PredictionViewModel < handle
                 obj.applyPredictionData(data);
                 app.logEvent('API', sprintf('Prediction complete — id: %s  circuit: %s  backend: %s', ...
                     app.State.predictionId, app.State.selectedCircuitId, app.State.selectedBackend));
+                app.State.logActivity(sprintf('Run prediction — %s', char(app.State.selectedCircuitName)), 'Success');
                 app.hideLoading();
             catch ME
                 app.hideLoading();

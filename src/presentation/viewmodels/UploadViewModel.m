@@ -219,6 +219,7 @@ classdef UploadViewModel < handle
             try
                 app.CircuitSvc.deleteCircuit(circuitId, app.State.authToken);
                 app.logEvent('API', sprintf('Circuit deleted: %s', circuitId));
+                app.State.logActivity(sprintf('Delete circuit — %s', circuitName), 'Success');
                 obj.onRefreshCircuits();
             catch ME
                 app.logEvent('ERROR', sprintf('deleteCircuit FAILED: %s', ME.message));
@@ -233,6 +234,7 @@ classdef UploadViewModel < handle
             app.State.selectedCircuitName = string(name);
             app.logEvent('API', sprintf('Circuit uploaded successfully — id: %s  name: %s  format: %s  project: %s', ...
                 app.State.selectedCircuitId, name, format, char(app.State.currentProjectId)));
+            app.State.logActivity(sprintf('Upload circuit — %s', name), 'Success');
             diagramHtml = '';
             filePath2 = char(app.State.selectedFile);
             if ~isempty(filePath2) && isfile(filePath2)

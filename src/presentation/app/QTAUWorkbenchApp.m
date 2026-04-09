@@ -98,12 +98,14 @@ classdef QTAUWorkbenchApp < handle
     % ── Login dialog ──────────────────────────────────────────────────────────
     properties
         LoginDialog                % modal uifigure
-        LoginDlgBaseUrlField       % Base URL edit field in dialog
-        LoginDlgUsernameField      % Username edit field in dialog
-        LoginDlgPasswordField      % Password edit field (displays masked dots)
-        LoginDlgPasswordReal       % Real password string (stored separately)
-        LoginDlgPasswordVisible    % logical — true = show plain text
-        LoginDlgEyeButton          % Eye toggle button
+        LoginDlgBaseUrlField       % Base URL uihtml input
+        LoginDlgBaseUrlValue       % Current base URL string (synced from HTML)
+        LoginDlgUsernameField      % Username uihtml input
+        LoginDlgUsernameValue      % Current username string (synced from HTML)
+        LoginDlgPasswordField      % Password uihtml input (native masking)
+        LoginDlgPasswordReal       % Real password string (synced from HTML)
+        LoginDlgPasswordVisible    % (unused — managed in HTML)
+        LoginDlgEyeButton          % (unused — integrated in password HTML)
         LoginDlgStatusLabel        % Status label in dialog
     end
 
@@ -147,6 +149,9 @@ classdef QTAUWorkbenchApp < handle
         DashboardRefreshButton
         DashKpiLabels
         DashActivityTable
+        DashActivityPrevBtn
+        DashActivityPageLabel
+        DashActivityNextBtn
         DashReadinessArea
     end
 
@@ -548,47 +553,33 @@ classdef QTAUWorkbenchApp < handle
             end
         end
 
-        % -- Password masking callbacks ----------------------------------------
-        function onPasswordChanging(app, evt)
-            if app.LoginDlgPasswordVisible
-                app.LoginDlgPasswordReal = char(evt.Value);
-                return;
+        % -- Login dialog HTML input callbacks ---------------------------------
+        function onTextFieldHtmlData(app, fieldName)
+            switch fieldName
+                case 'baseUrl'
+                    d = app.LoginDlgBaseUrlField.Data;
+                    if isempty(d), return; end
+                    app.LoginDlgBaseUrlValue = char(string(d.v));
+                case 'username'
+                    d = app.LoginDlgUsernameField.Data;
+                    if isempty(d), return; end
+                    app.LoginDlgUsernameValue = char(string(d.v));
             end
-            bullet  = char(8226);  % •
-            newVal  = char(evt.Value);
-            oldReal = char(app.LoginDlgPasswordReal);
-            oldLen  = length(oldReal);
-            newLen  = length(newVal);
+            if string(d.a) == "enter"
+                app.WelcomeVm.onLogin();
+            end
+        end
 
-            if newLen > oldLen
-                % Characters were added — find non-bullet chars (the real input)
-                mask = (newVal ~= bullet);
-                typed = newVal(mask);
-                % Determine insertion position from first non-bullet index
-                firstNew = find(mask, 1);
-                if isempty(firstNew)
-                    % All bullets — no real char detected (shouldn't happen)
-                    app.LoginDlgPasswordReal = oldReal;
-                else
-                    insertPos = firstNew - 1;  % chars before insertion
-                    app.LoginDlgPasswordReal = [oldReal(1:insertPos), typed, oldReal(insertPos+1:end)];
-                end
-            elseif newLen < oldLen
-                % Characters were deleted — find where the deletion occurred
-                nDel = oldLen - newLen;
-                % Find first position where old bullets and new bullets diverge
-                % (i.e., where deletion started)
-                delStart = newLen + 1;
-                for i = 1:newLen
-                    if newVal(i) ~= bullet
-                        delStart = i;
-                        break;
-                    end
-                end
-                delEnd = delStart + nDel - 1;
-                app.LoginDlgPasswordReal = [oldReal(1:delStart-1), oldReal(delEnd+1:end)];
+        function onPasswordHtmlData(app, ~)
+            d = app.LoginDlgPasswordField.Data;
+            if isempty(d), return; end
+            action = string(d.a);
+            if action == "i"
+                app.LoginDlgPasswordReal = char(string(d.v));
+            elseif action == "enter"
+                app.LoginDlgPasswordReal = char(string(d.v));
+                app.WelcomeVm.onLogin();
             end
-            app.LoginDlgPasswordField.Value = repmat(bullet, 1, length(app.LoginDlgPasswordReal));
         end
 
         function onLoginKeyPress(app, evt)
@@ -597,18 +588,6 @@ classdef QTAUWorkbenchApp < handle
                     return;
                 end
                 app.WelcomeVm.onLogin();
-            end
-        end
-
-        function onTogglePasswordVisibility(app)
-            app.LoginDlgPasswordVisible = ~app.LoginDlgPasswordVisible;
-            ud = app.LoginDlgEyeButton.UserData;
-            if app.LoginDlgPasswordVisible
-                app.LoginDlgPasswordField.Value = char(app.LoginDlgPasswordReal);
-                app.LoginDlgEyeButton.HTMLSource = ud.visibleHtml;
-            else
-                app.LoginDlgPasswordField.Value = repmat(char(8226), 1, strlength(string(app.LoginDlgPasswordReal)));
-                app.LoginDlgEyeButton.HTMLSource = ud.hiddenHtml;
             end
         end
 

@@ -26,6 +26,7 @@ classdef NotesViewModel < handle
                 app.ProjectSvc.saveNotes(app.State.currentProjectId, content, app.State.authToken);
                 app.State.projectNotes = content;
                 app.logEvent('API', sprintf('Notes saved to server — project: %s', app.State.currentProjectId));
+                app.State.logActivity('Save notes', 'Success');
                 app.hideLoading();
             catch ME
                 app.hideLoading();

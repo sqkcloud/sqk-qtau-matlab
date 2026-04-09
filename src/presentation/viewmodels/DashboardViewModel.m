@@ -5,6 +5,8 @@ classdef DashboardViewModel < handle
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
+        ActivityPageSkip double = 0
+        ActivityPageLimit double = 15
     end
     methods
         function obj = DashboardViewModel(app)
@@ -34,6 +36,68 @@ classdef DashboardViewModel < handle
             end
             app.logEvent('UI', 'Dashboard falling back to session state summary');
             obj.refreshDashboardFromState();
+            % Always refresh activity table from local log
+            obj.refreshActivityTable();
+        end
+
+        function onActivityNextPage(obj)
+            obj.ActivityPageSkip = obj.ActivityPageSkip + obj.ActivityPageLimit;
+            obj.refreshActivityTable();
+        end
+
+        function onActivityPrevPage(obj)
+            obj.ActivityPageSkip = max(0, obj.ActivityPageSkip - obj.ActivityPageLimit);
+            obj.refreshActivityTable();
+        end
+
+        function refreshActivityTable(obj)
+            app = obj.App;
+            if isempty(app.DashActivityTable) || ~isvalid(app.DashActivityTable)
+                return;
+            end
+            % Try fetching from API (server-side activity log with pagination)
+            if app.State.isAuthenticated() && app.State.hasProject()
+                try
+                    data = app.ProjectSvc.getActivities( ...
+                        app.State.currentProjectId, ...
+                        obj.ActivityPageSkip, obj.ActivityPageLimit, ...
+                        app.State.authToken);
+                    if isstruct(data) && isfield(data, 'items')
+                        items = JsonHelper.extractList(data, 'items');
+                        totalRows = 0;
+                        if isfield(data, 'total')
+                            totalRows = data.total;
+                        end
+                        n = numel(items);
+                        rows = cell(n, 3);
+                        for i = 1:n
+                            rows{i,1} = char(JsonHelper.pick(items(i), {'timestamp','time'}));
+                            rows{i,2} = char(JsonHelper.pick(items(i), {'action','description'}));
+                            rows{i,3} = char(JsonHelper.pick(items(i), {'status'}));
+                        end
+                        app.DashActivityTable.Data = rows;
+                        obj.updateActivityPageLabel(totalRows);
+                        return;
+                    end
+                catch
+                    % Fall through to local log
+                end
+            end
+            % Fallback: use local ActivityLog
+            allRows = app.State.ActivityLog;
+            totalRows = size(allRows, 1);
+            if totalRows == 0
+                app.DashActivityTable.Data = {};
+                obj.updateActivityPageLabel(0);
+                return;
+            end
+            if obj.ActivityPageSkip >= totalRows
+                obj.ActivityPageSkip = max(0, totalRows - obj.ActivityPageLimit);
+            end
+            startIdx = obj.ActivityPageSkip + 1;
+            endIdx   = min(obj.ActivityPageSkip + obj.ActivityPageLimit, totalRows);
+            app.DashActivityTable.Data = allRows(startIdx:endIdx, :);
+            obj.updateActivityPageLabel(totalRows);
         end
     end
 
@@ -64,11 +128,9 @@ classdef DashboardViewModel < handle
                 end
                 app.setStatus(app.DashboardStatusArea, {JsonHelper.pretty(data)});
 
-                % Populate Recent Activity table
-                actRows = JsonHelper.activityToRows(data);
-                if ~isempty(actRows) && ~isempty(app.DashActivityTable) && isvalid(app.DashActivityTable)
-                    app.DashActivityTable.Data = actRows;
-                end
+                % Refresh activity table from local log (pagination-aware)
+                obj.ActivityPageSkip = 0;
+                obj.refreshActivityTable();
             catch ME
                 Logger.warn('DashboardViewModel', 'applyDashboardData failed: %s', ME.message);
             end
@@ -102,6 +164,21 @@ classdef DashboardViewModel < handle
                 sprintf('Circuit ID: %s',       app.State.selectedCircuitId)};
             app.DashboardSummaryArea.Value = summary;
             app.setStatus(app.DashboardStatusArea, {'Dashboard refreshed from session state.'});
+        end
+
+        function updateActivityPageLabel(obj, totalRows)
+            app = obj.App;
+            pageNum   = floor(obj.ActivityPageSkip / obj.ActivityPageLimit) + 1;
+            totalPages = max(1, ceil(totalRows / obj.ActivityPageLimit));
+            if ~isempty(app.DashActivityPageLabel) && isvalid(app.DashActivityPageLabel)
+                app.DashActivityPageLabel.Text = sprintf('Page %d / %d', pageNum, totalPages);
+            end
+            if ~isempty(app.DashActivityPrevBtn) && isvalid(app.DashActivityPrevBtn)
+                app.DashActivityPrevBtn.Enable = obj.ActivityPageSkip > 0;
+            end
+            if ~isempty(app.DashActivityNextBtn) && isvalid(app.DashActivityNextBtn)
+                app.DashActivityNextBtn.Enable = (obj.ActivityPageSkip + obj.ActivityPageLimit) < totalRows;
+            end
         end
     end
 end
