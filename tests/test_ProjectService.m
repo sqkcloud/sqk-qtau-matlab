@@ -122,7 +122,7 @@ classdef test_ProjectService < matlab.unittest.TestCase
         % ── compareStrategies ────────────────────────────────────────────
 
         function testCompareStrategiesPosts(testCase)
-            testCase.Service.compareStrategies('p9', 'c1', 'ibm_brisbane', 'tok');
+            testCase.Service.compareStrategies('p9', 'c1', 'ibm_brisbane', {'level1_sabre','level2_sabre','level3_sabre'}, 'tok');
             testCase.verifyEqual(char(testCase.Stub.LastMethod), 'postAuthJson');
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'compare-strategies'));
         end

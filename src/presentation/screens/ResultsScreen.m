@@ -124,10 +124,10 @@ function ResultsScreen(app)
     desc = uilabel(bg, 'Text', Labels.get('results_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
-    tmp = uibutton(bg, 'Text', Labels.get('results_btn_next'), ...
+    tmp = uibutton(bg, 'Text', [char(9651) ' Detailed Analysis'], ...  % Detailed Analysis nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Detailed Analysis'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'primary');
-    tmp = uibutton(bg, 'Text', Labels.get('results_btn_back'), ...
+    tmp = uibutton(bg, 'Text', [char(9635) ' Jobs'], ...  % Jobs nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Jobs'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'ghost');
 

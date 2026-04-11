@@ -76,12 +76,12 @@ function PredictionScreen(app)
     desc = uilabel(sg, 'Text', Labels.get('prediction_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
-    tmp = uibutton(sg, 'Text', [char(9654) ' ' Labels.get('prediction_btn_submit')], ...
+    tmp = uibutton(sg, 'Text', [char(9635) ' Jobs'], ...  % Jobs nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Jobs'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'success');
     tmp.FontSize = 14;
     tmp.Tooltip = 'Navigate to Jobs to submit';
-    tmp = uibutton(sg, 'Text', Labels.get('prediction_btn_back'), ...
+    tmp = uibutton(sg, 'Text', [char(9678) ' Benchmark'], ...  % Benchmark nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Benchmark'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'ghost');
     tmp = uibutton(sg, 'Text', Labels.get('prediction_btn_save'));

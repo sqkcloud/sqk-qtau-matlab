@@ -81,7 +81,7 @@ function DetailedAnalysisScreen(app)
     app.RefreshRBButton.FontSize = 13;
     app.RefreshRBButton.Tooltip = 'GET /jobs/{id}/rb-decay — randomized benchmarking';
 
-    nextBtn = uibutton(toolbar, 'Text', Labels.get('detailed_btn_next'), ...
+    nextBtn = uibutton(toolbar, 'Text', [char(9636) ' Reports'], ...  % Reports nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Reports'));
     nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 2;
     app.styleBtn(nextBtn, 'primary');

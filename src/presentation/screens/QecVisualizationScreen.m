@@ -52,7 +52,7 @@ function QecVisualizationScreen(app)
     app.styleBtn(app.QecAnimateButton, 'secondary');
     app.QecAnimateButton.FontSize = 14;
 
-    nextBtn = uibutton(toolbar, 'Text', Labels.get('qec_viz_btn_next', 'Next: Reports'), ...
+    nextBtn = uibutton(toolbar, 'Text', [char(9636) ' Reports'], ...  % Reports nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Reports'));
     nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 2;
     app.styleBtn(nextBtn, 'primary');

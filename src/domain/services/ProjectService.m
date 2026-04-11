@@ -178,12 +178,15 @@ classdef ProjectService < handle
         end
 
         % Compare transpilation strategies for a project's circuit + backend.
-        function data = compareStrategies(obj, projectId, circuitId, backendName, token)
+        function data = compareStrategies(obj, projectId, circuitId, backendName, strategies, token)
             ep = sprintf('/api/projects/%s/benchmark-config/compare-strategies', char(projectId));
             Logger.info('ProjectService', 'compareStrategies → POST %s (circuit: %s  backend: %s)', ...
                 ep, char(circuitId), char(backendName));
             payload = struct('circuit_id',   char(circuitId), ...
                              'backend_name', char(backendName));
+            if ~isempty(strategies)
+                payload.strategies = strategies;
+            end
             try
                 data = obj.Client.postAuthJson(ep, payload, token);
                 Logger.info('ProjectService', 'compareStrategies → strategy comparison complete');

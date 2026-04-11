@@ -88,6 +88,11 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.ResultsVm, ttl)
                         app.ResultsVm.onRefreshResults();
                     end
+                case 'Benchmark'
+                    if ~isempty(app.BenchmarkVm) && app.State.hasProject() ...
+                            && ~NavigationManager.isScreenFresh(app.BenchmarkVm, ttl)
+                        app.BenchmarkVm.onLoadBenchmark();
+                    end
             end
         end
 

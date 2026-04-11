@@ -39,8 +39,8 @@ classdef AppState < handle
         % ── Benchmark configuration ───────────────────────────────────────────
         benchmarkShots      double = 4096
         benchmarkOptLevel   double = 3
-        benchmarkMitigation string = "Measurement mitigation"
-        benchmarkStrategy   string = "Fidelity optimized"
+        benchmarkMitigation string = "measurement_mitigation"
+        benchmarkStrategy   string = "sabre"
 
         % ── Job context ───────────────────────────────────────────────────────
         selectedJobId string = ""

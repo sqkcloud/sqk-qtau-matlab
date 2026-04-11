@@ -56,7 +56,7 @@ function QecSimulationScreen(app)
     app.styleBtn(app.QecClearButton, 'ghost');
     app.QecClearButton.FontSize = 14;
 
-    nextBtn = uibutton(toolbar, 'Text', Labels.get('qec_sim_btn_next', 'Next: QEC Visualization'), ...
+    nextBtn = uibutton(toolbar, 'Text', [char(9672) ' QEC Visualization'], ...  % QEC Viz nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('QEC Visualization'));
     nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 2;
     app.styleBtn(nextBtn, 'primary');

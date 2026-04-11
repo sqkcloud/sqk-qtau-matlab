@@ -124,7 +124,7 @@ function AnalysisScreen(app)
     tmp = uibutton(eg, 'Text', [char(9004) ' ' Labels.get('analysis_btn_next')], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Backends'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'primary');
-    tmp = uibutton(eg, 'Text', [char(10548) ' ' Labels.get('analysis_btn_back')], ...
+    tmp = uibutton(eg, 'Text', [char(8593) ' Upload'], ...  % Upload nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Upload'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'ghost');
 

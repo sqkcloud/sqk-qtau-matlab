@@ -212,10 +212,17 @@ classdef QTAUWorkbenchApp < handle
         RefreshBackendsButton
         SelectBackendButton
         BackendKpiLabels
+        BackendsSearchField
+        BackendsPrevBtn
+        BackendsNextBtn
+        BackendsPageLabel
+        BackendsPopupPanel
     end
 
     % ── Benchmark tab ─────────────────────────────────────────────────────────
     properties
+        BenchmarkCircuitDropdown
+        BenchmarkBackendSelect
         BenchmarkShotsField
         BenchmarkOptField
         BenchmarkMitigationDropdown
@@ -487,6 +494,16 @@ classdef QTAUWorkbenchApp < handle
 
         function hideCircuitsPopupMenu(app)
             PopupMenuManager.hideCircuitsPopup(app);
+        end
+
+        function buildBackendsPopupMenu(app)
+            PopupMenuManager.buildBackendsPopup(app);
+        end
+        function showBackendsPopupMenu(app, x, y)
+            PopupMenuManager.showBackendsPopup(app, x, y);
+        end
+        function hideBackendsPopupMenu(app)
+            PopupMenuManager.hideBackendsPopup(app);
         end
 
         function onFigureMouseDown(app)

@@ -126,28 +126,85 @@ classdef PopupMenuManager
             end
         end
 
-        % ── Global dismiss (called on figure mouse-down) ─────────────────
+        % ── Backends popup ────────────────────────────────────────────────
 
-        function dismissPopups(app)
-            if ~isempty(app.ProjectsPopupPanel) && isvalid(app.ProjectsPopupPanel) ...
-                    && strcmp(app.ProjectsPopupPanel.Visible, 'on')
-                cp = app.UIFigure.CurrentPoint;
-                pp = app.ProjectsPopupPanel.Position;
-                if cp(1) < pp(1) || cp(1) > pp(1)+pp(3) || ...
-                   cp(2) < pp(2) || cp(2) > pp(2)+pp(4)
-                    PopupMenuManager.hideProjectPopup(app);
-                end
+        function buildBackendsPopup(app)
+            popW = 180; popH = 108;
+            app.BackendsPopupPanel = uipanel(app.UIFigure, ...
+                'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', [1 1 1], ...
+                'BorderColor', [0.78 0.80 0.84], ...
+                'Position', [0 0 popW popH], ...
+                'Visible', 'off');
+
+            pg = uigridlayout(app.BackendsPopupPanel, [3 1]);
+            pg.RowHeight   = {'1x', '1x', '1x'};
+            pg.ColumnWidth = {'1x'};
+            pg.Padding     = [4 4 4 4];
+            pg.RowSpacing  = 2;
+            pg.BackgroundColor = [1 1 1];
+
+            % Set as Primary (char(9745) — same as Select button)
+            b1 = uibutton(pg, 'Text', [' ' char(9745) '  Set as Primary'], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~)app.BackendsVm.onCtxSetPrimary());
+            b1.Layout.Row = 1;
+            b1.BackgroundColor = [1 1 1]; b1.FontColor = [0.13 0.33 0.73];
+
+            % Set as Backup (char(9744) — empty checkbox)
+            b2 = uibutton(pg, 'Text', [' ' char(9744) '  Set as Backup'], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~)app.BackendsVm.onCtxSetBackup());
+            b2.Layout.Row = 2;
+            b2.BackgroundColor = [1 1 1]; b2.FontColor = [0.15 0.18 0.24];
+
+            % View Details (char(8505) — info)
+            b3 = uibutton(pg, 'Text', [' ' char(8505) '  View Details'], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~)app.BackendsVm.onCtxViewDetails());
+            b3.Layout.Row = 3;
+            b3.BackgroundColor = [1 1 1]; b3.FontColor = [0.15 0.18 0.24];
+        end
+
+        function showBackendsPopup(app, x, y)
+            if isempty(app.BackendsPopupPanel) || ~isvalid(app.BackendsPopupPanel)
+                PopupMenuManager.buildBackendsPopup(app);
             end
-            if ~isempty(app.CircuitsPopupPanel) && isvalid(app.CircuitsPopupPanel) ...
-                    && strcmp(app.CircuitsPopupPanel.Visible, 'on')
-                cp = app.UIFigure.CurrentPoint;
-                pp = app.CircuitsPopupPanel.Position;
-                if cp(1) < pp(1) || cp(1) > pp(1)+pp(3) || ...
-                   cp(2) < pp(2) || cp(2) > pp(2)+pp(4)
-                    PopupMenuManager.hideCircuitsPopup(app);
-                end
+            popW = 180; popH = 108;
+            figPos = app.UIFigure.Position;
+            px = min(x, figPos(3) - popW - 4);
+            py = max(y - popH, 4);
+            app.BackendsPopupPanel.Position = [px py popW popH];
+            app.BackendsPopupPanel.Visible = 'on';
+        end
+
+        function hideBackendsPopup(app)
+            if ~isempty(app.BackendsPopupPanel) && isvalid(app.BackendsPopupPanel)
+                app.BackendsPopupPanel.Visible = 'off';
             end
         end
 
+        % ── Global dismiss (called on figure mouse-down) ─────────────────
+
+        function dismissPopups(app)
+            PopupMenuManager.dismissOne(app, 'ProjectsPopupPanel', @PopupMenuManager.hideProjectPopup);
+            PopupMenuManager.dismissOne(app, 'CircuitsPopupPanel', @PopupMenuManager.hideCircuitsPopup);
+            PopupMenuManager.dismissOne(app, 'BackendsPopupPanel', @PopupMenuManager.hideBackendsPopup);
+        end
+
+    end
+
+    methods (Static, Access = private)
+        function dismissOne(app, propName, hideFcn)
+            if isprop(app, propName) && ~isempty(app.(propName)) && isvalid(app.(propName)) ...
+                    && strcmp(app.(propName).Visible, 'on')
+                cp = app.UIFigure.CurrentPoint;
+                pp = app.(propName).Position;
+                if cp(1) < pp(1) || cp(1) > pp(1)+pp(3) || ...
+                   cp(2) < pp(2) || cp(2) > pp(2)+pp(4)
+                    hideFcn(app);
+                end
+            end
+        end
     end
 end
