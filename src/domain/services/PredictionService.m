@@ -35,7 +35,7 @@ classdef PredictionService < handle
 
         % Retrieve a previously generated prediction by ID.
         function data = getPrediction(obj, predictionId, token)
-            ep = sprintf('/api/predict/%s', char(predictionId));
+            ep = sprintf('/api/predict/%s', FastAPIClient.encodePathSegment(predictionId));
             Logger.info('PredictionService', 'getPrediction → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);

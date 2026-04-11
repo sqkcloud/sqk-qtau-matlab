@@ -32,6 +32,7 @@ classdef QTAUWorkbenchApp < handle
         NavPanel
         NavList
         NavButtons
+        NavHtml                     % uihtml nav menu with consistent icon sizing
         NavToggleButton
         NavCollapsed = false
 
@@ -39,8 +40,6 @@ classdef QTAUWorkbenchApp < handle
         ContentContainer
         SectionTitleLabel
         SectionSubtitleLabel
-        Tabs                        % alias for ContentContainer (backward compat)
-
         DragState = struct('active', false, 'grid', [], 'startX', 0, 'col1W', 0, 'col3W', 0)
         ColumnDividers = {}
 
@@ -52,7 +51,6 @@ classdef QTAUWorkbenchApp < handle
         ActivityOverlay            % Reusable loading overlay for API calls
         AuthOverlay                % Login-required overlay covering content area
         HeaderUserLabel            % Logged-in username button in header
-        HeaderUserMenu             % Dropdown panel for user menu
         HeaderUserMenuPanel        % The popup panel container
         HeaderLoginButton          % Login button in header (shown when logged out)
     end
@@ -104,8 +102,6 @@ classdef QTAUWorkbenchApp < handle
         LoginDlgUsernameValue      % Current username string (synced from HTML)
         LoginDlgPasswordField      % Password uihtml input (native masking)
         LoginDlgPasswordReal       % Real password string (synced from HTML)
-        LoginDlgPasswordVisible    % (unused — managed in HTML)
-        LoginDlgEyeButton          % (unused — integrated in password HTML)
         LoginDlgStatusLabel        % Status label in dialog
     end
 
@@ -619,14 +615,14 @@ classdef QTAUWorkbenchApp < handle
                         for gc = ch.Children(:)'
                             comps{end+1} = gc; %#ok
                         end
-                    catch; end
+                    catch ME; Logger.debug('QTAUWorkbenchApp', 'divider grandchild traversal: %s', ME.message); end
                 end
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'divider child traversal: %s', ME.message); end
             app.ColumnDividers{end+1} = struct('comps', {comps}, 'grid', g);
             divPanel.Tooltip = 'Drag left/right to resize panels';
             cb = @(~,~)app.onDividerDown(g);
             for j = 1:numel(comps)
-                try; comps{j}.ButtonDownFcn = cb; catch; end
+                try; comps{j}.ButtonDownFcn = cb; catch ME; Logger.debug('QTAUWorkbenchApp', 'divider ButtonDownFcn assignment: %s', ME.message); end
             end
         end
 
@@ -665,10 +661,10 @@ classdef QTAUWorkbenchApp < handle
                             if isvalid(entry.comps{j}) && isequal(clicked, entry.comps{j})
                                 app.onDividerDown(entry.grid); return;
                             end
-                        catch; end
+                        catch ME; Logger.debug('QTAUWorkbenchApp', 'divider component match: %s', ME.message); end
                     end
                 end
-            catch; end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'onFigMouseDown: %s', ME.message); end
         end
 
         function onDividerDown(app, g)

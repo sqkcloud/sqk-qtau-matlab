@@ -44,7 +44,7 @@ classdef JobService < handle
 
         % Fetch the full record for one job.
         function data = getJob(obj, jobId, token)
-            ep = sprintf('/api/jobs/%s', char(jobId));
+            ep = sprintf('/api/jobs/%s', FastAPIClient.encodePathSegment(jobId));
             Logger.info('JobService', 'getJob → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -57,7 +57,7 @@ classdef JobService < handle
 
         % Poll the lightweight status endpoint (faster than getJob).
         function data = getStatus(obj, jobId, token)
-            ep = sprintf('/api/jobs/%s/status', char(jobId));
+            ep = sprintf('/api/jobs/%s/status', FastAPIClient.encodePathSegment(jobId));
             Logger.debug('JobService', 'getStatus → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -70,7 +70,7 @@ classdef JobService < handle
 
         % Cancel a running or queued job.
         function data = cancelJob(obj, jobId, token)
-            ep = sprintf('/api/jobs/%s/cancel', char(jobId));
+            ep = sprintf('/api/jobs/%s/cancel', FastAPIClient.encodePathSegment(jobId));
             Logger.info('JobService', 'cancelJob → POST %s', ep);
             try
                 data = obj.Client.postAuthJson(ep, struct(), token);
@@ -83,7 +83,7 @@ classdef JobService < handle
 
         % Pause a running job.
         function data = pauseJob(obj, jobId, token)
-            ep = sprintf('/api/jobs/%s/pause', char(jobId));
+            ep = sprintf('/api/jobs/%s/pause', FastAPIClient.encodePathSegment(jobId));
             Logger.info('JobService', 'pauseJob → POST %s', ep);
             try
                 data = obj.Client.postAuthJson(ep, struct(), token);
@@ -96,7 +96,7 @@ classdef JobService < handle
 
         % Fetch the results summary for a completed job.
         function data = getResults(obj, jobId, token)
-            ep = sprintf('/api/jobs/%s/results', char(jobId));
+            ep = sprintf('/api/jobs/%s/results', FastAPIClient.encodePathSegment(jobId));
             Logger.info('JobService', 'getResults → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -109,7 +109,7 @@ classdef JobService < handle
 
         % Fetch the detailed analysis (distributions, per-qubit metrics).
         function data = getDetailedResults(obj, jobId, token)
-            ep = sprintf('/api/jobs/%s/results/detailed', char(jobId));
+            ep = sprintf('/api/jobs/%s/results/detailed', FastAPIClient.encodePathSegment(jobId));
             Logger.info('JobService', 'getDetailedResults → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -122,7 +122,7 @@ classdef JobService < handle
 
         % Retrieve error-rate trend history for a job.
         function data = getErrorTrends(obj, jobId, token)
-            ep = sprintf('/api/jobs/%s/error-trends', char(jobId));
+            ep = sprintf('/api/jobs/%s/error-trends', FastAPIClient.encodePathSegment(jobId));
             Logger.info('JobService', 'getErrorTrends → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -135,7 +135,7 @@ classdef JobService < handle
 
         % Fetch randomized benchmarking decay data for a job.
         function data = getRBDecay(obj, jobId, token)
-            ep = sprintf('/api/jobs/%s/rb-decay', char(jobId));
+            ep = sprintf('/api/jobs/%s/rb-decay', FastAPIClient.encodePathSegment(jobId));
             Logger.info('JobService', 'getRBDecay → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -151,7 +151,7 @@ classdef JobService < handle
             if nargin < 4; skip  = 0;  end
             if nargin < 5; limit = 50; end
             ep = sprintf('/api/projects/%s/jobs?skip=%d&limit=%d', ...
-                char(projectId), round(skip), round(limit));
+                FastAPIClient.encodePathSegment(projectId), round(skip), round(limit));
             Logger.info('JobService', 'listProjectJobs → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -164,7 +164,7 @@ classdef JobService < handle
 
         % Project-scoped job submission.
         function data = submitProjectJob(obj, projectId, payload, token)
-            ep = sprintf('/api/projects/%s/jobs', char(projectId));
+            ep = sprintf('/api/projects/%s/jobs', FastAPIClient.encodePathSegment(projectId));
             Logger.info('JobService', 'submitProjectJob → POST %s', ep);
             try
                 data = obj.Client.postAuthJson(ep, payload, token);

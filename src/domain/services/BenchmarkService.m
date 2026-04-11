@@ -36,7 +36,7 @@ classdef BenchmarkService < handle
             %   Returns Quantum Volume, CLOPS, Layer Fidelity, EPLG and
             %   other standard system-level benchmarks.
             endpoint = sprintf('/api/benchmark/system-metrics/%s', ...
-                char(backendName));
+                FastAPIClient.encodePathSegment(backendName));
             result = obj.Client.getAuth(endpoint, token);
         end
 
@@ -69,7 +69,7 @@ classdef BenchmarkService < handle
             %   algorithm domain, and complexity tier.
             endpoint = sprintf( ...
                 '/api/benchmark/classify/%s?project_id=%s', ...
-                char(circuitId), char(projectId));
+                FastAPIClient.encodePathSegment(circuitId), char(projectId));
             result = obj.Client.getAuth(endpoint, token);
         end
 

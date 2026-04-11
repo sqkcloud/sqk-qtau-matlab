@@ -51,7 +51,7 @@ classdef SettingsViewModel < handle
             if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
                 app.SettingsStatusArea.Value = {'Settings saved.'};
             end
-            uialert(app.UIFigure, 'Settings saved for this session.', 'Settings', 'Icon', 'success');
+            uialert(app.UIFigure, Labels.get('settings_saved_session', 'Settings saved for this session.'), 'Settings', 'Icon', 'success');
         end
 
         function onVerifyIbm(obj)

@@ -44,7 +44,7 @@ classdef ProjectService < handle
 
         % Update an existing project (PATCH with all editable fields).
         function data = updateProject(obj, projectId, name, description, tags, token)
-            ep = sprintf('/api/projects/%s', char(projectId));
+            ep = sprintf('/api/projects/%s', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'updateProject → PATCH %s (name: %s)', ep, char(name));
             if nargin < 5; tags = {}; end
             if isempty(tags); tags = {}; end
@@ -65,7 +65,7 @@ classdef ProjectService < handle
 
         % Permanently delete a project.
         function data = deleteProject(obj, projectId, token)
-            ep = sprintf('/api/projects/%s', char(projectId));
+            ep = sprintf('/api/projects/%s', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'deleteProject → DELETE %s', ep);
             try
                 data = obj.Client.deleteAuth(ep, token);
@@ -78,7 +78,7 @@ classdef ProjectService < handle
 
         % Fetch a single project record.
         function data = getProject(obj, projectId, token)
-            ep = sprintf('/api/projects/%s', char(projectId));
+            ep = sprintf('/api/projects/%s', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'getProject → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -91,7 +91,7 @@ classdef ProjectService < handle
 
         % Retrieve the dashboard snapshot (KPI cards, pipeline status).
         function data = getDashboard(obj, projectId, token)
-            ep = sprintf('/api/projects/%s/dashboard', char(projectId));
+            ep = sprintf('/api/projects/%s/dashboard', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'getDashboard → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -104,7 +104,7 @@ classdef ProjectService < handle
 
         % Fetch paginated activity log for a project.
         function data = getActivities(obj, projectId, skip, limit, token)
-            ep = sprintf('/api/projects/%s/activities?skip=%d&limit=%d', char(projectId), skip, limit);
+            ep = sprintf('/api/projects/%s/activities?skip=%d&limit=%d', FastAPIClient.encodePathSegment(projectId), skip, limit);
             Logger.info('ProjectService', 'getActivities → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -117,7 +117,7 @@ classdef ProjectService < handle
 
         % Fetch the markdown notes for a project.
         function data = getNotes(obj, projectId, token)
-            ep = sprintf('/api/projects/%s/notes', char(projectId));
+            ep = sprintf('/api/projects/%s/notes', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'getNotes → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -130,7 +130,7 @@ classdef ProjectService < handle
 
         % Persist updated notes (full replace via PUT).
         function data = saveNotes(obj, projectId, content, token)
-            ep = sprintf('/api/projects/%s/notes', char(projectId));
+            ep = sprintf('/api/projects/%s/notes', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'saveNotes → PUT %s (length: %d chars)', ep, numel(char(content)));
             payload = struct('content', char(content));
             try
@@ -144,7 +144,7 @@ classdef ProjectService < handle
 
         % Save the benchmark configuration (shots, opt level, mitigation, strategy).
         function data = saveBenchmarkConfig(obj, projectId, circuitId, backendName, shots, optLevel, mitigation, strategy, token)
-            ep = sprintf('/api/projects/%s/benchmark-config', char(projectId));
+            ep = sprintf('/api/projects/%s/benchmark-config', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'saveBenchmarkConfig → POST %s', ep);
             Logger.info('ProjectService', '  circuit: %s  backend: %s  shots: %d  opt: %d  mitigation: %s  strategy: %s', ...
                 char(circuitId), char(backendName), round(shots), round(optLevel), char(mitigation), char(strategy));
@@ -166,7 +166,7 @@ classdef ProjectService < handle
 
         % Retrieve the current benchmark configuration.
         function data = getBenchmarkConfig(obj, projectId, token)
-            ep = sprintf('/api/projects/%s/benchmark-config', char(projectId));
+            ep = sprintf('/api/projects/%s/benchmark-config', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'getBenchmarkConfig → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -179,7 +179,7 @@ classdef ProjectService < handle
 
         % Compare transpilation strategies for a project's circuit + backend.
         function data = compareStrategies(obj, projectId, circuitId, backendName, strategies, token)
-            ep = sprintf('/api/projects/%s/benchmark-config/compare-strategies', char(projectId));
+            ep = sprintf('/api/projects/%s/benchmark-config/compare-strategies', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'compareStrategies → POST %s (circuit: %s  backend: %s)', ...
                 ep, char(circuitId), char(backendName));
             payload = struct('circuit_id',   char(circuitId), ...
@@ -198,7 +198,7 @@ classdef ProjectService < handle
 
         % Run fidelity prediction (project-scoped).
         function data = predict(obj, projectId, circuitId, backendName, shots, optLevel, token)
-            ep = sprintf('/api/projects/%s/predict', char(projectId));
+            ep = sprintf('/api/projects/%s/predict', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'predict → POST %s', ep);
             Logger.info('ProjectService', '  circuit: %s  backend: %s  shots: %d  opt: %d', ...
                 char(circuitId), char(backendName), round(shots), round(optLevel));
@@ -218,7 +218,7 @@ classdef ProjectService < handle
 
         % Retrieve the latest prediction result for a project.
         function data = getLatestPrediction(obj, projectId, token)
-            ep = sprintf('/api/projects/%s/predict/latest', char(projectId));
+            ep = sprintf('/api/projects/%s/predict/latest', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'getLatestPrediction → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -231,7 +231,7 @@ classdef ProjectService < handle
 
         % List project-scoped reports.
         function data = listReports(obj, projectId, token)
-            ep = sprintf('/api/projects/%s/reports', char(projectId));
+            ep = sprintf('/api/projects/%s/reports', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'listReports → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -244,7 +244,7 @@ classdef ProjectService < handle
 
         % Generate a project-scoped report.
         function data = generateReport(obj, projectId, title, format, sections, token)
-            ep = sprintf('/api/projects/%s/reports', char(projectId));
+            ep = sprintf('/api/projects/%s/reports', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'generateReport → POST %s (format: %s)', ep, char(format));
             payload = struct( ...
                 'title',    char(title), ...

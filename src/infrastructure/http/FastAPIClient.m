@@ -35,11 +35,6 @@ classdef FastAPIClient < handle
 
     % ── Named convenience methods (existing + new) ────────────────────────────
     methods
-        function data = openApi(obj)
-            Logger.debug('FastAPIClient', 'openApi → GET /api/openapi.json');
-            data = obj.get('/api/openapi.json');
-        end
-
         function data = login(obj, username, password)
             % POST application/x-www-form-urlencoded with fields username, password.
             % Path comes from resources/app.properties key login_path (default /api/auth/login).
@@ -254,6 +249,27 @@ classdef FastAPIClient < handle
         end
     end
 
+    % ── Public static helpers ─────────────────────────────────────────────────
+    methods (Static)
+        function s = encodePathSegment(seg)
+            % encodePathSegment  Percent-encode a single URL path segment.
+            %   Encodes characters outside the unreserved set (RFC 3986) so that
+            %   user-supplied IDs cannot alter the URL path structure.
+            seg = char(string(seg));
+            out = '';
+            for i = 1:numel(seg)
+                c = seg(i);
+                if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || ...
+                   (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~'
+                    out = [out c]; %#ok
+                else
+                    out = [out sprintf('%%%02X', uint8(c))]; %#ok
+                end
+            end
+            s = out;
+        end
+    end
+
     % ── Private static helpers ────────────────────────────────────────────────
     methods (Static, Access = private)
 
@@ -299,7 +315,8 @@ classdef FastAPIClient < handle
                         msg = char(jsonencode(detail));
                     end
                 end
-            catch
+            catch ME
+                Logger.debug('FastAPIClient', 'error detail normalization: %s', ME.message);
             end
         end
 

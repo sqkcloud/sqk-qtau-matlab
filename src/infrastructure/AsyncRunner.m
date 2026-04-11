@@ -71,14 +71,14 @@ classdef AsyncRunner
                     if isvalid(wdog); stop(wdog); delete(wdog); end
                     future.UserData = [];
                 end
-            catch; end
+            catch ME; Logger.debug('AsyncRunner', 'watchdog cleanup: %s', ME.message); end
 
             try
                 % Check for error — guard against missing Error property
                 hasErr = false;
                 try
                     hasErr = ~isempty(future.Error);
-                catch; end
+                catch ME; Logger.debug('AsyncRunner', 'future error check: %s', ME.message); end
 
                 if hasErr
                     err = future.Error;

@@ -200,7 +200,7 @@ classdef BackendsViewModel < handle
             % Last resort: basic list (may be empty)
             try
                 data = app.BackendSvc.listBackends(app.State.authToken, '');
-            catch; end
+            catch ME; Logger.debug('BackendsViewModel', 'fetchBackends basic list: %s', ME.message); end
         end
 
         function tf = hasBackends(~, data)
@@ -216,7 +216,7 @@ classdef BackendsViewModel < handle
             if isempty(tData); row = 0; return; end
             sel = app.BackendTable.Selection;
             if isempty(sel)
-                uialert(app.UIFigure, 'Select a backend row first.', 'Select Backend', 'Icon', 'warning');
+                uialert(app.UIFigure, Labels.get('error_select_backend_row', 'Select a backend row first.'), 'Select Backend', 'Icon', 'warning');
                 row = 0; return;
             end
             row = sel(1);
@@ -249,7 +249,7 @@ classdef BackendsViewModel < handle
                 detail = app.BackendSvc.getBackend(primaryName, app.State.authToken);
                 ageHrs = JsonHelper.pick(detail, {'calibration_age_hours'});
                 if isnumeric(ageHrs) && ~isnan(ageHrs); calAge = sprintf('%.1f hours', ageHrs); end
-            catch; end
+            catch ME; Logger.debug('BackendsViewModel', 'populateKpiCards calibration age: %s', ME.message); end
             app.BackendKpiLabels{1}.Text = primaryName;
             app.BackendKpiLabels{2}.Text = backupName;
             if bestFid > 0; app.BackendKpiLabels{3}.Text = sprintf('%.4f', bestFid);
@@ -268,7 +268,7 @@ classdef BackendsViewModel < handle
                 detail = app.BackendSvc.getBackend(char(string(tData{row,2})), app.State.authToken);
                 ageHrs = JsonHelper.pick(detail, {'calibration_age_hours'});
                 if isnumeric(ageHrs) && ~isnan(ageHrs); app.BackendKpiLabels{4}.Text = sprintf('%.1f hours', ageHrs); end
-            catch; end
+            catch ME; Logger.debug('BackendsViewModel', 'updateKpiForSelection calibration age: %s', ME.message); end
         end
 
         function updateStatusNotes(~, app, row, backupName)

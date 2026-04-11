@@ -106,7 +106,6 @@ classdef DialogBuilder
             passLbl.Layout.Row = 10; passLbl.Layout.Column = 1;
 
             app.LoginDlgPasswordReal    = '';
-            app.LoginDlgPasswordVisible = false;
 
             placeholder = Labels.get('login_dlg_placeholder_pass', 'Enter your password');
             eyeColor = '#6B7280';

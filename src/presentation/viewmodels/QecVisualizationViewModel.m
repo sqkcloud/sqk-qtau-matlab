@@ -37,12 +37,12 @@ classdef QecVisualizationViewModel < handle
             app = obj.App;
             app.logEvent('QEC', 'Refreshing surface code lattice');
             try
-                distance = 3;
+                distance = AppConfig.getDouble('qec_viz_default_distance', 3);
                 % Read distance from QEC Simulation screen if available
                 if ~isempty(app.QecDistanceSpinner) && isvalid(app.QecDistanceSpinner)
                     distance = round(app.QecDistanceSpinner.Value);
                 end
-                errorProb = 0.05;
+                errorProb = AppConfig.getDouble('qec_viz_default_error_prob', 0.05);
                 if ~isempty(app.QecErrorProbSlider) && isvalid(app.QecErrorProbSlider)
                     errorProb = app.QecErrorProbSlider.Value;
                 end
@@ -71,8 +71,8 @@ classdef QecVisualizationViewModel < handle
             app.logEvent('QEC', 'Animating Bloch vector decay');
             try
                 params = obj.readSimParams();
-                nSteps = 30;
-                pRange = linspace(0, 0.5, nSteps);
+                nSteps = AppConfig.getDouble('qec_viz_decay_steps', 30);
+                pRange = linspace(0, AppConfig.getDouble('qec_viz_decay_max_prob', 0.5), nSteps);
                 blochTrail = zeros(nSteps, 3);
 
                 % Get ideal vector
@@ -81,7 +81,7 @@ classdef QecVisualizationViewModel < handle
                 idealVec = idealResult.blochVector;
 
                 % Also compute and plot fidelity decay over rounds
-                maxRounds = 10;
+                maxRounds = AppConfig.getDouble('qec_viz_max_rounds', 10);
                 decay = app.QecEngine.simulateDecay( ...
                     params.codeType, params.noiseModel, params.errorProb, ...
                     params.initialState, maxRounds);
@@ -295,7 +295,7 @@ classdef QecVisualizationViewModel < handle
             % Data qubits
             for i = 1:lattice.nData
                 scatter(ax, lattice.dataX(i), lattice.dataY(i), 100, ...
-                    [0.18 0.45 0.82], 'filled', ...
+                    Theme.COLOR_PRIMARY, 'filled', ...
                     'MarkerEdgeColor', [0.08 0.25 0.52], 'LineWidth', 1.2);
             end
 
@@ -323,8 +323,8 @@ classdef QecVisualizationViewModel < handle
             ax = obj.App.QecDecayAxes;
             cla(ax);
             plot(ax, decay.rounds, decay.fidelities, '-s', ...
-                'Color', [0.10 0.54 0.36], 'LineWidth', 1.8, ...
-                'MarkerSize', 5, 'MarkerFaceColor', [0.10 0.54 0.36]);
+                'Color', Theme.COLOR_SUCCESS, 'LineWidth', 1.8, ...
+                'MarkerSize', 5, 'MarkerFaceColor', Theme.COLOR_SUCCESS);
             ax.YLim = [0 1.05];
             obj.App.styleAxes(ax);
             ax.Title.String  = Labels.get('qec_viz_plot_decay_title', 'Fidelity vs Correction Round');

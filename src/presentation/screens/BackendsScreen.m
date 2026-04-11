@@ -36,7 +36,7 @@ function BackendsScreen(app)
         Labels.get('backends_kpi_best_fidelity',       'Best Predicted Fidelity'), ...
         Labels.get('backends_kpi_cal_age',             'Current Calibration Age')};
     cardDefault = {'—','—','—','—'};
-    cardAccents = {[0.18 0.45 0.82],[0.28 0.48 0.72],[0.10 0.54 0.36],[0.62 0.38 0.82]};
+    cardAccents = {Theme.COLOR_PRIMARY,[0.28 0.48 0.72],Theme.COLOR_SUCCESS,Theme.COLOR_PURPLE};
 
     app.BackendKpiLabels = cell(1, 4);
     for i = 1:4

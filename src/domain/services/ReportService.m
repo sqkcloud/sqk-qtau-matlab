@@ -46,7 +46,7 @@ classdef ReportService < handle
 
         % Fetch report metadata by ID.
         function data = getReport(obj, reportId, token)
-            ep = sprintf('/api/reports/%s', char(reportId));
+            ep = sprintf('/api/reports/%s', FastAPIClient.encodePathSegment(reportId));
             Logger.info('ReportService', 'getReport → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -59,7 +59,7 @@ classdef ReportService < handle
 
         % Returns download URL or base64-encoded content depending on server.
         function data = downloadReport(obj, reportId, token)
-            ep = sprintf('/api/reports/%s/download', char(reportId));
+            ep = sprintf('/api/reports/%s/download', FastAPIClient.encodePathSegment(reportId));
             Logger.info('ReportService', 'downloadReport → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -72,7 +72,7 @@ classdef ReportService < handle
 
         % Share a report by email.
         function data = shareReport(obj, reportId, email, token)
-            ep = sprintf('/api/reports/%s/share', char(reportId));
+            ep = sprintf('/api/reports/%s/share', FastAPIClient.encodePathSegment(reportId));
             Logger.info('ReportService', 'shareReport → POST %s (email: %s)', ep, char(email));
             payload = struct('email', char(email));
             try

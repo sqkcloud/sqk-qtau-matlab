@@ -282,7 +282,7 @@ classdef WelcomeViewModel < handle
                 Logger.warn('WelcomeViewModel', 'Login over plain HTTP — credentials are not encrypted');
                 app.LoginDlgStatusLabel.Text = Labels.get('login_warn_http', ...
                     'Warning: Connection is not encrypted (HTTP). Use HTTPS for production.');
-                app.LoginDlgStatusLabel.FontColor = [0.75 0.48 0.10];
+                app.LoginDlgStatusLabel.FontColor = Theme.COLOR_AMBER;
             end
 
             app.logEvent('AUTH', sprintf('Login attempt — user: %s  url: %s', username, app.State.baseUrl));

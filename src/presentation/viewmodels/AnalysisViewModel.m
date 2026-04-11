@@ -95,7 +95,7 @@ classdef AnalysisViewModel < handle
             try
                 tData = app.SimilarityTable.Data;
                 if isempty(tData)
-                    uialert(app.UIFigure, 'Run analysis first to get similarity results.', ...
+                    uialert(app.UIFigure, Labels.get('error_run_analysis_first', 'Run analysis first to get similarity results.'), ...
                         'No Data', 'Icon', 'info');
                     return;
                 end
@@ -265,7 +265,8 @@ classdef AnalysisViewModel < handle
                                 svgContent = serverSvg;
                                 serverOk = true;
                             end
-                        catch
+                        catch ME
+                            Logger.debug('AnalysisViewModel', 'loadDiagram serverPreview: %s', ME.message);
                         end
                         % 2) Fallback: client-side rendering (truncated for large circuits)
                         if ~serverOk
@@ -281,7 +282,7 @@ classdef AnalysisViewModel < handle
                         svgContent = '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>';
                     end
                 catch ME
-                    svgContent = sprintf('<p style="color:#DC2626;font-family:sans-serif">Failed to load diagram: %s</p>', ME.message);
+                    svgContent = sprintf('<p style="color:#DC2626;font-family:sans-serif">Failed to load diagram: %s</p>', CircuitDiagram.escapeHtml(ME.message));
                 end
                 diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
 
@@ -574,7 +575,7 @@ classdef AnalysisViewModel < handle
                             lines{end+1} = 'Novel structure — limited benchmark reference data.';
                         end
                     end
-                catch; end
+                catch ME; Logger.debug('AnalysisViewModel', 'buildFeatureSummary QASMBench similarity: %s', ME.message); end
 
                 app.AnalysisFeatureArea.Value = lines;
             catch ME

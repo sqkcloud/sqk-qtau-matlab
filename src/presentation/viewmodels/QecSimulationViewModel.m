@@ -152,7 +152,7 @@ classdef QecSimulationViewModel < handle
             % Success rate bar
             cla(app.QecSuccessAxes);
             successPct = result.correctionSuccess;
-            barh(app.QecSuccessAxes, 1, successPct, 'FaceColor', [0.10 0.54 0.36]);
+            barh(app.QecSuccessAxes, 1, successPct, 'FaceColor', Theme.COLOR_SUCCESS);
             app.QecSuccessAxes.XLim = [0 1];
             app.QecSuccessAxes.YTickLabel = {sprintf('%.1f%%', successPct*100)};
             app.styleAxes(app.QecSuccessAxes);
@@ -192,7 +192,7 @@ classdef QecSimulationViewModel < handle
             app = obj.App;
             cla(app.QecFidelityAxes);
             plot(app.QecFidelityAxes, sweep.errorRates, sweep.fidelities, ...
-                '-o', 'Color', [0.18 0.45 0.82], 'LineWidth', 1.8, 'MarkerSize', 3);
+                '-o', 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.8, 'MarkerSize', 3);
             app.styleAxes(app.QecFidelityAxes);
             app.QecFidelityAxes.Title.String  = Labels.get('qec_sim_plot_fidelity_title', 'Fidelity vs Physical Error Rate');
             app.QecFidelityAxes.XLabel.String = Labels.get('qec_sim_plot_fidelity_x', 'Physical Error Probability (p)');
@@ -231,7 +231,7 @@ classdef QecSimulationViewModel < handle
             cla(app.QecFidelityAxes);
             pDemo = linspace(0, 0.5, 30);
             fDemo = 1 - 1.5*pDemo.^2;
-            plot(app.QecFidelityAxes, pDemo, fDemo, '-o', 'Color', [0.18 0.45 0.82], ...
+            plot(app.QecFidelityAxes, pDemo, fDemo, '-o', 'Color', Theme.COLOR_PRIMARY, ...
                 'LineWidth', 1.6, 'MarkerSize', 3);
             app.styleAxes(app.QecFidelityAxes);
             app.QecFidelityAxes.Title.String = 'Fidelity vs Physical Error Rate (demo)';
@@ -252,7 +252,7 @@ classdef QecSimulationViewModel < handle
         function plotSuccessDemo(obj)
             app = obj.App;
             cla(app.QecSuccessAxes);
-            barh(app.QecSuccessAxes, 1, 0.95, 'FaceColor', [0.10 0.54 0.36]);
+            barh(app.QecSuccessAxes, 1, 0.95, 'FaceColor', Theme.COLOR_SUCCESS);
             app.QecSuccessAxes.XLim = [0 1];
             app.QecSuccessAxes.YTickLabel = {'Success Rate'};
             app.styleAxes(app.QecSuccessAxes);

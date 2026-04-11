@@ -188,10 +188,10 @@ classdef BenchmarkViewModel < handle
                 em = char(JsonHelper.pick(data, {'error_mitigation'}));
                 ts = char(JsonHelper.pick(data, {'transpilation_strategy'}));
                 if ~isempty(em)
-                    try app.BenchmarkMitigationDropdown.Value = em; catch; end
+                    try app.BenchmarkMitigationDropdown.Value = em; catch ME; Logger.debug('BenchmarkViewModel', 'restoreMitigationDropdown: %s', ME.message); end
                 end
                 if ~isempty(ts)
-                    try app.BenchmarkStrategyDropdown.Value = ts; catch; end
+                    try app.BenchmarkStrategyDropdown.Value = ts; catch ME; Logger.debug('BenchmarkViewModel', 'restoreStrategyDropdown: %s', ME.message); end
                 end
 
                 obj.displayExecutionPlan(data, s, o, em, ts);
@@ -262,7 +262,7 @@ classdef BenchmarkViewModel < handle
                         obj.populateBackendDropdown(data);
                         return;
                     end
-                catch; end
+                catch ME; Logger.debug('BenchmarkViewModel', 'loadBackends enriched list: %s', ME.message); end
             end
 
             % Attempt 2: use any circuit from the project as fallback
@@ -279,7 +279,7 @@ classdef BenchmarkViewModel < handle
                         end
                     end
                 end
-            catch; end
+            catch ME; Logger.debug('BenchmarkViewModel', 'loadBackends fallback circuit: %s', ME.message); end
 
             % Attempt 3: basic list without circuit_id (last resort)
             try
@@ -288,7 +288,7 @@ classdef BenchmarkViewModel < handle
                     obj.populateBackendDropdown(data);
                     return;
                 end
-            catch; end
+            catch ME; Logger.debug('BenchmarkViewModel', 'loadBackends basic list: %s', ME.message); end
 
             % All attempts failed
             app.BenchmarkBackendSelect.Items     = {'(no backends)'};
@@ -416,7 +416,8 @@ classdef BenchmarkViewModel < handle
                 if any(strcmp(dd.ItemsData, value))
                     dd.Value = value;
                 end
-            catch
+            catch ME
+                Logger.debug('BenchmarkViewModel', 'selectDropdownValue: %s', ME.message);
             end
         end
     end

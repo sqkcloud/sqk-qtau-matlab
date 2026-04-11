@@ -118,22 +118,5 @@ classdef test_ServiceContainer < matlab.unittest.TestCase
             testCase.verifyTrue(isa(testCase.Container.BenchmarkSvc, 'BenchmarkService'));
         end
 
-        % -- syncClient updates BaseUrl ----------------------------------------
-
-        function testSyncClientUpdatesBaseUrl(testCase)
-            newUrl = 'http://newhost:1234';
-            testCase.Container.syncClient(newUrl);
-            testCase.verifyEqual(char(testCase.Container.Client.BaseUrl), newUrl, ...
-                'syncClient should update the Client BaseUrl');
-        end
-
-        function testSyncClientPreservesServices(testCase)
-            testCase.Container.syncClient('http://changed:5555');
-            testCase.verifyNotEmpty(testCase.Container.CircuitSvc, ...
-                'Services should remain intact after syncClient');
-            testCase.verifyNotEmpty(testCase.Container.AuthSvc, ...
-                'Services should remain intact after syncClient');
-        end
-
     end
 end

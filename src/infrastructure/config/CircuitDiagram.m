@@ -81,12 +81,23 @@ classdef CircuitDiagram
             end
         end
 
+        function s = escapeHtml(text)
+            % escapeHtml  Encode &, <, >, ", ' for safe insertion into HTML.
+            s = char(string(text));
+            s = strrep(s, '&', '&amp;');
+            s = strrep(s, '<', '&lt;');
+            s = strrep(s, '>', '&gt;');
+            s = strrep(s, '"', '&quot;');
+            s = strrep(s, '''', '&#39;');
+        end
+
         function src = wrapHtml(text)
             % wrapHtml  Wrap plain text or HTML body in a styled HTML page
             %           suitable for uihtml.HTMLSource.
             if iscell(text)
                 text = strjoin(text, newline);
             end
+            safeText = CircuitDiagram.escapeHtml(text);
             src = [ ...
                 '<html><head><style>' ...
                 'html,body{height:100%;margin:0;padding:0;}' ...
@@ -94,7 +105,7 @@ classdef CircuitDiagram
                 'pre{font-family:"Courier New",monospace;font-size:11px;' ...
                 'color:#232a36;line-height:1.6;margin:0;}' ...
                 '</style></head><body><pre>' ...
-                char(text) ...
+                safeText ...
                 '</pre></body></html>'];
         end
 
@@ -821,13 +832,24 @@ classdef CircuitDiagram
 
         function val = parseParam(paramStr)
             % Parse a numeric parameter string, supporting pi expressions.
+            % Uses safe arithmetic evaluation — never eval() — to prevent
+            % code injection from malicious QASM gate parameters.
             val = 0;
             if isempty(paramStr); return; end
             paramStr = strtrim(char(paramStr));
-            % Handle common expressions: pi, pi/2, -pi/4, 2*pi, etc.
+            % Substitute 'pi' with its numeric value
             paramStr = strrep(paramStr, 'pi', num2str(pi, '%.15g'));
+            % Reject anything that isn't a safe arithmetic expression
+            if ~isempty(regexp(paramStr, '[^0-9eE.+\-*/() ]', 'once'))
+                return;
+            end
+            % Try str2num for simple arithmetic (runs in a restricted
+            % numeric context — no function calls or variable access).
             try
-                val = eval(paramStr);
+                result = str2num(paramStr); %#ok<ST2NM>
+                if ~isempty(result) && isscalar(result) && isfinite(result)
+                    val = result;
+                end
             catch
                 val = 0;
             end

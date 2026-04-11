@@ -61,7 +61,7 @@ classdef CircuitService < handle
 
         % Fetch a single circuit by ID.
         function data = getCircuit(obj, circuitId, token)
-            ep = sprintf('/api/circuits/%s', char(circuitId));
+            ep = sprintf('/api/circuits/%s', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'getCircuit → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -74,7 +74,7 @@ classdef CircuitService < handle
 
         % Trigger feature extraction on a previously uploaded circuit.
         function data = analyzeCircuit(obj, circuitId, token)
-            ep = sprintf('/api/circuits/%s/analyze', char(circuitId));
+            ep = sprintf('/api/circuits/%s/analyze', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'analyzeCircuit → POST %s', ep);
             try
                 data = obj.Client.postAuthJson(ep, struct(), token);
@@ -87,7 +87,7 @@ classdef CircuitService < handle
 
         % Retrieve the stored analysis for a circuit (no re-computation).
         function data = getAnalysis(obj, circuitId, token)
-            ep = sprintf('/api/circuits/%s/analysis', char(circuitId));
+            ep = sprintf('/api/circuits/%s/analysis', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'getAnalysis → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -100,7 +100,7 @@ classdef CircuitService < handle
 
         % Run QASMBench similarity matching for a circuit.
         function data = matchBenchmarks(obj, circuitId, token)
-            ep = sprintf('/api/circuits/%s/match-benchmarks', char(circuitId));
+            ep = sprintf('/api/circuits/%s/match-benchmarks', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'matchBenchmarks → POST %s', ep);
             try
                 data = obj.Client.postAuthJson(ep, struct(), token);
@@ -113,7 +113,7 @@ classdef CircuitService < handle
 
         % Get a preview diagram of the circuit (returns image URL or base64).
         function data = previewCircuit(obj, circuitId, token)
-            ep = sprintf('/api/circuits/%s/preview', char(circuitId));
+            ep = sprintf('/api/circuits/%s/preview', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'previewCircuit → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -126,7 +126,7 @@ classdef CircuitService < handle
 
         % Update circuit metadata (name, category, source).
         function data = updateCircuit(obj, circuitId, patch, token)
-            ep = sprintf('/api/circuits/%s', char(circuitId));
+            ep = sprintf('/api/circuits/%s', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'updateCircuit → PATCH %s', ep);
             try
                 data = obj.Client.patchAuthJson(ep, patch, token);
@@ -139,7 +139,7 @@ classdef CircuitService < handle
 
         % Permanently delete a circuit.
         function data = deleteCircuit(obj, circuitId, token)
-            ep = sprintf('/api/circuits/%s', char(circuitId));
+            ep = sprintf('/api/circuits/%s', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'deleteCircuit → DELETE %s', ep);
             try
                 data = obj.Client.deleteAuth(ep, token);

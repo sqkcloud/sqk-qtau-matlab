@@ -65,7 +65,7 @@ classdef UploadViewModel < handle
             diagramHtml = '';
             try
                 diagramHtml = CircuitDiagram.renderSvg(content);
-            catch; end
+            catch ME; Logger.debug('UploadViewModel', 'onBrowseCircuit renderSvg: %s', ME.message); end
             app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, diagramHtml);
         end
 
@@ -154,7 +154,7 @@ classdef UploadViewModel < handle
             % Bail if still no circuit after upload attempt
             if ~app.State.hasCircuit()
                 uialert(app.UIFigure, ...
-                    'Please save the circuit first before analyzing.', ...
+                    Labels.get('error_save_circuit_first', 'Please save the circuit first before analyzing.'), ...
                     'No Circuit', 'Icon', 'warning');
                 return;
             end
@@ -236,7 +236,7 @@ classdef UploadViewModel < handle
             end
             sel = app.UploadCircuitsTable.Selection;
             if isempty(sel)
-                uialert(app.UIFigure, 'Select a circuit row first.', 'Delete Circuit', 'Icon', 'warning'); return;
+                uialert(app.UIFigure, Labels.get('error_select_circuit_row', 'Select a circuit row first.'), 'Delete Circuit', 'Icon', 'warning'); return;
             end
             row = sel(1);
             tData = app.UploadCircuitsTable.Data;
@@ -277,14 +277,14 @@ classdef UploadViewModel < handle
                 if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
                     diagramHtml = serverSvg;
                 end
-            catch; end
+            catch ME; Logger.debug('UploadViewModel', 'onUploadComplete previewCircuit: %s', ME.message); end
             % Fallback: client-side rendering
             if isempty(diagramHtml)
                 filePath2 = char(app.State.selectedFile);
                 if ~isempty(filePath2) && isfile(filePath2)
                     try
                         diagramHtml = CircuitDiagram.renderSvg(fileread(filePath2));
-                    catch; end
+                    catch ME; Logger.debug('UploadViewModel', 'onUploadComplete fallback renderSvg: %s', ME.message); end
                 end
             end
             app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, diagramHtml);

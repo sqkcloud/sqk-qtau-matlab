@@ -57,14 +57,15 @@ classdef DetailedAnalysisViewModel < handle
                     end
                     if all(sig == 0); sig = 0.012 * ones(1,n); end
                     t2  = 1:n;
-                    GRN = [0.10 0.54 0.36];
+                    GRN = Theme.COLOR_SUCCESS;
                     fill(app.TemporalAxes, [t2 fliplr(t2)], [conf+sig fliplr(conf-sig)], ...
                         GRN, 'FaceAlpha', 0.14, 'EdgeColor', 'none');
                     hold(app.TemporalAxes, 'on');
                     plot(app.TemporalAxes, t2, conf, '-',  'Color', GRN, 'LineWidth', 1.7);
                     plot(app.TemporalAxes, t2, conf, 'o',  'Color', GRN, ...
                         'MarkerSize', 3.5, 'MarkerFaceColor', GRN);
-                    yline(app.TemporalAxes, 0.94, '--', 'Color', [0.62 0.38 0.82], ...
+                    confThresh = AppConfig.getDouble('confidence_threshold', 0.94);
+                    yline(app.TemporalAxes, confThresh, '--', 'Color', Theme.COLOR_PURPLE, ...
                         'LineWidth', 1.2, 'Label', 'Threshold', 'LabelHorizontalAlignment', 'left');
                     hold(app.TemporalAxes, 'off');
                     app.TemporalAxes.Title.String  = Labels.get('detailed_plot_temporal_title');
@@ -75,9 +76,9 @@ classdef DetailedAnalysisViewModel < handle
                     grid(app.TemporalAxes, 'on');
                     % Drift annotation
                     driftSlope = (conf(end)-conf(1)) / max(n-1,1);
-                    nOutliers  = sum(conf < 0.94);
+                    nOutliers  = sum(conf < confThresh);
                     obj.appendInsight(sprintf('[Temporal] slope=%.4f/batch · outliers<%0.2f = %d', ...
-                        driftSlope, 0.94, nOutliers));
+                        driftSlope, confThresh, nOutliers));
                     app.logEvent('API', 'Temporal plot updated from live data');
                     app.hideLoading();
                     return;
@@ -215,10 +216,10 @@ classdef DetailedAnalysisViewModel < handle
                     if ~isnan(EPC)
                         A_rb = 0.475; B_rb = 0.500; mDns = 1:max(mPts);
                         plot(app.RBDecayAxes, mDns, A_rb*(1-2*EPC).^mDns+B_rb, '--', ...
-                            'Color', [0.62 0.38 0.82], 'LineWidth', 1.5);
+                            'Color', Theme.COLOR_PURPLE, 'LineWidth', 1.5);
                     end
                     errorbar(app.RBDecayAxes, mPts, pMea, pErr, ...
-                        'o', 'Color', [0.18 0.45 0.82], 'MarkerFaceColor', [0.18 0.45 0.82], ...
+                        'o', 'Color', Theme.COLOR_PRIMARY, 'MarkerFaceColor', Theme.COLOR_PRIMARY, ...
                         'MarkerSize', 5, 'LineWidth', 1.2, 'CapSize', 4);
                     hold(app.RBDecayAxes, 'off');
                     if ~isnan(EPC)
@@ -300,14 +301,15 @@ classdef DetailedAnalysisViewModel < handle
             t2   = 1:40;
             conf = 0.940 + 0.018*randn(1,40);
             sig  = 0.012 + 0.004*rand(1,40);
-            GRN  = [0.10 0.54 0.36];
+            GRN  = Theme.COLOR_SUCCESS;
             fill(app.TemporalAxes, [t2 fliplr(t2)], [conf+sig fliplr(conf-sig)], ...
                 GRN, 'FaceAlpha', 0.14, 'EdgeColor', 'none');
             hold(app.TemporalAxes, 'on');
             plot(app.TemporalAxes, t2, conf, '-',  'Color', GRN, 'LineWidth', 1.7);
             plot(app.TemporalAxes, t2, conf, 'o',  'Color', GRN, ...
                 'MarkerSize', 3.5, 'MarkerFaceColor', GRN);
-            yline(app.TemporalAxes, 0.94, '--', 'Color', [0.62 0.38 0.82], ...
+            confThresh = AppConfig.getDouble('confidence_threshold', 0.94);
+            yline(app.TemporalAxes, confThresh, '--', 'Color', Theme.COLOR_PURPLE, ...
                 'LineWidth', 1.2, 'Label', 'Threshold', 'LabelHorizontalAlignment', 'left');
             hold(app.TemporalAxes, 'off');
             app.TemporalAxes.Title.String  = 'Confidence per Shot Batch (demo)';
@@ -375,7 +377,7 @@ classdef DetailedAnalysisViewModel < handle
             pMea  = pFit + 0.008*randn(size(pFit));
             pErr  = 0.007 + 0.003*rand(size(pFit));
             mDns  = 1:256;
-            PURP  = [0.62 0.38 0.82];  BLU = [0.18 0.45 0.82];
+            PURP  = Theme.COLOR_PURPLE;  BLU = Theme.COLOR_PRIMARY;
             hold(app.RBDecayAxes, 'on');
             fill(app.RBDecayAxes, [mDns fliplr(mDns)], ...
                 [A_rb*(1-2*(EPC+0.0003)).^mDns+B_rb, ...
@@ -405,7 +407,7 @@ classdef DetailedAnalysisViewModel < handle
             if numel(cur) >= 1 && contains(cur{1}, 'Press the Refresh')
                 cur = {};
             end
-            ts  = datestr(now, 'HH:MM:SS');  %#ok<TNOW1,DATST>
+            ts  = char(datetime('now', 'Format', 'HH:mm:ss'));
             cur{end+1} = sprintf('[%s] %s', ts, msg);
             app.DetailedInsightArea.Value = cur;
         end

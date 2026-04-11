@@ -7,9 +7,6 @@ classdef ServiceContainer < handle
     %   Usage:
     %       container = ServiceContainer(baseUrl);
     %       svc = container.CircuitSvc;
-    %
-    %   Call syncClient(newUrl) to update the base URL and propagate it
-    %   to the underlying FastAPIClient.
 
     properties
         Client          % FastAPIClient
@@ -40,11 +37,6 @@ classdef ServiceContainer < handle
             obj.QecEngine     = QecEngineService();
             obj.BenchmarkSvc  = BenchmarkService(obj.Client);
             Logger.info('ServiceContainer', 'All services initialized');
-        end
-
-        function syncClient(obj, newUrl)
-            % Update the base URL on the existing FastAPIClient.
-            obj.Client.BaseUrl = newUrl;
         end
     end
 end

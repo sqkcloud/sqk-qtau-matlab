@@ -18,7 +18,7 @@ classdef BenchmarkDashboardViewModel < handle
         function onRefreshAll(obj)
             app = obj.App;
             if ~app.State.isAuthenticated()
-                uialert(app.UIFigure, 'Please login first.', 'Auth Required');
+                uialert(app.UIFigure, Labels.get('error_login_required', 'Please login first.'), 'Auth Required');
                 return;
             end
             app.showLoading();
@@ -116,7 +116,7 @@ classdef BenchmarkDashboardViewModel < handle
                 scatter(ax, depths, widths, 50, fids, 'filled');
                 colormap(ax, parula);
                 colorbar(ax);
-                caxis(ax, [0 1]);  %#ok<CAXIS>
+                clim(ax, [0 1]);
                 title(ax, 'Volumetric Fidelity Map');
                 xlabel(ax, 'Circuit Depth');
                 ylabel(ax, 'Circuit Width');
@@ -218,7 +218,7 @@ classdef BenchmarkDashboardViewModel < handle
 
                 fids = cellfun(@(p) JsonHelper.pick(p, 'fidelity', 0), points);
                 plot(ax, 1:numel(fids), fids, '-o', ...
-                    'Color', [0.18 0.45 0.82], 'LineWidth', 1.4, 'MarkerSize', 4);
+                    'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.4, 'MarkerSize', 4);
                 title(ax, ['Fidelity Trend: ' char(backendName)]);
                 xlabel(ax, 'Job Index');
                 ylabel(ax, 'Fidelity');

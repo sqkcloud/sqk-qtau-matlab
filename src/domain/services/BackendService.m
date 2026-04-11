@@ -35,7 +35,7 @@ classdef BackendService < handle
 
         % Fetch detailed information for one backend by name.
         function data = getBackend(obj, backendName, token)
-            ep = sprintf('/api/backends/%s', char(backendName));
+            ep = sprintf('/api/backends/%s', FastAPIClient.encodePathSegment(backendName));
             Logger.info('BackendService', 'getBackend → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -48,7 +48,7 @@ classdef BackendService < handle
 
         % Retrieve the latest calibration data (gate errors, T1/T2, etc.).
         function data = getCalibration(obj, backendName, token)
-            ep = sprintf('/api/backends/%s/calibration', char(backendName));
+            ep = sprintf('/api/backends/%s/calibration', FastAPIClient.encodePathSegment(backendName));
             Logger.info('BackendService', 'getCalibration → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -61,7 +61,7 @@ classdef BackendService < handle
 
         % Fetch the hardware connectivity topology.
         function data = getTopology(obj, backendName, token)
-            ep = sprintf('/api/backends/%s/topology', char(backendName));
+            ep = sprintf('/api/backends/%s/topology', FastAPIClient.encodePathSegment(backendName));
             Logger.info('BackendService', 'getTopology → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
@@ -90,7 +90,7 @@ classdef BackendService < handle
 
         % Persist the primary / backup backend selection for a project.
         function data = saveSelection(obj, projectId, primaryName, backupName, token)
-            ep = sprintf('/api/projects/%s/backend-selection', char(projectId));
+            ep = sprintf('/api/projects/%s/backend-selection', FastAPIClient.encodePathSegment(projectId));
             Logger.info('BackendService', 'saveSelection → POST %s (primary: %s, backup: %s)', ...
                 ep, char(primaryName), char(backupName));
             payload = struct( ...
@@ -107,7 +107,7 @@ classdef BackendService < handle
 
         % Retrieve the previously saved backend selection for a project.
         function data = getSelection(obj, projectId, token)
-            ep = sprintf('/api/projects/%s/backend-selection', char(projectId));
+            ep = sprintf('/api/projects/%s/backend-selection', FastAPIClient.encodePathSegment(projectId));
             Logger.info('BackendService', 'getSelection → GET %s', ep);
             try
                 data = obj.Client.getAuth(ep, token);
