@@ -41,15 +41,20 @@ classdef CircuitDiagram
             % renderSvg  Parse QASM and produce a graphical SVG circuit diagram
             %            with colored gate boxes, wires, control dots, measurements,
             %            per-qubit probabilities, and a probability distribution chart.
+            %
+            %            For large circuits, parsing is capped at 200 gates to keep
+            %            the preview responsive.  A truncation notice is shown.
+            maxGatesForPreview = 2000;
             try
-                [nQubits, gates] = CircuitDiagram.parseGates(content);
+                [nQubits, gates, wasTruncated] = CircuitDiagram.parseGates(content, maxGatesForPreview);
                 if nQubits == 0 || isempty(gates)
                     svg = '<p style="color:#888;font-family:sans-serif">(No gates detected)</p>';
                     return;
                 end
                 % Simulate circuit to get state vector and probabilities
+                % (only for small qubit counts AND when we have the full circuit)
                 stateVec = [];
-                if nQubits <= 16
+                if nQubits <= 16 && ~wasTruncated
                     try
                         stateVec = CircuitDiagram.simulateCircuit(nQubits, gates);
                     catch ME2
@@ -57,13 +62,19 @@ classdef CircuitDiagram
                     end
                 end
                 circuitSvg = CircuitDiagram.drawSvgDiagram(nQubits, gates, stateVec);
-                if ~isempty(stateVec)
-                    probSvg = CircuitDiagram.drawProbDistSvg(nQubits, stateVec);
-                    svg = ['<div style="display:flex;flex-direction:column;align-items:center;gap:16px;">' ...
-                           circuitSvg probSvg '</div>'];
-                else
-                    svg = circuitSvg;
+                parts = {'<div style="display:flex;flex-direction:column;align-items:center;gap:16px;">'};
+                parts{end+1} = circuitSvg;
+                if wasTruncated
+                    parts{end+1} = ['<p style="color:#8b95a8;font-family:-apple-system,sans-serif;' ...
+                        'font-size:11px;margin:4px 0 0 0;text-align:center;">' ...
+                        sprintf('Showing first %d gates (circuit truncated for preview)', numel(gates)) ...
+                        '</p>'];
                 end
+                if ~isempty(stateVec)
+                    parts{end+1} = CircuitDiagram.drawProbDistSvg(nQubits, stateVec);
+                end
+                parts{end+1} = '</div>';
+                svg = strjoin(parts, '');
             catch ME
                 Logger.warn('CircuitDiagram', 'renderSvg failed: %s', ME.message);
                 svg = '<p style="color:#888;font-family:sans-serif">(Unable to render diagram)</p>';
@@ -89,13 +100,16 @@ classdef CircuitDiagram
 
         function src = buildStatsHtml(infoLines, diagramHtml)
             % buildStatsHtml  Wrap SVG or HTML diagram for uihtml display.
+            %   Uses a wrapper div for centering so that overflow scrolling
+            %   works correctly for large diagrams (many qubits / columns).
             src = [ ...
                 '<html><head><style>' ...
-                'html,body{min-height:100%;margin:0;padding:0;overflow:auto;}' ...
-                'body{display:flex;align-items:center;justify-content:center;' ...
-                'background:#111827;padding:12px 0;}' ...
+                'html,body{width:100%;height:100%;margin:0;padding:0;overflow:auto;' ...
+                'background:#111827;}' ...
+                '.wrap{display:inline-flex;flex-direction:column;align-items:center;' ...
+                'min-width:100%;min-height:100%;padding:12px;box-sizing:border-box;}' ...
                 '</style></head><body>' ...
-                char(diagramHtml) ...
+                '<div class="wrap">' char(diagramHtml) '</div>' ...
                 '</body></html>'];
         end
 
@@ -103,11 +117,35 @@ classdef CircuitDiagram
 
     methods (Static, Access = private)
 
-        function [nQubits, gates] = parseGates(content)
+        function [nQubits, gates, wasTruncated] = parseGates(content, maxGates)
             % Parse qubit declarations and gate operations from QASM text.
+            % maxGates: stop after this many gates (default unlimited).
+            if nargin < 2; maxGates = inf; end
             nQubits = 0;
             gates = {};  % each entry: struct with .name, .qubits (0-based indices)
-            lines = strsplit(content, newline);
+            wasTruncated = false;
+            % For large content with a gate limit, only split the first
+            % portion to avoid creating a huge cell array.
+            if isfinite(maxGates) && numel(content) > 500000
+                % Keep header + enough lines for maxGates (generous 10x factor)
+                maxChars = min(numel(content), maxGates * 200);
+                truncContent = content(1:maxChars);
+                lastNL = find(truncContent == newline, 1, 'last');
+                if ~isempty(lastNL); truncContent = truncContent(1:lastNL); end
+                % Also scan full content for qreg declarations (usually in first 1KB)
+                headerEnd = min(numel(content), 2000);
+                headerPart = content(1:headerEnd);
+                headerTok = regexp(headerPart, '(?:qreg\s+\w+\[(\d+)\]|qubit\[(\d+)\])', 'tokens');
+                for j = 1:numel(headerTok)
+                    vals = headerTok{j};
+                    for m = 1:numel(vals)
+                        if ~isempty(vals{m}); nQubits = nQubits + str2double(vals{m}); end
+                    end
+                end
+                lines = strsplit(truncContent, newline);
+            else
+                lines = strsplit(content, newline);
+            end
             for k = 1:numel(lines)
                 ln = strtrim(lines{k});
                 if isempty(ln) || startsWith(ln, '//') || startsWith(ln, 'OPENQASM') ...
@@ -141,6 +179,7 @@ classdef CircuitDiagram
                     end
                     if strcmp(gName, 'MEASURE'); gName = 'M'; end
                     gates{end+1} = struct('name', gName, 'qubits', qIdx, 'params', paramStr); %#ok<AGROW>
+                    if numel(gates) >= maxGates; wasTruncated = true; break; end
                     continue;
                 end
 
@@ -149,6 +188,7 @@ classdef CircuitDiagram
                     for qi = 0:max(nQubits-1, 0)
                         gates{end+1} = struct('name', 'M', 'qubits', qi, 'params', ''); %#ok<AGROW>
                     end
+                    if numel(gates) >= maxGates; wasTruncated = true; break; end
                     continue;
                 end
 
@@ -160,6 +200,7 @@ classdef CircuitDiagram
                     q2 = str2double(tok3{1}{3});
                     q3 = str2double(tok3{1}{4});
                     gates{end+1} = struct('name', gName, 'qubits', [q1, q2, q3], 'params', ''); %#ok<AGROW>
+                    if numel(gates) >= maxGates; wasTruncated = true; break; end
                     continue;
                 end
 
@@ -170,6 +211,7 @@ classdef CircuitDiagram
                     q1 = str2double(tok2{1}{2});
                     q2 = str2double(tok2{1}{3});
                     gates{end+1} = struct('name', gName, 'qubits', [q1, q2], 'params', ''); %#ok<AGROW>
+                    if numel(gates) >= maxGates; wasTruncated = true; break; end
                     continue;
                 end
             end
@@ -345,9 +387,9 @@ classdef CircuitDiagram
             end
         end
 
-        function [grid, nQubits, displayCols, cellWidth, truncated, nGatesTotal] = buildGrid(nQubits, gates)
+        function [grid, nQubits, displayCols, cellWidth, truncated, nGatesTotal] = buildGrid(nQubits, gates, maxCols)
             % Shared grid-building logic used by both drawDiagram and drawHtmlDiagram.
-            maxCols = 20;
+            if nargin < 3; maxCols = 20; end
             nGates = numel(gates);
             nGatesTotal = nGates;
             colAssign = zeros(1, nGates);
@@ -417,7 +459,7 @@ classdef CircuitDiagram
             padR    = 24;   % right padding
             padT    = 16;   % top padding
             padB    = 16;   % bottom padding
-            maxCols = 25;   % max gate columns to display
+            maxCols = 10000; % max gate columns to display
             probW   = 110;  % width reserved for probability labels on the right
 
             % Dark theme colors
@@ -440,7 +482,7 @@ classdef CircuitDiagram
 
             % Build the grid using existing buildGrid
             [grid, ~, displayCols, ~, truncated, ~] = ...
-                CircuitDiagram.buildGrid(nQubits, gates);
+                CircuitDiagram.buildGrid(nQubits, gates, maxCols);
 
             % Compute per-qubit P(|1>) if we have state vector
             qubitProbs = zeros(1, nQubits);
@@ -853,7 +895,13 @@ classdef CircuitDiagram
             barW = max(minBarW, min(maxBarW, floor(600 / nBars) - barSpacing));
             chartAreaW = nBars * (barW + barSpacing);
             chartH = 180;
-            svgW = marginL + chartAreaW + marginR;
+            minSvgW = 320;  % enough width for the title text
+            naturalW = marginL + chartAreaW + marginR;
+            svgW = max(minSvgW, naturalW);
+            % Center chart area when SVG is wider than needed
+            if svgW > naturalW
+                marginL = marginL + floor((svgW - naturalW) / 2);
+            end
             svgH = marginT + chartH + marginB;
 
             parts = {};

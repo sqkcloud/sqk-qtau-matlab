@@ -31,10 +31,25 @@ classdef UploadViewModel < handle
             app.logEvent('UI', sprintf('Circuit file selected: %s  path: %s  size: %d bytes', ...
                 file, path, info.bytes));
             content = '';
+            maxPreviewBytes = 100000;  % 100 KB limit for TextArea preview
             try
                 content = fileread(fullp);
-                app.CircuitPreviewArea.Value = strsplit(content, newline);
-                app.logEvent('UI', sprintf('Circuit file preview loaded (%d lines)', numel(strsplit(content, newline))));
+                if numel(content) > maxPreviewBytes
+                    previewText = content(1:maxPreviewBytes);
+                    % Trim to last complete line
+                    lastNL = find(previewText == newline, 1, 'last');
+                    if ~isempty(lastNL); previewText = previewText(1:lastNL); end
+                    totalLines = numel(strfind(content, newline)) + 1;
+                    previewLines = strsplit(previewText, newline);
+                    previewLines{end+1} = sprintf('... [truncated — showing %d of %d lines (%.1f MB file)]', ...
+                        numel(previewLines), totalLines, numel(content)/1e6);
+                    app.CircuitPreviewArea.Value = previewLines;
+                    app.logEvent('UI', sprintf('Circuit file preview truncated (%d/%d lines, %.1f MB)', ...
+                        numel(previewLines)-1, totalLines, numel(content)/1e6));
+                else
+                    app.CircuitPreviewArea.Value = strsplit(content, newline);
+                    app.logEvent('UI', sprintf('Circuit file preview loaded (%d lines)', numel(strsplit(content, newline))));
+                end
                 % Auto-detect format from OPENQASM header
                 if contains(content, 'OPENQASM 3')
                     app.UploadFormatDropdown.Value = 'qasm3';
@@ -46,7 +61,7 @@ classdef UploadViewModel < handle
             catch ME
                 app.logEvent('WARN', sprintf('Could not read file for preview: %s', ME.message));
             end
-            % Build colored HTML circuit diagram
+            % Build colored HTML circuit diagram (renderSvg auto-truncates large circuits)
             diagramHtml = '';
             try
                 diagramHtml = CircuitDiagram.renderSvg(content);
@@ -75,7 +90,17 @@ classdef UploadViewModel < handle
             depth    = obj.ParsedDepth;
             app.logEvent('API', sprintf('POST /api/circuits/upload — file: %s  name: %s  format: %s  category: %s  qubits: %d  depth: %d  project: %s', ...
                 filePath, name, format, category, nQubits, depth, char(app.State.currentProjectId)));
-            app.showLoading(Labels.get('loading_uploading', 'Uploading circuit...'));
+            % Show file size in loading overlay; enable elapsed timer for large files
+            fInfo = dir(filePath);
+            if fInfo.bytes >= 1048576
+                sizeStr = sprintf('%.1f MB', fInfo.bytes / 1048576);
+            elseif fInfo.bytes >= 1024
+                sizeStr = sprintf('%.0f KB', fInfo.bytes / 1024);
+            else
+                sizeStr = sprintf('%d B', fInfo.bytes);
+            end
+            loadMsg = sprintf('Uploading %s (%s) ...', name, sizeStr);
+            app.showLoading(loadMsg, fInfo.bytes > 102400);
             AsyncRunner.run( ...
                 @() app.CircuitSvc.uploadCircuit(filePath, name, format, category, ...
                     nQubits, depth, app.State.authToken), ...
@@ -101,7 +126,15 @@ classdef UploadViewModel < handle
                     name     = char(app.CircuitNameField.Value);
                     format   = 'auto';
                     category = char(app.CircuitCategoryDropdown.Value);
-                    app.showLoading(Labels.get('loading_uploading', 'Uploading circuit...'));
+                    fInfo = dir(filePath);
+                    if fInfo.bytes >= 1048576
+                        sizeStr = sprintf('%.1f MB', fInfo.bytes / 1048576);
+                    elseif fInfo.bytes >= 1024
+                        sizeStr = sprintf('%.0f KB', fInfo.bytes / 1024);
+                    else
+                        sizeStr = sprintf('%d B', fInfo.bytes);
+                    end
+                    app.showLoading(sprintf('Uploading %s (%s) ...', name, sizeStr), fInfo.bytes > 102400);
                     try
                         data = app.CircuitSvc.uploadCircuit(filePath, name, format, category, ...
                             obj.ParsedQubits, obj.ParsedDepth, app.State.authToken);
@@ -235,12 +268,24 @@ classdef UploadViewModel < handle
             app.logEvent('API', sprintf('Circuit uploaded successfully — id: %s  name: %s  format: %s  project: %s', ...
                 app.State.selectedCircuitId, name, format, char(app.State.currentProjectId)));
             app.State.logActivity(sprintf('Upload circuit — %s', name), 'Success');
+            % Prefer server-rendered SVG (complete, all gates) after upload
             diagramHtml = '';
-            filePath2 = char(app.State.selectedFile);
-            if ~isempty(filePath2) && isfile(filePath2)
-                try
-                    diagramHtml = CircuitDiagram.renderSvg(fileread(filePath2));
-                catch; end
+            try
+                prevData = app.CircuitSvc.previewCircuit( ...
+                    app.State.selectedCircuitId, app.State.authToken);
+                serverSvg = char(JsonHelper.pick(prevData, {'svg'}));
+                if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
+                    diagramHtml = serverSvg;
+                end
+            catch; end
+            % Fallback: client-side rendering
+            if isempty(diagramHtml)
+                filePath2 = char(app.State.selectedFile);
+                if ~isempty(filePath2) && isfile(filePath2)
+                    try
+                        diagramHtml = CircuitDiagram.renderSvg(fileread(filePath2));
+                    catch; end
+                end
             end
             app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, diagramHtml);
             if ~silent

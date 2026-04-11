@@ -421,9 +421,10 @@ classdef QTAUWorkbenchApp < handle
         end
 
         % -- Overlays / logging (→ OverlayManager) ----------------------------
-        function showLoading(app, msg)
+        function showLoading(app, msg, showTimer)
             if nargin < 2; msg = 'Loading...'; end
-            OverlayManager.showLoading(app, msg);
+            if nargin < 3; showTimer = false; end
+            OverlayManager.showLoading(app, msg, showTimer);
         end
 
         function hideLoading(app)

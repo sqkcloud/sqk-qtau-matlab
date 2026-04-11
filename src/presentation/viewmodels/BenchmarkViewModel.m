@@ -26,12 +26,14 @@ classdef BenchmarkViewModel < handle
             app.logEvent('CONFIG', sprintf('Benchmark config updated — shots: %d  opt: %d  mitigation: %s  strategy: %s', ...
                 shots, opt, mitig, strategy));
 
-            if app.State.hasProject() && app.State.hasCircuit()
-                app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config — circuit: %s', ...
-                    app.State.currentProjectId, app.State.selectedCircuitId));
+            hasBackend = strlength(app.State.selectedBackend) > 0;
+            if app.State.hasProject() && app.State.hasCircuit() && hasBackend
+                app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config — circuit: %s  backend: %s', ...
+                    app.State.currentProjectId, app.State.selectedCircuitId, app.State.selectedBackend));
                 app.showLoading(Labels.get('loading_benchmark', 'Running benchmark...'));
                 try
                     app.ProjectSvc.saveBenchmarkConfig(app.State.currentProjectId, ...
+                        app.State.selectedCircuitId, app.State.selectedBackend, ...
                         shots, opt, mitig, strategy, app.State.authToken);
                     app.logEvent('API', 'Benchmark config saved to server');
                     app.logEvent('API', sprintf('POST /api/projects/%s/compare-strategies — circuit: %s  backend: %s', ...
@@ -64,13 +66,16 @@ classdef BenchmarkViewModel < handle
                     app.showError('Run Benchmark', ME);
                 end
             else
-                app.logEvent('CONFIG', sprintf('Benchmark config saved to session only — hasProject: %s  hasCircuit: %s', ...
-                    string(app.State.hasProject()), string(app.State.hasCircuit())));
+                missing = {};
+                if ~app.State.hasProject(); missing{end+1} = 'project'; end
+                if ~app.State.hasCircuit(); missing{end+1} = 'circuit'; end
+                if ~hasBackend;             missing{end+1} = 'backend'; end
+                app.logEvent('CONFIG', sprintf('Benchmark config saved to session only — missing: %s', strjoin(missing, ', ')));
                 app.setStatus(app.BenchmarkStatusArea, { ...
                     sprintf('Shots: %d  Opt level: %d', shots, opt), ...
                     sprintf('Mitigation: %s', mitig), ...
                     sprintf('Strategy: %s', strategy), ...
-                    'Config saved to session (no project/circuit selected).'});
+                    sprintf('Config saved to session (select %s first).', strjoin(missing, ', '))});
             end
         end
     end

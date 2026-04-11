@@ -248,18 +248,34 @@ classdef AnalysisViewModel < handle
                 diagramHtml = uihtml(tab2Grid);
                 diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
 
-                % Fetch circuit content and render SVG diagram
+                % Fetch circuit diagram — prefer server-rendered SVG (Qiskit, all gates)
+                % with client-side renderSvg as fallback
                 svgContent = '<p style="color:#888;font-family:sans-serif">Loading circuit diagram...</p>';
                 diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
                 try
                     if app.State.hasCircuit() && app.State.isAuthenticated()
-                        circData = app.CircuitSvc.getCircuit( ...
-                            app.State.selectedCircuitId, app.State.authToken);
-                        qasmText = char(JsonHelper.pick(circData, {'content','raw_content','qasm_content','source'}));
-                        if ~isempty(qasmText)
-                            svgContent = CircuitDiagram.renderSvg(qasmText);
-                        else
-                            svgContent = '<p style="color:#888;font-family:sans-serif">No circuit content available.</p>';
+                        cid = app.State.selectedCircuitId;
+                        tok = app.State.authToken;
+                        % 1) Try server-side Qiskit preview (complete, all gates)
+                        serverOk = false;
+                        try
+                            prevData = app.CircuitSvc.previewCircuit(cid, tok);
+                            serverSvg = char(JsonHelper.pick(prevData, {'svg'}));
+                            if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
+                                svgContent = serverSvg;
+                                serverOk = true;
+                            end
+                        catch
+                        end
+                        % 2) Fallback: client-side rendering (truncated for large circuits)
+                        if ~serverOk
+                            circData = app.CircuitSvc.getCircuit(cid, tok);
+                            qasmText = char(JsonHelper.pick(circData, {'content','raw_content','qasm_content','source'}));
+                            if ~isempty(qasmText)
+                                svgContent = CircuitDiagram.renderSvg(qasmText);
+                            else
+                                svgContent = '<p style="color:#888;font-family:sans-serif">No circuit content available.</p>';
+                            end
                         end
                     else
                         svgContent = '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>';

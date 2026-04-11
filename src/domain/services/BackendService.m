@@ -14,11 +14,18 @@ classdef BackendService < handle
             Logger.info('BackendService', 'Initialized');
         end
 
-        % List all available backends with status, qubit counts, and queue.
-        function data = listBackends(obj, token)
-            Logger.info('BackendService', 'listBackends → GET /api/backends');
+        % List available backends.  When circuitId is given, the API returns
+        % an enriched list with predicted fidelity, queue status, etc.
+        % Without circuitId, returns only backends stored in the project DB.
+        function data = listBackends(obj, token, circuitId)
+            if nargin >= 3 && strlength(string(circuitId)) > 0
+                ep = sprintf('/api/backends?circuit_id=%s', char(circuitId));
+            else
+                ep = '/api/backends';
+            end
+            Logger.info('BackendService', 'listBackends → GET %s', ep);
             try
-                data = obj.Client.getAuth('/api/backends', token);
+                data = obj.Client.getAuth(ep, token);
                 Logger.info('BackendService', 'listBackends → response received');
             catch ME
                 Logger.error('BackendService', 'listBackends FAILED: %s', ME.message);
