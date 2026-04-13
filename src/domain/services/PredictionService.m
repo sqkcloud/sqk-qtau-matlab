@@ -15,13 +15,18 @@ classdef PredictionService < handle
         end
 
         % Run a global (non-project-scoped) fidelity prediction.
-        function data = predict(obj, circuitId, backendName, shots, optLevel, token)
+        %
+        %   backendNames  — single backend (char/string) or cell array of
+        %                   backends for cross-backend prediction. The API
+        %                   requires the plural `backend_names` array form.
+        function data = predict(obj, circuitId, backendNames, shots, optLevel, token)
             Logger.info('PredictionService', 'predict → POST /api/predict');
-            Logger.info('PredictionService', '  circuit: %s  backend: %s  shots: %d  opt: %d', ...
-                char(circuitId), char(backendName), round(shots), round(optLevel));
+            backends = PredictionService.normalizeBackends(backendNames);
+            Logger.info('PredictionService', '  circuit: %s  backends: [%s]  shots: %d  opt: %d', ...
+                char(circuitId), strjoin(backends, ', '), round(shots), round(optLevel));
             payload = struct( ...
                 'circuit_id',         char(circuitId), ...
-                'backend_name',       char(backendName), ...
+                'backend_names',      {backends}, ...
                 'shots',              round(shots), ...
                 'optimization_level', round(optLevel));
             try
@@ -63,6 +68,23 @@ classdef PredictionService < handle
                 Logger.error('PredictionService', 'optimizeCircuit FAILED: %s', ME.message);
                 rethrow(ME);
             end
+        end
+    end
+
+    methods (Static, Access = private)
+        function backends = normalizeBackends(input)
+            % Accept a char/string (single backend) or a cell array of
+            % char/string (multi-backend) and return a cell array of char.
+            % Empty elements are dropped. Empty input yields {} — the
+            % caller / API layer is responsible for validating that.
+            if iscell(input)
+                backends = cellfun(@(b) char(string(b)), input, 'UniformOutput', false);
+            elseif isstring(input) && numel(input) > 1
+                backends = arrayfun(@char, input, 'UniformOutput', false);
+            else
+                backends = {char(string(input))};
+            end
+            backends = backends(~cellfun(@isempty, backends));
         end
     end
 end

@@ -232,7 +232,9 @@ classdef QTAUWorkbenchApp < handle
     properties
         PredictButton
         PredictionTable
-        PredictionTextArea
+        PredictionDistAxes      % Probability distribution bar chart
+        PredictionBudgetAxes    % Error budget breakdown bar chart
+        PredictionHeadlineLabel % Top-backend recommendation callout
     end
 
     % ── Jobs tab ──────────────────────────────────────────────────────────────

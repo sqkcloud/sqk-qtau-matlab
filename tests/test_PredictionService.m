@@ -48,12 +48,34 @@ classdef test_PredictionService < matlab.unittest.TestCase
         end
 
         function testPredictPayloadContainsAllFields(testCase)
+            % Regression guard: the API requires `backend_names` (plural
+            % array), not `backend_name` (singular string). A previous
+            % implementation sent the singular form and got HTTP 500
+            % from the backend — see commit history around the Prediction
+            % screen fix.
             testCase.Service.predict('circ2', 'backend1', 1024, 2, 'tok');
             p = testCase.Stub.LastPayload;
             testCase.verifyEqual(p.circuit_id, 'circ2');
-            testCase.verifyEqual(p.backend_name, 'backend1');
+            testCase.verifyEqual(p.backend_names, {'backend1'});
             testCase.verifyEqual(p.shots, 1024);
             testCase.verifyEqual(p.optimization_level, 2);
+            testCase.verifyFalse(isfield(p, 'backend_name'), ...
+                'Payload must not send the deprecated singular `backend_name` field');
+        end
+
+        function testPredictAcceptsCellArrayOfBackends(testCase)
+            % Multi-backend cross-comparison: the service must forward
+            % a cell array verbatim so the API can rank each backend.
+            testCase.Service.predict('c', {'ibm_brisbane','ibm_sherbrooke'}, 1024, 2, 'tok');
+            p = testCase.Stub.LastPayload;
+            testCase.verifyEqual(p.backend_names, {'ibm_brisbane','ibm_sherbrooke'});
+        end
+
+        function testPredictAcceptsStringBackend(testCase)
+            % Accept a MATLAB string scalar and promote to a singleton
+            % cell array for wire serialization.
+            testCase.Service.predict('c', "ibm_brisbane", 1024, 2, 'tok');
+            testCase.verifyEqual(testCase.Stub.LastPayload.backend_names, {'ibm_brisbane'});
         end
 
         function testPredictRoundsShots(testCase)

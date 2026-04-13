@@ -233,9 +233,49 @@ classdef test_JsonHelper < matlab.unittest.TestCase
             testCase.verifyTrue(isempty(rows) || size(rows, 1) == 0);
         end
 
+        function testBackendsToRowsEmptyArrayInEnvelope(testCase)
+            % Regression: envelope with empty `backends` must NOT produce a
+            % garbage row from the response wrapped as a single item.
+            data = struct('backends', [], 'project_id', 'p1');
+            rows = JsonHelper.backendsToRows(data);
+            testCase.verifyEqual(size(rows, 1), 0);
+        end
+
         function testJobsToRowsEmpty(testCase)
             rows = JsonHelper.jobsToRows(struct());
             testCase.verifyTrue(isempty(rows) || size(rows, 1) == 0);
+        end
+
+        function testJobsToRowsEmptyArrayInEnvelope(testCase)
+            data = struct('jobs', [], 'project_id', 'p1');
+            rows = JsonHelper.jobsToRows(data);
+            testCase.verifyEqual(size(rows, 1), 0);
+        end
+
+        function testActivityToRowsEmptyArrayInEnvelope(testCase)
+            data = struct('recent_activity', [], 'project_id', 'p1');
+            rows = JsonHelper.activityToRows(data);
+            testCase.verifyEqual(size(rows, 1), 0);
+        end
+
+        function testExtractListSafeReturnsListWhenPresent(testCase)
+            s1 = struct('name', 'a'); s2 = struct('name', 'b');
+            data = struct('items', [s1 s2], 'envelope_field', 'x');
+            items = JsonHelper.extractListSafe(data, 'items');
+            testCase.verifyEqual(numel(items), 2);
+        end
+
+        function testExtractListSafeReturnsEmptyForEmptyArray(testCase)
+            % This is the bug guard: must return [] not the envelope.
+            data = struct('items', [], 'envelope_field', 'x');
+            items = JsonHelper.extractListSafe(data, 'items');
+            testCase.verifyTrue(isempty(items));
+        end
+
+        function testExtractListSafeReturnsEmptyForMissingField(testCase)
+            data = struct('other_field', 'x');
+            items = JsonHelper.extractListSafe(data, 'items');
+            testCase.verifyTrue(isempty(items));
         end
 
         function testResultsToRowsEmpty(testCase)
@@ -246,6 +286,54 @@ classdef test_JsonHelper < matlab.unittest.TestCase
         function testBenchmarkStrategyToRowsEmpty(testCase)
             rows = JsonHelper.benchmarkStrategyToRows(struct());
             testCase.verifyTrue(isempty(rows) || size(rows, 1) == 0);
+        end
+
+        function testBenchmarkStrategyToRowsEmptyStrategiesArray(testCase)
+            % Regression: previously returned 1 garbage row of zeros when
+            % the API responded with `{strategies: [], circuit_id: ..., backend_name: ...}`
+            % because the asList fallback wrapped the envelope as one item.
+            data = struct( ...
+                'strategies',   [], ...
+                'circuit_id',   'c1', ...
+                'backend_name', 'ibm_brisbane');
+            rows = JsonHelper.benchmarkStrategyToRows(data);
+            testCase.verifyEqual(size(rows, 1), 0, ...
+                'Empty strategies array must yield zero rows, not a garbage row');
+        end
+
+        function testBenchmarkStrategyToRowsHappyPath(testCase)
+            % Backend response shape from sqk-qtau storyboard router.
+            s1 = struct('name', 'level1_sabre', 'depth', 100, ...
+                'two_qubit_gates', 40, 'predicted_fidelity', 0.92, ...
+                'comment', 'opt_level=1');
+            s2 = struct('name', 'level3_sabre', 'depth', 70, ...
+                'two_qubit_gates', 28, 'predicted_fidelity', 0.96, ...
+                'comment', 'opt_level=3');
+            data = struct('strategies', [s1 s2], ...
+                'circuit_id', 'c1', 'backend_name', 'ibm_brisbane');
+            rows = JsonHelper.benchmarkStrategyToRows(data);
+            testCase.verifyEqual(size(rows, 1), 2);
+            testCase.verifyEqual(rows{1, 1}, 'level1_sabre');
+            testCase.verifyEqual(rows{1, 2}, 100);
+            testCase.verifyEqual(rows{1, 3}, 40);
+            testCase.verifyEqual(rows{2, 1}, 'level3_sabre');
+            testCase.verifyEqual(rows{2, 4}, 0.96);
+        end
+
+        function testBenchmarkStrategyToRowsAcceptsBackendAfterFields(testCase)
+            % The Python backend's PredictionService.optimize() actually
+            % stores the post-transpile metrics under `*_after` keys.
+            % StoryboardService maps them to the public names but tolerate
+            % both forms here in case a direct caller passes the raw dict.
+            s = struct('strategy_name', 'level2_sabre', ...
+                'depth_after', 85, 'two_qubit_gates_after', 34, ...
+                'predicted_fidelity', 0.94);
+            data = struct('strategies', s, ...
+                'circuit_id', 'c1', 'backend_name', 'b1');
+            rows = JsonHelper.benchmarkStrategyToRows(data);
+            testCase.verifyEqual(rows{1, 1}, 'level2_sabre');
+            testCase.verifyEqual(rows{1, 2}, 85);
+            testCase.verifyEqual(rows{1, 3}, 34);
         end
 
         function testPredictionToLinesEmpty(testCase)

@@ -93,8 +93,7 @@ classdef JsonHelper
         %   Name | Qubits | Status | Pred Fidelity | Queue | Notes
         function rows = backendsToRows(data)
             rows  = cell(0, 6);
-            items = JsonHelper.extractList(data, 'backends');
-            if isempty(items); items = JsonHelper.asList(data); end
+            items = JsonHelper.extractListSafe(data, 'backends');
             n = numel(items);
             if n == 0; return; end
             rows = cell(n, 6);
@@ -114,8 +113,7 @@ classdef JsonHelper
         %   Job ID | Backend | Status | Progress | Created
         function rows = jobsToRows(data)
             rows  = cell(0, 5);
-            items = JsonHelper.extractList(data, 'jobs');
-            if isempty(items); items = JsonHelper.asList(data); end
+            items = JsonHelper.extractListSafe(data, 'jobs');
             n = numel(items);
             if n == 0; return; end
             rows = cell(n, 5);
@@ -161,17 +159,31 @@ classdef JsonHelper
 
         % benchmarkStrategyToRows  Map compare-strategies response → 5-column matrix
         %   Strategy | Depth | 2Q gates | Predicted fidelity | Comment
+        %
+        % Returns an empty 0x5 cell when the backend produced no strategies
+        % (typical case: Qiskit transpilation failed for every level/routing
+        % pair on the server). Callers must treat empty rows as "use local
+        % estimates instead" — do NOT pass the empty cell straight to a
+        % MATLAB uitable, which renders it as one blank zero-row.
+        %
+        % Historic bug: a previous implementation fell back to asList(data)
+        % when `strategies` was absent or empty. Because the response is an
+        % envelope `{strategies: [], circuit_id: ..., backend_name: ...}`,
+        % asList wrapped the envelope itself as a single-item list and the
+        % loop produced one row of empty strings + zeros (the envelope has
+        % no `name`/`depth`/etc. fields). That single garbage row then
+        % suppressed the caller's local-estimate fallback.
         function rows = benchmarkStrategyToRows(data)
             rows  = cell(0, 5);
-            items = JsonHelper.extractList(data, 'strategies');
-            if isempty(items); items = JsonHelper.asList(data); end
+            items = JsonHelper.extractListSafe(data, 'strategies');
             n = numel(items);
             if n == 0; return; end
+
             rows = cell(n, 5);
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'name','strategy','strategy_name'}));
-                rows{i,2} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'depth'}));
-                rows{i,3} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'two_qubit_gates','cx_count','num_2q'}));
+                rows{i,2} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'depth','depth_after'}));
+                rows{i,3} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'two_qubit_gates','two_qubit_gates_after','cx_count','num_2q'}));
                 rows{i,4} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'predicted_fidelity','fidelity'}));
                 rows{i,5} = char(JsonHelper.pick(items(i), {'comment','notes','description'}));
             end
@@ -181,8 +193,7 @@ classdef JsonHelper
         %   Time | Action | Status
         function rows = activityToRows(data)
             rows  = cell(0, 3);
-            items = JsonHelper.extractList(data, 'recent_activity');
-            if isempty(items); items = JsonHelper.asList(data); end
+            items = JsonHelper.extractListSafe(data, 'recent_activity');
             n = numel(items);
             if n == 0; return; end
             rows = cell(n, 3);
@@ -250,6 +261,37 @@ classdef JsonHelper
             if isnumeric(v) && isscalar(v); d = v; return; end
             d = str2double(char(string(v)));
             if isnan(d); d = 0; end
+        end
+
+        % extractListSafe  Envelope-aware list extraction for *toRows helpers.
+        %
+        %   Returns a struct/cell array if the response contains a non-empty
+        %   list under `fieldName`. Falls back to a bare-array response shape
+        %   ONLY when the response is genuinely a top-level array — never to
+        %   the envelope-as-single-item misinterpretation that asList would
+        %   produce, which historically rendered as one garbage row of zeros
+        %   in MATLAB uitables (see benchmarkStrategyToRows commentary).
+        %
+        %   Returns [] when the field is absent or its value is empty.
+        function items = extractListSafe(data, fieldName)
+            items = [];
+            try
+                data = JsonHelper.decodeIfJson(data);
+                % Preferred shape: envelope with a non-empty named list.
+                if isstruct(data) && isfield(data, fieldName) && ~isempty(data.(fieldName))
+                    items = data.(fieldName);
+                % Bare cell-array response (rare).
+                elseif iscell(data) && ~isempty(data)
+                    items = [data{:}];
+                % Bare struct-array response (rare): more than one element AND
+                % missing the named-list field, so we treat the whole thing
+                % as the list.
+                elseif isstruct(data) && numel(data) > 1 && ~isfield(data, fieldName)
+                    items = data;
+                end
+            catch ME
+                Logger.warn('JsonHelper', 'extractListSafe(%s) failed: %s', fieldName, ME.message);
+            end
         end
 
         % extractList  Return a struct array from a named list field or empty [].

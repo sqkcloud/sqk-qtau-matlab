@@ -247,6 +247,161 @@ classdef DetailedAnalysisViewModel < handle
 
     end
 
+    methods
+        % --- Demo render methods (also called by DetailedAnalysisScreen
+        %     at build time so the chart layout has content before any
+        %     Refresh button is clicked). RNG is seeded locally so
+        %     repeated renders produce pixel-identical output.
+
+        function plotAllDemos(obj)
+            % Render all five demo charts in one call. Used by the screen
+            % builder for initial paint.
+            obj.plotComparisonDemo();
+            obj.plotHeatmapDemo();
+            obj.plotTemporalDemo();
+            obj.plotQubitDemo();
+            obj.plotRBDecayDemo();
+        end
+
+        function plotComparisonDemo(obj)
+            app = obj.App;
+            cla(app.CompareAxes);
+            rs = RandStream('twister', 'Seed', 1001);
+            x  = 1:10;
+            y1 = 0.73 + 0.06*randn(rs, 1, 10);
+            y2 = 0.78 + 0.03*randn(rs, 1, 10);
+            b  = bar(app.CompareAxes, x, [y1' y2'], 'grouped');
+            b(1).FaceColor = [0.20 0.48 0.78]; b(1).FaceAlpha = 0.88;
+            b(2).FaceColor = [0.93 0.45 0.18]; b(2).FaceAlpha = 0.88;
+            hold(app.CompareAxes, 'on');
+            err = 0.018 + 0.008*rand(rs, 1, 10);
+            errorbar(app.CompareAxes, x-0.18, y1, err, '.', ...
+                'Color', [0.10 0.22 0.48], 'LineWidth', 1.1, 'CapSize', 3);
+            hold(app.CompareAxes, 'off');
+            legend(app.CompareAxes, {'Measured','Ideal'}, 'Location','northeast','FontSize',10);
+            app.CompareAxes.Title.String  = Labels.get('detailed_plot_compare_title', 'Top-10 State Probabilities (demo)');
+            app.CompareAxes.XLabel.String = 'Basis state index';
+            app.CompareAxes.YLabel.String = 'Probability';
+            app.CompareAxes.YLim = [0 1];
+            app.styleAxes(app.CompareAxes);
+            grid(app.CompareAxes, 'on');
+            app.CompareAxes.GridAlpha = 0.18;
+        end
+
+        function plotTemporalDemo(obj)
+            app = obj.App;
+            cla(app.TemporalAxes);
+            rs   = RandStream('twister', 'Seed', 1002);
+            t2   = 1:40;
+            conf = 0.940 + 0.018*randn(rs, 1, 40);
+            sig  = 0.012 + 0.004*rand(rs, 1, 40);
+            GRN  = Theme.COLOR_SUCCESS;
+            fill(app.TemporalAxes, [t2 fliplr(t2)], [conf+sig fliplr(conf-sig)], ...
+                GRN, 'FaceAlpha', 0.14, 'EdgeColor', 'none');
+            hold(app.TemporalAxes, 'on');
+            plot(app.TemporalAxes, t2, conf, '-',  'Color', GRN, 'LineWidth', 1.7);
+            plot(app.TemporalAxes, t2, conf, 'o',  'Color', GRN, ...
+                'MarkerSize', 3.5, 'MarkerFaceColor', GRN);
+            confThresh = AppConfig.getDouble('confidence_threshold', 0.94);
+            yline(app.TemporalAxes, confThresh, '--', 'Color', Theme.COLOR_PURPLE, ...
+                'LineWidth', 1.2, 'Label', 'Threshold', 'LabelHorizontalAlignment', 'left');
+            hold(app.TemporalAxes, 'off');
+            app.TemporalAxes.Title.String  = Labels.get('detailed_plot_temporal_title', 'Confidence per Shot Batch (demo)');
+            app.TemporalAxes.XLabel.String = Labels.get('detailed_plot_x_batch', 'Batch index');
+            app.TemporalAxes.YLabel.String = 'Confidence';
+            app.TemporalAxes.YLim = [0.88 1.01];
+            app.styleAxes(app.TemporalAxes);
+            grid(app.TemporalAxes, 'on');
+            app.TemporalAxes.GridAlpha = 0.18;
+        end
+
+        function plotQubitDemo(obj)
+            app = obj.App;
+            cla(app.QubitAxes);
+            rs   = RandStream('twister', 'Seed', 1003);
+            nQb  = 27;
+            T1   = 45 + 38*rand(rs, 1, nQb);
+            T2   = min(35 + 28*rand(rs, 1, nQb), 2*T1 - 3);   % physical T2 ≤ 2·T1
+            fidQ = 0.955 + 0.038*rand(rs, 1, nQb);
+            scatter(app.QubitAxes, T1, T2, 65, fidQ, 'filled', ...
+                'MarkerEdgeColor', [0.3 0.3 0.3], 'LineWidth', 0.5);
+            colormap(app.QubitAxes, 'cool');
+            cb = colorbar(app.QubitAxes);
+            cb.Label.String  = 'Readout fidelity';
+            cb.Label.FontSize = 10;
+            app.QubitAxes.CLim = [0.95 1.00];
+            hold(app.QubitAxes, 'on');
+            xlBound = [30 90];
+            plot(app.QubitAxes, xlBound, 2*xlBound, '--', ...
+                'Color', [0.85 0.33 0.10], 'LineWidth', 1.0);
+            hold(app.QubitAxes, 'off');
+            app.QubitAxes.Title.String  = Labels.get('detailed_plot_qubit_title', 'T1 vs T2 per Qubit (demo)');
+            app.QubitAxes.XLabel.String = 'T1 (\mus)';
+            app.QubitAxes.YLabel.String = 'T2 (\mus)';
+            app.styleAxes(app.QubitAxes);
+            grid(app.QubitAxes, 'on');
+            app.QubitAxes.GridAlpha = 0.18;
+        end
+
+        function plotHeatmapDemo(obj)
+            app = obj.App;
+            cla(app.ErrorHeatmapAxes);
+            rs     = RandStream('twister', 'Seed', 1004);
+            nQ     = 8;
+            errMat = 0.015*rand(rs, nQ, nQ);
+            errMat = (errMat + errMat') / 2;
+            for i = 1:nQ; errMat(i,i) = 0; end
+            errMat(2,3) = 0.042; errMat(3,2) = 0.042;  % stronger coupling pairs
+            errMat(5,6) = 0.038; errMat(6,5) = 0.038;
+            imagesc(app.ErrorHeatmapAxes, errMat);
+            colormap(app.ErrorHeatmapAxes, 'hot');
+            cb = colorbar(app.ErrorHeatmapAxes);
+            cb.Label.String  = 'Error rate';
+            cb.Label.FontSize = 10;
+            app.ErrorHeatmapAxes.CLim  = [0 0.05];
+            app.ErrorHeatmapAxes.XTick = 1:nQ;
+            app.ErrorHeatmapAxes.YTick = 1:nQ;
+            app.ErrorHeatmapAxes.Title.String  = Labels.get('detailed_plot_heatmap_title', 'Qubit Pair Error Rates (demo)');
+            app.ErrorHeatmapAxes.XLabel.String = 'Qubit index';
+            app.ErrorHeatmapAxes.YLabel.String = 'Qubit index';
+            app.styleAxes(app.ErrorHeatmapAxes);
+        end
+
+        function plotRBDecayDemo(obj)
+            app = obj.App;
+            cla(app.RBDecayAxes);
+            rs    = RandStream('twister', 'Seed', 1005);
+            mPts  = [1 2 4 8 16 32 64 128 256];
+            EPC   = 0.0019;  A_rb = 0.475;  B_rb = 0.500;
+            pFit  = A_rb*(1-2*EPC).^mPts + B_rb;
+            pMea  = pFit + 0.008*randn(rs, size(pFit));
+            pErr  = 0.007 + 0.003*rand(rs, size(pFit));
+            mDns  = 1:256;
+            PURP  = Theme.COLOR_PURPLE;  BLU = Theme.COLOR_PRIMARY;
+            hold(app.RBDecayAxes, 'on');
+            fill(app.RBDecayAxes, [mDns fliplr(mDns)], ...
+                [A_rb*(1-2*(EPC+0.0003)).^mDns+B_rb, ...
+                 fliplr(A_rb*(1-2*(EPC-0.0003)).^mDns+B_rb)], ...
+                PURP, 'FaceAlpha', 0.12, 'EdgeColor', 'none');
+            plot(app.RBDecayAxes, mDns, A_rb*(1-2*EPC).^mDns+B_rb, '-', ...
+                'Color', PURP, 'LineWidth', 1.6);
+            errorbar(app.RBDecayAxes, mPts, pMea, pErr, ...
+                'o', 'Color', BLU, 'MarkerFaceColor', BLU, ...
+                'MarkerSize', 5, 'LineWidth', 1.2, 'CapSize', 4);
+            hold(app.RBDecayAxes, 'off');
+            legend(app.RBDecayAxes, {'Fit band','Fit','Data'}, ...
+                'Location','northeast','FontSize',9);
+            app.RBDecayAxes.Title.String  = sprintf('%s  —  EPC = %.4f%%', ...
+                Labels.get('detailed_plot_rb_title', 'RB Decay (demo)'), EPC*100);
+            app.RBDecayAxes.XLabel.String = 'Sequence length (Clifford gates)';
+            app.RBDecayAxes.YLabel.String = 'Survival probability';
+            app.styleAxes(app.RBDecayAxes);
+            grid(app.RBDecayAxes, 'on');
+            app.RBDecayAxes.GridAlpha = 0.18;
+        end
+
+    end
+
     methods (Access = private)
         function plotComparisonFromData(obj, data)
             app = obj.App;
@@ -270,132 +425,6 @@ classdef DetailedAnalysisViewModel < handle
                 Logger.warn('DetailedAnalysisViewModel', 'plotComparisonFromData failed: %s', ME.message);
                 obj.plotComparisonDemo();
             end
-        end
-
-        function plotComparisonDemo(obj)
-            app = obj.App;
-            cla(app.CompareAxes);
-            x  = 1:10;
-            y1 = 0.73 + 0.06*randn(1,10);
-            y2 = 0.78 + 0.03*randn(1,10);
-            b  = bar(app.CompareAxes, x, [y1' y2'], 'grouped');
-            b(1).FaceColor = [0.20 0.48 0.78]; b(1).FaceAlpha = 0.88;
-            b(2).FaceColor = [0.93 0.45 0.18]; b(2).FaceAlpha = 0.88;
-            hold(app.CompareAxes, 'on');
-            err = 0.018 + 0.008*rand(1,10);
-            errorbar(app.CompareAxes, x-0.18, y1, err, '.', ...
-                'Color', [0.10 0.22 0.48], 'LineWidth', 1.1, 'CapSize', 3);
-            hold(app.CompareAxes, 'off');
-            legend(app.CompareAxes, {'Measured','Ideal'}, 'Location','northeast','FontSize',10);
-            app.CompareAxes.Title.String  = 'Top-10 State Probabilities (demo)';
-            app.CompareAxes.XLabel.String = 'Basis state index';
-            app.CompareAxes.YLabel.String = 'Probability';
-            app.CompareAxes.YLim = [0 1];
-            app.styleAxes(app.CompareAxes);
-            grid(app.CompareAxes, 'on');
-        end
-
-        function plotTemporalDemo(obj)
-            app = obj.App;
-            cla(app.TemporalAxes);
-            t2   = 1:40;
-            conf = 0.940 + 0.018*randn(1,40);
-            sig  = 0.012 + 0.004*rand(1,40);
-            GRN  = Theme.COLOR_SUCCESS;
-            fill(app.TemporalAxes, [t2 fliplr(t2)], [conf+sig fliplr(conf-sig)], ...
-                GRN, 'FaceAlpha', 0.14, 'EdgeColor', 'none');
-            hold(app.TemporalAxes, 'on');
-            plot(app.TemporalAxes, t2, conf, '-',  'Color', GRN, 'LineWidth', 1.7);
-            plot(app.TemporalAxes, t2, conf, 'o',  'Color', GRN, ...
-                'MarkerSize', 3.5, 'MarkerFaceColor', GRN);
-            confThresh = AppConfig.getDouble('confidence_threshold', 0.94);
-            yline(app.TemporalAxes, confThresh, '--', 'Color', Theme.COLOR_PURPLE, ...
-                'LineWidth', 1.2, 'Label', 'Threshold', 'LabelHorizontalAlignment', 'left');
-            hold(app.TemporalAxes, 'off');
-            app.TemporalAxes.Title.String  = 'Confidence per Shot Batch (demo)';
-            app.TemporalAxes.XLabel.String = 'Batch index';
-            app.TemporalAxes.YLabel.String = 'Confidence';
-            app.TemporalAxes.YLim = [0.88 1.01];
-            app.styleAxes(app.TemporalAxes);
-            grid(app.TemporalAxes, 'on');
-        end
-
-        function plotQubitDemo(obj)
-            app = obj.App;
-            cla(app.QubitAxes);
-            nQb = 27;
-            T1  = 45 + 38*rand(1,nQb);
-            T2  = min(35 + 28*rand(1,nQb), 2*T1 - 3);
-            fidQ = 0.955 + 0.038*rand(1,nQb);
-            scatter(app.QubitAxes, T1, T2, 65, fidQ, 'filled', ...
-                'MarkerEdgeColor', [0.3 0.3 0.3], 'LineWidth', 0.5);
-            colormap(app.QubitAxes, 'cool');
-            cb = colorbar(app.QubitAxes);
-            cb.Label.String  = 'Readout fidelity';
-            cb.Label.FontSize = 10;
-            app.QubitAxes.CLim = [0.95 1.00];
-            hold(app.QubitAxes, 'on');
-            xlBound = [30 90];
-            plot(app.QubitAxes, xlBound, 2*xlBound, '--', ...
-                'Color', [0.85 0.33 0.10], 'LineWidth', 1.0);
-            hold(app.QubitAxes, 'off');
-            app.QubitAxes.Title.String  = 'T1 vs T2 per Qubit (demo)';
-            app.QubitAxes.XLabel.String = 'T1 (\mus)';
-            app.QubitAxes.YLabel.String = 'T2 (\mus)';
-            app.styleAxes(app.QubitAxes);
-            grid(app.QubitAxes, 'on');
-        end
-
-        function plotHeatmapDemo(obj)
-            app = obj.App;
-            cla(app.ErrorHeatmapAxes);
-            nQ     = 8;
-            errMat = 0.015*rand(nQ,nQ);
-            errMat = (errMat + errMat') / 2;
-            for i = 1:nQ; errMat(i,i) = 0; end
-            errMat(2,3) = 0.042; errMat(3,2) = 0.042;
-            errMat(5,6) = 0.038; errMat(6,5) = 0.038;
-            imagesc(app.ErrorHeatmapAxes, errMat);
-            colormap(app.ErrorHeatmapAxes, 'hot');
-            cb = colorbar(app.ErrorHeatmapAxes);
-            cb.Label.String = 'Error rate'; cb.Label.FontSize = 10;
-            app.ErrorHeatmapAxes.CLim  = [0 0.05];
-            app.ErrorHeatmapAxes.XTick = 1:nQ;
-            app.ErrorHeatmapAxes.YTick = 1:nQ;
-            app.ErrorHeatmapAxes.Title.String  = 'Qubit Pair Error Rates (demo)';
-            app.ErrorHeatmapAxes.XLabel.String = 'Qubit index';
-            app.ErrorHeatmapAxes.YLabel.String = 'Qubit index';
-            app.styleAxes(app.ErrorHeatmapAxes);
-        end
-
-        function plotRBDecayDemo(obj)
-            app = obj.App;
-            cla(app.RBDecayAxes);
-            mPts  = [1 2 4 8 16 32 64 128 256];
-            EPC   = 0.0019;  A_rb = 0.475;  B_rb = 0.500;
-            pFit  = A_rb*(1-2*EPC).^mPts + B_rb;
-            pMea  = pFit + 0.008*randn(size(pFit));
-            pErr  = 0.007 + 0.003*rand(size(pFit));
-            mDns  = 1:256;
-            PURP  = Theme.COLOR_PURPLE;  BLU = Theme.COLOR_PRIMARY;
-            hold(app.RBDecayAxes, 'on');
-            fill(app.RBDecayAxes, [mDns fliplr(mDns)], ...
-                [A_rb*(1-2*(EPC+0.0003)).^mDns+B_rb, ...
-                 fliplr(A_rb*(1-2*(EPC-0.0003)).^mDns+B_rb)], ...
-                PURP, 'FaceAlpha', 0.12, 'EdgeColor', 'none');
-            plot(app.RBDecayAxes, mDns, A_rb*(1-2*EPC).^mDns+B_rb, '-', ...
-                'Color', PURP, 'LineWidth', 1.6);
-            errorbar(app.RBDecayAxes, mPts, pMea, pErr, ...
-                'o', 'Color', BLU, 'MarkerFaceColor', BLU, ...
-                'MarkerSize', 5, 'LineWidth', 1.2, 'CapSize', 4);
-            hold(app.RBDecayAxes, 'off');
-            legend(app.RBDecayAxes, {'Fit band','Fit','Data'}, ...
-                'Location','northeast','FontSize',9);
-            app.RBDecayAxes.Title.String  = sprintf('RB Decay (demo)  —  EPC = %.4f%%', EPC*100);
-            app.RBDecayAxes.XLabel.String = 'Sequence length (Clifford gates)';
-            app.RBDecayAxes.YLabel.String = 'Survival probability';
-            app.styleAxes(app.RBDecayAxes);
-            grid(app.RBDecayAxes, 'on');
         end
 
         function appendInsight(obj, msg)

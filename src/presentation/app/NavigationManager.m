@@ -93,6 +93,15 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.BenchmarkVm, ttl)
                         app.BenchmarkVm.onLoadBenchmark();
                     end
+                case 'DetailedAnalysis'
+                    % On first entry, paint seeded demo charts so the layout
+                    % isn't empty. Skipped on subsequent entries so any live
+                    % data from Refresh buttons is preserved.
+                    if ~isempty(app.DetailedAnalysisVm) ...
+                            && ~isempty(app.CompareAxes) && isvalid(app.CompareAxes) ...
+                            && isempty(app.CompareAxes.Children)
+                        app.DetailedAnalysisVm.plotAllDemos();
+                    end
             end
         end
 

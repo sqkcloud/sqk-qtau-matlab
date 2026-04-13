@@ -85,11 +85,10 @@ function AnalysisScreen(app)
         'Quantum Volume — Circuit Depth vs Width'));
     qvPanel.Layout.Row = 3; qvPanel.Layout.Column = [1 3];
     qvPanel.BackgroundColor = Theme.COLOR_CARD;
-    qvPanel.Scrollable = 'on';
 
     qvGrid = uigridlayout(qvPanel, [1 2]);
-    qvGrid.ColumnWidth = {'1x', 160};
-    qvGrid.RowHeight   = {190};
+    qvGrid.ColumnWidth = {'1x', 220};
+    qvGrid.RowHeight   = {'1x'};
     qvGrid.Padding = Theme.KPI_INNER_PAD; qvGrid.BackgroundColor = Theme.COLOR_CARD;
 
     app.QVHeatmapAxes = uiaxes(qvGrid);

@@ -5,12 +5,10 @@
 %     Row 2 ('1x'):    Distribution Bar | Cross-Qubit Error Heatmap | Temporal + Band
 %     Row 3 ('0.82x'): T1/T2 Coherence Scatter | RB Decay Curve | Insight Notes
 %
-%   Professional quantum visualisations:
-%     - Grouped bar + measurement error-bar overlays   (distribution comparison)
-%     - imagesc 'hot' colourmap + colorbar              (cross-qubit error matrix)
-%     - Line + ±1σ shaded fill + threshold yline        (temporal stability)
-%     - Scatter coloured by readout fidelity + T2≤2T1 bound line (qubit coherence)
-%     - Errorbar data + exponential fit + uncertainty band (RB decay, EPC annotation)
+%   This function only builds the UI scaffolding (panels + empty axes).
+%   Initial demo rendering happens in DetailedAnalysisViewModel.plotAllDemos(),
+%   triggered from NavigationManager.autoLoadScreen on first entry. Refresh
+%   buttons swap the demos for live API data.
 %
 %   All visible strings come from resources/labels.properties via Labels.
 function DetailedAnalysisScreen(app)
@@ -97,27 +95,7 @@ function DetailedAnalysisScreen(app)
     cpg = uigridlayout(comparePanel, [1 1]);
     cpg.Padding = Theme.KPI_INNER_PAD; cpg.BackgroundColor = PW;
     app.CompareAxes = uiaxes(cpg);
-
-    x  = 1:10;
-    y1 = 0.73 + 0.06*randn(1,10);
-    y2 = 0.78 + 0.03*randn(1,10);
-    b  = bar(app.CompareAxes, x, [y1' y2'], 'grouped');
-    b(1).FaceColor  = [0.20 0.48 0.78]; b(1).FaceAlpha = 0.88;
-    b(2).FaceColor  = [0.93 0.45 0.18]; b(2).FaceAlpha = 0.88;
-    hold(app.CompareAxes, 'on');
-    err = 0.018 + 0.008*rand(1,10);
-    errorbar(app.CompareAxes, x - 0.18, y1, err, '.', ...
-        'Color', [0.10 0.22 0.48], 'LineWidth', 1.1, 'CapSize', 3);
-    hold(app.CompareAxes, 'off');
-    legend(app.CompareAxes, {'Measured','Ideal'}, ...
-        'Location', 'northeast', 'FontSize', 10);
     app.styleAxes(app.CompareAxes);
-    app.CompareAxes.Title.String  = Labels.get('detailed_plot_compare_title');
-    app.CompareAxes.XLabel.String = 'Basis state index';
-    app.CompareAxes.YLabel.String = 'Probability';
-    app.CompareAxes.YLim = [0 1];
-    grid(app.CompareAxes, 'on');
-    app.CompareAxes.GridAlpha = 0.18;
 
     % ── Row 2, Col 2: Cross-Qubit Error Rate Heatmap (imagesc) ───────────────
     heatmapPanel = uipanel(g, 'Title', Labels.get('detailed_panel_heatmap'));
@@ -126,25 +104,7 @@ function DetailedAnalysisScreen(app)
     hpg = uigridlayout(heatmapPanel, [1 1]);
     hpg.Padding = Theme.KPI_INNER_PAD; hpg.BackgroundColor = PW;
     app.ErrorHeatmapAxes = uiaxes(hpg);
-
-    nQ     = 8;
-    errMat = 0.015 * rand(nQ, nQ);
-    errMat = (errMat + errMat') / 2;
-    for i = 1:nQ; errMat(i,i) = 0; end
-    errMat(2,3) = 0.042; errMat(3,2) = 0.042;  % stronger coupling pairs
-    errMat(5,6) = 0.038; errMat(6,5) = 0.038;
-    imagesc(app.ErrorHeatmapAxes, errMat);
-    colormap(app.ErrorHeatmapAxes, 'hot');
-    cb1 = colorbar(app.ErrorHeatmapAxes);
-    cb1.Label.String  = 'Error rate';
-    cb1.Label.FontSize = 10;
     app.styleAxes(app.ErrorHeatmapAxes);
-    app.ErrorHeatmapAxes.Title.String  = Labels.get('detailed_plot_heatmap_title');
-    app.ErrorHeatmapAxes.XLabel.String = 'Qubit index';
-    app.ErrorHeatmapAxes.YLabel.String = 'Qubit index';
-    app.ErrorHeatmapAxes.XTick = 1:nQ;
-    app.ErrorHeatmapAxes.YTick = 1:nQ;
-    app.ErrorHeatmapAxes.CLim  = [0 0.05];
 
     % ── Row 2, Col 3: Temporal Stability with ±1σ Confidence Band ────────────
     temporalPanel = uipanel(g, 'Title', Labels.get('detailed_panel_temporal'));
@@ -153,29 +113,7 @@ function DetailedAnalysisScreen(app)
     tpg = uigridlayout(temporalPanel, [1 1]);
     tpg.Padding = Theme.KPI_INNER_PAD; tpg.BackgroundColor = PW;
     app.TemporalAxes = uiaxes(tpg);
-
-    t2   = 1:40;
-    conf = 0.940 + 0.018*randn(1,40);
-    sig  = 0.012 + 0.004*rand(1,40);
-    GRN  = Theme.COLOR_SUCCESS;
-    fill(app.TemporalAxes, ...
-        [t2 fliplr(t2)], [conf+sig fliplr(conf-sig)], ...
-        GRN, 'FaceAlpha', 0.14, 'EdgeColor', 'none');
-    hold(app.TemporalAxes, 'on');
-    plot(app.TemporalAxes, t2, conf, '-', 'Color', GRN, 'LineWidth', 1.7);
-    plot(app.TemporalAxes, t2, conf, 'o', 'Color', GRN, ...
-        'MarkerSize', 3.5, 'MarkerFaceColor', GRN);
-    yline(app.TemporalAxes, 0.94, '--', ...
-        'Color', Theme.COLOR_PURPLE, 'LineWidth', 1.2, ...
-        'Label', 'Threshold', 'LabelHorizontalAlignment', 'left');
-    hold(app.TemporalAxes, 'off');
     app.styleAxes(app.TemporalAxes);
-    app.TemporalAxes.Title.String  = Labels.get('detailed_plot_temporal_title');
-    app.TemporalAxes.XLabel.String = Labels.get('detailed_plot_x_batch');
-    app.TemporalAxes.YLabel.String = 'Confidence';
-    app.TemporalAxes.YLim = [0.88 1.01];
-    grid(app.TemporalAxes, 'on');
-    app.TemporalAxes.GridAlpha = 0.18;
 
     % ═════════════════════════════════════════════════════════════════════════
     %  ROW 3 — Three moderate-height diagnostic charts
@@ -188,29 +126,7 @@ function DetailedAnalysisScreen(app)
     qpg = uigridlayout(qubitPanel, [1 1]);
     qpg.Padding = Theme.KPI_INNER_PAD; qpg.BackgroundColor = PW;
     app.QubitAxes = uiaxes(qpg);
-
-    nQb = 27;
-    T1  = 45 + 38*rand(1,nQb);
-    T2  = min(35 + 28*rand(1,nQb), 2*T1 - 3);   % physical T2 ≤ 2·T1
-    fidQ = 0.955 + 0.038*rand(1,nQb);
-    scatter(app.QubitAxes, T1, T2, 65, fidQ, 'filled', ...
-        'MarkerEdgeColor', [0.3 0.3 0.3], 'LineWidth', 0.5);
-    colormap(app.QubitAxes, 'cool');
-    cb2 = colorbar(app.QubitAxes);
-    cb2.Label.String  = 'Readout fidelity';
-    cb2.Label.FontSize = 10;
-    app.QubitAxes.CLim = [0.95 1.00];
-    hold(app.QubitAxes, 'on');
-    xlBound = [30 90];
-    plot(app.QubitAxes, xlBound, 2*xlBound, '--', ...
-        'Color', [0.85 0.33 0.10], 'LineWidth', 1.0);   % T2 = 2·T1 bound
-    hold(app.QubitAxes, 'off');
     app.styleAxes(app.QubitAxes);
-    app.QubitAxes.Title.String  = Labels.get('detailed_plot_qubit_title');
-    app.QubitAxes.XLabel.String = 'T1 (\mus)';
-    app.QubitAxes.YLabel.String = 'T2 (\mus)';
-    grid(app.QubitAxes, 'on');
-    app.QubitAxes.GridAlpha = 0.18;
 
     % ── Row 3, Col 2: Randomized Benchmarking Decay Curve ────────────────────
     rbPanel = uipanel(g, 'Title', Labels.get('detailed_panel_rb'));
@@ -219,36 +135,7 @@ function DetailedAnalysisScreen(app)
     rpg = uigridlayout(rbPanel, [1 1]);
     rpg.Padding = Theme.KPI_INNER_PAD; rpg.BackgroundColor = PW;
     app.RBDecayAxes = uiaxes(rpg);
-
-    mPts  = [1 2 4 8 16 32 64 128 256];
-    EPC   = 0.0019;  A_rb = 0.475;  B_rb = 0.500;
-    pFit  = A_rb*(1-2*EPC).^mPts + B_rb;
-    pMea  = pFit + 0.008*randn(size(pFit));
-    pErr  = 0.007 + 0.003*rand(size(pFit));
-    mDns  = 1:256;
-    PURP  = Theme.COLOR_PURPLE;
-    BLU   = Theme.COLOR_PRIMARY;
-    hold(app.RBDecayAxes, 'on');
-    fill(app.RBDecayAxes, ...
-        [mDns fliplr(mDns)], ...
-        [A_rb*(1-2*(EPC+0.0003)).^mDns+B_rb, ...
-         fliplr(A_rb*(1-2*(EPC-0.0003)).^mDns+B_rb)], ...
-        PURP, 'FaceAlpha', 0.12, 'EdgeColor', 'none');
-    plot(app.RBDecayAxes, mDns, A_rb*(1-2*EPC).^mDns+B_rb, '-', ...
-        'Color', PURP, 'LineWidth', 1.6);
-    errorbar(app.RBDecayAxes, mPts, pMea, pErr, ...
-        'o', 'Color', BLU, 'MarkerFaceColor', BLU, ...
-        'MarkerSize', 5, 'LineWidth', 1.2, 'CapSize', 4);
-    hold(app.RBDecayAxes, 'off');
-    legend(app.RBDecayAxes, {'Fit band','Fit','Data'}, ...
-        'Location', 'northeast', 'FontSize', 9);
     app.styleAxes(app.RBDecayAxes);
-    app.RBDecayAxes.Title.String  = sprintf('%s  —  EPC = %.4f%%', ...
-        Labels.get('detailed_plot_rb_title'), EPC*100);
-    app.RBDecayAxes.XLabel.String = 'Sequence length (Clifford gates)';
-    app.RBDecayAxes.YLabel.String = 'Survival probability';
-    grid(app.RBDecayAxes, 'on');
-    app.RBDecayAxes.GridAlpha = 0.18;
 
     % ── Row 3, Col 3: Enhanced Interpretation & Diagnostics ──────────────────
     insightPanel = uipanel(g, 'Title', Labels.get('detailed_panel_insight'));

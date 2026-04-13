@@ -157,85 +157,128 @@ classdef AnalysisViewModel < handle
 
                 % ══════════════════════════════════════════════════════════════
                 % Tab 1: QASMBench Similarity Visualization
+                %   Single focused ranked-bar chart with auto-scaled X axis
+                %   (tight similarity bands of 97–98% become visually
+                %   differentiated) + a Match Profile side panel that
+                %   surfaces the current circuit, category breakdown, and
+                %   a calibrated interpretation of the top match.
                 % ══════════════════════════════════════════════════════════════
                 tab1 = uitab(tg, 'Title', 'QASMBench Similarity Visualization');
                 tab1.BackgroundColor = [1 1 1];
 
                 dg = uigridlayout(tab1, [2 2]);
-                dg.RowHeight = {'1x', '1x'};
-                dg.ColumnWidth = {'1.2x', '1x'};
-                dg.Padding = [16 14 16 10]; dg.RowSpacing = 10; dg.ColumnSpacing = 12;
+                dg.RowHeight = {40, '1x'};
+                dg.ColumnWidth = {'2x', '1x'};
+                dg.Padding = [18 14 18 12]; dg.RowSpacing = 8; dg.ColumnSpacing = 16;
                 dg.BackgroundColor = [1 1 1];
 
-                % ── Chart 1: Horizontal bar chart (top-left) ────────────────
-                ax1 = uiaxes(dg);
-                ax1.Layout.Row = 1; ax1.Layout.Column = 1;
+                % ── Header: current circuit + headline summary ──────────────
+                curCircName = char(app.State.selectedCircuitName);
+                if isempty(curCircName); curCircName = 'current circuit'; end
+                [topSim, topIdx] = max(sims);
+                headerLbl = uilabel(dg, ...
+                    'Text', sprintf(['Circuit:  %s      ' ...
+                                     'Closest of %d matches:  %s  (%.1f%%)'], ...
+                                    curCircName, n, dispNames{topIdx}, topSim*100), ...
+                    'FontSize', 13, 'FontWeight', 'bold', ...
+                    'FontColor', [0.15 0.22 0.38], ...
+                    'VerticalAlignment', 'center', ...
+                    'Interpreter', 'none');
+                headerLbl.Layout.Row = 1; headerLbl.Layout.Column = [1 2];
 
+                % ── Left: Ranked similarity bars (auto-scaled X) ────────────
+                ax1 = uiaxes(dg);
+                ax1.Layout.Row = 2; ax1.Layout.Column = 1;
+
+                % Sort worst→best so highest bar sits at the TOP in barh
                 [sortedSims, si] = sort(sims, 'ascend');
                 sortedNames  = dispNames(si);
                 sortedColors = colors(si, :);
+                sortedCats   = cats(si);
+
+                % Auto-scale X axis so tight bands (e.g. 97–98%) are visible.
+                % Anchor right edge at 1.0 so "room to grow" is meaningful.
+                simSpread = max(sims) - min(sims);
+                if simSpread < 0.02
+                    xMin = max(0, min(sims) - 0.05);
+                elseif simSpread < 0.10
+                    xMin = max(0, min(sims) - 0.03);
+                else
+                    xMin = max(0, min(sims) - simSpread * 0.15);
+                end
+                xMax = 1.0;
+                xLabelPad = (xMax - xMin) * 0.012;
 
                 hold(ax1, 'on');
                 for i = 1:n
-                    barh(ax1, i, sortedSims(i), 'FaceColor', sortedColors(i,:), ...
-                        'EdgeColor', 'none', 'BarWidth', 0.65);
-                    text(ax1, sortedSims(i) + 0.01, i, sprintf('%.1f%%', sortedSims(i)*100), ...
-                        'FontSize', 10, 'VerticalAlignment', 'middle', ...
-                        'Color', [0.25 0.25 0.25], 'Interpreter', 'none');
+                    isTop = (si(i) == topIdx);
+                    faceAlpha = 0.92;
+                    edgeClr   = 'none';
+                    edgeWidth = 0.1;
+                    if isTop
+                        edgeClr   = [0.12 0.14 0.20];
+                        edgeWidth = 1.5;
+                    end
+                    barh(ax1, i, sortedSims(i), ...
+                        'FaceColor', sortedColors(i,:), ...
+                        'FaceAlpha', faceAlpha, ...
+                        'EdgeColor', edgeClr, 'LineWidth', edgeWidth, ...
+                        'BarWidth', 0.62);
+                    % Similarity % label at end of bar
+                    text(ax1, sortedSims(i) + xLabelPad, i, ...
+                        sprintf('%.1f%%', sortedSims(i)*100), ...
+                        'FontSize', 11, 'FontWeight', 'bold', ...
+                        'VerticalAlignment', 'middle', ...
+                        'Color', [0.18 0.22 0.30], 'Interpreter', 'none');
+                    % Category badge just past the percent label
+                    if ~isempty(sortedCats{i})
+                        catLabel = sortedCats{i};
+                        if isTop; catLabel = ['★ ' catLabel]; end %#ok<AGROW>
+                        text(ax1, xMin + (xMax-xMin)*0.012, i + 0.33, ...
+                            catLabel, ...
+                            'FontSize', 9, 'FontAngle', 'italic', ...
+                            'Color', sortedColors(i,:) * 0.55 + [0.3 0.3 0.3], ...
+                            'VerticalAlignment', 'middle', ...
+                            'Interpreter', 'none');
+                    end
                 end
                 hold(ax1, 'off');
                 ax1.YTick = 1:n; ax1.YTickLabel = sortedNames;
                 ax1.TickLabelInterpreter = 'none';
-                ax1.YLim = [0.3, n + 0.7]; ax1.XLim = [0, 1.15];
-                ax1.XTick = 0:0.2:1;
-                ax1.XTickLabel = {'0%','20%','40%','60%','80%','100%'};
-                xlabel(ax1, 'Similarity');
-                title(ax1, 'Similarity Ranking', 'FontSize', 14, 'FontWeight', 'bold');
-                ax1.Box = 'on'; ax1.FontSize = 11;
-
-                % ── Chart 2: Radar / Spider chart (top-right) ───────────────
-                ax2 = uiaxes(dg);
-                ax2.Layout.Row = 1; ax2.Layout.Column = 2;
-                obj.drawRadarChart(ax2, dispNames, sims, colors);
-
-                % ── Chart 3: Lollipop chart by category (bottom-left) ───────
-                ax3 = uiaxes(dg);
-                ax3.Layout.Row = 2; ax3.Layout.Column = 1;
-
-                [sortedSims2, si2] = sort(sims, 'descend');
-                sortedNames2  = dispNames(si2);
-                sortedColors2 = colors(si2, :);
-
-                hold(ax3, 'on');
-                for i = 1:n
-                    xpos = i;
-                    plot(ax3, [xpos xpos], [0 sortedSims2(i)], '-', ...
-                        'Color', sortedColors2(i,:), 'LineWidth', 3);
-                    plot(ax3, xpos, sortedSims2(i), 'o', ...
-                        'MarkerSize', 11, 'MarkerFaceColor', sortedColors2(i,:), ...
-                        'MarkerEdgeColor', [1 1 1], 'LineWidth', 1.5);
-                    text(ax3, xpos, sortedSims2(i) + 0.03, sprintf('%.1f%%', sortedSims2(i)*100), ...
-                        'FontSize', 9, 'FontWeight', 'bold', ...
-                        'HorizontalAlignment', 'center', 'Color', [0.25 0.25 0.25], ...
-                        'Interpreter', 'none');
+                ax1.YLim = [0.3, n + 0.7];
+                ax1.XLim = [xMin, xMax + (xMax - xMin) * 0.09];
+                % Dynamic tick density + label precision based on zoom level
+                tickStep = AnalysisViewModel.niceTickStep(xMax - xMin, 6);
+                ax1.XTick = xMin:tickStep:xMax;
+                if tickStep < 0.01
+                    labelFmt = '%.1f%%';
+                else
+                    labelFmt = '%.0f%%';
                 end
-                hold(ax3, 'off');
-                ax3.XTick = 1:n; ax3.XTickLabel = sortedNames2;
-                ax3.TickLabelInterpreter = 'none';
-                ax3.XTickLabelRotation = 30;
-                ax3.XLim = [0.3, n + 0.7]; ax3.YLim = [0, 1.12];
-                ax3.YTick = 0:0.2:1;
-                ax3.YTickLabel = {'0%','20%','40%','60%','80%','100%'};
-                ylabel(ax3, 'Similarity');
-                title(ax3, 'Score Distribution', 'FontSize', 14, 'FontWeight', 'bold');
-                ax3.Box = 'on'; ax3.FontSize = 11;
-                ax3.XGrid = 'off'; ax3.YGrid = 'on';
-                ax3.GridAlpha = 0.15;
+                ax1.XTickLabel = arrayfun(@(v) sprintf(labelFmt, v*100), ...
+                    ax1.XTick, 'UniformOutput', false);
+                xlabel(ax1, sprintf('Similarity  (zoomed to %.0f%%–100%% to show differentiation)', xMin*100));
+                title(ax1, 'Benchmark Similarity Ranking', 'FontSize', 14, 'FontWeight', 'bold');
+                ax1.Box = 'on'; ax1.FontSize = 11;
+                ax1.XGrid = 'on'; ax1.YGrid = 'off';
+                ax1.GridColor = [0.85 0.88 0.92]; ax1.GridAlpha = 0.8;
+                ax1.XColor = [0.35 0.42 0.52]; ax1.YColor = [0.22 0.28 0.40];
 
-                % ── Chart 4: Category breakdown donut (bottom-right) ────────
-                ax4 = uiaxes(dg);
-                ax4.Layout.Row = 2; ax4.Layout.Column = 2;
-                obj.drawCategoryDonut(ax4, cats, sims, uniqueCats, palette);
+                % ── Right: Match Profile side panel ────────────────────────
+                profilePanel = uipanel(dg, 'Title', 'Match Profile', ...
+                    'FontWeight', 'bold', 'BackgroundColor', [0.98 0.99 1.00], ...
+                    'ForegroundColor', [0.20 0.28 0.45]);
+                profilePanel.Layout.Row = 2; profilePanel.Layout.Column = 2;
+
+                ppg = uigridlayout(profilePanel, [1 1]);
+                ppg.Padding = [12 10 12 10];
+                ppg.BackgroundColor = [0.98 0.99 1.00];
+
+                profileArea = uitextarea(ppg, 'Editable', 'off');
+                profileArea.FontSize = 12;
+                profileArea.FontColor = [0.18 0.22 0.30];
+                profileArea.Value = AnalysisViewModel.buildMatchProfileText( ...
+                    curCircName, dispNames, sims, cats, notes, uniqueCats, topIdx);
 
                 % ══════════════════════════════════════════════════════════════
                 % Tab 2: Circuit Diagram
@@ -305,126 +348,114 @@ classdef AnalysisViewModel < handle
                 Logger.warn('AnalysisViewModel', 'onVisualizeSimilarity failed: %s', ME.message);
             end
         end
+
+        function renderComplexityLandscape(obj, data)
+            % Public entry point for the Circuit Complexity Landscape chart.
+            % Delegates to the internal renderer; exposed for unit tests and
+            % for any future caller that wants to repaint without going
+            % through the full analyze pipeline.
+            obj.buildQVHeatmap(data);
+        end
     end
 
     methods (Static, Access = private)
 
-        function drawRadarChart(ax, names, sims, colors)
-            % Draw a radar/spider chart on the given axes.
-            n = numel(names);
-            angles = linspace(0, 2*pi, n + 1);
-            angles = angles(1:n);
-
-            cla(ax); hold(ax, 'on');
-            ax.Visible = 'off';
-
-            % Draw concentric grid rings
-            gridLevels = [0.2, 0.4, 0.6, 0.8, 1.0];
-            for gl = gridLevels
-                theta = linspace(0, 2*pi, 100);
-                plot(ax, gl * cos(theta), gl * sin(theta), '-', ...
-                    'Color', [0.85 0.85 0.85], 'LineWidth', 0.5);
-                text(ax, 0.03, gl + 0.04, sprintf('%.0f%%', gl*100), ...
-                    'FontSize', 8, 'Color', [0.5 0.5 0.5], 'Interpreter', 'none');
+        function step = niceTickStep(range, targetTicks)
+            % Pick a human-readable tick step for the given numeric range.
+            if range <= 0 || ~isfinite(range)
+                step = 0.1; return;
             end
-
-            % Draw axis spokes and labels
-            for i = 1:n
-                cx = cos(angles(i)); cy = sin(angles(i));
-                plot(ax, [0 cx], [0 cy], '-', 'Color', [0.82 0.82 0.82], 'LineWidth', 0.5);
-                lbl = names{i};
-                if length(lbl) > 18; lbl = [lbl(1:16) '..']; end
-                ha = 'center';
-                if cx > 0.1; ha = 'left'; elseif cx < -0.1; ha = 'right'; end
-                text(ax, cx * 1.22, cy * 1.22, lbl, ...
-                    'FontSize', 10, 'FontWeight', 'bold', ...
-                    'HorizontalAlignment', ha, ...
-                    'VerticalAlignment', 'middle', ...
-                    'Color', [0.20 0.25 0.38], 'Interpreter', 'none');
+            raw = range / max(1, targetTicks);
+            mag = 10^floor(log10(raw));
+            normalized = raw / mag;
+            if     normalized < 1.5; step = 1 * mag;
+            elseif normalized < 3.5; step = 2 * mag;
+            elseif normalized < 7.5; step = 5 * mag;
+            else;                    step = 10 * mag;
             end
-
-            % Draw filled polygon
-            rx = sims .* cos(angles(:));
-            ry = sims .* sin(angles(:));
-            fill(ax, [rx; rx(1)], [ry; ry(1)], [0.23 0.53 0.87], ...
-                'FaceAlpha', 0.20, 'EdgeColor', [0.15 0.40 0.78], 'LineWidth', 2);
-
-            % Draw data points with score labels
-            for i = 1:n
-                plot(ax, rx(i), ry(i), 'o', 'MarkerSize', 8, ...
-                    'MarkerFaceColor', colors(i,:), 'MarkerEdgeColor', [1 1 1], 'LineWidth', 1.5);
-            end
-
-            hold(ax, 'off');
-            ax.XLim = [-1.5 1.5]; ax.YLim = [-1.5 1.5];
-            ax.DataAspectRatio = [1 1 1];
-            title(ax, 'Radar — Similarity Profile', 'FontSize', 14, ...
-                'FontWeight', 'bold', 'Visible', 'on');
         end
 
-        function drawCategoryDonut(ax, cats, sims, uniqueCats, palette)
-            % Draw a donut chart showing average similarity per category.
-            nCats = numel(uniqueCats);
-            avgSims = zeros(nCats, 1);
-            counts  = zeros(nCats, 1);
-            for i = 1:numel(cats)
-                ci = find(strcmp(uniqueCats, cats{i}), 1);
-                avgSims(ci) = avgSims(ci) + sims(i);
-                counts(ci)  = counts(ci) + 1;
-            end
-            avgSims = avgSims ./ max(counts, 1);
+        function lines = buildMatchProfileText(curName, dispNames, sims, cats, notes, uniqueCats, topIdx)
+            % Build the Match Profile sidebar — derived from real
+            % per-circuit analysis data so it genuinely changes as the
+            % user analyzes different circuits.
+            n = numel(sims);
+            topSim  = sims(topIdx);
+            topName = dispNames{topIdx};
+            topCat  = cats{topIdx};
+            meanSim = mean(sims);
+            spread  = max(sims) - min(sims);
 
-            cla(ax); hold(ax, 'on');
-            ax.Visible = 'off';
-
-            % Pie angles
-            total = sum(counts);
-            startAngle = pi/2;
-            for ci = 1:nCats
-                frac = counts(ci) / total;
-                endAngle = startAngle - frac * 2 * pi;
-                theta = linspace(startAngle, endAngle, 80);
-                outerR = 0.9;
-                innerR = 0.50;
-                xOuter = outerR * cos(theta);
-                yOuter = outerR * sin(theta);
-                xInner = innerR * cos(flip(theta));
-                yInner = innerR * sin(flip(theta));
-                clr = palette(mod(ci-1, size(palette,1)) + 1, :);
-                fill(ax, [xOuter, xInner], [yOuter, yInner], clr, ...
-                    'EdgeColor', [1 1 1], 'LineWidth', 2, 'FaceAlpha', 0.88);
-
-                % Label outside the arc with a connecting line
-                midAngle = (startAngle + endAngle) / 2;
-                outerLabelR = 1.2;
-                lx = outerLabelR * cos(midAngle);
-                ly = outerLabelR * sin(midAngle);
-                % Connector from arc edge to label
-                edgeX = (outerR + 0.04) * cos(midAngle);
-                edgeY = (outerR + 0.04) * sin(midAngle);
-                plot(ax, [edgeX lx], [edgeY ly], '-', 'Color', [0.6 0.6 0.6], 'LineWidth', 0.8);
-                ha = 'left';
-                if lx < 0; ha = 'right'; end
-                text(ax, lx, ly, sprintf('%s (%.0f%%)', uniqueCats{ci}, avgSims(ci)*100), ...
-                    'FontSize', 10, 'FontWeight', 'bold', 'Color', clr, ...
-                    'HorizontalAlignment', ha, 'VerticalAlignment', 'middle', ...
-                    'Interpreter', 'none');
-                startAngle = endAngle;
+            % Calibrated interpretation based on top similarity
+            if topSim > 0.95
+                interp = 'Strong structural match — a well-characterised benchmark class.';
+            elseif topSim > 0.85
+                interp = 'Good match — similar structure to a known benchmark.';
+            elseif topSim > 0.70
+                interp = 'Moderate match — broadly comparable to QASMBench peers.';
+            else
+                interp = 'Weak match — novel structure with limited benchmark reference.';
             end
 
-            % Center label — overall average
-            text(ax, 0, 0.06, sprintf('%.1f%%', mean(sims)*100), ...
-                'FontSize', 22, 'FontWeight', 'bold', 'Color', [0.18 0.28 0.50], ...
-                'HorizontalAlignment', 'center', 'Interpreter', 'none');
-            text(ax, 0, -0.14, 'avg similarity', ...
-                'FontSize', 10, 'Color', [0.5 0.5 0.6], ...
-                'HorizontalAlignment', 'center', 'Interpreter', 'none');
+            lines = {};
+            lines{end+1} = sprintf('Circuit');
+            lines{end+1} = sprintf('  %s', curName);
+            lines{end+1} = '';
+            lines{end+1} = sprintf('Top match');
+            lines{end+1} = sprintf('  %s', topName);
+            lines{end+1} = sprintf('  similarity: %.1f%%', topSim*100);
+            lines{end+1} = sprintf('  category:   %s', topCat);
+            lines{end+1} = '';
+            lines{end+1} = interp;
+            lines{end+1} = '';
+            lines{end+1} = sprintf('All %d matches', n);
+            lines{end+1} = sprintf('  mean similarity: %.1f%%', meanSim*100);
+            lines{end+1} = sprintf('  spread:          %.1f pp', spread*100);
+            lines{end+1} = '';
+            lines{end+1} = 'Category breakdown';
+            for ci = 1:numel(uniqueCats)
+                mask = strcmp(cats, uniqueCats{ci});
+                k    = sum(mask);
+                catAvg = mean(sims(mask));
+                lines{end+1} = sprintf('  %s — %d (avg %.1f%%)', ...
+                    uniqueCats{ci}, k, catAvg*100); %#ok<AGROW>
+            end
 
-            hold(ax, 'off');
-            ax.XLim = [-1.7 1.7]; ax.YLim = [-1.5 1.5];
-            ax.DataAspectRatio = [1 1 1];
-            title(ax, 'Category Breakdown', 'FontSize', 14, ...
-                'FontWeight', 'bold', 'Visible', 'on');
+            % Top match notes if present
+            tnote = '';
+            if numel(notes) >= topIdx
+                tnote = strtrim(notes{topIdx});
+            end
+            if ~isempty(tnote)
+                lines{end+1} = '';
+                lines{end+1} = 'Notes on top match';
+                % Split long notes into wrapped lines (soft 32-char wrap)
+                wrapped = AnalysisViewModel.softWrap(tnote, 32);
+                for wi = 1:numel(wrapped)
+                    lines{end+1} = sprintf('  %s', wrapped{wi}); %#ok<AGROW>
+                end
+            end
+        end
+
+        function parts = softWrap(text, width)
+            % Break a string into whitespace-bounded lines no wider than
+            % `width` chars (best effort; doesn't split words).
+            parts = {};
+            if isempty(text); return; end
+            words = strsplit(char(text));
+            cur = '';
+            for wi = 1:numel(words)
+                w = words{wi};
+                if isempty(cur)
+                    cur = w;
+                elseif length(cur) + 1 + length(w) <= width
+                    cur = [cur ' ' w]; %#ok<AGROW>
+                else
+                    parts{end+1} = cur; %#ok<AGROW>
+                    cur = w;
+                end
+            end
+            if ~isempty(cur); parts{end+1} = cur; end
         end
 
     end
@@ -606,13 +637,15 @@ classdef AnalysisViewModel < handle
         end
 
         function buildQVHeatmap(obj, data)
-            % buildQVHeatmap  Renders a Quantum Volume heatmap showing
-            %   Circuit Depth (x) vs Circuit Width (y) colored by average
-            %   result fidelity. A staircase boundary marks the QV level.
+            % buildQVHeatmap  Renders the Circuit Complexity Landscape —
+            %   a clean scatter of Circuit Depth (log) vs Width (qubits)
+            %   with the current circuit as the hero marker against a
+            %   reference backdrop of well-known quantum algorithms.
             %
-            %   Data source: tries GET /api/benchmark/volumetric first for
-            %   real project data; falls back to QASMBench-style demo data
-            %   merged with the current circuit's analysis metrics.
+            %   Fidelity is estimated deterministically from the current
+            %   circuit's actual gate counts using typical NISQ error
+            %   rates (1Q: 0.1%, 2Q: 1%, meas: 2%) — so the visualization
+            %   genuinely updates every time the circuit changes.
             app = obj.App;
             ax  = app.QVHeatmapAxes;
             try
@@ -620,262 +653,216 @@ classdef AnalysisViewModel < handle
                 curDepth = JsonHelper.toDouble(JsonHelper.pick(data, {'depth'}));
                 curWidth = JsonHelper.toDouble(JsonHelper.pick(data, {'num_qubits','width'}));
                 curName  = char(JsonHelper.pick(data, {'circuit_name','name'}));
-                curFid   = JsonHelper.toDouble(JsonHelper.pick(data, ...
-                    {'result_fidelity','fidelity','expected_fidelity'}));
-                if isnan(curFid) || curFid <= 0; curFid = 0.5 + 0.4*rand(); end
-                if isnan(curDepth); curDepth = 10; end
-                if isnan(curWidth); curWidth = 5;  end
+                if isempty(curName); curName = 'current circuit'; end
+                if isnan(curDepth) || curDepth <= 0; curDepth = 1; end
+                if isnan(curWidth) || curWidth <= 0; curWidth = 1; end
 
-                % --- Try real API data first ------------------------------
-                [allDepths, allWidths, allFids, allNames, apiQV] = ...
-                    obj.fetchVolumetricData(curDepth, curWidth, curFid, curName);
-
-                nAll = numel(allDepths);
-
-                % --- Define grid axes (log-spaced depth buckets) ----------
-                depthEdges = [1 2 3 4 5 7 10 14 17 23 30 43 55 69 90 ...
-                    120 176 250 350 500 700 1000 1500 2000 3000];
-                nDepthBins = numel(depthEdges);
-                maxWidth   = max(max(allWidths), 17);
-                widthVals  = 1:maxWidth;
-
-                % Map each circuit to the nearest depth bin
-                depthBin = zeros(1, nAll);
-                for k = 1:nAll
-                    [~, depthBin(k)] = min(abs(depthEdges - allDepths(k)));
-                end
-
-                % Fill fidelity matrix (NaN = empty cell)
-                fidMat = NaN(maxWidth, nDepthBins);
-                for k = 1:nAll
-                    r = allWidths(k); c = depthBin(k);
-                    if r >= 1 && r <= maxWidth && c >= 1 && c <= nDepthBins
-                        fidMat(r, c) = allFids(k);
-                    end
-                end
-
-                % --- Compute QV (largest n where fidelity > 2/3) ----------
-                if ~isnan(apiQV) && apiQV > 0
-                    qvValue = apiQV;
-                    qvLevel = round(log2(apiQV));
-                else
-                    qvLevel = 1;
-                    for n = 2:min(maxWidth, nDepthBins)
-                        dBin = find(depthEdges >= n, 1);
-                        if isempty(dBin); break; end
-                        if dBin <= nDepthBins && n <= maxWidth
-                            found = false;
-                            for dc = max(1,dBin-1):min(nDepthBins,dBin+1)
-                                f2 = fidMat(n, dc);
-                                if ~isnan(f2) && f2 > 2/3
-                                    qvLevel = n; found = true; break;
-                                end
-                            end
-                            if ~found; break; end
+                % Gate counts drive the deterministic fidelity estimate
+                sq = 0; tq = 0; meas = 0;
+                gcMap = JsonHelper.safeField(data, 'gate_counts', struct());
+                if isstruct(gcMap)
+                    fns = fieldnames(gcMap);
+                    twoQ = {'cx','cz','cy','swap','cswap','ccx','cu1','cu2','cu3','ch','ecr','rzz','rxx','ryy'};
+                    for gi = 1:numel(fns)
+                        gn = fns{gi}; cnt = gcMap.(gn);
+                        if ~isnumeric(cnt); cnt = str2double(char(string(cnt))); end
+                        if isnan(cnt); continue; end
+                        if ismember(gn, twoQ)
+                            tq = tq + cnt;
+                        elseif ismember(gn, {'measure','measurement'})
+                            meas = meas + cnt;
+                        else
+                            sq = sq + cnt;
                         end
                     end
-                    qvValue = 2^qvLevel;
+                end
+                if sq + tq + meas == 0
+                    sq   = JsonHelper.toDouble(JsonHelper.pick(data, {'single_qubit_gates','num_1q'}));
+                    tq   = JsonHelper.toDouble(JsonHelper.pick(data, {'two_qubit_gates','num_2q','cx_count'}));
+                    meas = JsonHelper.toDouble(JsonHelper.pick(data, {'measurements','num_measurements'}));
+                    if isnan(sq);   sq   = 0; end
+                    if isnan(tq);   tq   = 0; end
+                    if isnan(meas); meas = 0; end
                 end
 
-                % --- Render heatmap ──────────────────────────────────────
-                cla(ax); hold(ax, 'on');
-
-                % Gray background for the full grid
-                grayBg = 0.82 * ones(maxWidth, nDepthBins);
-                imagesc(ax, 1:nDepthBins, widthVals, grayBg);
-
-                % Overlay fidelity data with AlphaData
-                hasData = ~isnan(fidMat);
-                fidPlot = fidMat;
-                fidPlot(~hasData) = 0;
-                hImg = imagesc(ax, 1:nDepthBins, widthVals, fidPlot);
-                hImg.AlphaData = double(hasData);
-
-                % Custom colormap: pink -> yellow -> green -> teal -> blue
-                nColors = 256;
-                cmap = zeros(nColors, 3);
-                anchors = [
-                    0.0,  0.90, 0.60, 0.70;   % pink/salmon (low fidelity)
-                    0.2,  0.95, 0.85, 0.55;   % warm yellow
-                    0.4,  0.90, 0.95, 0.55;   % yellow-green
-                    0.6,  0.55, 0.85, 0.55;   % green
-                    0.8,  0.35, 0.70, 0.70;   % teal
-                    1.0,  0.20, 0.45, 0.78    % deep blue (high fidelity)
-                ];
-                for ch = 1:3
-                    cmap(:,ch) = interp1(anchors(:,1), anchors(:,ch+1), ...
-                        linspace(0,1,nColors)', 'pchip');
+                apiFid = JsonHelper.toDouble(JsonHelper.pick(data, ...
+                    {'result_fidelity','fidelity','expected_fidelity'}));
+                if ~isnan(apiFid) && apiFid > 0 && apiFid <= 1
+                    curFid = apiFid;
+                else
+                    curFid = 0.999^sq * 0.99^tq * 0.98^meas;
+                    curFid = max(0.02, min(0.999, curFid));
                 end
-                cmap = max(0, min(1, cmap));
-                colormap(ax, cmap);
+
+                % Top benchmark match (from real analysis data)
+                topMatchName = ''; topMatchSim = NaN;
+                try
+                    mItems = JsonHelper.extractList(data, 'benchmark_matches');
+                    if isempty(mItems); mItems = JsonHelper.extractList(data, 'matches'); end
+                    if ~isempty(mItems) && numel(mItems) > 0
+                        topMatchName = char(JsonHelper.pick(mItems(1), {'benchmark_name','name'}));
+                        topMatchSim  = JsonHelper.toDouble(JsonHelper.pick(mItems(1), {'similarity','score'}));
+                    end
+                catch; end
+
+                % --- Reference backdrop (well-known algorithms) -----------
+                refNames  = {'Bell', 'GHZ-7', 'BV-5', 'DJ-5', 'Grover', ...
+                             'Simon', 'Hidden-Shift', 'QFT-11', 'QPE', 'VQE-5', ...
+                             'QAOA', 'Shor', 'MC-Sim', 'Ham-Sim', 'Rand-4', 'Supremacy'};
+                refDepths = [5, 3, 7, 7, 23, 17, 10, 43, 69, 53, ...
+                             27, 113, 69, 281, 450, 1000];
+                refWidths = [2, 7, 5, 5, 8, 6, 12, 11, 12, 5, ...
+                             6, 7, 5, 13, 4, 53];
+                % Deterministic reference fidelities using the same model
+                refFids = 0.999.^(refDepths.*1.2) .* 0.99.^(refDepths.*0.3);
+                refFids = max(0.05, min(0.995, refFids));
+
+                % --- Axis bounds ------------------------------------------
+                allD = [refDepths, round(curDepth)];
+                allW = [refWidths, round(curWidth)];
+                xMax = max(2000, max(allD) * 1.8);
+                yMax = max(32, max(allW) + 6);
+
+                % --- Render -----------------------------------------------
+                cla(ax, 'reset');
+                app.styleAxes(ax);
+                hold(ax, 'on');
+
+                % Soft regime bands (NISQ / Mid-depth / Fault-tolerant)
+                patch(ax, [1 50 50 1],           [0 0 yMax yMax], ...
+                      [0.94 0.97 1.00], 'EdgeColor', 'none', 'FaceAlpha', 0.55);
+                patch(ax, [50 500 500 50],       [0 0 yMax yMax], ...
+                      [1.00 0.99 0.93], 'EdgeColor', 'none', 'FaceAlpha', 0.55);
+                patch(ax, [500 xMax xMax 500],   [0 0 yMax yMax], ...
+                      [1.00 0.94 0.93], 'EdgeColor', 'none', 'FaceAlpha', 0.55);
+
+                % Regime labels at top of chart
+                text(ax, 7,   yMax - 1.2, 'NISQ',           ...
+                    'FontSize', 9.5, 'FontWeight', 'bold', ...
+                    'Color', [0.35 0.50 0.72], 'Interpreter', 'none');
+                text(ax, 130, yMax - 1.2, 'Mid-depth',      ...
+                    'FontSize', 9.5, 'FontWeight', 'bold', ...
+                    'Color', [0.72 0.58 0.25], 'Interpreter', 'none');
+                text(ax, 800, yMax - 1.2, 'Fault-tolerant', ...
+                    'FontSize', 9.5, 'FontWeight', 'bold', ...
+                    'Color', [0.75 0.40 0.36], 'Interpreter', 'none');
+
+                % Diagonal n × n reference line (quantum volume region)
+                nGrid = 1:ceil(yMax);
+                plot(ax, nGrid, nGrid, '--', ...
+                    'Color', [0.45 0.48 0.58], 'LineWidth', 1.1);
+                labY = min(yMax - 2, max(allW) - 1);
+                labX = max(1.2, labY * 1.15);
+                text(ax, labX, labY, ' n × n  (depth = width)', ...
+                    'FontSize', 9, 'FontAngle', 'italic', ...
+                    'Color', [0.40 0.45 0.55], ...
+                    'BackgroundColor', [1 1 1 0.75], ...
+                    'Margin', 2, 'Interpreter', 'none');
+
+                % Reference benchmark dots
+                scatter(ax, refDepths, refWidths, 48, refFids, 'filled', ...
+                    'MarkerEdgeColor', [0.35 0.38 0.45], ...
+                    'MarkerFaceAlpha', 0.85, 'LineWidth', 0.5);
+                for k = 1:numel(refDepths)
+                    text(ax, refDepths(k)*1.10, refWidths(k), refNames{k}, ...
+                        'FontSize', 8.5, 'Color', [0.28 0.32 0.40], ...
+                        'VerticalAlignment', 'middle', ...
+                        'Interpreter', 'none');
+                end
+
+                % --- Current circuit — hero star with halo ---------------
+                scatter(ax, curDepth, curWidth, 480, [1 1 1], 'p', 'filled', ...
+                    'MarkerEdgeColor', [1 1 1], 'LineWidth', 0.1);  % halo
+                scatter(ax, curDepth, curWidth, 300, curFid, 'p', 'filled', ...
+                    'MarkerEdgeColor', [0.08 0.10 0.14], 'LineWidth', 1.8);
+
+                % Hero callout — offset intelligently to stay inside plot
+                annoText = sprintf('%s\ndepth %d  ·  %d qubits\nest. fidelity %.1f%%', ...
+                    curName, round(curDepth), round(curWidth), curFid*100);
+                if curDepth * 2.2 < xMax
+                    xAnno = curDepth * 1.35;
+                    haAnno = 'left';
+                else
+                    xAnno = curDepth / 1.35;
+                    haAnno = 'right';
+                end
+                yAnno = min(yMax - 0.5, curWidth + 2);
+                text(ax, xAnno, yAnno, annoText, ...
+                    'FontSize', 10, 'FontWeight', 'bold', ...
+                    'Color', [0.10 0.14 0.22], ...
+                    'BackgroundColor', [1 1 1 0.92], ...
+                    'EdgeColor', [0.22 0.34 0.56], ...
+                    'Margin', 6, 'HorizontalAlignment', haAnno, ...
+                    'VerticalAlignment', 'bottom', 'Interpreter', 'none');
+
+                % Connector line from annotation back to the star
+                plot(ax, [curDepth xAnno], [curWidth yAnno], ':', ...
+                    'Color', [0.22 0.34 0.56], 'LineWidth', 0.9);
+
+                % --- Colormap & axes -------------------------------------
+                colormap(ax, parula(256));
                 ax.CLim = [0 1];
-
                 cb = colorbar(ax);
-                cb.Label.String   = Labels.get('analysis_qv_colorbar', 'Avg Result Fidelity');
+                cb.Label.String = Labels.get('analysis_qv_colorbar', ...
+                    'Estimated Result Fidelity');
                 cb.Label.FontSize = 10;
 
-                % --- QV staircase boundary ───────────────────────────────
-                qvDepthBin = find(depthEdges >= qvLevel, 1);
-                if ~isempty(qvDepthBin)
-                    stairX = [0.5, qvDepthBin+0.5, qvDepthBin+0.5, nDepthBins+0.5];
-                    stairY = [qvLevel+0.5, qvLevel+0.5, 0.5, 0.5];
-                    plot(ax, stairX, stairY, 'k-', 'LineWidth', 2.2);
-                end
-
-                % QV label box
-                text(ax, nDepthBins - 1, 1.5, sprintf('QV = %d', qvValue), ...
-                    'FontSize', 11, 'FontWeight', 'bold', ...
-                    'BackgroundColor', [1 1 1], 'EdgeColor', [0.3 0.3 0.3], ...
-                    'Margin', 4, 'HorizontalAlignment', 'center');
-
-                % --- Annotate circuit names on cells ─────────────────────
-                for k = 1:nAll
-                    r = allWidths(k); c = depthBin(k);
-                    if r >= 1 && r <= maxWidth && c >= 1 && c <= nDepthBins
-                        lbl = allNames{k};
-                        if length(lbl) > 18; lbl = [lbl(1:16) '...']; end
-                        fSz = 7;
-                        if k == nAll; fSz = 8; end  % highlight current circuit
-                        text(ax, c, r, ['  ' lbl], ...
-                            'FontSize', fSz, 'FontWeight', 'normal', ...
-                            'Color', [0.15 0.15 0.15], ...
-                            'VerticalAlignment', 'middle', ...
-                            'HorizontalAlignment', 'left', ...
-                            'Clipping', 'on');
-                        plot(ax, c, r, 'k.', 'MarkerSize', 6);
-                    end
-                end
-
-                % Highlight current circuit with a ring
-                curR = round(curWidth); curC = depthBin(end);
-                plot(ax, curC, curR, 'o', 'MarkerSize', 12, ...
-                    'LineWidth', 2, 'Color', [0.05 0.05 0.05]);
-
-                % --- Axis formatting ─────────────────────────────────────
-                ax.XLim = [0.5, nDepthBins + 0.5];
-                ax.YLim = [0.5, maxWidth + 0.5];
-                ax.YDir = 'normal';
-
-                tickStep = max(1, floor(nDepthBins / 15));
-                tickIdx  = 1:tickStep:nDepthBins;
-                ax.XTick = tickIdx;
-                tickLabels = cell(size(tickIdx));
-                for ti = 1:numel(tickIdx)
-                    v = depthEdges(tickIdx(ti));
-                    if v >= 1000
-                        tickLabels{ti} = sprintf('%gK', v/1000);
-                    else
-                        tickLabels{ti} = sprintf('%d', v);
-                    end
-                end
-                ax.XTickLabel = tickLabels;
-                ax.XTickLabelRotation = 45;
-
-                ax.YTick = widthVals;
-                ax.YTickLabel = arrayfun(@(w) sprintf('%d', w), widthVals, 'UniformOutput', false);
+                ax.XScale = 'log';
+                ax.XLim   = [1, xMax];
+                ax.YLim   = [0, yMax];
+                ax.XGrid  = 'on'; ax.YGrid = 'on';
+                ax.GridColor = [0.80 0.84 0.90];
+                ax.GridAlpha = 0.7;
+                ax.Box    = 'on';
 
                 title(ax, Labels.get('analysis_qv_title', ...
-                    'Circuit Depth vs Width (Avg Result Fidelity)'));
-                xlabel(ax, Labels.get('analysis_qv_xlabel', 'Circuit Depth'));
-                ylabel(ax, Labels.get('analysis_qv_ylabel', 'Circuit Width (Qubits)'));
+                    'Circuit Depth vs Width (Est. Result Fidelity)'));
+                xlabel(ax, Labels.get('analysis_qv_xlabel', ...
+                    'Circuit Depth (log scale)'));
+                ylabel(ax, Labels.get('analysis_qv_ylabel', ...
+                    'Circuit Width (Qubits)'));
 
-                ax.Box = 'on';
                 hold(ax, 'off');
 
-                % --- Update info label ───────────────────────────────────
+                % --- Side info panel -------------------------------------
+                if curDepth < 50
+                    regime = 'NISQ (near-term)';
+                elseif curDepth < 500
+                    regime = 'Mid-depth';
+                else
+                    regime = 'Fault-tolerant';
+                end
+
+                matchLine = '';
+                if ~isempty(topMatchName) && ~isnan(topMatchSim)
+                    matchLine = sprintf('Closest benchmark:\n  %s (%.0f%%)\n\n', ...
+                        topMatchName, topMatchSim*100);
+                end
+
                 app.QVInfoLabel.Text = sprintf([ ...
-                    'Quantum Volume\n\n' ...
-                    'QV = %d\n' ...
-                    '(log2 = %d)\n\n' ...
-                    'Current circuit:\n' ...
-                    '  %s\n' ...
-                    '  Depth: %d\n' ...
-                    '  Width: %d qubits\n' ...
-                    '  Fidelity: %.2f\n\n' ...
-                    'The QV boundary marks\n' ...
-                    'the largest n x n\n' ...
-                    'circuit passing the\n' ...
-                    'heavy-output test\n' ...
-                    '(fidelity > 2/3).'], ...
-                    qvValue, qvLevel, curName, round(curDepth), ...
-                    round(curWidth), curFid);
+                    'Current circuit\n' ...
+                    '  %s\n\n' ...
+                    '  depth: %d\n' ...
+                    '  width: %d qubits\n' ...
+                    '  gates: %d (1Q) + %d (2Q)\n' ...
+                    '  est. fidelity: %.1f%%\n\n' ...
+                    'Regime: %s\n\n' ...
+                    '%s' ...
+                    'Fidelity is estimated\n' ...
+                    'from gate counts using\n' ...
+                    'typical NISQ error rates\n' ...
+                    '(1Q: 0.1%%, 2Q: 1%%,\n' ...
+                    ' meas: 2%%).'], ...
+                    curName, round(curDepth), round(curWidth), ...
+                    sq, tq, curFid*100, regime, matchLine);
                 app.QVInfoLabel.FontColor = [0.22 0.27 0.35];
 
                 Logger.info('AnalysisViewModel', ...
-                    'QV heatmap rendered — QV=%d, %d circuits plotted', qvValue, nAll);
+                    'Complexity landscape rendered — %s d=%d w=%d fid=%.2f', ...
+                    curName, round(curDepth), round(curWidth), curFid);
             catch ME
                 Logger.warn('AnalysisViewModel', 'buildQVHeatmap failed: %s', ME.message);
             end
-        end
-
-        function [depths, widths, fids, names, apiQV] = ...
-                fetchVolumetricData(obj, curDepth, curWidth, curFid, curName)
-            % fetchVolumetricData  Fetches volumetric data from the backend
-            %   API (GET /api/benchmark/volumetric). Falls back to demo
-            %   QASMBench-style data if the API call fails or returns empty.
-            app   = obj.App;
-            apiQV = NaN;
-
-            % Try real API
-            if app.State.hasProject() && app.State.isAuthenticated()
-                try
-                    svc  = app.BenchmarkSvc;
-                    vdat = svc.getVolumetricData( ...
-                        app.State.currentProjectId, app.State.authToken);
-                    pts  = JsonHelper.extractList(vdat, 'data_points');
-                    if ~isempty(pts) && numel(pts) > 0
-                        n = numel(pts);
-                        depths = zeros(1, n+1);
-                        widths = zeros(1, n+1);
-                        fids   = zeros(1, n+1);
-                        names  = cell(1, n+1);
-                        for k = 1:n
-                            depths(k) = JsonHelper.toDouble( ...
-                                JsonHelper.pick(pts(k), {'depth'}));
-                            widths(k) = JsonHelper.toDouble( ...
-                                JsonHelper.pick(pts(k), {'width'}));
-                            fids(k)   = JsonHelper.toDouble( ...
-                                JsonHelper.pick(pts(k), {'fidelity'}));
-                            names{k}  = char(JsonHelper.pick(pts(k), ...
-                                {'circuit_name','name','circuit_id'}));
-                        end
-                        % Append current circuit
-                        depths(n+1) = round(curDepth);
-                        widths(n+1) = round(curWidth);
-                        fids(n+1)   = curFid;
-                        names{n+1}  = curName;
-                        % Extract QV boundary from API
-                        apiQV = JsonHelper.toDouble( ...
-                            JsonHelper.pick(vdat, {'qv_boundary'}));
-                        Logger.info('AnalysisViewModel', ...
-                            'Volumetric API returned %d data points', n);
-                        return;
-                    end
-                catch ME
-                    Logger.debug('AnalysisViewModel', ...
-                        'Volumetric API unavailable, using demo data: %s', ME.message);
-                end
-            end
-
-            % Fallback: QASMBench-style demo portfolio
-            benchNames  = {'Bernstein-Vazirani', 'Deutsch-Jozsa', ...
-                'Hidden Shift', 'GHZ State', 'Quantum Fourier Transform', ...
-                'Phase Estimation', 'Grover''s Search', 'Simon''s Algorithm', ...
-                'Amplitude Estimation', 'VQE Simulation', ...
-                'QAOA MaxCut', 'Shor''s Order Finding', ...
-                'Monte Carlo Sampling', 'Hamiltonian Simulation', ...
-                'Random Circuit (1)', 'Random Circuit (2)'};
-            benchDepths = [4, 7, 10, 3, 43, 69, 23, 17, 176, 53, ...
-                27, 113, 69, 281, 450, 1000];
-            benchWidths = [5, 5, 12, 7, 11, 12, 8, 6, 8, 5, ...
-                6, 7, 5, 13, 4, 3];
-            benchFids   = [0.92, 0.95, 0.78, 0.97, 0.55, 0.48, 0.72, 0.85, ...
-                0.31, 0.68, 0.62, 0.41, 0.66, 0.22, 0.58, 0.75];
-
-            depths = [benchDepths, round(curDepth)];
-            widths = [benchWidths, round(curWidth)];
-            fids   = [benchFids,   curFid];
-            names  = [benchNames,  {curName}];
         end
     end
 end

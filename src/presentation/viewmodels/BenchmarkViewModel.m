@@ -112,14 +112,24 @@ classdef BenchmarkViewModel < handle
                         app.BenchmarkStrategyTable.Data = rows;
                         app.logEvent('API', sprintf('Strategy comparison complete — %d rows', size(rows, 1)));
                     else
-                        % API returned but with empty strategies — use estimates
-                        app.BenchmarkStrategyTable.Data = obj.estimateStrategies(strategy, opt, shots);
-                        app.logEvent('WARN', 'API returned empty strategies — using local estimates');
+                        % API returned 200 but `strategies: []` — typically means
+                        % the backend's Qiskit transpilation failed for every
+                        % level/routing pair (see sqk-qtau predict_service.py
+                        % around line 438 — the loop swallows per-attempt
+                        % exceptions and never raises if all 9 fail).
+                        app.BenchmarkStrategyTable.Data = ...
+                            obj.estimateStrategies(strategy, opt, shots);
+                        app.logEvent('WARN', ...
+                            'API returned strategies=[] — using local estimates. Check backend logs for "Transpilation failed" warnings.');
                     end
                 catch ME2
-                    % compare-strategies failed (e.g. Qiskit not installed — 503)
-                    app.logEvent('WARN', sprintf('Strategy comparison API failed: %s — using local estimates', ME2.message));
-                    app.BenchmarkStrategyTable.Data = obj.estimateStrategies(strategy, opt, shots);
+                    % compare-strategies failed (e.g. Qiskit not installed — 503,
+                    % invalid circuit — 422, missing raw_content — 500).
+                    app.logEvent('WARN', sprintf( ...
+                        'Strategy comparison API failed: %s — using local estimates', ...
+                        ME2.message));
+                    app.BenchmarkStrategyTable.Data = ...
+                        obj.estimateStrategies(strategy, opt, shots);
                 end
 
                 app.State.logActivity('Run benchmark', 'Success');
