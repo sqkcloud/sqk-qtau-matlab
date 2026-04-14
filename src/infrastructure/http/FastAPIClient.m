@@ -10,8 +10,7 @@ classdef FastAPIClient < handle
     %   domain-level errors with human-readable messages.
     %
     %   File upload uses matlab.net.http.* (R2016b+) to build a proper
-    %   multipart/form-data body.  A system-curl fallback is attempted when
-    %   the import fails (e.g. older MATLAB or restricted deployments).
+    %   multipart/form-data body.
 
     properties
         BaseUrl   string
@@ -22,13 +21,17 @@ classdef FastAPIClient < handle
     % ── Constructor / config ──────────────────────────────────────────────────
     methods
         function obj = FastAPIClient(baseUrl)
-            obj.BaseUrl = string(baseUrl);
+            url = strtrim(string(baseUrl));
+            FastAPIClient.assertSafeBaseUrl(url);
+            obj.BaseUrl = url;
             Logger.info('FastAPIClient', 'Initialized — BaseUrl: %s', char(obj.BaseUrl));
         end
 
         function setBaseUrl(obj, baseUrl)
+            url = strtrim(string(baseUrl));
+            FastAPIClient.assertSafeBaseUrl(url);
             old = char(obj.BaseUrl);
-            obj.BaseUrl = string(baseUrl);
+            obj.BaseUrl = url;
             Logger.info('FastAPIClient', 'BaseUrl changed: %s → %s', old, char(obj.BaseUrl));
         end
     end
@@ -232,25 +235,42 @@ classdef FastAPIClient < handle
         function data = uploadFileAuth(obj, endpoint, filePath, extraFields, token)
             url = char(obj.BaseUrl + string(endpoint));
             Logger.info('FastAPIClient', 'uploadFileAuth → POST %s (file: %s)', endpoint, filePath);
-            projId = obj.ProjectId;
             try
-                data = FastAPIClient.uploadViaHttpNet(url, filePath, extraFields, token, obj.Timeout, projId);
-                Logger.info('FastAPIClient', 'uploadFileAuth → POST %s OK (via matlab.net.http)', endpoint);
+                data = FastAPIClient.uploadViaHttpNet(url, filePath, extraFields, token, obj.Timeout, obj.ProjectId);
+                Logger.info('FastAPIClient', 'uploadFileAuth → POST %s OK', endpoint);
             catch ME
-                Logger.warn('FastAPIClient', 'matlab.net.http upload failed (%s); attempting curl fallback', ME.message);
-                try
-                    data = FastAPIClient.uploadViaCurl(url, filePath, extraFields, token, projId);
-                    Logger.info('FastAPIClient', 'uploadFileAuth → POST %s OK (via curl fallback)', endpoint);
-                catch ME2
-                    Logger.error('FastAPIClient', 'uploadFileAuth → POST %s FAILED (both methods): http=%s  curl=%s', endpoint, ME.message, ME2.message);
-                    rethrow(ME2);
-                end
+                Logger.error('FastAPIClient', 'uploadFileAuth → POST %s FAILED: %s', endpoint, ME.message);
+                rethrow(ME);
             end
         end
     end
 
     % ── Public static helpers ─────────────────────────────────────────────────
     methods (Static)
+        function assertSafeBaseUrl(url)
+            % assertSafeBaseUrl  Reject base URLs that would send credentials
+            %   over an insecure transport.  HTTPS is always allowed; plain
+            %   HTTP is allowed only when the host is the loopback interface
+            %   (development).  All other plain-HTTP URLs throw.
+            s = char(string(url));
+            if isempty(s)
+                error('FastAPIClient:invalidBaseUrl', 'Base URL is empty.');
+            end
+            if startsWith(s, 'https://', 'IgnoreCase', true)
+                return;
+            end
+            if startsWith(s, 'http://localhost',  'IgnoreCase', true) || ...
+               startsWith(s, 'http://127.0.0.1',  'IgnoreCase', true) || ...
+               startsWith(s, 'http://[::1]',      'IgnoreCase', true)
+                Logger.warn('FastAPIClient', ...
+                    'Plain HTTP allowed for loopback only: %s', s);
+                return;
+            end
+            error('FastAPIClient:insecureBaseUrl', ...
+                ['Refusing non-HTTPS base URL: %s. ' ...
+                 'Use https:// (or http://localhost for local development).'], s);
+        end
+
         function s = encodePathSegment(seg)
             % encodePathSegment  Percent-encode a single URL path segment.
             %   Encodes characters outside the unreserved set (RFC 3986) so that
@@ -418,42 +438,5 @@ classdef FastAPIClient < handle
             data = FastAPIClient.normalizeJsonResponse(bodyData);
         end
 
-        function data = uploadViaCurl(url, filePath, extraFields, token, projectId)
-            % System curl fallback for environments without matlab.net.http.
-            % All arguments are shell-escaped to prevent command injection.
-            esc = @(s) ['''' strrep(char(s), '''', '''\\''''') ''''];
-            extra = '';
-            if isstruct(extraFields)
-                fns = fieldnames(extraFields);
-                for i = 1:numel(fns)
-                    val = char(string(extraFields.(fns{i})));
-                    extra = [extra ' -F ' esc([fns{i} '=' val])]; %#ok
-                end
-            end
-            projHdr = '';
-            if nargin >= 5 && strlength(string(projectId)) > 0
-                projHdr = sprintf(' -H %s', esc(['X-Project-Id: ' char(projectId)]));
-            end
-            cmd = sprintf('curl -s -w "\\n%%{http_code}" -X POST -H %s -H %s%s -F %s%s %s', ...
-                esc(['Authorization: Bearer ' char(token)]), ...
-                esc('Accept: application/json'), ...
-                projHdr, ...
-                esc(['file=@' char(filePath)]), ...
-                extra, esc(char(url)));
-            Logger.debug('FastAPIClient', 'curl upload → POST %s', char(url));
-            [status, out] = system(cmd);
-            if status ~= 0
-                error('FastAPIClient:curlFailed', 'curl upload failed (exit %d): %s', status, out);
-            end
-            % Split response body and HTTP status code
-            lines = strsplit(strtrim(out), newline);
-            httpCode = str2double(lines{end});
-            body = strjoin(lines(1:end-1), newline);
-            if ~isnan(httpCode) && httpCode >= 400
-                errMsg = FastAPIClient.extractErrorMessage(body, httpCode);
-                error('FastAPIClient:httpError', 'HTTP %d: %s', httpCode, errMsg);
-            end
-            data = FastAPIClient.normalizeJsonResponse(body);
-        end
     end
 end

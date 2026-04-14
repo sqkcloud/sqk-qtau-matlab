@@ -149,5 +149,39 @@ classdef test_Logger < matlab.unittest.TestCase
             Logger.setLevel('DEBUG');
         end
 
+        % ── Token redaction ──────────────────────────────────────────────
+
+        function testRedactBearerToken(testCase)
+            out = Logger.redact('Bearer abc123xyz');
+            testCase.verifyEqual(out, 'Bearer ***');
+        end
+
+        function testRedactAuthorizationHeader(testCase)
+            out = Logger.redact('Authorization: Bearer secrettoken');
+            testCase.verifyEqual(out, 'Authorization: Bearer ***');
+        end
+
+        function testRedactQueryParamToken(testCase)
+            out = Logger.redact('GET /api/x?access_token=zzz&foo=1');
+            testCase.verifyTrue(contains(out, 'access_token=***'), ...
+                'access_token query param value should be masked');
+            testCase.verifyTrue(contains(out, 'foo=1'), ...
+                'non-credential params must be preserved');
+        end
+
+        function testRedactPreservesSafeText(testCase)
+            in  = 'GET /api/circuits — 12 rows';
+            out = Logger.redact(in);
+            testCase.verifyEqual(out, in);
+        end
+
+        function testLogOutputRedactsBearerToken(testCase)
+            output = evalc("Logger.info('Test', 'Authorization: Bearer leakme')");
+            testCase.verifyFalse(contains(output, 'leakme'), ...
+                'Bearer token must not appear in log output');
+            testCase.verifyTrue(contains(output, 'Bearer ***'), ...
+                'Bearer should be replaced with ***');
+        end
+
     end
 end

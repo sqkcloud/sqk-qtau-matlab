@@ -18,25 +18,32 @@ classdef DashboardViewModel < handle
             app.logEvent('UI', sprintf('Dashboard refresh triggered — auth: %s  project: %s', ...
                 string(app.State.isAuthenticated()), app.State.currentProjectId));
             if app.State.isAuthenticated() && app.State.hasProject()
-                app.logEvent('API', sprintf('GET /api/projects/%s/dashboard', app.State.currentProjectId));
+                pid = app.State.currentProjectId;
+                app.logEvent('API', sprintf('GET /api/projects/%s/dashboard', pid));
                 app.showLoading(Labels.get('loading_dashboard', 'Loading dashboard...'));
-                try
-                    data = app.ProjectSvc.getDashboard(app.State.currentProjectId, app.State.authToken);
-                    obj.applyDashboardData(data);
-                    app.logEvent('API', sprintf('Dashboard data loaded for project: %s', app.State.currentProjectId));
-                    obj.LastRefresh = tic;
-                    app.hideLoading();
-                    return;
-                catch ME
-                    app.hideLoading();
-                    app.logEvent('ERROR', sprintf('Dashboard fetch failed (project: %s): %s', ...
-                        app.State.currentProjectId, ME.message));
-                    app.showError('Dashboard Refresh', ME);
-                end
+                AsyncRunner.run( ...
+                    @() app.ProjectSvc.getDashboard(pid, app.State.authToken), ...
+                    @(data) obj.onDashboardComplete(app, pid, data), ...
+                    @(ME)   obj.onDashboardError(app, pid, ME));
+                return;
             end
             app.logEvent('UI', 'Dashboard falling back to session state summary');
             obj.refreshDashboardFromState();
-            % Always refresh activity table from local log
+            obj.refreshActivityTable();
+        end
+
+        function onDashboardComplete(obj, app, pid, data)
+            obj.applyDashboardData(data);
+            app.logEvent('API', sprintf('Dashboard data loaded for project: %s', pid));
+            obj.LastRefresh = tic;
+            app.hideLoading();
+        end
+
+        function onDashboardError(obj, app, pid, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Dashboard fetch failed (project: %s): %s', pid, ME.message));
+            app.showError('Dashboard Refresh', ME);
+            obj.refreshDashboardFromState();
             obj.refreshActivityTable();
         end
 
@@ -55,35 +62,39 @@ classdef DashboardViewModel < handle
             if isempty(app.DashActivityTable) || ~isvalid(app.DashActivityTable)
                 return;
             end
-            % Try fetching from API (server-side activity log with pagination)
+            % Paint local ActivityLog immediately for instant feedback,
+            % then async-fetch the server-side log to overwrite when ready.
+            obj.paintLocalActivity(app);
             if app.State.isAuthenticated() && app.State.hasProject()
-                try
-                    data = app.ProjectSvc.getActivities( ...
-                        app.State.currentProjectId, ...
-                        obj.ActivityPageSkip, obj.ActivityPageLimit, ...
-                        app.State.authToken);
-                    if isstruct(data) && isfield(data, 'items')
-                        items = JsonHelper.extractList(data, 'items');
-                        totalRows = 0;
-                        if isfield(data, 'total')
-                            totalRows = data.total;
-                        end
-                        n = numel(items);
-                        rows = cell(n, 3);
-                        for i = 1:n
-                            rows{i,1} = char(JsonHelper.pick(items(i), {'timestamp','time'}));
-                            rows{i,2} = char(JsonHelper.pick(items(i), {'action','description'}));
-                            rows{i,3} = char(JsonHelper.pick(items(i), {'status'}));
-                        end
-                        app.DashActivityTable.Data = rows;
-                        obj.updateActivityPageLabel(totalRows);
-                        return;
-                    end
-                catch
-                    % Fall through to local log
-                end
+                pid   = app.State.currentProjectId;
+                skip  = obj.ActivityPageSkip;
+                limit = obj.ActivityPageLimit;
+                AsyncRunner.run( ...
+                    @() app.ProjectSvc.getActivities(pid, skip, limit, app.State.authToken), ...
+                    @(data) obj.onActivitiesComplete(app, data), ...
+                    @(~)   [] );  % silent failure — local fallback already showing
             end
-            % Fallback: use local ActivityLog
+        end
+
+        function onActivitiesComplete(obj, app, data)
+            if ~(isstruct(data) && isfield(data, 'items')); return; end
+            items = JsonHelper.extractList(data, 'items');
+            totalRows = 0;
+            if isfield(data, 'total'); totalRows = data.total; end
+            n = numel(items);
+            rows = cell(n, 3);
+            for i = 1:n
+                rows{i,1} = char(JsonHelper.pick(items(i), {'timestamp','time'}));
+                rows{i,2} = char(JsonHelper.pick(items(i), {'action','description'}));
+                rows{i,3} = char(JsonHelper.pick(items(i), {'status'}));
+            end
+            if isvalid(app.DashActivityTable)
+                app.DashActivityTable.Data = rows;
+            end
+            obj.updateActivityPageLabel(totalRows);
+        end
+
+        function paintLocalActivity(obj, app)
             allRows = app.State.ActivityLog;
             totalRows = size(allRows, 1);
             if totalRows == 0

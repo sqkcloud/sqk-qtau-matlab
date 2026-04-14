@@ -60,37 +60,10 @@ classdef WelcomeViewModel < handle
 
             app.logEvent('API', sprintf('Creating project: "%s"', projName));
             app.showLoading(Labels.get('loading_creating_project', 'Creating project...'));
-            try
-                data = app.ProjectSvc.createProject(char(projName), char(projDesc), tags, app.State.authToken);
-                app.State.currentProjectId = string(JsonHelper.pick(data, {'project_id','id'}));
-                app.State.currentProjectName = string(projName);
-                app.Client.ProjectId = app.State.currentProjectId;
-                app.logEvent('API', sprintf('Project created successfully — id: %s  name: %s', ...
-                    app.State.currentProjectId, char(projName)));
-                app.State.logActivity(sprintf('Create project — %s', char(projName)), 'Success');
-                if ~isempty(app.ActiveProjectLabel) && isvalid(app.ActiveProjectLabel)
-                    app.ActiveProjectLabel.Text = char(projName);
-                end
-                if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
-                    app.UploadActiveProjectLabel.Text = char(projName);
-                end
-
-                % Close dialog
-                if ~isempty(app.NewProjectDialog) && isvalid(app.NewProjectDialog)
-                    delete(app.NewProjectDialog);
-                    app.NewProjectDialog = [];
-                end
-
-                obj.CurrentPage = 1;
-                obj.onFetchProjects();
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                if ~isempty(app.NewProjectDialog) && isvalid(app.NewProjectDialog)
-                    app.NewProjStatusLabel.Text = ME.message;
-                end
-                app.logEvent('ERROR', sprintf('Create project FAILED: %s', ME.message));
-            end
+            AsyncRunner.run( ...
+                @() app.ProjectSvc.createProject(char(projName), char(projDesc), tags, app.State.authToken), ...
+                @(data) obj.onCreateProjectComplete(app, projName, data), ...
+                @(ME)   obj.onCreateProjectError(app, ME));
         end
 
         function onLoadProject(obj)
@@ -172,32 +145,10 @@ classdef WelcomeViewModel < handle
             end
 
             app.logEvent('API', sprintf('Updating project: %s (%s)', projName, projectId));
-            try
-                app.ProjectSvc.updateProject(char(projectId), char(projName), char(projDesc), tags, app.State.authToken);
-                app.logEvent('API', sprintf('Project updated successfully — id: %s', char(projectId)));
-                app.State.logActivity(sprintf('Edit project — %s', char(projName)), 'Success');
-
-                % Update active project name if this was the active project
-                if strcmp(char(app.State.currentProjectId), char(projectId))
-                    app.State.currentProjectName = projName;
-                    app.ActiveProjectLabel.Text = char(projName);
-                    if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
-                        app.UploadActiveProjectLabel.Text = char(projName);
-                    end
-                end
-
-                if ~isempty(app.EditProjectDialog) && isvalid(app.EditProjectDialog)
-                    delete(app.EditProjectDialog);
-                    app.EditProjectDialog = [];
-                end
-
-                obj.onFetchProjects();
-            catch ME
-                if ~isempty(app.EditProjectDialog) && isvalid(app.EditProjectDialog)
-                    app.EditProjStatusLabel.Text = ME.message;
-                end
-                app.logEvent('ERROR', sprintf('Update project FAILED: %s', ME.message));
-            end
+            AsyncRunner.run( ...
+                @() app.ProjectSvc.updateProject(char(projectId), char(projName), char(projDesc), tags, app.State.authToken), ...
+                @(~) obj.onSaveProjectComplete(app, projectId, projName), ...
+                @(ME) obj.onSaveProjectError(app, ME));
         end
 
         function onDeleteProject(obj)
@@ -232,29 +183,10 @@ classdef WelcomeViewModel < handle
 
             app.logEvent('API', sprintf('DELETE /api/projects/%s', projectId));
             app.showLoading('Deleting project...');
-            try
-                app.ProjectSvc.deleteProject(char(projectId), app.State.authToken);
-                app.logEvent('API', sprintf('Project deleted: %s (%s)', projName, projectId));
-                app.State.logActivity(sprintf('Delete project — %s', projName), 'Success');
-
-                % Clear active project if the deleted one was active
-                if strcmp(char(app.State.currentProjectId), char(projectId))
-                    app.State.currentProjectId   = "";
-                    app.State.currentProjectName = "";
-                    app.Client.ProjectId = "";
-                    app.ActiveProjectLabel.Text = Labels.get('welcome_active_project_none', 'None');
-                    if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
-                        app.UploadActiveProjectLabel.Text = Labels.get('upload_label_no_project');
-                    end
-                end
-
-                app.hideLoading();
-                obj.onFetchProjects();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Delete project FAILED: %s', ME.message));
-                app.showError('Delete Project', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.ProjectSvc.deleteProject(char(projectId), app.State.authToken), ...
+                @(~) obj.onDeleteProjectComplete(app, projectId, projName), ...
+                @(ME) obj.onDeleteProjectError(app, ME));
         end
 
         function onLogin(obj)
@@ -273,16 +205,22 @@ classdef WelcomeViewModel < handle
                 return;
             end
 
-            % Set base URL from dialog and sync client
+            % Set base URL from dialog and sync client.
+            % FastAPIClient.setBaseUrl rejects non-HTTPS URLs that aren't
+            % loopback (S2). Surface that error to the dialog instead of
+            % crashing the login flow.
             app.State.baseUrl = strtrim(baseUrl);
-            app.syncClient();
-
-            % Warn if connecting over plain HTTP (credentials travel unencrypted)
-            if startsWith(app.State.baseUrl, 'http://') && ~contains(app.State.baseUrl, 'localhost')
-                Logger.warn('WelcomeViewModel', 'Login over plain HTTP — credentials are not encrypted');
-                app.LoginDlgStatusLabel.Text = Labels.get('login_warn_http', ...
-                    'Warning: Connection is not encrypted (HTTP). Use HTTPS for production.');
-                app.LoginDlgStatusLabel.FontColor = Theme.COLOR_AMBER;
+            try
+                app.syncClient();
+            catch urlErr
+                if strcmp(urlErr.identifier, 'FastAPIClient:insecureBaseUrl') || ...
+                   strcmp(urlErr.identifier, 'FastAPIClient:invalidBaseUrl')
+                    app.LoginDlgStatusLabel.FontColor = [0.851 0.188 0.145];
+                    app.LoginDlgStatusLabel.Text = Labels.get('error_login_insecure_url', ...
+                        'Base URL must use https:// (or http://localhost for development).');
+                    return;
+                end
+                rethrow(urlErr);
             end
 
             app.logEvent('AUTH', sprintf('Login attempt — user: %s  url: %s', username, app.State.baseUrl));
@@ -388,41 +326,10 @@ classdef WelcomeViewModel < handle
             end
             app.logEvent('API', 'GET /api/projects');
             app.showLoading(Labels.get('loading_projects', 'Loading projects...'));
-            try
-                data = app.AuthSvc.listProjects(app.State.authToken, 0, 0);
-                [rows, ids] = JsonHelper.projectsToRows(data);
-                obj.FullProjectRows = rows;
-                obj.FullProjectIds  = ids;
-                obj.FilteredRows    = rows;
-                obj.FilteredIds     = ids;
-
-                obj.TotalItems = size(rows, 1);
-
-                nRows = size(rows, 1);
-                app.logEvent('API', sprintf('GET /api/projects → %d row(s) returned (total: %d)', nRows, obj.TotalItems));
-
-                % Resolve active project name from fetched rows
-                if app.State.hasProject() && nRows > 0
-                    for r = 1:nRows
-                        if strcmp(ids{r}, char(app.State.currentProjectId))
-                            app.State.currentProjectName = string(rows{r,1});
-                            app.ActiveProjectLabel.Text = char(rows{r,1});
-                            if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
-                                app.UploadActiveProjectLabel.Text = char(rows{r,1});
-                            end
-                            break;
-                        end
-                    end
-                end
-
-                obj.displayCurrentPage();
-                obj.LastRefresh = tic;
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
-                app.showError('Fetch Projects', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.AuthSvc.listProjects(app.State.authToken, 0, 0), ...
+                @(data) obj.onFetchProjectsComplete(app, data), ...
+                @(ME)   obj.onFetchProjectsError(app, ME));
         end
 
         function onSearchProjects(obj, query)
@@ -470,6 +377,114 @@ classdef WelcomeViewModel < handle
     end
 
     methods (Access = private)
+        function onCreateProjectComplete(obj, app, projName, data)
+            app.State.currentProjectId   = string(JsonHelper.pick(data, {'project_id','id'}));
+            app.State.currentProjectName = string(projName);
+            app.Client.ProjectId = app.State.currentProjectId;
+            app.logEvent('API', sprintf('Project created successfully — id: %s  name: %s', ...
+                app.State.currentProjectId, char(projName)));
+            app.State.logActivity(sprintf('Create project — %s', char(projName)), 'Success');
+            if ~isempty(app.ActiveProjectLabel) && isvalid(app.ActiveProjectLabel)
+                app.ActiveProjectLabel.Text = char(projName);
+            end
+            if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                app.UploadActiveProjectLabel.Text = char(projName);
+            end
+            if ~isempty(app.NewProjectDialog) && isvalid(app.NewProjectDialog)
+                delete(app.NewProjectDialog);
+                app.NewProjectDialog = [];
+            end
+            obj.CurrentPage = 1;
+            obj.onFetchProjects();
+            app.hideLoading();
+        end
+
+        function onCreateProjectError(~, app, ME)
+            app.hideLoading();
+            if ~isempty(app.NewProjectDialog) && isvalid(app.NewProjectDialog)
+                app.NewProjStatusLabel.Text = ME.message;
+            end
+            app.logEvent('ERROR', sprintf('Create project FAILED: %s', ME.message));
+        end
+
+        function onSaveProjectComplete(obj, app, projectId, projName)
+            app.logEvent('API', sprintf('Project updated successfully — id: %s', char(projectId)));
+            app.State.logActivity(sprintf('Edit project — %s', char(projName)), 'Success');
+            if strcmp(char(app.State.currentProjectId), char(projectId))
+                app.State.currentProjectName = projName;
+                app.ActiveProjectLabel.Text = char(projName);
+                if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                    app.UploadActiveProjectLabel.Text = char(projName);
+                end
+            end
+            if ~isempty(app.EditProjectDialog) && isvalid(app.EditProjectDialog)
+                delete(app.EditProjectDialog);
+                app.EditProjectDialog = [];
+            end
+            obj.onFetchProjects();
+        end
+
+        function onSaveProjectError(~, app, ME)
+            if ~isempty(app.EditProjectDialog) && isvalid(app.EditProjectDialog)
+                app.EditProjStatusLabel.Text = ME.message;
+            end
+            app.logEvent('ERROR', sprintf('Update project FAILED: %s', ME.message));
+        end
+
+        function onDeleteProjectComplete(obj, app, projectId, projName)
+            app.logEvent('API', sprintf('Project deleted: %s (%s)', projName, projectId));
+            app.State.logActivity(sprintf('Delete project — %s', projName), 'Success');
+            if strcmp(char(app.State.currentProjectId), char(projectId))
+                app.State.currentProjectId   = "";
+                app.State.currentProjectName = "";
+                app.Client.ProjectId = "";
+                app.ActiveProjectLabel.Text = Labels.get('welcome_active_project_none', 'None');
+                if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                    app.UploadActiveProjectLabel.Text = Labels.get('upload_label_no_project');
+                end
+            end
+            app.hideLoading();
+            obj.onFetchProjects();
+        end
+
+        function onDeleteProjectError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Delete project FAILED: %s', ME.message));
+            app.showError('Delete Project', ME);
+        end
+
+        function onFetchProjectsComplete(obj, app, data)
+            [rows, ids] = JsonHelper.projectsToRows(data);
+            obj.FullProjectRows = rows;
+            obj.FullProjectIds  = ids;
+            obj.FilteredRows    = rows;
+            obj.FilteredIds     = ids;
+            obj.TotalItems = size(rows, 1);
+            nRows = size(rows, 1);
+            app.logEvent('API', sprintf('GET /api/projects → %d row(s) returned (total: %d)', nRows, obj.TotalItems));
+            if app.State.hasProject() && nRows > 0
+                for r = 1:nRows
+                    if strcmp(ids{r}, char(app.State.currentProjectId))
+                        app.State.currentProjectName = string(rows{r,1});
+                        app.ActiveProjectLabel.Text = char(rows{r,1});
+                        if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                            app.UploadActiveProjectLabel.Text = char(rows{r,1});
+                        end
+                        break;
+                    end
+                end
+            end
+            obj.displayCurrentPage();
+            obj.LastRefresh = tic;
+            app.hideLoading();
+        end
+
+        function onFetchProjectsError(~, app, ME)
+            app.hideLoading();
+            if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
+            app.showError('Fetch Projects', ME);
+        end
+
         function displayCurrentPage(obj)
             app = obj.App;
             startIdx = (obj.CurrentPage - 1) * obj.ItemsPerPage + 1;

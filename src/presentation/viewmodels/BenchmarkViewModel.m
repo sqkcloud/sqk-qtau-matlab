@@ -91,57 +91,61 @@ classdef BenchmarkViewModel < handle
             token = app.State.authToken;
 
             app.showLoading(Labels.get('loading_benchmark', 'Running benchmark...'));
-            try
-                % ── Step 1: Save benchmark config ────────────────────────
-                app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config', pid));
-                configResp = app.ProjectSvc.saveBenchmarkConfig( ...
-                    pid, circuitId, backendName, shots, opt, mitig, strategy, token);
+            app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config', pid));
+            ctx = struct('pid', pid, 'cid', circuitId, 'backend', backendName, ...
+                'shots', shots, 'opt', opt, 'mitig', mitig, 'strategy', strategy);
+            AsyncRunner.run( ...
+                @() app.ProjectSvc.saveBenchmarkConfig(pid, circuitId, backendName, shots, opt, mitig, strategy, token), ...
+                @(configResp) obj.onSaveBenchmarkConfigComplete(app, ctx, configResp), ...
+                @(ME)         obj.onBenchmarkError(app, ME));
+        end
 
-                % ── Display execution plan from config response ──────────
-                obj.displayExecutionPlan(configResp, shots, opt, mitig, strategy);
-                app.logEvent('API', 'Benchmark config saved — execution plan displayed');
+        function onSaveBenchmarkConfigComplete(obj, app, ctx, configResp)
+            obj.displayExecutionPlan(configResp, ctx.shots, ctx.opt, ctx.mitig, ctx.strategy);
+            app.logEvent('API', 'Benchmark config saved — execution plan displayed');
+            % Step 2 — chained async: compare transpilation strategies
+            strategies = obj.buildStrategiesList(ctx.strategy);
+            app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config/compare-strategies', ctx.pid));
+            AsyncRunner.run( ...
+                @() app.ProjectSvc.compareStrategies(ctx.pid, ctx.cid, ctx.backend, strategies, app.State.authToken), ...
+                @(compData) obj.onCompareStrategiesComplete(app, ctx, compData), ...
+                @(ME)       obj.onCompareStrategiesFallback(app, ctx, ME));
+        end
 
-                % ── Step 2: Compare transpilation strategies ─────────────
-                strategies = obj.buildStrategiesList(strategy);
-                app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config/compare-strategies', pid));
-                try
-                    compData = app.ProjectSvc.compareStrategies( ...
-                        pid, circuitId, backendName, strategies, token);
-                    rows = JsonHelper.benchmarkStrategyToRows(compData);
-                    if ~isempty(rows)
-                        app.BenchmarkStrategyTable.Data = rows;
-                        app.logEvent('API', sprintf('Strategy comparison complete — %d rows', size(rows, 1)));
-                    else
-                        % API returned 200 but `strategies: []` — typically means
-                        % the backend's Qiskit transpilation failed for every
-                        % level/routing pair (see sqk-qtau predict_service.py
-                        % around line 438 — the loop swallows per-attempt
-                        % exceptions and never raises if all 9 fail).
-                        app.BenchmarkStrategyTable.Data = ...
-                            obj.estimateStrategies(strategy, opt, shots);
-                        app.logEvent('WARN', ...
-                            'API returned strategies=[] — using local estimates. Check backend logs for "Transpilation failed" warnings.');
-                    end
-                catch ME2
-                    % compare-strategies failed (e.g. Qiskit not installed — 503,
-                    % invalid circuit — 422, missing raw_content — 500).
-                    app.logEvent('WARN', sprintf( ...
-                        'Strategy comparison API failed: %s — using local estimates', ...
-                        ME2.message));
-                    app.BenchmarkStrategyTable.Data = ...
-                        obj.estimateStrategies(strategy, opt, shots);
-                end
-
-                app.State.logActivity('Run benchmark', 'Success');
-                obj.LastRefresh = tic;
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Benchmark API FAILED: %s', ME.message));
-                app.setStatus(app.BenchmarkStatusArea, { ...
-                    'Benchmark failed (API error).', ME.message});
-                app.showError('Run Benchmark', ME);
+        function onCompareStrategiesComplete(obj, app, ctx, compData)
+            rows = JsonHelper.benchmarkStrategyToRows(compData);
+            if ~isempty(rows)
+                app.BenchmarkStrategyTable.Data = rows;
+                app.logEvent('API', sprintf('Strategy comparison complete — %d rows', size(rows, 1)));
+            else
+                % API returned 200 but `strategies: []` — typically the
+                % backend's Qiskit transpilation failed for every level/
+                % routing pair. Render local estimates instead.
+                app.BenchmarkStrategyTable.Data = obj.estimateStrategies(ctx.strategy, ctx.opt, ctx.shots);
+                app.logEvent('WARN', ...
+                    'API returned strategies=[] — using local estimates. Check backend logs for "Transpilation failed" warnings.');
             end
+            obj.finishBenchmarkRun(app);
+        end
+
+        function onCompareStrategiesFallback(obj, app, ctx, ME)
+            app.logEvent('WARN', sprintf( ...
+                'Strategy comparison API failed: %s — using local estimates', ME.message));
+            app.BenchmarkStrategyTable.Data = obj.estimateStrategies(ctx.strategy, ctx.opt, ctx.shots);
+            obj.finishBenchmarkRun(app);
+        end
+
+        function onBenchmarkError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Benchmark API FAILED: %s', ME.message));
+            app.setStatus(app.BenchmarkStatusArea, {'Benchmark failed (API error).', ME.message});
+            app.showError('Run Benchmark', ME);
+        end
+
+        function finishBenchmarkRun(obj, app)
+            app.State.logActivity('Run benchmark', 'Success');
+            obj.LastRefresh = tic;
+            app.hideLoading();
         end
 
         % ── Auto-load on screen entry ────────────────────────────────────

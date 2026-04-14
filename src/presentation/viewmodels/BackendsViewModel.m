@@ -34,25 +34,31 @@ classdef BackendsViewModel < handle
                 cid = char(app.State.selectedCircuitId);
             end
             app.showLoading(Labels.get('loading_backends', 'Loading backends...'));
-            try
-                data = obj.fetchBackends(app, cid);
-                rows = JsonHelper.backendsToRows(data);
-                obj.FullTableData = rows;
-                obj.PageSkip = 0;  % reset to page 1 on refresh
-                obj.applyPage();
-                if ~isempty(rows)
-                    obj.populateKpiCards(app, rows);
-                end
-                app.setStatus(app.BackendStatusArea, {sprintf('Loaded %d backend(s).', size(rows,1))});
-                app.logEvent('API', sprintf('Backends loaded — %d rows', size(rows,1)));
-                obj.LastRefresh = tic;
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Backends FAILED: %s', ME.message));
-                app.setStatus(app.BackendStatusArea, {'Backend refresh failed.', ME.message});
-                app.showError('Refresh Backends', ME);
+            AsyncRunner.run( ...
+                @() obj.fetchBackends(app, cid), ...
+                @(data) obj.onRefreshBackendsComplete(app, data), ...
+                @(ME)   obj.onRefreshBackendsError(app, ME));
+        end
+
+        function onRefreshBackendsComplete(obj, app, data)
+            rows = JsonHelper.backendsToRows(data);
+            obj.FullTableData = rows;
+            obj.PageSkip = 0;  % reset to page 1 on refresh
+            obj.applyPage();
+            if ~isempty(rows)
+                obj.populateKpiCards(app, rows);
             end
+            app.setStatus(app.BackendStatusArea, {sprintf('Loaded %d backend(s).', size(rows,1))});
+            app.logEvent('API', sprintf('Backends loaded — %d rows', size(rows,1)));
+            obj.LastRefresh = tic;
+            app.hideLoading();
+        end
+
+        function onRefreshBackendsError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Backends FAILED: %s', ME.message));
+            app.setStatus(app.BackendStatusArea, {'Backend refresh failed.', ME.message});
+            app.showError('Refresh Backends', ME);
         end
 
         % ── Search ────────────────────────────────────────────────────────
@@ -147,24 +153,30 @@ classdef BackendsViewModel < handle
             if row == 0; return; end
             bName = char(string(app.BackendTable.Data{row, 2}));
             app.showLoading(sprintf('Loading details for %s...', bName));
-            try
-                detail = app.BackendSvc.getBackend(bName, app.State.authToken);
-                notes = {sprintf('=== %s ===', bName), ''};
-                notes{end+1} = sprintf('Qubits: %s',      string(JsonHelper.pick(detail, {'num_qubits'})));
-                notes{end+1} = sprintf('Operational: %s',  string(JsonHelper.pick(detail, {'operational'})));
-                notes{end+1} = sprintf('Simulator: %s',    string(JsonHelper.pick(detail, {'simulator'})));
-                notes{end+1} = sprintf('Max shots: %s',    string(JsonHelper.pick(detail, {'max_shots'})));
-                notes{end+1} = sprintf('Version: %s',      string(JsonHelper.pick(detail, {'backend_version'})));
-                gates = JsonHelper.pick(detail, {'basis_gates'});
-                if iscell(gates); notes{end+1} = sprintf('Basis gates: %s', strjoin(string(gates), ', ')); end
-                calAge = JsonHelper.pick(detail, {'calibration_age_hours'});
-                if isnumeric(calAge) && ~isnan(calAge); notes{end+1} = sprintf('Calibration age: %.1f hours', calAge); end
-                app.setStatus(app.BackendStatusArea, notes);
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.setStatus(app.BackendStatusArea, {sprintf('Failed to load details: %s', ME.message)});
-            end
+            AsyncRunner.run( ...
+                @() app.BackendSvc.getBackend(bName, app.State.authToken), ...
+                @(detail) obj.onCtxViewDetailsComplete(app, bName, detail), ...
+                @(ME)     obj.onCtxViewDetailsError(app, ME));
+        end
+
+        function onCtxViewDetailsComplete(~, app, bName, detail)
+            notes = {sprintf('=== %s ===', bName), ''};
+            notes{end+1} = sprintf('Qubits: %s',      string(JsonHelper.pick(detail, {'num_qubits'})));
+            notes{end+1} = sprintf('Operational: %s',  string(JsonHelper.pick(detail, {'operational'})));
+            notes{end+1} = sprintf('Simulator: %s',    string(JsonHelper.pick(detail, {'simulator'})));
+            notes{end+1} = sprintf('Max shots: %s',    string(JsonHelper.pick(detail, {'max_shots'})));
+            notes{end+1} = sprintf('Version: %s',      string(JsonHelper.pick(detail, {'backend_version'})));
+            gates = JsonHelper.pick(detail, {'basis_gates'});
+            if iscell(gates); notes{end+1} = sprintf('Basis gates: %s', strjoin(string(gates), ', ')); end
+            calAge = JsonHelper.pick(detail, {'calibration_age_hours'});
+            if isnumeric(calAge) && ~isnan(calAge); notes{end+1} = sprintf('Calibration age: %.1f hours', calAge); end
+            app.setStatus(app.BackendStatusArea, notes);
+            app.hideLoading();
+        end
+
+        function onCtxViewDetailsError(~, app, ME)
+            app.hideLoading();
+            app.setStatus(app.BackendStatusArea, {sprintf('Failed to load details: %s', ME.message)});
         end
     end
 
@@ -244,17 +256,20 @@ classdef BackendsViewModel < handle
             end
             if isempty(primaryName) && n >= 1; primaryName = char(string(rows{1, 1})); end
             if isempty(backupName)  && n >= 2; backupName  = char(string(rows{2, 1})); end
-            calAge = 'N/A';
-            try
-                detail = app.BackendSvc.getBackend(primaryName, app.State.authToken);
-                ageHrs = JsonHelper.pick(detail, {'calibration_age_hours'});
-                if isnumeric(ageHrs) && ~isnan(ageHrs); calAge = sprintf('%.1f hours', ageHrs); end
-            catch ME; Logger.debug('BackendsViewModel', 'populateKpiCards calibration age: %s', ME.message); end
             app.BackendKpiLabels{1}.Text = primaryName;
             app.BackendKpiLabels{2}.Text = backupName;
             if bestFid > 0; app.BackendKpiLabels{3}.Text = sprintf('%.4f', bestFid);
             else; app.BackendKpiLabels{3}.Text = 'N/A'; end
-            app.BackendKpiLabels{4}.Text = calAge;
+            app.BackendKpiLabels{4}.Text = 'Loading…';
+            % Async-fetch calibration age so the KPI strip never blocks
+            if ~isempty(primaryName)
+                AsyncRunner.run( ...
+                    @() app.BackendSvc.getBackend(primaryName, app.State.authToken), ...
+                    @(detail) BackendsViewModel.applyCalibrationAge(app, 4, detail), ...
+                    @(ME) BackendsViewModel.calibrationAgeError(app, 4, ME));
+            else
+                app.BackendKpiLabels{4}.Text = 'N/A';
+            end
         end
 
         function updateKpiForSelection(~, app, row, backupName)
@@ -264,11 +279,12 @@ classdef BackendsViewModel < handle
             if ~isempty(backupName); app.BackendKpiLabels{2}.Text = backupName; end
             fid = tData{row, 5};
             if isnumeric(fid) && ~isnan(fid); app.BackendKpiLabels{3}.Text = sprintf('%.4f', fid); end
-            try
-                detail = app.BackendSvc.getBackend(char(string(tData{row,2})), app.State.authToken);
-                ageHrs = JsonHelper.pick(detail, {'calibration_age_hours'});
-                if isnumeric(ageHrs) && ~isnan(ageHrs); app.BackendKpiLabels{4}.Text = sprintf('%.1f hours', ageHrs); end
-            catch ME; Logger.debug('BackendsViewModel', 'updateKpiForSelection calibration age: %s', ME.message); end
+            app.BackendKpiLabels{4}.Text = 'Loading…';
+            primary = char(string(tData{row,2}));
+            AsyncRunner.run( ...
+                @() app.BackendSvc.getBackend(primary, app.State.authToken), ...
+                @(detail) BackendsViewModel.applyCalibrationAge(app, 4, detail), ...
+                @(ME) BackendsViewModel.calibrationAgeError(app, 4, ME));
         end
 
         function updateStatusNotes(~, app, row, backupName)
@@ -336,6 +352,26 @@ classdef BackendsViewModel < handle
             if isprop(app, 'BackendsNextBtn') && ~isempty(app.BackendsNextBtn) && isvalid(app.BackendsNextBtn)
                 app.BackendsNextBtn.Enable = (obj.PageSkip + obj.PageLimit) < totalItems;
             end
+        end
+    end
+
+    methods (Static, Access = private)
+        function applyCalibrationAge(app, kpiIdx, detail)
+            if isempty(app.BackendKpiLabels) || numel(app.BackendKpiLabels) < kpiIdx; return; end
+            if ~isvalid(app.BackendKpiLabels{kpiIdx}); return; end
+            ageHrs = JsonHelper.pick(detail, {'calibration_age_hours'});
+            if isnumeric(ageHrs) && ~isnan(ageHrs)
+                app.BackendKpiLabels{kpiIdx}.Text = sprintf('%.1f hours', ageHrs);
+            else
+                app.BackendKpiLabels{kpiIdx}.Text = 'N/A';
+            end
+        end
+
+        function calibrationAgeError(app, kpiIdx, ME)
+            Logger.debug('BackendsViewModel', 'calibration age fetch: %s', ME.message);
+            if isempty(app.BackendKpiLabels) || numel(app.BackendKpiLabels) < kpiIdx; return; end
+            if ~isvalid(app.BackendKpiLabels{kpiIdx}); return; end
+            app.BackendKpiLabels{kpiIdx}.Text = 'N/A';
         end
     end
 end

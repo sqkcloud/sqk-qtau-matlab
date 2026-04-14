@@ -12,10 +12,23 @@ classdef SettingsViewModel < handle
             app = obj.App;
             app.logEvent('CONFIG', 'Settings save triggered');
             try
+                prevUrl = app.State.baseUrl;
                 if ~isempty(app.SettingsBaseUrlField) && isvalid(app.SettingsBaseUrlField)
                     app.State.baseUrl = string(app.SettingsBaseUrlField.Value);
                 end
-                app.syncClient();
+                try
+                    app.syncClient();
+                catch urlErr
+                    if strcmp(urlErr.identifier, 'FastAPIClient:insecureBaseUrl') || ...
+                       strcmp(urlErr.identifier, 'FastAPIClient:invalidBaseUrl')
+                        app.State.baseUrl = prevUrl;  % revert
+                        uialert(app.UIFigure, ...
+                            sprintf('%s\n\nThe base URL was reverted.', urlErr.message), ...
+                            'Insecure URL', 'Icon', 'error');
+                        return;
+                    end
+                    rethrow(urlErr);
+                end
                 app.logEvent('CONFIG', sprintf('Base URL updated: %s', app.State.baseUrl));
             catch ME
                 app.logEvent('WARN', sprintf('Could not update base URL: %s', ME.message));
@@ -27,20 +40,14 @@ classdef SettingsViewModel < handle
                 app.logEvent('API', sprintf('POST /api/settings/preferences — shots: %d  opt: %d  logLevel: %s', ...
                     shots, opt, logLevel));
                 app.showLoading(Labels.get('loading_saving_settings', 'Saving settings...'));
-                try
-                    prefs = struct( ...
-                        'default_shots',      shots, ...
-                        'optimization_level', opt, ...
-                        'log_level',          logLevel);
-                    app.SettingsSvc.savePreferences(prefs, app.State.authToken);
-                    app.logEvent('API', 'Preferences saved to server successfully');
-                    app.State.logActivity('Save settings', 'Success');
-                    app.hideLoading();
-                catch ME
-                    app.hideLoading();
-                    app.logEvent('ERROR', sprintf('Save preferences FAILED: %s', ME.message));
-                    app.showError('Save Settings', ME);
-                end
+                prefs = struct( ...
+                    'default_shots',      shots, ...
+                    'optimization_level', opt, ...
+                    'log_level',          logLevel);
+                AsyncRunner.run( ...
+                    @() app.SettingsSvc.savePreferences(prefs, app.State.authToken), ...
+                    @(~) obj.onSavePrefsComplete(app), ...
+                    @(ME) obj.onSavePrefsError(app, ME));
             else
                 app.logEvent('CONFIG', 'Preferences not synced to server (not authenticated)');
             end
@@ -65,22 +72,10 @@ classdef SettingsViewModel < handle
             app.logEvent('API', sprintf('POST /api/settings/verify-ibm — channel: %s  instance: %s', ...
                 channel, instance));
             app.showLoading(Labels.get('loading_verifying', 'Verifying IBM credentials...'));
-            try
-                data = app.SettingsSvc.verifyIbmCredentials(apiTok, channel, instance, app.State.authToken);
-                ok   = char(JsonHelper.pick(data, {'valid','status','ok'}));
-                if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
-                    app.SettingsStatusArea.Value = {sprintf('IBM credentials verified: %s', ok)};
-                end
-                app.logEvent('API', sprintf('IBM credentials verification result: %s', ok));
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('IBM verify FAILED (channel: %s): %s', channel, ME.message));
-                if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
-                    app.SettingsStatusArea.Value = {'Verification failed.', ME.message};
-                end
-                app.showError('Verify IBM Credentials', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.SettingsSvc.verifyIbmCredentials(apiTok, channel, instance, app.State.authToken), ...
+                @(data) obj.onVerifyIbmComplete(app, data), ...
+                @(ME)   obj.onVerifyIbmError(app, channel, ME));
         end
 
         function onSettingsUrlChanged(obj, src)
@@ -93,8 +88,21 @@ classdef SettingsViewModel < handle
                         'Invalid URL', 'Icon', 'warning');
                     return;
                 end
+                prevUrl = app.State.baseUrl;
                 app.State.baseUrl = newUrl;
-                app.syncClient();
+                try
+                    app.syncClient();
+                catch urlErr
+                    if strcmp(urlErr.identifier, 'FastAPIClient:insecureBaseUrl') || ...
+                       strcmp(urlErr.identifier, 'FastAPIClient:invalidBaseUrl')
+                        app.State.baseUrl = prevUrl;  % revert
+                        uialert(app.UIFigure, ...
+                            sprintf('%s\n\nThe base URL was reverted.', urlErr.message), ...
+                            'Insecure URL', 'Icon', 'error');
+                        return;
+                    end
+                    rethrow(urlErr);
+                end
                 app.logEvent('CONFIG', sprintf('Base URL updated from Settings tab: %s', newUrl));
             catch ME
                 app.logEvent('WARN', sprintf('Settings URL change handler error: %s', ME.message));
@@ -120,18 +128,10 @@ classdef SettingsViewModel < handle
             end
             app.logEvent('API', 'DELETE /api/settings/cache');
             app.showLoading(Labels.get('loading_clearing_cache', 'Clearing cache...'));
-            try
-                app.SettingsSvc.clearCache(app.State.authToken);
-                app.logEvent('API', 'Server cache cleared successfully');
-                if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
-                    app.SettingsStatusArea.Value = {'Server-side cache cleared.'};
-                end
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Clear cache FAILED: %s', ME.message));
-                app.showError('Clear Server Cache', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.SettingsSvc.clearCache(app.State.authToken), ...
+                @(~) obj.onClearCacheComplete(app), ...
+                @(ME) obj.onClearCacheError(app, ME));
         end
 
         function onRestartPipeline(obj)
@@ -156,6 +156,52 @@ classdef SettingsViewModel < handle
             end
             fprintf('[%s] UI       Event log cleared (%d entries removed)\n', ...
                 char(datetime('now', 'Format', 'HH:mm:ss.SSS')), prevCount);
+        end
+    end
+
+    methods (Access = private)
+        function onSavePrefsComplete(~, app)
+            app.logEvent('API', 'Preferences saved to server successfully');
+            app.State.logActivity('Save settings', 'Success');
+            app.hideLoading();
+        end
+
+        function onSavePrefsError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Save preferences FAILED: %s', ME.message));
+            app.showError('Save Settings', ME);
+        end
+
+        function onVerifyIbmComplete(~, app, data)
+            ok = char(JsonHelper.pick(data, {'valid','status','ok'}));
+            if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
+                app.SettingsStatusArea.Value = {sprintf('IBM credentials verified: %s', ok)};
+            end
+            app.logEvent('API', sprintf('IBM credentials verification result: %s', ok));
+            app.hideLoading();
+        end
+
+        function onVerifyIbmError(~, app, channel, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('IBM verify FAILED (channel: %s): %s', channel, ME.message));
+            if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
+                app.SettingsStatusArea.Value = {'Verification failed.', ME.message};
+            end
+            app.showError('Verify IBM Credentials', ME);
+        end
+
+        function onClearCacheComplete(~, app)
+            app.logEvent('API', 'Server cache cleared successfully');
+            if ~isempty(app.SettingsStatusArea) && isvalid(app.SettingsStatusArea)
+                app.SettingsStatusArea.Value = {'Server-side cache cleared.'};
+            end
+            app.hideLoading();
+        end
+
+        function onClearCacheError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Clear cache FAILED: %s', ME.message));
+            app.showError('Clear Server Cache', ME);
         end
     end
 end

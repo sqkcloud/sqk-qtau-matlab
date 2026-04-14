@@ -31,29 +31,31 @@ classdef PredictionViewModel < handle
                     'Prediction', 'Icon', 'warning');
                 return;
             end
+            cid   = char(app.State.selectedCircuitId);
+            shots = app.State.benchmarkShots;
+            opt   = app.State.benchmarkOptLevel;
             app.logEvent('API', sprintf('POST /api/predict — circuit: %s  backend: %s  shots: %d  opt: %d', ...
-                app.State.selectedCircuitId, backend, ...
-                app.State.benchmarkShots, app.State.benchmarkOptLevel));
+                cid, backend, shots, opt));
             app.showLoading(Labels.get('loading_prediction', 'Running prediction...'));
-            try
-                data = app.PredictionSvc.predict( ...
-                    app.State.selectedCircuitId, ...
-                    backend, ...
-                    app.State.benchmarkShots, ...
-                    app.State.benchmarkOptLevel, ...
-                    app.State.authToken);
-                app.State.predictionId = string(JsonHelper.pick(data, {'prediction_id','id'}));
-                obj.applyPredictionData(data);
-                app.logEvent('API', sprintf('Prediction complete — id: %s  circuit: %s  backend: %s', ...
-                    app.State.predictionId, app.State.selectedCircuitId, backend));
-                app.State.logActivity(sprintf('Run prediction — %s', char(app.State.selectedCircuitName)), 'Success');
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Prediction FAILED (circuit: %s  backend: %s): %s', ...
-                    app.State.selectedCircuitId, backend, ME.message));
-                app.showError('Run Prediction', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.PredictionSvc.predict(cid, backend, shots, opt, app.State.authToken), ...
+                @(data) obj.onPredictComplete(app, cid, backend, data), ...
+                @(ME)   obj.onPredictError(app, cid, backend, ME));
+        end
+
+        function onPredictComplete(obj, app, cid, backend, data)
+            app.State.predictionId = string(JsonHelper.pick(data, {'prediction_id','id'}));
+            obj.applyPredictionData(data);
+            app.logEvent('API', sprintf('Prediction complete — id: %s  circuit: %s  backend: %s', ...
+                app.State.predictionId, cid, backend));
+            app.State.logActivity(sprintf('Run prediction — %s', char(app.State.selectedCircuitName)), 'Success');
+            app.hideLoading();
+        end
+
+        function onPredictError(~, app, cid, backend, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Prediction FAILED (circuit: %s  backend: %s): %s', cid, backend, ME.message));
+            app.showError('Run Prediction', ME);
         end
     end
 

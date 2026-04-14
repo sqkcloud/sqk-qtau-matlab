@@ -39,70 +39,12 @@ classdef CircuitsViewModel < handle
             end
             app.logEvent('API', sprintf('GET /api/circuits?skip=%d&limit=%d — project: %s', ...
                 obj.PageSkip, obj.PageLimit, char(app.State.currentProjectId)));
-            try
-                data = app.CircuitSvc.listCircuitsPaged(obj.PageSkip, obj.PageLimit, ...
-                    app.State.authToken);
-                circuits = JsonHelper.extractList(data, 'circuits');
-                if isempty(circuits)
-                    app.CircuitsTable.Data = {};
-                    obj.RowCircuitIds = {};
-                    obj.RowCircuits   = {};
-                    obj.updatePageLabel();
-                    return;
-                end
-                if isstruct(circuits)
-                    circuits = num2cell(circuits);
-                end
-                n = numel(circuits);
-                tableData = cell(n, 8);
-                ids   = cell(1, n);
-                cdata = cell(1, n);
-                for i = 1:n
-                    c = circuits{i};
-                    tableData{i,1} = obj.PageSkip + i;  % row index
-                    if isstruct(c)
-                        cid = char(string(JsonHelper.pick(c, {'circuit_id','id'})));
-                        ids{i}   = cid;
-                        cdata{i} = c;
-                        tableData{i,2} = char(string(JsonHelper.pick(c, {'name','circuit_name'})));
-                        fmt = JsonHelper.safeField(c, 'format', '');
-                        tableData{i,3} = char(string(fmt));
-                        fmtStr = lower(char(string(fmt)));
-                        if contains(fmtStr, '3')
-                            tableData{i,4} = '3.0';
-                        elseif contains(fmtStr, '2') || contains(fmtStr, 'qasm')
-                            tableData{i,4} = '2.0';
-                        else
-                            tableData{i,4} = char(string(fmt));
-                        end
-                        cat = JsonHelper.safeField(c, 'category', '');
-                        tableData{i,5} = char(string(cat));
-                        nq = JsonHelper.safeField(c, 'num_qubits', '');
-                        if isnumeric(nq); tableData{i,6} = num2str(nq); else; tableData{i,6} = char(string(nq)); end
-                        dp = JsonHelper.safeField(c, 'depth', '');
-                        if isnumeric(dp); tableData{i,7} = num2str(dp); else; tableData{i,7} = char(string(dp)); end
-                        tableData{i,8} = char(string(JsonHelper.safeField(c, 'created_at', '')));
-                    end
-                end
-                obj.RowCircuitIds = ids;
-                obj.RowCircuits   = cdata;
-                obj.FullTableData = tableData;
-                obj.FullRowIds    = ids;
-                obj.FullRowData   = cdata;
-                app.CircuitsTable.Data = tableData;
-                % Re-apply active search filter if any
-                if ~isempty(app.CircuitsSearchField) && isvalid(app.CircuitsSearchField)
-                    q = strtrim(app.CircuitsSearchField.Value);
-                    if strlength(q) > 0
-                        obj.onSearch(char(q));
-                    end
-                end
-                app.logEvent('API', sprintf('listCircuitsPaged → %d circuits loaded', n));
-                obj.LastRefresh = tic;
-            catch ME
-                app.logEvent('ERROR', sprintf('listCircuitsPaged FAILED: %s', ME.message));
-            end
-            obj.updatePageLabel();
+            skip  = obj.PageSkip;
+            limit = obj.PageLimit;
+            AsyncRunner.run( ...
+                @() app.CircuitSvc.listCircuitsPaged(skip, limit, app.State.authToken), ...
+                @(data) obj.onLoadCircuitsComplete(app, data), ...
+                @(ME)   obj.onLoadCircuitsError(app, ME));
         end
 
         function onNextPage(obj)
@@ -433,20 +375,92 @@ classdef CircuitsViewModel < handle
             end
         end
 
-        function doDeleteCircuit(obj, cid, row)
+        function doDeleteCircuit(obj, cid, ~)
             app = obj.App;
-            try
-                app.showLoading('Deleting circuit...');
-                app.CircuitSvc.deleteCircuit(cid, app.State.authToken);
-                app.logEvent('API', sprintf('Circuit deleted: %s', cid));
-                app.State.logActivity(sprintf('Delete circuit — %s', char(cid)), 'Success');
-                app.hideLoading();
-                obj.onLoadCircuits();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('deleteCircuit FAILED: %s', ME.message));
-                app.showError('Delete Circuit', ME);
+            app.showLoading('Deleting circuit...');
+            AsyncRunner.run( ...
+                @() app.CircuitSvc.deleteCircuit(cid, app.State.authToken), ...
+                @(~) obj.onDeleteComplete(app, cid), ...
+                @(ME) obj.onDeleteError(app, ME));
+        end
+
+        function onLoadCircuitsComplete(obj, app, data)
+            circuits = JsonHelper.extractList(data, 'circuits');
+            if isempty(circuits)
+                app.CircuitsTable.Data = {};
+                obj.RowCircuitIds = {};
+                obj.RowCircuits   = {};
+                obj.updatePageLabel();
+                return;
             end
+            if isstruct(circuits)
+                circuits = num2cell(circuits);
+            end
+            n = numel(circuits);
+            tableData = cell(n, 8);
+            ids   = cell(1, n);
+            cdata = cell(1, n);
+            for i = 1:n
+                c = circuits{i};
+                tableData{i,1} = obj.PageSkip + i;
+                if isstruct(c)
+                    cid = char(string(JsonHelper.pick(c, {'circuit_id','id'})));
+                    ids{i}   = cid;
+                    cdata{i} = c;
+                    tableData{i,2} = char(string(JsonHelper.pick(c, {'name','circuit_name'})));
+                    fmt = JsonHelper.safeField(c, 'format', '');
+                    tableData{i,3} = char(string(fmt));
+                    fmtStr = lower(char(string(fmt)));
+                    if contains(fmtStr, '3')
+                        tableData{i,4} = '3.0';
+                    elseif contains(fmtStr, '2') || contains(fmtStr, 'qasm')
+                        tableData{i,4} = '2.0';
+                    else
+                        tableData{i,4} = char(string(fmt));
+                    end
+                    cat = JsonHelper.safeField(c, 'category', '');
+                    tableData{i,5} = char(string(cat));
+                    nq = JsonHelper.safeField(c, 'num_qubits', '');
+                    if isnumeric(nq); tableData{i,6} = num2str(nq); else; tableData{i,6} = char(string(nq)); end
+                    dp = JsonHelper.safeField(c, 'depth', '');
+                    if isnumeric(dp); tableData{i,7} = num2str(dp); else; tableData{i,7} = char(string(dp)); end
+                    tableData{i,8} = char(string(JsonHelper.safeField(c, 'created_at', '')));
+                end
+            end
+            obj.RowCircuitIds = ids;
+            obj.RowCircuits   = cdata;
+            obj.FullTableData = tableData;
+            obj.FullRowIds    = ids;
+            obj.FullRowData   = cdata;
+            app.CircuitsTable.Data = tableData;
+            % Re-apply active search filter if any
+            if ~isempty(app.CircuitsSearchField) && isvalid(app.CircuitsSearchField)
+                q = strtrim(app.CircuitsSearchField.Value);
+                if strlength(q) > 0
+                    obj.onSearch(char(q));
+                end
+            end
+            app.logEvent('API', sprintf('listCircuitsPaged → %d circuits loaded', n));
+            obj.LastRefresh = tic;
+            obj.updatePageLabel();
+        end
+
+        function onLoadCircuitsError(obj, app, ME)
+            app.logEvent('ERROR', sprintf('listCircuitsPaged FAILED: %s', ME.message));
+            obj.updatePageLabel();
+        end
+
+        function onDeleteComplete(obj, app, cid)
+            app.logEvent('API', sprintf('Circuit deleted: %s', cid));
+            app.State.logActivity(sprintf('Delete circuit — %s', char(cid)), 'Success');
+            app.hideLoading();
+            obj.onLoadCircuits();
+        end
+
+        function onDeleteError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('deleteCircuit FAILED: %s', ME.message));
+            app.showError('Delete Circuit', ME);
         end
 
         function updatePageLabel(obj)

@@ -47,7 +47,7 @@ classdef Logger
             else
                 msg = char(fmt);
             end
-            fprintf('[%s] %-8s [%-18s] %s\n', ts, levelStr, char(category), msg);
+            fprintf('[%s] %-8s [%-18s] %s\n', ts, levelStr, char(category), Logger.redact(msg));
         end
 
         function debug(category, fmt, varargin)
@@ -96,6 +96,20 @@ classdef Logger
             else
                 masked = [u(1) '***'];
             end
+        end
+
+        % redact  Strip Bearer tokens and credential-bearing query params
+        %         from a log message so sensitive material never reaches
+        %         stdout.  Applied automatically by Logger.log; callers can
+        %         also invoke it directly when composing custom output.
+        function out = redact(s)
+            out = char(string(s));
+            % "Bearer <token>"  →  "Bearer ***"
+            out = regexprep(out, '(?i)(Bearer\s+)\S+',                       '$1***');
+            % "Authorization: Bearer <token>"  →  "Authorization: Bearer ***"
+            out = regexprep(out, '(?i)(Authorization:\s*Bearer\s+)\S+',      '$1***');
+            % "?access_token=...&token=..." → masked values
+            out = regexprep(out, '(?i)([?&](access_token|token|api_key)=)[^&\s]+', '$1***');
         end
 
     end

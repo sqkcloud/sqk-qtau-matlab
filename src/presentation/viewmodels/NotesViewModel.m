@@ -19,21 +19,13 @@ classdef NotesViewModel < handle
                 return;
             end
             content = strjoin(app.NotesArea.Value, newline);
-            app.logEvent('API', sprintf('PUT /api/projects/%s/notes (%d chars)', ...
-                app.State.currentProjectId, numel(content)));
+            pid     = app.State.currentProjectId;
+            app.logEvent('API', sprintf('PUT /api/projects/%s/notes (%d chars)', pid, numel(content)));
             app.showLoading(Labels.get('loading_saving_notes', 'Saving notes...'));
-            try
-                app.ProjectSvc.saveNotes(app.State.currentProjectId, content, app.State.authToken);
-                app.State.projectNotes = content;
-                app.logEvent('API', sprintf('Notes saved to server — project: %s', app.State.currentProjectId));
-                app.State.logActivity('Save notes', 'Success');
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Save notes FAILED (project: %s): %s', ...
-                    app.State.currentProjectId, ME.message));
-                app.showError('Save Notes', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.ProjectSvc.saveNotes(pid, content, app.State.authToken), ...
+                @(~) obj.onSaveNotesComplete(app, pid, content), ...
+                @(ME) obj.onSaveNotesError(app, pid, ME));
         end
 
         function onLoadNotes(obj)
@@ -42,27 +34,13 @@ classdef NotesViewModel < handle
                 app.logEvent('UI', 'Load notes skipped — not authenticated or no project');
                 return;
             end
-            app.logEvent('API', sprintf('GET /api/projects/%s/notes', app.State.currentProjectId));
+            pid = app.State.currentProjectId;
+            app.logEvent('API', sprintf('GET /api/projects/%s/notes', pid));
             app.showLoading(Labels.get('loading_notes', 'Loading notes...'));
-            try
-                data    = app.ProjectSvc.getNotes(app.State.currentProjectId, app.State.authToken);
-                content = char(JsonHelper.pick(data, {'content','notes','text'}));
-                if ~isempty(content)
-                    app.NotesArea.Value    = strsplit(content, newline);
-                    app.State.projectNotes = content;
-                    app.logEvent('API', sprintf('Notes loaded (%d chars) — project: %s', ...
-                        numel(content), app.State.currentProjectId));
-                else
-                    app.logEvent('API', 'Notes loaded — response empty, no content to display');
-                end
-                obj.LastRefresh = tic;
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Load notes FAILED (project: %s): %s', ...
-                    app.State.currentProjectId, ME.message));
-                app.showError('Load Notes', ME);
-            end
+            AsyncRunner.run( ...
+                @() app.ProjectSvc.getNotes(pid, app.State.authToken), ...
+                @(data) obj.onLoadNotesComplete(app, pid, data), ...
+                @(ME)   obj.onLoadNotesError(app, pid, ME));
         end
 
         function onClearNotes(obj)
@@ -70,6 +48,40 @@ classdef NotesViewModel < handle
             app.NotesArea.Value    = {''};
             app.State.projectNotes = "";
             app.logEvent('UI', 'Notes cleared');
+        end
+    end
+
+    methods (Access = private)
+        function onSaveNotesComplete(~, app, pid, content)
+            app.State.projectNotes = content;
+            app.logEvent('API', sprintf('Notes saved to server — project: %s', pid));
+            app.State.logActivity('Save notes', 'Success');
+            app.hideLoading();
+        end
+
+        function onSaveNotesError(~, app, pid, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Save notes FAILED (project: %s): %s', pid, ME.message));
+            app.showError('Save Notes', ME);
+        end
+
+        function onLoadNotesComplete(obj, app, pid, data)
+            content = char(JsonHelper.pick(data, {'content','notes','text'}));
+            if ~isempty(content)
+                app.NotesArea.Value    = strsplit(content, newline);
+                app.State.projectNotes = content;
+                app.logEvent('API', sprintf('Notes loaded (%d chars) — project: %s', numel(content), pid));
+            else
+                app.logEvent('API', 'Notes loaded — response empty, no content to display');
+            end
+            obj.LastRefresh = tic;
+            app.hideLoading();
+        end
+
+        function onLoadNotesError(~, app, pid, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Load notes FAILED (project: %s): %s', pid, ME.message));
+            app.showError('Load Notes', ME);
         end
     end
 end

@@ -44,8 +44,8 @@ classdef test_FastAPIClient < matlab.unittest.TestCase
         end
 
         function testConstructorAcceptsStringUrl(testCase)
-            c = FastAPIClient("http://example.com:8080");
-            testCase.verifyEqual(char(c.BaseUrl), 'http://example.com:8080');
+            c = FastAPIClient("https://example.com:8080");
+            testCase.verifyEqual(char(c.BaseUrl), 'https://example.com:8080');
         end
 
         % ── Handle semantics ─────────────────────────────────────────────
@@ -58,15 +58,47 @@ classdef test_FastAPIClient < matlab.unittest.TestCase
         % ── setBaseUrl ───────────────────────────────────────────────────
 
         function testSetBaseUrlChangesUrl(testCase)
-            testCase.Client.setBaseUrl('http://newhost:9090');
+            testCase.Client.setBaseUrl('https://newhost:9090');
             testCase.verifyEqual(char(testCase.Client.BaseUrl), ...
-                'http://newhost:9090');
+                'https://newhost:9090');
         end
 
         function testSetBaseUrlAcceptsString(testCase)
-            testCase.Client.setBaseUrl("http://string.url:1234");
+            testCase.Client.setBaseUrl("https://string.url:1234");
             testCase.verifyEqual(char(testCase.Client.BaseUrl), ...
-                'http://string.url:1234');
+                'https://string.url:1234');
+        end
+
+        % ── Base URL safety guard ────────────────────────────────────────
+
+        function testHttpsBaseUrlAccepted(testCase)
+            testCase.verifyWarningFree( ...
+                @() FastAPIClient.assertSafeBaseUrl('https://api.example.com'));
+        end
+
+        function testHttpLoopbackAccepted(testCase)
+            testCase.verifyWarningFree( ...
+                @() FastAPIClient.assertSafeBaseUrl('http://localhost:5715'));
+            testCase.verifyWarningFree( ...
+                @() FastAPIClient.assertSafeBaseUrl('http://127.0.0.1:5715'));
+        end
+
+        function testHttpRemoteRejected(testCase)
+            testCase.verifyError( ...
+                @() FastAPIClient.assertSafeBaseUrl('http://api.example.com'), ...
+                'FastAPIClient:insecureBaseUrl');
+        end
+
+        function testEmptyBaseUrlRejected(testCase)
+            testCase.verifyError( ...
+                @() FastAPIClient.assertSafeBaseUrl(''), ...
+                'FastAPIClient:invalidBaseUrl');
+        end
+
+        function testSetBaseUrlRejectsInsecureRemote(testCase)
+            testCase.verifyError( ...
+                @() testCase.Client.setBaseUrl('http://attacker.example.com'), ...
+                'FastAPIClient:insecureBaseUrl');
         end
 
         % ── ProjectId assignment ─────────────────────────────────────────
@@ -86,8 +118,8 @@ classdef test_FastAPIClient < matlab.unittest.TestCase
         % ── Multiple instances are independent ───────────────────────────
 
         function testMultipleInstancesAreIndependent(testCase)
-            c1 = FastAPIClient('http://host1:1111');
-            c2 = FastAPIClient('http://host2:2222');
+            c1 = FastAPIClient('https://host1:1111');
+            c2 = FastAPIClient('https://host2:2222');
             testCase.verifyNotEqual(char(c1.BaseUrl), char(c2.BaseUrl));
         end
 

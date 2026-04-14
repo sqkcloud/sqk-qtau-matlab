@@ -20,19 +20,13 @@ classdef DetailedAnalysisViewModel < handle
             if ~app.State.isAuthenticated() || ~app.State.hasJob()
                 obj.plotComparisonDemo(); return;
             end
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed', app.State.selectedJobId));
+            jobId = app.State.selectedJobId;
+            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
-            try
-                data = app.JobSvc.getDetailedResults(app.State.selectedJobId, app.State.authToken);
-                obj.plotComparisonFromData(data);
-                app.logEvent('API', 'Comparison plot updated from live data');
-                app.State.logActivity('Detailed analysis — comparison plot', 'Success');
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('Detailed results failed: %s', ME.message));
-                obj.plotComparisonDemo();
-            end
+            AsyncRunner.run( ...
+                @() app.JobSvc.getDetailedResults(jobId, app.State.authToken), ...
+                @(data) obj.onPlotComparisonComplete(app, data), ...
+                @(ME)   obj.onPlotComparisonError(app, ME));
         end
 
         function onPlotTemporal(obj)
@@ -40,10 +34,17 @@ classdef DetailedAnalysisViewModel < handle
             if ~app.State.isAuthenticated() || ~app.State.hasJob()
                 obj.plotTemporalDemo(); return;
             end
-            app.logEvent('API', sprintf('GET /jobs/%s/error-trends', app.State.selectedJobId));
+            jobId = app.State.selectedJobId;
+            app.logEvent('API', sprintf('GET /jobs/%s/error-trends', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
+            AsyncRunner.run( ...
+                @() app.JobSvc.getErrorTrends(jobId, app.State.authToken), ...
+                @(data) obj.onPlotTemporalComplete(app, data), ...
+                @(ME)   obj.onPlotTemporalError(app, ME));
+        end
+
+        function onPlotTemporalComplete(obj, app, data)
             try
-                data = app.JobSvc.getErrorTrends(app.State.selectedJobId, app.State.authToken);
                 cla(app.TemporalAxes);
                 items = JsonHelper.extractList(data, 'trend');
                 if isempty(items); items = JsonHelper.asList(data); end
@@ -86,8 +87,14 @@ classdef DetailedAnalysisViewModel < handle
                 app.hideLoading();
             catch ME
                 app.hideLoading();
-                app.logEvent('ERROR', sprintf('Error trends failed: %s', ME.message));
+                Logger.warn('DetailedAnalysisViewModel', 'plotTemporalComplete failed: %s', ME.message);
             end
+            obj.plotTemporalDemo();
+        end
+
+        function onPlotTemporalError(obj, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Error trends failed: %s', ME.message));
             obj.plotTemporalDemo();
         end
 
@@ -96,10 +103,17 @@ classdef DetailedAnalysisViewModel < handle
             if ~app.State.isAuthenticated() || ~app.State.hasJob()
                 obj.plotQubitDemo(); return;
             end
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (qubit)', app.State.selectedJobId));
+            jobId = app.State.selectedJobId;
+            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (qubit)', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
+            AsyncRunner.run( ...
+                @() app.JobSvc.getDetailedResults(jobId, app.State.authToken), ...
+                @(data) obj.onPlotQubitComplete(app, data), ...
+                @(ME)   obj.onPlotQubitError(app, ME));
+        end
+
+        function onPlotQubitComplete(obj, app, data)
             try
-                data  = app.JobSvc.getDetailedResults(app.State.selectedJobId, app.State.authToken);
                 items = JsonHelper.extractList(data, 'qubit_fidelities');
                 if isempty(items); items = JsonHelper.extractList(data, 'per_qubit_fidelity'); end
                 n = numel(items);
@@ -133,8 +147,14 @@ classdef DetailedAnalysisViewModel < handle
                 app.hideLoading();
             catch ME
                 app.hideLoading();
-                app.logEvent('ERROR', sprintf('Qubit data failed: %s', ME.message));
+                Logger.warn('DetailedAnalysisViewModel', 'plotQubitComplete failed: %s', ME.message);
             end
+            obj.plotQubitDemo();
+        end
+
+        function onPlotQubitError(obj, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Qubit data failed: %s', ME.message));
             obj.plotQubitDemo();
         end
 
@@ -143,10 +163,17 @@ classdef DetailedAnalysisViewModel < handle
             if ~app.State.isAuthenticated() || ~app.State.hasJob()
                 obj.plotHeatmapDemo(); return;
             end
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (heatmap)', app.State.selectedJobId));
+            jobId = app.State.selectedJobId;
+            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (heatmap)', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
+            AsyncRunner.run( ...
+                @() app.JobSvc.getDetailedResults(jobId, app.State.authToken), ...
+                @(data) obj.onPlotHeatmapComplete(app, data), ...
+                @(ME)   obj.onPlotHeatmapError(app, ME));
+        end
+
+        function onPlotHeatmapComplete(obj, app, data)
             try
-                data  = app.JobSvc.getDetailedResults(app.State.selectedJobId, app.State.authToken);
                 items = JsonHelper.extractList(data, 'error_matrix');
                 if isempty(items); items = JsonHelper.extractList(data, 'crosstalk_matrix'); end
                 n = numel(items);
@@ -179,8 +206,14 @@ classdef DetailedAnalysisViewModel < handle
                 app.hideLoading();
             catch ME
                 app.hideLoading();
-                app.logEvent('ERROR', sprintf('Error matrix failed: %s', ME.message));
+                Logger.warn('DetailedAnalysisViewModel', 'plotHeatmapComplete failed: %s', ME.message);
             end
+            obj.plotHeatmapDemo();
+        end
+
+        function onPlotHeatmapError(obj, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Error matrix failed: %s', ME.message));
             obj.plotHeatmapDemo();
         end
 
@@ -189,10 +222,17 @@ classdef DetailedAnalysisViewModel < handle
             if ~app.State.isAuthenticated() || ~app.State.hasJob()
                 obj.plotRBDecayDemo(); return;
             end
-            app.logEvent('API', sprintf('GET /jobs/%s/rb-decay', app.State.selectedJobId));
+            jobId = app.State.selectedJobId;
+            app.logEvent('API', sprintf('GET /jobs/%s/rb-decay', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
+            AsyncRunner.run( ...
+                @() app.JobSvc.getRBDecay(jobId, app.State.authToken), ...
+                @(data) obj.onPlotRBDecayComplete(app, data), ...
+                @(ME)   obj.onPlotRBDecayError(app, ME));
+        end
+
+        function onPlotRBDecayComplete(obj, app, data)
             try
-                data  = app.JobSvc.getRBDecay(app.State.selectedJobId, app.State.authToken);
                 items = JsonHelper.extractList(data, 'rb_data');
                 if isempty(items); items = JsonHelper.asList(data); end
                 n = numel(items);
@@ -240,11 +280,32 @@ classdef DetailedAnalysisViewModel < handle
                 app.hideLoading();
             catch ME
                 app.hideLoading();
-                app.logEvent('ERROR', sprintf('RB decay failed: %s', ME.message));
+                Logger.warn('DetailedAnalysisViewModel', 'plotRBDecayComplete failed: %s', ME.message);
             end
             obj.plotRBDecayDemo();
         end
 
+        function onPlotRBDecayError(obj, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('RB decay failed: %s', ME.message));
+            obj.plotRBDecayDemo();
+        end
+
+    end
+
+    methods (Access = private)
+        function onPlotComparisonComplete(obj, app, data)
+            obj.plotComparisonFromData(data);
+            app.logEvent('API', 'Comparison plot updated from live data');
+            app.State.logActivity('Detailed analysis — comparison plot', 'Success');
+            app.hideLoading();
+        end
+
+        function onPlotComparisonError(obj, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Detailed results failed: %s', ME.message));
+            obj.plotComparisonDemo();
+        end
     end
 
     methods
