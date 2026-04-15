@@ -29,8 +29,8 @@ function SettingsScreen(app)
     ibmPanel = uipanel(g, 'Title', Labels.get('settings_panel_ibm_account'));
     ibmPanel.Layout.Row = 1; ibmPanel.Layout.Column = 1; ibmPanel.BackgroundColor = [1 1 1];
 
-    ig = uigridlayout(ibmPanel, [7 2]);
-    ig.RowHeight = {28,28,28,28,28,34,'1x'};
+    ig = uigridlayout(ibmPanel, [8 2]);
+    ig.RowHeight = {28,28,28,28,28,34,54,'1x'};
     ig.ColumnWidth = {160,'1x'};
     ig.Padding = [14 10 14 10]; ig.RowSpacing = 5; ig.BackgroundColor = [1 1 1];
 
@@ -43,22 +43,27 @@ function SettingsScreen(app)
     lbl = uilabel(ig, 'Text', Labels.get('settings_label_api_token'));
     lbl.FontColor = [0.35 0.42 0.52];
     lbl.Layout.Row = 2; lbl.Layout.Column = 1;
-    app.IbmApiTokenField = uieditfield(ig, 'text', 'Value', '');
+    % Pre-fill from IBM_QUANTUM_TOKEN env var if set — mirrors the notebook's
+    % os.getenv("IBM_QUANTUM_TOKEN") pattern so developers can configure once
+    % and have both the server and this UI pick it up automatically.
+    app.IbmApiTokenField = uieditfield(ig, 'text', 'Value', AppConfig.env('IBM_QUANTUM_TOKEN', ''));
     app.IbmApiTokenField.Layout.Row = 2; app.IbmApiTokenField.Layout.Column = 2;
     app.IbmApiTokenField.Placeholder = Labels.get('settings_placeholder_api_token', 'Paste IBM Quantum API token');
 
     lbl = uilabel(ig, 'Text', Labels.get('settings_label_channel'));
     lbl.FontColor = [0.35 0.42 0.52];
     lbl.Layout.Row = 3; lbl.Layout.Column = 1;
-    app.IbmChannelDropdown = uidropdown(ig, ...
-        'Items', Labels.items('settings_channel_items', {'ibm_quantum','ibm_cloud'}), ...
-        'Value', Labels.get('settings_channel_default', 'ibm_quantum'));
+    channelItems   = Labels.items('settings_channel_items', {'ibm_quantum','ibm_cloud'});
+    channelDefault = AppConfig.env('IBM_CHANNEL', Labels.get('settings_channel_default', 'ibm_cloud'));
+    if ~any(strcmp(channelItems, channelDefault)); channelDefault = channelItems{1}; end
+    app.IbmChannelDropdown = uidropdown(ig, 'Items', channelItems, 'Value', channelDefault);
     app.IbmChannelDropdown.Layout.Row = 3; app.IbmChannelDropdown.Layout.Column = 2;
 
     lbl = uilabel(ig, 'Text', Labels.get('settings_label_instance'));
     lbl.FontColor = [0.35 0.42 0.52];
     lbl.Layout.Row = 4; lbl.Layout.Column = 1;
-    app.IbmInstanceField = uieditfield(ig, 'text', 'Value', Labels.get('settings_default_instance', 'ibm-q/open/main'));
+    app.IbmInstanceField = uieditfield(ig, 'text', 'Value', ...
+        AppConfig.env('IBM_QUANTUM_INSTANCE', Labels.get('settings_default_instance', 'ibm-q/open/main')));
     app.IbmInstanceField.Layout.Row = 4; app.IbmInstanceField.Layout.Column = 2;
 
     lbl = uilabel(ig, 'Text', Labels.get('settings_label_base_url'));
@@ -75,8 +80,17 @@ function SettingsScreen(app)
     app.styleBtn(app.VerifyIbmButton, 'secondary');
     app.VerifyIbmButton.Tooltip = 'POST /api/settings/verify-ibm';
 
+    % ── Server IBM runtime status (from GET /api/settings/ibm-config) ────
+    app.ServerIbmStatusArea = uitextarea(ig, 'Editable', 'off');
+    app.ServerIbmStatusArea.FontSize = 11;
+    app.ServerIbmStatusArea.FontName = 'Courier New';
+    app.ServerIbmStatusArea.BackgroundColor = [0.97 0.98 1.00];
+    app.ServerIbmStatusArea.Layout.Row = 7;
+    app.ServerIbmStatusArea.Layout.Column = [1 2];
+    app.ServerIbmStatusArea.Value = {Labels.get('settings_server_ibm_loading', 'Loading server IBM configuration...')};
+
     help1 = uitextarea(ig, 'Editable', 'off'); help1.FontSize = 11;
-    help1.Layout.Row = 7; help1.Layout.Column = [1 2]; help1.WordWrap = 'on';
+    help1.Layout.Row = 8; help1.Layout.Column = [1 2]; help1.WordWrap = 'on';
     help1.Value = {Labels.get('settings_ibm_help', 'Credentials are stored locally for this session only.')};
 
     % ── Default Values (row 1, right) ─────────────────────────────────────────

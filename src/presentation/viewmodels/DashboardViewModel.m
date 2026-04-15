@@ -137,7 +137,7 @@ classdef DashboardViewModel < handle
                 if ~isempty(summary)
                     app.setStatus(app.DashboardSummaryArea, {summary});
                 end
-                app.setStatus(app.DashboardStatusArea, {JsonHelper.pretty(data)});
+                JsonTreeView.setData(app.DashboardStatusArea, data);
 
                 % Refresh activity table from local log (pagination-aware)
                 obj.ActivityPageSkip = 0;
@@ -174,7 +174,7 @@ classdef DashboardViewModel < handle
                 sprintf('Selected backend: %s', app.State.selectedBackend), ...
                 sprintf('Circuit ID: %s',       app.State.selectedCircuitId)};
             app.DashboardSummaryArea.Value = summary;
-            app.setStatus(app.DashboardStatusArea, {'Dashboard refreshed from session state.'});
+            JsonTreeView.setMessage(app.DashboardStatusArea, 'Dashboard refreshed from session state.');
         end
 
         function updateActivityPageLabel(obj, totalRows)

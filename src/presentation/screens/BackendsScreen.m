@@ -157,22 +157,30 @@ function BackendsScreen(app)
     nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 3];
     nextPanel.BackgroundColor = [0.94 0.97 1.00];
 
-    ng = uigridlayout(nextPanel, [1 3]);
-    ng.ColumnWidth = {'1x', 150, 150};
+    ng = uigridlayout(nextPanel, [1 4]);
+    ng.ColumnWidth = {'1x', 220, 150, 150};
     ng.Padding = [14 8 14 8]; ng.BackgroundColor = [0.94 0.97 1.00];
     desc = uilabel(ng, 'Text', Labels.get('backends_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
 
+    % Submit to IBM pool (fan-out across IBM_BACKENDS list — char(9889) = ⚡)
+    app.SubmitPoolButton = uibutton(ng, 'Text', [char(9889) ' ' Labels.get('backends_btn_submit_pool', 'Submit to IBM pool')], ...
+        'ButtonPushedFcn', @(~,~)app.BackendsVm.onSubmitToPool());
+    app.SubmitPoolButton.Layout.Row = 1; app.SubmitPoolButton.Layout.Column = 2;
+    app.styleBtn(app.SubmitPoolButton, 'primary');
+    app.SubmitPoolButton.FontSize = 14;
+    app.SubmitPoolButton.Tooltip = 'Submit the current circuit concurrently to every backend in IBM_BACKENDS';
+
     % Benchmark button — uses Benchmark nav icon (char(9678) = ◎)
     tmp = uibutton(ng, 'Text', [char(9678) ' Benchmark'], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Benchmark'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'primary');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'secondary');
 
     % Analysis button — uses Analysis nav icon (char(8981) = ⌕)
     tmp = uibutton(ng, 'Text', [char(8981) ' Analysis'], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Analysis'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'ghost');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'ghost');
 
     Logger.info('BackendsScreen', 'Backends tab UI built successfully');
 end
@@ -182,6 +190,10 @@ function handleBackendsMouseDown(app, prevFcn, src, evt)
     if ~isempty(prevFcn)
         try prevFcn(src, evt); catch; end
     end
+    % Only react while the Backends panel is the active section. Prevents
+    % this handler from firing when the user is on another screen and
+    % previous-screen popups leaking into the current one.
+    if ~isSectionVisible(app, 'Backends'); return; end
     cp = app.UIFigure.CurrentPoint;
     if ~isempty(app.BackendsPopupPanel) && isvalid(app.BackendsPopupPanel) ...
             && strcmp(app.BackendsPopupPanel.Visible, 'on')
@@ -196,4 +208,16 @@ function handleBackendsMouseDown(app, prevFcn, src, evt)
     sel = app.BackendTable.Selection;
     if isempty(sel); return; end
     app.showBackendsPopupMenu(cp(1), cp(2));
+end
+
+function tf = isSectionVisible(app, key)
+    tf = false;
+    try
+        if isstruct(app.SectionPanels) && isfield(app.SectionPanels, key) ...
+                && isvalid(app.SectionPanels.(key))
+            tf = strcmp(app.SectionPanels.(key).Visible, 'on');
+        end
+    catch
+        tf = false;
+    end
 end

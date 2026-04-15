@@ -267,6 +267,12 @@ classdef WelcomeViewModel < handle
                 obj.CurrentPage = 1;
                 obj.onFetchProjects();
 
+                % Populate server IBM config silently so downstream screens
+                % (Prediction's "Submit to IBM" button, Backends pool, etc.)
+                % can gate on the real server state instead of the default
+                % ServerIbmConfig struct (which has_token=false until set).
+                obj.prefetchServerIbmConfig(app);
+
             catch ME
                 if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
                     app.LoginDlgStatusLabel.FontColor = [0.851 0.188 0.145];
@@ -296,6 +302,11 @@ classdef WelcomeViewModel < handle
                 app.AuthSvc.logout(app.State.authToken);
                 app.State.authToken = "";
                 app.State.currentUser = "";
+                % Reset cached server state so the next login's prefetch
+                % takes effect before the Submit button gets hit again.
+                app.ServerIbmConfig = struct('channel','','instance','', ...
+                    'backends',{{}},'has_token',false, ...
+                    'runtime_broken',false,'runtime_broken_reason','');
                 app.logEvent('AUTH', sprintf('Logout OK — user: %s', prevUser));
                 app.State.logActivity(sprintf('Logout — user: %s', prevUser), 'Success');
                 app.updateWelcomeAuthButtons();
@@ -485,6 +496,38 @@ classdef WelcomeViewModel < handle
             app.showError('Fetch Projects', ME);
         end
 
+        function prefetchServerIbmConfig(~, app)
+            % Fire-and-forget fetch of /settings/ibm-config so downstream
+            % screens can gate on the real server state instead of the
+            % default ServerIbmConfig struct (has_token=false). Silent on
+            % failure — Settings screen will still surface the fresh state
+            % when the user visits it.
+            AsyncRunner.run( ...
+                @() app.SettingsSvc.getIbmConfig(app.State.authToken), ...
+                @(cfg) WelcomeViewModel.storeIbmConfig(app, cfg), ...
+                @(ME)  Logger.debug('WelcomeViewModel', ...
+                    'IBM config prefetch skipped: %s', ME.message));
+        end
+    end
+
+    methods (Static, Access = private)
+        function storeIbmConfig(app, cfg)
+            % Central helper used by both login-prefetch and the Settings
+            % screen to populate app.ServerIbmConfig consistently.
+            backends = JsonHelper.safeField(cfg, 'backends', {});
+            if ischar(backends); backends = {backends}; end
+            if ~iscell(backends); backends = num2cell(string(backends)); end
+            app.ServerIbmConfig = struct( ...
+                'channel',  string(JsonHelper.safeField(cfg, 'channel', '')), ...
+                'instance', string(JsonHelper.safeField(cfg, 'instance', '')), ...
+                'backends', {backends}, ...
+                'has_token', logical(JsonHelper.safeField(cfg, 'has_token', false)), ...
+                'runtime_broken', logical(JsonHelper.safeField(cfg, 'runtime_broken', false)), ...
+                'runtime_broken_reason', string(JsonHelper.safeField(cfg, 'runtime_broken_reason', '')));
+        end
+    end
+
+    methods (Access = private)
         function displayCurrentPage(obj)
             app = obj.App;
             startIdx = (obj.CurrentPage - 1) * obj.ItemsPerPage + 1;

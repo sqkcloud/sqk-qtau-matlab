@@ -114,11 +114,14 @@ function DashboardScreen(app)
         '[ ]  Prediction and job submission'};
 
     % ── Status / Raw (right, row 3) ───────────────────────────────────────────
+    % Interactive JSON tree viewer (see src/presentation/JsonTreeView.m).
+    % Populated from DashboardViewModel via JsonTreeView.setData(...).
     rawPanel = uipanel(g, 'Title', Labels.get('dashboard_panel_status_raw'));
     rawPanel.Layout.Row = 3; rawPanel.Layout.Column = 3; rawPanel.BackgroundColor = [1 1 1];
-    gp2 = uigridlayout(rawPanel, [1 1]); gp2.BackgroundColor = [1 1 1]; gp2.Padding = [14 12 14 12];
-    app.DashboardStatusArea = uitextarea(gp2, 'Editable', 'off'); app.DashboardStatusArea.FontSize = 12;
-    app.DashboardStatusArea.Value = {'API health: —', 'Auth token: —', 'Last refresh: —'};
+    gp2 = uigridlayout(rawPanel, [1 1]); gp2.BackgroundColor = [1 1 1]; gp2.Padding = [0 0 0 0];
+    app.DashboardStatusArea = JsonTreeView.attach(gp2);
+    JsonTreeView.setMessage(app.DashboardStatusArea, ...
+        Labels.get('dashboard_raw_initial', 'Awaiting dashboard response — click Refresh.'));
 
     % ── Recent Activity (right, row 4) ───────────────────────────────────────
     activity = uipanel(g, 'Title', Labels.get('dashboard_panel_recent_activity'));

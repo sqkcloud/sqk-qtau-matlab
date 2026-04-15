@@ -8,6 +8,12 @@ classdef BackendsViewModel < handle
     properties (Access = private)
         App
         FullTableData cell = {}   % unfiltered rows for search
+        % Pool submission tracking (transient, one round of fan-out at a time)
+        PoolResults   cell   = {}
+        PoolExpected  double = 0
+        PoolDone      double = 0
+        PoolSucceeded double = 0
+        PoolFailed    double = 0
     end
 
     properties
@@ -113,6 +119,7 @@ classdef BackendsViewModel < handle
             selName = char(string(app.BackendTable.Data{row, 2}));
             if isempty(selName); return; end
 
+            app.showLoading(Labels.get('loading_saving_selection', 'Saving backend selection...'));
             app.State.selectedBackend = string(selName);
             backupName = obj.findBackup(selName);
             app.State.backupBackend = string(backupName);
@@ -126,15 +133,29 @@ classdef BackendsViewModel < handle
 
         function onCtxSetPrimary(obj)
             obj.App.hideBackendsPopupMenu();
-            obj.onSelectBackend();
+            drawnow;   % flush the hide before any subsequent work blocks the UI
+            app = obj.App;
+            row = obj.getSelectedRow();
+            if row == 0; return; end
+            selName = char(string(app.BackendTable.Data{row, 2}));
+            if isempty(selName); return; end
+            app.showLoading(Labels.get('loading_saving_primary', 'Setting primary backend...'));
+            app.State.selectedBackend = string(selName);
+            backupName = obj.findBackup(selName);
+            app.State.backupBackend = string(backupName);
+            obj.updateKpiForSelection(app, row, backupName);
+            obj.updateStatusNotes(app, row, backupName);
+            obj.persistSelection(app, selName, backupName);
         end
 
         function onCtxSetBackup(obj)
             app = obj.App;
             app.hideBackendsPopupMenu();
+            drawnow;
             row = obj.getSelectedRow();
             if row == 0; return; end
             backupName = char(string(app.BackendTable.Data{row, 2}));
+            app.showLoading(Labels.get('loading_saving_backup', 'Setting backup backend...'));
             app.State.backupBackend = string(backupName);
             if ~isempty(app.BackendKpiLabels) && numel(app.BackendKpiLabels) >= 2
                 app.BackendKpiLabels{2}.Text = backupName;
@@ -143,12 +164,96 @@ classdef BackendsViewModel < handle
             notes{end+1} = sprintf('Backup changed to: %s', backupName);
             app.setStatus(app.BackendStatusArea, notes);
             primary = char(app.State.selectedBackend);
-            if ~isempty(primary); obj.persistSelection(app, primary, backupName); end
+            if isempty(primary)
+                % No primary selected yet — nothing to persist but we still
+                % opened a spinner; close it.
+                app.hideLoading();
+                return;
+            end
+            obj.persistSelection(app, primary, backupName);
+        end
+
+        % onSubmitToPool  Fan-out: submit the current circuit to each backend
+        %   in the server's configured IBM pool (IBM_BACKENDS env). Mirrors
+        %   the notebook's 3-QPU concurrent submission pattern — one job per
+        %   backend, all fired in parallel via AsyncRunner.
+        %
+        %   Always fetches fresh /settings/ibm-config first — the cached
+        %   ServerIbmConfig from login can become stale between login and
+        %   this click (e.g. visiting Backends triggers a server-side
+        %   IBM call that may have set the sticky-broken flag). Without
+        %   the refetch we'd fire N doomed /jobs/submit calls and the
+        %   user would see N × 503 Service Unavailable errors.
+        function onSubmitToPool(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Submit Pool', 'Icon', 'warning'); return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(app.UIFigure, Labels.get('error_no_circuit'), 'Submit Pool', 'Icon', 'warning'); return;
+            end
+            app.showLoading('Checking IBM runtime status...');
+            AsyncRunner.run( ...
+                @() app.SettingsSvc.getIbmConfig(app.State.authToken), ...
+                @(cfg) obj.onPoolResolved(app, cfg), ...
+                @(ME)  obj.onPoolResolveError(app, ME));
+        end
+
+        function onPoolResolved(obj, app, cfg)
+            app.hideLoading();
+            backends = JsonHelper.safeField(cfg, 'backends', {});
+            if ischar(backends); backends = {backends}; end
+            if ~iscell(backends); backends = num2cell(string(backends)); end
+            hasToken = logical(JsonHelper.safeField(cfg, 'has_token', false));
+            broken   = logical(JsonHelper.safeField(cfg, 'runtime_broken', false));
+            reason   = char(JsonHelper.safeField(cfg, 'runtime_broken_reason', ''));
+            % Update the session cache so other screens don't see stale state.
+            app.ServerIbmConfig = struct( ...
+                'channel',  string(JsonHelper.safeField(cfg, 'channel', '')), ...
+                'instance', string(JsonHelper.safeField(cfg, 'instance', '')), ...
+                'backends', {backends}, ...
+                'has_token', hasToken, ...
+                'runtime_broken', broken, ...
+                'runtime_broken_reason', string(reason));
+
+            % Fail with a targeted dialog BEFORE firing N doomed requests.
+            if broken
+                uialert(app.UIFigure, ...
+                    sprintf(['IBM runtime is currently unavailable on the server, ' ...
+                            'so all %d submissions would return 503.\n\n%s\n\n' ...
+                            'Fix the IBM credentials in the server .env and restart ' ...
+                            'the API, then try again.'], numel(backends), reason), ...
+                    'Submit to IBM pool', 'Icon', 'error');
+                return;
+            end
+            if ~hasToken
+                uialert(app.UIFigure, ...
+                    Labels.get('error_no_server_token', ...
+                        'Server has no IBM_QUANTUM_TOKEN configured.'), ...
+                    'Submit to IBM pool', 'Icon', 'warning');
+                return;
+            end
+            if isempty(backends)
+                uialert(app.UIFigure, ...
+                    Labels.get('error_no_pool', ...
+                        'Server has no IBM backend pool configured.'), ...
+                    'Submit to IBM pool', 'Icon', 'warning');
+                return;
+            end
+            % All preconditions met — proceed with fan-out.
+            obj.submitPool(app, backends, hasToken);
+        end
+
+        function onPoolResolveError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Resolve IBM pool FAILED: %s', ME.message));
+            app.showError('Submit to IBM pool', ME);
         end
 
         function onCtxViewDetails(obj)
             app = obj.App;
             app.hideBackendsPopupMenu();
+            drawnow;
             row = obj.getSelectedRow();
             if row == 0; return; end
             bName = char(string(app.BackendTable.Data{row, 2}));
@@ -182,6 +287,105 @@ classdef BackendsViewModel < handle
 
     % ── Private helpers ───────────────────────────────────────────────────
     methods (Access = private)
+
+        function submitPool(obj, app, backends, hasToken)
+            if isempty(backends)
+                uialert(app.UIFigure, Labels.get('error_no_pool', ...
+                    'Server has no IBM backend pool configured.'), ...
+                    'Submit to IBM pool', 'Icon', 'warning');
+                return;
+            end
+            if ~hasToken
+                uialert(app.UIFigure, Labels.get('error_no_server_token', ...
+                    'Server is not configured with an IBM token.'), ...
+                    'Submit to IBM pool', 'Icon', 'warning');
+                return;
+            end
+            cid   = char(app.State.selectedCircuitId);
+            shots = app.State.benchmarkShots;
+            opt   = app.State.benchmarkOptLevel;
+            mitig = char(app.State.benchmarkMitigation);
+            n     = numel(backends);
+            app.logEvent('API', sprintf('Pool submit — circuit: %s  backends: %d', cid, n));
+            app.setStatus(app.BackendStatusArea, { ...
+                sprintf('Submitting to %d IBM backend(s):', n), ...
+                strjoin(cellfun(@(b) ['  • ' char(string(b))], backends, 'UniformOutput', false), newline)});
+
+            % Spawn one AsyncRunner per backend. Each worker fires POST
+            % /api/jobs/submit; the record IDs are collected in BackendStatusArea
+            % as they come back. AppState.selectedJobId is set to the first
+            % successful record so the Jobs screen auto-selects it.
+            obj.PoolResults = cell(1, n);
+            obj.PoolExpected = n;
+            obj.PoolDone = 0;
+            obj.PoolSucceeded = 0;
+            obj.PoolFailed = 0;
+            for i = 1:n
+                backend = char(string(backends{i}));
+                payload = struct( ...
+                    'circuit_id',         cid, ...
+                    'backend_name',       backend, ...
+                    'shots',              shots, ...
+                    'optimization_level', opt);
+                if ~isempty(mitig) && ~strcmp(mitig, 'none')
+                    payload.error_mitigation = mitig;
+                end
+                idx = i;
+                AsyncRunner.run( ...
+                    @() app.JobSvc.submitJob(payload, app.State.authToken), ...
+                    @(data) obj.onPoolJobComplete(app, idx, backend, data), ...
+                    @(ME)   obj.onPoolJobError(app, idx, backend, ME));
+            end
+        end
+
+        function onPoolJobComplete(obj, app, idx, backend, data)
+            recordId = char(JsonHelper.pick(data, {'job_record_id','id'}));
+            ibmJobId = char(JsonHelper.pick(data, {'ibm_job_id'}));
+            status   = char(JsonHelper.pick(data, {'status'}));
+            obj.PoolResults{idx} = struct('backend', backend, ...
+                'record_id', recordId, 'ibm_job_id', ibmJobId, 'status', status, 'ok', true);
+            obj.PoolSucceeded = obj.PoolSucceeded + 1;
+            if strlength(app.State.selectedJobId) == 0 && ~isempty(recordId)
+                app.State.selectedJobId = string(recordId);
+            end
+            app.logEvent('API', sprintf('Pool[%d] %s — record: %s  ibm_job_id: %s  status: %s', ...
+                idx, backend, recordId, ibmJobId, status));
+            obj.poolTick(app);
+        end
+
+        function onPoolJobError(obj, app, idx, backend, ME)
+            obj.PoolResults{idx} = struct('backend', backend, ...
+                'record_id', '', 'ibm_job_id', '', 'status', 'failed', ...
+                'ok', false, 'error', ME.message);
+            obj.PoolFailed = obj.PoolFailed + 1;
+            app.logEvent('ERROR', sprintf('Pool[%d] %s FAILED: %s', idx, backend, ME.message));
+            obj.poolTick(app);
+        end
+
+        function poolTick(obj, app)
+            obj.PoolDone = obj.PoolDone + 1;
+            if obj.PoolDone < obj.PoolExpected; return; end
+            % All workers finished — summarise.
+            lines = {sprintf(Labels.get('pool_submit_summary', ...
+                'Pool submit complete — %d succeeded, %d failed.'), ...
+                obj.PoolSucceeded, obj.PoolFailed)};
+            for k = 1:numel(obj.PoolResults)
+                r = obj.PoolResults{k};
+                if isempty(r); continue; end
+                if r.ok
+                    lines{end+1} = sprintf('  ✓ %s — %s (IBM %s)', r.backend, r.status, r.ibm_job_id); %#ok<AGROW>
+                else
+                    lines{end+1} = sprintf('  ✗ %s — %s', r.backend, r.error); %#ok<AGROW>
+                end
+            end
+            app.setStatus(app.BackendStatusArea, lines);
+            app.State.logActivity(sprintf('Pool submit — %d/%d ok', ...
+                obj.PoolSucceeded, obj.PoolExpected), 'Success');
+            if obj.PoolSucceeded > 0
+                % Navigate to Jobs so users see the new records.
+                app.onSelectSection('Jobs');
+            end
+        end
 
         function data = fetchBackends(obj, app, cid)
             % Try enriched list with circuit_id. If that fails (404),
@@ -300,16 +504,21 @@ classdef BackendsViewModel < handle
         end
 
         function persistSelection(~, app, primaryName, backupName)
-            if app.State.isAuthenticated() && app.State.hasProject() && ~isempty(primaryName)
-                try
-                    app.BackendSvc.saveSelection(app.State.currentProjectId, ...
-                        string(primaryName), string(backupName), app.State.authToken);
-                    app.logEvent('API', sprintf('Backend selection saved — primary: %s  backup: %s', primaryName, backupName));
-                catch ME
-                    app.logEvent('ERROR', sprintf('Save selection FAILED: %s', ME.message));
-                    app.showError('Save Backend Selection', ME);
-                end
+            if ~app.State.isAuthenticated() || ~app.State.hasProject() || isempty(primaryName)
+                % No auth / project / primary → nothing to save. The caller
+                % may have already opened a loading overlay; close it.
+                app.hideLoading();
+                return;
             end
+            % Run save in the background so the popup close / KPI update
+            % aren't blocked by the HTTP round-trip. Callers are expected
+            % to have already invoked showLoading; both terminal handlers
+            % call hideLoading.
+            pid = app.State.currentProjectId;
+            AsyncRunner.run( ...
+                @() app.BackendSvc.saveSelection(pid, string(primaryName), string(backupName), app.State.authToken), ...
+                @(~) BackendsViewModel.onPersistDone(app, primaryName, backupName), ...
+                @(ME) BackendsViewModel.onPersistError(app, ME));
         end
 
         function applyPage(obj)
@@ -372,6 +581,18 @@ classdef BackendsViewModel < handle
             if isempty(app.BackendKpiLabels) || numel(app.BackendKpiLabels) < kpiIdx; return; end
             if ~isvalid(app.BackendKpiLabels{kpiIdx}); return; end
             app.BackendKpiLabels{kpiIdx}.Text = 'N/A';
+        end
+
+        function onPersistDone(app, primaryName, backupName)
+            app.hideLoading();
+            app.logEvent('API', sprintf('Backend selection saved — primary: %s  backup: %s', ...
+                primaryName, backupName));
+        end
+
+        function onPersistError(app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Save selection FAILED: %s', ME.message));
+            app.showError('Save Backend Selection', ME);
         end
     end
 end

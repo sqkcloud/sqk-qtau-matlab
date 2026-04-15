@@ -12,6 +12,9 @@ classdef NavigationManager
         function onSelectSection(app, key)
             if isstring(key); key = char(key); end
             app.logEvent('NAV', sprintf('Navigating to: %s', key));
+            % Dismiss any popup that might still be visible from the
+            % outgoing screen before we show the new one.
+            try PopupMenuManager.dismissPopups(app); catch; end
             names = fieldnames(app.SectionPanels);
             for i = 1:numel(names)
                 app.SectionPanels.(names{i}).Visible = 'off';
@@ -101,6 +104,11 @@ classdef NavigationManager
                             && ~isempty(app.CompareAxes) && isvalid(app.CompareAxes) ...
                             && isempty(app.CompareAxes.Children)
                         app.DetailedAnalysisVm.plotAllDemos();
+                    end
+                case 'Settings'
+                    if ~isempty(app.SettingsVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.SettingsVm, ttl)
+                        app.SettingsVm.onEnter();
                     end
             end
         end

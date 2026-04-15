@@ -110,22 +110,31 @@ function PredictionScreen(app)
     submitPanel.Layout.Row = 4; submitPanel.Layout.Column = [1 3];
     submitPanel.BackgroundColor = [0.94 0.97 1.00];
 
-    sg = uigridlayout(submitPanel, [1 4]);
-    sg.ColumnWidth = {'1x', 110, 130, 140};
+    sg = uigridlayout(submitPanel, [1 5]);
+    sg.ColumnWidth = {'1x', 170, 110, 130, 140};
     sg.Padding = [14 8 14 8]; sg.BackgroundColor = [0.94 0.97 1.00];
     desc = uilabel(sg, 'Text', Labels.get('prediction_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
+
+    % POST /api/jobs/submit with the current circuit + backend + shots/opt.
+    app.SubmitJobButton = uibutton(sg, 'Text', [char(9889) ' ' Labels.get('prediction_btn_submit', 'Submit to IBM')], ...
+        'ButtonPushedFcn', @(~,~)app.PredictionVm.onSubmitToIbm());
+    app.SubmitJobButton.Layout.Row = 1; app.SubmitJobButton.Layout.Column = 2;
+    app.styleBtn(app.SubmitJobButton, 'primary');
+    app.SubmitJobButton.FontSize = 14;
+    app.SubmitJobButton.Tooltip = 'POST /api/jobs/submit — runs on IBM Quantum backend';
+
     tmp = uibutton(sg, 'Text', [char(9635) ' Jobs'], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Jobs'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'success');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'success');
     tmp.FontSize = 14;
-    tmp.Tooltip = 'Navigate to Jobs to submit';
+    tmp.Tooltip = 'Navigate to Jobs';
     tmp = uibutton(sg, 'Text', [char(9678) ' Benchmark'], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Benchmark'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'ghost');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'ghost');
     tmp = uibutton(sg, 'Text', Labels.get('prediction_btn_save', 'Save Prediction'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'secondary');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 5; app.styleBtn(tmp, 'secondary');
 
     Logger.info('PredictionScreen', 'Prediction tab UI built successfully');
 end

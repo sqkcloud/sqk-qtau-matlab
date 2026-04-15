@@ -148,6 +148,118 @@ classdef BenchmarkViewModel < handle
             app.hideLoading();
         end
 
+        % ── Submit benchmark to IBM Quantum ──────────────────────────────
+        %   onRunBenchmark above only persists the config and runs a LOCAL
+        %   transpilation-strategy comparison. onSubmitBenchmarkToIbm
+        %   actually dispatches the circuit to IBM hardware via
+        %   POST /api/jobs/submit — the same endpoint the Prediction
+        %   screen's "Submit to IBM" button uses, parametrised from the
+        %   Benchmark form's shots / opt / mitigation values.
+
+        function onSubmitBenchmarkToIbm(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Submit', 'Icon', 'warning'); return;
+            end
+            circuitId   = char(app.BenchmarkCircuitDropdown.Value);
+            backendName = char(app.BenchmarkBackendSelect.Value);
+            if strlength(circuitId) == 0
+                uialert(app.UIFigure, Labels.get('error_no_circuit'), 'Submit', 'Icon', 'warning');
+                return;
+            end
+            if strlength(backendName) == 0
+                uialert(app.UIFigure, ...
+                    Labels.get('error_no_backend', 'Select a backend first.'), ...
+                    'Submit', 'Icon', 'warning');
+                return;
+            end
+            % Surface known-bad server state early (prefetched at login).
+            cfg = app.ServerIbmConfig;
+            if isstruct(cfg) && isfield(cfg, 'channel') && strlength(string(cfg.channel)) > 0
+                if isfield(cfg, 'runtime_broken') && logical(cfg.runtime_broken)
+                    reason = '';
+                    if isfield(cfg, 'runtime_broken_reason')
+                        reason = char(string(cfg.runtime_broken_reason));
+                    end
+                    uialert(app.UIFigure, ...
+                        sprintf('IBM runtime unavailable on server:\n%s', reason), ...
+                        'Submit', 'Icon', 'warning');
+                    return;
+                end
+                if isfield(cfg, 'has_token') && ~logical(cfg.has_token)
+                    uialert(app.UIFigure, ...
+                        Labels.get('error_no_server_token', ...
+                            'Server is not configured with an IBM token.'), ...
+                        'Submit', 'Icon', 'warning');
+                    return;
+                end
+            end
+            shots = round(app.BenchmarkShotsField.Value);
+            opt   = round(app.BenchmarkOptField.Value);
+            mitig = char(app.BenchmarkMitigationDropdown.Value);
+
+            % Mirror AppState so downstream screens (Jobs, Results) see
+            % the same context if the user navigates.
+            app.State.selectedCircuitId   = string(circuitId);
+            app.State.selectedBackend     = string(backendName);
+            app.State.benchmarkShots      = shots;
+            app.State.benchmarkOptLevel   = opt;
+            app.State.benchmarkMitigation = string(mitig);
+
+            payload = struct( ...
+                'circuit_id',         circuitId, ...
+                'backend_name',       backendName, ...
+                'shots',              shots, ...
+                'optimization_level', opt);
+            if ~isempty(mitig) && ~strcmp(mitig, 'none')
+                payload.error_mitigation = mitig;
+            end
+
+            app.logEvent('API', sprintf('POST /api/jobs/submit — circuit: %s  backend: %s  shots: %d  opt: %d  mitig: %s', ...
+                circuitId, backendName, shots, opt, mitig));
+            app.showLoading(Labels.get('loading_submitting_bench', ...
+                'Submitting benchmark to IBM Quantum...'));
+            AsyncRunner.run( ...
+                @() app.JobSvc.submitJob(payload, app.State.authToken), ...
+                @(data) obj.onSubmitBenchmarkComplete(app, circuitId, backendName, data), ...
+                @(ME)   obj.onSubmitBenchmarkError(app, circuitId, backendName, ME));
+        end
+
+        function onSubmitBenchmarkComplete(~, app, cid, backendName, data)
+            app.hideLoading();
+            recordId = char(JsonHelper.pick(data, {'job_record_id','id'}));
+            ibmJobId = char(JsonHelper.pick(data, {'ibm_job_id'}));
+            status   = char(JsonHelper.pick(data, {'status'}));
+            if ~isempty(recordId)
+                app.State.selectedJobId = string(recordId);
+            end
+            app.logEvent('API', sprintf('Benchmark submitted — record: %s  ibm_job_id: %s  status: %s', ...
+                recordId, ibmJobId, status));
+            app.State.logActivity(sprintf('Benchmark submit — %s → %s', cid, backendName), 'Success');
+            app.onSelectSection('Jobs');
+            uialert(app.UIFigure, ...
+                sprintf(Labels.get('benchmark_submit_success', ...
+                    'Benchmark submitted to %s — IBM job id: %s'), backendName, ibmJobId), ...
+                'Benchmark Submitted', 'Icon', 'success');
+        end
+
+        function onSubmitBenchmarkError(~, app, cid, backendName, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Benchmark submit FAILED (circuit: %s  backend: %s): %s', ...
+                cid, backendName, ME.message));
+            % On 503, the real reason is almost always "server marked its
+            % IBM runtime broken after login". Refetch /settings/ibm-config
+            % and surface the actual cause instead of a generic error.
+            if contains(ME.message, '503') || contains(ME.message, 'Service Unavailable')
+                AsyncRunner.run( ...
+                    @() app.SettingsSvc.getIbmConfig(app.State.authToken), ...
+                    @(cfg) BenchmarkViewModel.explain503(app, cfg, cid, backendName), ...
+                    @(~)   app.showError('Submit Benchmark to IBM', ME));
+                return;
+            end
+            app.showError('Submit Benchmark to IBM', ME);
+        end
+
         % ── Auto-load on screen entry ────────────────────────────────────
 
         function onLoadBenchmark(obj)
@@ -432,6 +544,43 @@ classdef BenchmarkViewModel < handle
                 end
             catch ME
                 Logger.debug('BenchmarkViewModel', 'selectDropdownValue: %s', ME.message);
+            end
+        end
+    end
+
+    methods (Static, Access = private)
+        function explain503(app, cfg, cid, backendName)
+            % Post-failure diagnostic — called after a 503 from /jobs/submit
+            % to surface the real server-side runtime state.
+            broken   = logical(JsonHelper.safeField(cfg, 'runtime_broken', false));
+            reason   = char(JsonHelper.safeField(cfg, 'runtime_broken_reason', ''));
+            hasToken = logical(JsonHelper.safeField(cfg, 'has_token', false));
+            backends = JsonHelper.safeField(cfg, 'backends', {});
+            if ischar(backends); backends = {backends}; end
+            if ~iscell(backends); backends = num2cell(string(backends)); end
+            % Refresh session cache.
+            app.ServerIbmConfig = struct( ...
+                'channel',  string(JsonHelper.safeField(cfg, 'channel', '')), ...
+                'instance', string(JsonHelper.safeField(cfg, 'instance', '')), ...
+                'backends', {backends}, ...
+                'has_token', hasToken, ...
+                'runtime_broken', broken, ...
+                'runtime_broken_reason', string(reason));
+            if broken
+                uialert(app.UIFigure, ...
+                    sprintf(['IBM runtime is currently unavailable on the server.\n\n' ...
+                            'Backend: %s\nReason: %s\n\nFix the IBM credentials in the ' ...
+                            'server .env and restart the API, then try again.'], ...
+                            backendName, reason), ...
+                    'Submit Benchmark to IBM', 'Icon', 'error');
+            elseif ~hasToken
+                uialert(app.UIFigure, ...
+                    'The server has no IBM_QUANTUM_TOKEN configured. Ask the operator to set it in .env and restart.', ...
+                    'Submit Benchmark to IBM', 'Icon', 'error');
+            else
+                uialert(app.UIFigure, ...
+                    sprintf('Server returned 503 for circuit %s / backend %s but reports IBM runtime as healthy. Try again in a moment.', cid, backendName), ...
+                    'Submit Benchmark to IBM', 'Icon', 'warning');
             end
         end
     end

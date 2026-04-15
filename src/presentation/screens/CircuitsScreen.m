@@ -118,6 +118,12 @@ function handleCircuitsMouseDown(app, prevFcn, src, evt)
         try prevFcn(src, evt); catch; end
     end
 
+    % Only react while the Circuits panel is the active section. Other
+    % screens also chain their WindowButtonDownFcn through this one, so
+    % without the guard this handler would fire on e.g. Backends clicks
+    % and show the Circuits popup on top of an unrelated table.
+    if ~isCircuitsSectionVisible(app); return; end
+
     cp = app.UIFigure.CurrentPoint;
 
     % If the popup is visible, only hide it when clicking OUTSIDE
@@ -146,4 +152,16 @@ function handleCircuitsMouseDown(app, prevFcn, src, evt)
 
     % Show custom popup at the cursor position
     app.showCircuitsPopupMenu(cp(1), cp(2));
+end
+
+function tf = isCircuitsSectionVisible(app)
+    tf = false;
+    try
+        if isstruct(app.SectionPanels) && isfield(app.SectionPanels, 'Circuits') ...
+                && isvalid(app.SectionPanels.Circuits)
+            tf = strcmp(app.SectionPanels.Circuits.Visible, 'on');
+        end
+    catch
+        tf = false;
+    end
 end

@@ -57,6 +57,141 @@ classdef PredictionViewModel < handle
             app.logEvent('ERROR', sprintf('Prediction FAILED (circuit: %s  backend: %s): %s', cid, backend, ME.message));
             app.showError('Run Prediction', ME);
         end
+
+        % onSubmitToIbm  POST /api/jobs/submit with the current circuit +
+        %   backend + shots/opt, then navigate to the Jobs screen.
+        %   Mirrors the notebook's SamplerV2(mode=session).run() call path —
+        %   the server holds the IBM credentials and does the transpile/submit.
+        function onSubmitToIbm(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Submit', 'Icon', 'warning'); return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(app.UIFigure, Labels.get('error_no_circuit'), 'Submit', 'Icon', 'warning'); return;
+            end
+            backend = char(app.State.selectedBackend);
+            if isempty(strtrim(backend))
+                uialert(app.UIFigure, ...
+                    Labels.get('error_no_backend', 'Select a backend on the Backends screen first.'), ...
+                    'Submit', 'Icon', 'warning');
+                return;
+            end
+            % Surface clear errors if we already know the server state —
+            % ServerIbmConfig is populated by WelcomeViewModel.prefetchServerIbmConfig
+            % at login (and refreshed on the Settings screen). An empty
+            % `channel` means the prefetch hasn't completed; in that case
+            % skip the pre-check and let the server return 503 if needed
+            % (never block on stale default state).
+            cfg = app.ServerIbmConfig;
+            if isstruct(cfg) && isfield(cfg, 'channel') && strlength(string(cfg.channel)) > 0
+                if isfield(cfg, 'runtime_broken') && logical(cfg.runtime_broken)
+                    reason = '';
+                    if isfield(cfg, 'runtime_broken_reason')
+                        reason = char(string(cfg.runtime_broken_reason));
+                    end
+                    uialert(app.UIFigure, ...
+                        sprintf('IBM runtime unavailable on server:\n%s', reason), ...
+                        'Submit', 'Icon', 'warning');
+                    return;
+                end
+                if isfield(cfg, 'has_token') && ~logical(cfg.has_token)
+                    uialert(app.UIFigure, ...
+                        Labels.get('error_no_server_token', ...
+                            'Server is not configured with an IBM token.'), ...
+                        'Submit', 'Icon', 'warning');
+                    return;
+                end
+            end
+            cid   = char(app.State.selectedCircuitId);
+            shots = app.State.benchmarkShots;
+            opt   = app.State.benchmarkOptLevel;
+            mitig = char(app.State.benchmarkMitigation);
+            payload = struct( ...
+                'circuit_id',         cid, ...
+                'backend_name',       backend, ...
+                'shots',              shots, ...
+                'optimization_level', opt);
+            if ~isempty(mitig) && ~strcmp(mitig, 'none')
+                payload.error_mitigation = mitig;
+            end
+            app.logEvent('API', sprintf('POST /api/jobs/submit — circuit: %s  backend: %s  shots: %d  opt: %d', ...
+                cid, backend, shots, opt));
+            app.showLoading(Labels.get('loading_submitting', 'Submitting job to IBM Quantum...'));
+            AsyncRunner.run( ...
+                @() app.JobSvc.submitJob(payload, app.State.authToken), ...
+                @(data) obj.onSubmitComplete(app, cid, backend, data), ...
+                @(ME)   obj.onSubmitError(app, cid, backend, ME));
+        end
+
+        function onSubmitComplete(~, app, cid, backend, data)
+            app.hideLoading();
+            recordId = char(JsonHelper.pick(data, {'job_record_id','id'}));
+            ibmJobId = char(JsonHelper.pick(data, {'ibm_job_id'}));
+            status   = char(JsonHelper.pick(data, {'status'}));
+            if ~isempty(recordId)
+                app.State.selectedJobId = string(recordId);
+            end
+            app.logEvent('API', sprintf('Job submitted — record: %s  ibm_job_id: %s  status: %s', ...
+                recordId, ibmJobId, status));
+            app.State.logActivity(sprintf('Submit job — %s → %s', char(app.State.selectedCircuitName), backend), 'Success');
+            % Navigate to Jobs so the user sees the new record.
+            app.onSelectSection('Jobs');
+            uialert(app.UIFigure, ...
+                sprintf(Labels.get('submit_job_success', 'Job submitted. IBM job id: %s'), ibmJobId), ...
+                'Submit to IBM', 'Icon', 'success');
+        end
+
+        function onSubmitError(~, app, cid, backend, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Submit job FAILED (circuit: %s  backend: %s): %s', cid, backend, ME.message));
+            % A 503 almost always means the server marked its IBM runtime
+            % broken after the ServerIbmConfig cache was last refreshed.
+            % Refetch once and surface the real reason so the user doesn't
+            % think the MATLAB client is wrong.
+            if contains(ME.message, '503') || contains(ME.message, 'Service Unavailable')
+                AsyncRunner.run( ...
+                    @() app.SettingsSvc.getIbmConfig(app.State.authToken), ...
+                    @(cfg) PredictionViewModel.explain503(app, cfg, cid, backend), ...
+                    @(~)   app.showError('Submit to IBM', ME));
+                return;
+            end
+            app.showError('Submit to IBM', ME);
+        end
+    end
+
+    methods (Static, Access = private)
+        function explain503(app, cfg, cid, backend)
+            broken = logical(JsonHelper.safeField(cfg, 'runtime_broken', false));
+            reason = char(JsonHelper.safeField(cfg, 'runtime_broken_reason', ''));
+            hasToken = logical(JsonHelper.safeField(cfg, 'has_token', false));
+            % Refresh session cache so subsequent actions see the real state.
+            backends = JsonHelper.safeField(cfg, 'backends', {});
+            if ischar(backends); backends = {backends}; end
+            if ~iscell(backends); backends = num2cell(string(backends)); end
+            app.ServerIbmConfig = struct( ...
+                'channel',  string(JsonHelper.safeField(cfg, 'channel', '')), ...
+                'instance', string(JsonHelper.safeField(cfg, 'instance', '')), ...
+                'backends', {backends}, ...
+                'has_token', hasToken, ...
+                'runtime_broken', broken, ...
+                'runtime_broken_reason', string(reason));
+            if broken
+                uialert(app.UIFigure, ...
+                    sprintf(['IBM runtime is currently unavailable on the server.\n\n' ...
+                            'Backend: %s\nReason: %s\n\nFix the IBM credentials in the server ' ...
+                            '.env and restart the API, then try again.'], backend, reason), ...
+                    'Submit to IBM', 'Icon', 'error');
+            elseif ~hasToken
+                uialert(app.UIFigure, ...
+                    'The server has no IBM_QUANTUM_TOKEN configured. Ask the operator to set it in .env and restart.', ...
+                    'Submit to IBM', 'Icon', 'error');
+            else
+                uialert(app.UIFigure, ...
+                    sprintf('Server returned 503 for circuit %s / backend %s but reports IBM runtime as healthy. Try again in a moment.', cid, backend), ...
+                    'Submit to IBM', 'Icon', 'warning');
+            end
+        end
     end
 
     methods (Access = private)

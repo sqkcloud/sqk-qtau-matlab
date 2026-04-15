@@ -50,6 +50,20 @@ classdef SettingsService < handle
             end
         end
 
+        % Fetch the server's current IBM Quantum configuration summary.
+        % Returns struct with fields: channel, instance, backends, has_token.
+        % The token itself is never returned — only whether one is configured.
+        function data = getIbmConfig(obj, token)
+            Logger.info('SettingsService', 'getIbmConfig → GET /api/settings/ibm-config');
+            try
+                data = obj.Client.getAuth('/api/settings/ibm-config', token);
+                Logger.info('SettingsService', 'getIbmConfig → response received');
+            catch ME
+                Logger.error('SettingsService', 'getIbmConfig FAILED: %s', ME.message);
+                rethrow(ME);
+            end
+        end
+
         % Verify IBM Quantum API token / instance are reachable.
         function data = verifyIbmCredentials(obj, apiToken, channel, instance, token)
             Logger.info('SettingsService', 'verifyIbmCredentials → POST /api/settings/verify-ibm (channel: %s)', char(channel));

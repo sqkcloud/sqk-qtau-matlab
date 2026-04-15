@@ -96,13 +96,32 @@ function BenchmarkScreen(app)
         'Items', stratItems, 'ItemsData', stratValues, 'Value', stratDefault);
     app.BenchmarkStrategyDropdown.Layout.Row = 5; app.BenchmarkStrategyDropdown.Layout.Column = 2;
 
-    % Row 6: Run button
-    app.BenchmarkRunButton = uibutton(cg, 'Text', [char(9654) ' ' Labels.get('benchmark_btn_run')], ...
+    % Row 6: Action buttons — local strategy compare  +  submit to IBM Quantum.
+    % Split the full-width row into two half-columns so both actions sit
+    % side-by-side without consuming extra vertical space.
+    btnRow = uigridlayout(cg, [1 2]);
+    btnRow.Layout.Row = 6; btnRow.Layout.Column = [1 2];
+    btnRow.ColumnWidth = {'1x', '1x'};
+    btnRow.Padding = [0 0 0 0]; btnRow.ColumnSpacing = 8;
+    btnRow.BackgroundColor = Theme.COLOR_CARD;
+
+    app.BenchmarkRunButton = uibutton(btnRow, ...
+        'Text', [char(9654) ' ' Labels.get('benchmark_btn_run')], ...
         'ButtonPushedFcn', @(~,~)app.BenchmarkVm.onRunBenchmark());
-    app.BenchmarkRunButton.Layout.Row = 6; app.BenchmarkRunButton.Layout.Column = [1 2];
-    app.styleBtn(app.BenchmarkRunButton, 'primary');
+    app.BenchmarkRunButton.Layout.Row = 1; app.BenchmarkRunButton.Layout.Column = 1;
+    app.styleBtn(app.BenchmarkRunButton, 'secondary');
     app.BenchmarkRunButton.FontSize = 14;
-    app.BenchmarkRunButton.Tooltip = 'Save config and compare transpilation strategies';
+    app.BenchmarkRunButton.Tooltip = 'Save config and compare transpilation strategies locally (no IBM submission)';
+
+    % POST /api/jobs/submit — runs the circuit on the selected IBM backend
+    % with the configured shots / optimisation / mitigation.
+    app.BenchmarkSubmitButton = uibutton(btnRow, ...
+        'Text', [char(9889) ' ' Labels.get('benchmark_btn_submit', 'Submit to IBM')], ...
+        'ButtonPushedFcn', @(~,~)app.BenchmarkVm.onSubmitBenchmarkToIbm());
+    app.BenchmarkSubmitButton.Layout.Row = 1; app.BenchmarkSubmitButton.Layout.Column = 2;
+    app.styleBtn(app.BenchmarkSubmitButton, 'primary');
+    app.BenchmarkSubmitButton.FontSize = 14;
+    app.BenchmarkSubmitButton.Tooltip = 'POST /api/jobs/submit — actually runs the benchmark circuit on IBM Quantum';
 
     % ── Execution Plan (right) ────────────────────────────────────────────────
     estimate = uipanel(g, 'Title', Labels.get('benchmark_panel_plan'));

@@ -58,6 +58,23 @@ classdef AppConfig
             Logger.info('AppConfig', 'Configuration cache cleared — will reload on next access.');
         end
 
+        % env  Read an OS environment variable with fallback, for bootstrapping
+        %      IBM-related defaults from the shell (mirrors the notebook's
+        %      os.getenv pattern). Empty strings are treated as unset.
+        function value = env(key, defaultValue)
+            if nargin < 2; defaultValue = ''; end
+            try
+                raw = getenv(char(key));
+            catch
+                raw = '';
+            end
+            if ischar(raw) && ~isempty(strtrim(raw))
+                value = strtrim(raw);
+            else
+                value = char(defaultValue);
+            end
+        end
+
     end
 
     methods (Static, Access = private)

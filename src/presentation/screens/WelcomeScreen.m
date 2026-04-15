@@ -151,6 +151,9 @@ function handleWelcomeMouseDown(app, prevFcn, src, evt)
         try prevFcn(src, evt); catch; end
     end
 
+    % Only react while the Welcome panel is the active section.
+    if ~isWelcomeSectionVisible(app); return; end
+
     cp = app.UIFigure.CurrentPoint;
 
     % If the popup is visible, only hide it when clicking OUTSIDE.
@@ -181,4 +184,16 @@ function handleWelcomeMouseDown(app, prevFcn, src, evt)
 
     % Show custom popup at the cursor position
     app.showProjectPopupMenu(cp(1), cp(2));
+end
+
+function tf = isWelcomeSectionVisible(app)
+    tf = false;
+    try
+        if isstruct(app.SectionPanels) && isfield(app.SectionPanels, 'Welcome') ...
+                && isvalid(app.SectionPanels.Welcome)
+            tf = strcmp(app.SectionPanels.Welcome.Visible, 'on');
+        end
+    catch
+        tf = false;
+    end
 end

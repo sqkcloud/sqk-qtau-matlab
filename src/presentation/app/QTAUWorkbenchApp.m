@@ -207,6 +207,7 @@ classdef QTAUWorkbenchApp < handle
         BackendStatusArea
         RefreshBackendsButton
         SelectBackendButton
+        SubmitPoolButton        % Fan-out submit to every backend in IBM_BACKENDS
         BackendKpiLabels
         BackendsSearchField
         BackendsPrevBtn
@@ -224,6 +225,7 @@ classdef QTAUWorkbenchApp < handle
         BenchmarkMitigationDropdown
         BenchmarkStrategyDropdown
         BenchmarkRunButton
+        BenchmarkSubmitButton   % Submit benchmark to IBM (POST /api/jobs/submit)
         BenchmarkStatusArea
         BenchmarkStrategyTable
     end
@@ -235,6 +237,7 @@ classdef QTAUWorkbenchApp < handle
         PredictionDistAxes      % Probability distribution bar chart
         PredictionBudgetAxes    % Error budget breakdown bar chart
         PredictionHeadlineLabel % Top-backend recommendation callout
+        SubmitJobButton         % Submit to IBM Quantum (POST /api/jobs/submit)
     end
 
     % ── Jobs tab ──────────────────────────────────────────────────────────────
@@ -344,6 +347,8 @@ classdef QTAUWorkbenchApp < handle
         SaveSettingsButton
         VerifyIbmButton
         SettingsStatusArea
+        ServerIbmStatusArea   % Read-only text area — shows server IBM runtime config
+        ServerIbmConfig = struct('channel','','instance','','backends',{{}},'has_token',false)
     end
 
     % ── Constructor / destructor ──────────────────────────────────────────────

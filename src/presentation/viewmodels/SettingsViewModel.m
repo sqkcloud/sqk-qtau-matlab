@@ -1,11 +1,72 @@
 classdef SettingsViewModel < handle
     % SettingsViewModel  Callback handlers for the Settings screen.
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
     methods
         function obj = SettingsViewModel(app)
             obj.App = app;
+        end
+
+        % Called when navigating to the Settings screen — fetch server IBM config
+        % so the UI can display which channel / instance / backends the server
+        % is using and whether a token is present.
+        function onEnter(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            if isempty(app.ServerIbmStatusArea) || ~isvalid(app.ServerIbmStatusArea); return; end
+            app.ServerIbmStatusArea.Value = {Labels.get('settings_server_ibm_loading', 'Loading server IBM configuration...')};
+            AsyncRunner.run( ...
+                @() app.SettingsSvc.getIbmConfig(app.State.authToken), ...
+                @(data) obj.onIbmConfigComplete(app, data), ...
+                @(ME)   obj.onIbmConfigError(app, ME));
+        end
+
+        function onIbmConfigComplete(obj, app, data)
+            if ~isvalid(app.ServerIbmStatusArea); return; end
+            channel  = char(JsonHelper.pick(data, {'channel'}));
+            instance = char(JsonHelper.pick(data, {'instance'}));
+            if isempty(instance); instance = '(not set)'; end
+            backends = JsonHelper.safeField(data, 'backends', {});
+            if ischar(backends); backends = {backends}; end
+            if ~iscell(backends); backends = num2cell(string(backends)); end
+            backendStr = char(strjoin(string(backends), ', '));
+            if isempty(backendStr); backendStr = '(default family)'; end
+            hasToken = logical(JsonHelper.safeField(data, 'has_token', false));
+            brokenFlag = logical(JsonHelper.safeField(data, 'runtime_broken', false));
+            brokenMsg  = char(JsonHelper.safeField(data, 'runtime_broken_reason', ''));
+            % Store for downstream consumers (dashboard, backends screen)
+            app.ServerIbmConfig = struct( ...
+                'channel',  string(channel), ...
+                'instance', string(instance), ...
+                'backends', {backends}, ...
+                'has_token', hasToken, ...
+                'runtime_broken', brokenFlag, ...
+                'runtime_broken_reason', string(brokenMsg));
+            if brokenFlag
+                badge = sprintf('IBM runtime unavailable — %s', brokenMsg);
+            elseif hasToken
+                badge = Labels.get('settings_server_ibm_ok', 'Token configured on server.');
+            else
+                badge = Labels.get('settings_server_ibm_missing', 'No IBM_QUANTUM_TOKEN on server — submissions will fail.');
+            end
+            app.ServerIbmStatusArea.Value = { ...
+                sprintf('Channel:  %s', channel), ...
+                sprintf('Instance: %s', instance), ...
+                sprintf('Backends: %s', backendStr), ...
+                badge};
+            obj.LastRefresh = tic;
+        end
+
+        function onIbmConfigError(~, app, ME)
+            if isvalid(app.ServerIbmStatusArea)
+                app.ServerIbmStatusArea.Value = {sprintf(Labels.get('settings_server_ibm_fail', ...
+                    'Could not fetch server IBM config: %s'), ME.message)};
+            end
+            app.logEvent('WARN', sprintf('getIbmConfig failed: %s', ME.message));
         end
 
         function onSaveSettings(obj)
@@ -37,19 +98,30 @@ classdef SettingsViewModel < handle
                 shots    = round(app.DefaultShotsField.Value);
                 opt      = round(app.DefaultOptField.Value);
                 logLevel = char(app.SettingsLogLevelDropdown.Value);
-                app.logEvent('API', sprintf('POST /api/settings/preferences — shots: %d  opt: %d  logLevel: %s', ...
+                app.logEvent('API', sprintf('POST /api/settings — shots: %d  opt: %d  logLevel: %s', ...
                     shots, opt, logLevel));
                 app.showLoading(Labels.get('loading_saving_settings', 'Saving settings...'));
+                % Field names must match the server's SaveSettingsRequest
+                % schema (qdash.api.schemas.user_preferences). Pydantic
+                % silently drops unknown keys, so a mismatch here means
+                % user preferences are never actually persisted. log_level
+                % is not a supported field server-side and is therefore
+                % kept session-local only.
                 prefs = struct( ...
-                    'default_shots',      shots, ...
-                    'optimization_level', opt, ...
-                    'log_level',          logLevel);
+                    'default_shots',        shots, ...
+                    'default_optimization', opt);
                 AsyncRunner.run( ...
                     @() app.SettingsSvc.savePreferences(prefs, app.State.authToken), ...
                     @(~) obj.onSavePrefsComplete(app), ...
                     @(ME) obj.onSavePrefsError(app, ME));
             else
                 app.logEvent('CONFIG', 'Preferences not synced to server (not authenticated)');
+            end
+            % log level is session-local (applied via Logger.setLevel below)
+            try
+                Logger.setLevel(upper(char(app.SettingsLogLevelDropdown.Value)));
+            catch ME
+                Logger.debug('SettingsViewModel', 'setLevel: %s', ME.message);
             end
             app.State.defaultShots        = round(app.DefaultShotsField.Value);
             app.State.defaultOptimization = round(app.DefaultOptField.Value);
