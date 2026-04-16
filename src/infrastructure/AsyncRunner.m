@@ -13,8 +13,11 @@ classdef AsyncRunner
     %   With timeout (seconds):
     %       AsyncRunner.run(workFcn, onDone, onError, 120);
     %
-    %   Requires MATLAB R2021b+ (backgroundPool).
-    %   Falls back to synchronous execution on older releases.
+    %   Pool acquisition order:
+    %     1. backgroundPool()         (lightweight, R2021b+)
+    %     2. Existing parallel pool   (gcp 'nocreate')
+    %     3. parpool('Threads')       (shared-memory, R2020b+)
+    %     4. Synchronous fallback     (last resort, blocks UI)
 
     methods (Static)
 
@@ -29,98 +32,208 @@ classdef AsyncRunner
             if nargin < 3; onError = []; end
             if nargin < 4; timeoutSec = 120; end
 
-            try
-                pool = backgroundPool();
-                future = parfeval(pool, workFcn, 1);
-                afterEach(future, @(f) AsyncRunner.handleComplete(f, onDone, onError), 0);
+            pool = AsyncRunner.acquirePool();
 
-                % Start a watchdog timer that cancels the future on timeout
-                if timeoutSec > 0
-                    wdog = timer('StartDelay', timeoutSec, ...
-                        'TimerFcn', @(~,~) AsyncRunner.onTimeout(future, onError), ...
-                        'StopFcn', @(src,~) delete(src));
-                    % Store watchdog on future UserData so afterEach can stop it
-                    future.UserData = wdog;
-                    start(wdog);
-                end
-            catch
-                % backgroundPool unavailable (R2020b or earlier) — run synchronously
-                Logger.debug('AsyncRunner', 'backgroundPool unavailable — running synchronously');
+            if ~isempty(pool)
                 try
-                    result = workFcn();
-                    onDone(result);
-                    future = [];
+                    % Wrap the work function so it always returns 1 output,
+                    % even on error.  This avoids MATLAB:maxlhs when
+                    % parfeval expects 1 output but the function throws.
+                    future = parfeval(pool, @() AsyncRunner.safeCall(workFcn), 1);
+
+                    % Poll the future via a fast timer.  afterEach does NOT
+                    % fire for errored futures, so we use a 50ms polling
+                    % timer that checks future.State and delivers the
+                    % result (or error) to the main thread.
+                    poller = timer('Period', 0.05, 'ExecutionMode', 'fixedRate', ...
+                        'TimerFcn', @(src,~) AsyncRunner.pollFuture(src, future, onDone, onError, timeoutSec), ...
+                        'UserData', tic);
+                    start(poller);
+                    return;
                 catch ME
-                    if ~isempty(onError)
-                        onError(ME);
-                    else
-                        rethrow(ME);
+                    Logger.warn('AsyncRunner', 'parfeval dispatch failed: %s', ME.message);
+                    % Fall through to synchronous
+                end
+            end
+
+            % Synchronous fallback — runs on the UI thread
+            try
+                result = workFcn();
+                onDone(result);
+                future = [];
+            catch ME
+                if ~isempty(onError)
+                    onError(ME);
+                else
+                    rethrow(ME);
+                end
+                future = [];
+            end
+        end
+    end
+
+    methods (Static, Hidden)
+        function out = safeCall(workFcn)
+            % safeCall  Execute workFcn, returning a struct that always
+            %   has exactly 1 output.  If workFcn throws, the error is
+            %   stored in the struct instead of propagating to parfeval.
+            %   Must be non-private so parfeval workers can call it.
+            %
+            %   Handles MATLAB:maxlhs (anonymous functions whose body
+            %   never returns a value, e.g. @() error(...)) by retrying
+            %   with zero output arguments.
+            try
+                val = workFcn();
+                out = struct('ok', true, 'value', {val}, 'error', []);
+            catch ME
+                if strcmp(ME.identifier, 'MATLAB:maxlhs')
+                    try
+                        workFcn();
+                        out = struct('ok', true, 'value', {[]}, 'error', []);
+                    catch ME2
+                        out = struct('ok', false, 'value', {[]}, 'error', ME2);
                     end
-                    future = [];
+                else
+                    out = struct('ok', false, 'value', {[]}, 'error', ME);
                 end
             end
         end
     end
 
     methods (Static, Access = private)
-        function handleComplete(future, onDone, onError)
-            % Stop the watchdog timer if it exists
-            try
-                if isprop(future, 'UserData') && ~isempty(future.UserData)
-                    wdog = future.UserData;
-                    if isvalid(wdog); stop(wdog); delete(wdog); end
-                    future.UserData = [];
-                end
-            catch ME; Logger.debug('AsyncRunner', 'watchdog cleanup: %s', ME.message); end
 
-            try
-                % Check for error — guard against missing Error property
-                hasErr = false;
+        % ── Pool acquisition with caching ────────────────────────────────
+
+        function pool = acquirePool()
+            % acquirePool  Return a reusable parallel pool, or [] if none
+            %   available.  Caches the pool in a persistent variable so
+            %   backgroundPool() / parpool() is called at most once per
+            %   session.  Logs the actual error on first failure.
+            persistent cachedPool poolFailed
+
+            % Fast path: already have a working pool
+            if ~isempty(cachedPool)
                 try
-                    hasErr = ~isempty(future.Error);
-                catch ME; Logger.debug('AsyncRunner', 'future error check: %s', ME.message); end
+                    if isa(cachedPool, 'parallel.Pool') || isa(cachedPool, 'parallel.BackgroundPool')
+                        pool = cachedPool;
+                        return;
+                    end
+                catch
+                    cachedPool = [];
+                end
+            end
 
-                if hasErr
-                    err = future.Error;
-                    AsyncRunner.runOnMainThread(@() AsyncRunner.invokeError(onError, err));
-                else
-                    result = fetchOutputs(future);
-                    AsyncRunner.runOnMainThread(@() onDone(result));
+            % If we already tried and failed, don't retry every call
+            if ~isempty(poolFailed) && poolFailed
+                pool = [];
+                return;
+            end
+
+            % Strategy 1: backgroundPool (lightweight, shared-memory)
+            try
+                cachedPool = backgroundPool();
+                pool = cachedPool;
+                Logger.info('AsyncRunner', 'Using backgroundPool for async dispatch');
+                return;
+            catch ME
+                Logger.warn('AsyncRunner', 'backgroundPool() failed: %s', ME.message);
+            end
+
+            % Strategy 2: reuse an existing parallel pool
+            try
+                existing = gcp('nocreate');
+                if ~isempty(existing)
+                    cachedPool = existing;
+                    pool = cachedPool;
+                    Logger.info('AsyncRunner', 'Reusing existing parallel pool (%s, %d workers)', ...
+                        existing.Cluster.Profile, existing.NumWorkers);
+                    return;
                 end
             catch ME
-                Logger.error('AsyncRunner', 'handleComplete error: %s', ME.message);
-                if ~isempty(onError)
-                    AsyncRunner.runOnMainThread(@() AsyncRunner.invokeError(onError, ME));
-                end
+                Logger.debug('AsyncRunner', 'gcp(''nocreate'') failed: %s', ME.message);
             end
-        end
 
-        function onTimeout(future, onError)
-            % Cancel the future and invoke error callback with a timeout message.
+            % Strategy 3: create a thread-based pool (shared-memory, no serialization)
             try
-                if ~isempty(future) && isvalid(future) && strcmp(future.State, 'running')
-                    cancel(future);
-                    Logger.warn('AsyncRunner', 'Task timed out — cancelled');
-                    ME = MException('AsyncRunner:Timeout', ...
-                        'Operation timed out. The server may be busy — please try again.');
-                    AsyncRunner.runOnMainThread(@() AsyncRunner.invokeError(onError, ME));
-                end
-            catch ex
-                Logger.debug('AsyncRunner', 'onTimeout: %s', ex.message);
+                cachedPool = parpool('Threads');
+                pool = cachedPool;
+                Logger.info('AsyncRunner', 'Created Threads pool (%d workers)', cachedPool.NumWorkers);
+                return;
+            catch ME
+                Logger.warn('AsyncRunner', 'parpool(''Threads'') failed: %s', ME.message);
             end
+
+            % All strategies failed — fall back to synchronous
+            poolFailed = true;
+            pool = [];
+            Logger.warn('AsyncRunner', ...
+                'No parallel pool available — all async work will run synchronously on the UI thread');
         end
 
-        function runOnMainThread(fcn)
-            t = timer('StartDelay', 0, 'TimerFcn', @(~,~) fcn(), ...
-                'StopFcn', @(src,~) delete(src));
-            start(t);
-        end
+        % ── Future polling (runs on main thread via timer) ────────────────
 
-        function invokeError(onError, ME)
-            if ~isempty(onError)
-                onError(ME);
-            else
-                Logger.error('AsyncRunner', 'Async task failed: %s', ME.message);
+        function pollFuture(timerObj, future, onDone, onError, timeoutSec)
+            % pollFuture  Called every 50ms to check if the parfeval future
+            %   has finished.  Delivers the result (or error) on the main
+            %   thread, then stops and deletes the polling timer.
+            try
+                state = future.State;
+                if strcmp(state, 'running') || strcmp(state, 'queued')
+                    % Check timeout
+                    if timeoutSec > 0
+                        elapsed = toc(timerObj.UserData);
+                        if elapsed > timeoutSec
+                            cancel(future);
+                            stop(timerObj); delete(timerObj);
+                            Logger.warn('AsyncRunner', 'Task timed out — cancelled');
+                            ME = MException('AsyncRunner:Timeout', ...
+                                'Operation timed out. The server may be busy — please try again.');
+                            if ~isempty(onError); onError(ME); end
+                            return;
+                        end
+                    end
+                    return; % still running — check again on next tick
+                end
+
+                % Future finished — stop polling
+                stop(timerObj); delete(timerObj);
+
+                % Check if the future itself errored (safeCall failed to
+                % execute, e.g. closure serialization or path issue).
+                if ~isempty(future.Error)
+                    err = future.Error;
+                    % Unwrap ParallelException → remotecause → cause
+                    try; if ~isempty(err.remotecause); err = err.remotecause{1}; end; catch; end
+                    try; if ~isempty(err.cause); err = err.cause{1}; end; catch; end
+                    Logger.error('AsyncRunner', 'Background task error: %s', err.message);
+                    if ~isempty(onError); onError(err); else
+                        Logger.error('AsyncRunner', 'Async task failed (no handler): %s', err.message);
+                    end
+                    return;
+                end
+
+                % safeCall wraps errors in a struct.  Unwrap it.
+                out = fetchOutputs(future);
+                if isstruct(out) && isfield(out, 'ok')
+                    if out.ok
+                        onDone(out.value);
+                    else
+                        if ~isempty(onError)
+                            onError(out.error);
+                        else
+                            Logger.error('AsyncRunner', 'Async task failed: %s', out.error.message);
+                        end
+                    end
+                else
+                    % Unexpected result shape — treat as success
+                    onDone(out);
+                end
+            catch ME
+                try stop(timerObj); delete(timerObj); catch; end
+                Logger.error('AsyncRunner', 'pollFuture error: %s', ME.message);
+                if ~isempty(onError)
+                    onError(ME);
+                end
             end
         end
     end

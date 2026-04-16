@@ -40,8 +40,11 @@ classdef BackendsViewModel < handle
                 cid = char(app.State.selectedCircuitId);
             end
             app.showLoading(Labels.get('loading_backends', 'Loading backends...'));
+            backendSvc  = app.BackendSvc;
+            circuitSvc  = app.CircuitSvc;
+            token       = app.State.authToken;
             AsyncRunner.run( ...
-                @() obj.fetchBackends(app, cid), ...
+                @() BackendsViewModel.fetchBackends(backendSvc, circuitSvc, token, cid), ...
                 @(data) obj.onRefreshBackendsComplete(app, data), ...
                 @(ME)   obj.onRefreshBackendsError(app, ME));
         end
@@ -193,8 +196,10 @@ classdef BackendsViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_no_circuit'), 'Submit Pool', 'Icon', 'warning'); return;
             end
             app.showLoading('Checking IBM runtime status...');
+            settingsSvc = app.SettingsSvc;
+            token       = app.State.authToken;
             AsyncRunner.run( ...
-                @() app.SettingsSvc.getIbmConfig(app.State.authToken), ...
+                @() settingsSvc.getIbmConfig(token), ...
                 @(cfg) obj.onPoolResolved(app, cfg), ...
                 @(ME)  obj.onPoolResolveError(app, ME));
         end
@@ -258,8 +263,10 @@ classdef BackendsViewModel < handle
             if row == 0; return; end
             bName = char(string(app.BackendTable.Data{row, 2}));
             app.showLoading(sprintf('Loading details for %s...', bName));
+            backendSvc = app.BackendSvc;
+            token      = app.State.authToken;
             AsyncRunner.run( ...
-                @() app.BackendSvc.getBackend(bName, app.State.authToken), ...
+                @() backendSvc.getBackend(bName, token), ...
                 @(detail) obj.onCtxViewDetailsComplete(app, bName, detail), ...
                 @(ME)     obj.onCtxViewDetailsError(app, ME));
         end
@@ -320,6 +327,8 @@ classdef BackendsViewModel < handle
             obj.PoolDone = 0;
             obj.PoolSucceeded = 0;
             obj.PoolFailed = 0;
+            jobSvc = app.JobSvc;
+            token  = app.State.authToken;
             for i = 1:n
                 backend = char(string(backends{i}));
                 payload = struct( ...
@@ -332,7 +341,7 @@ classdef BackendsViewModel < handle
                 end
                 idx = i;
                 AsyncRunner.run( ...
-                    @() app.JobSvc.submitJob(payload, app.State.authToken), ...
+                    @() jobSvc.submitJob(payload, token), ...
                     @(data) obj.onPoolJobComplete(app, idx, backend, data), ...
                     @(ME)   obj.onPoolJobError(app, idx, backend, ME));
             end
@@ -387,44 +396,8 @@ classdef BackendsViewModel < handle
             end
         end
 
-        function data = fetchBackends(obj, app, cid)
-            % Try enriched list with circuit_id. If that fails (404),
-            % try fetching a circuit_id from the project, then fall back to basic.
-            data = struct('backends', {{}});
-            if ~isempty(cid)
-                try
-                    data = app.BackendSvc.listBackends(app.State.authToken, cid);
-                    if obj.hasBackends(data); return; end
-                catch
-                    app.logEvent('WARN', 'Enriched backend list failed for selected circuit');
-                end
-            end
-            % Try with any circuit from the project
-            try
-                circList = app.CircuitSvc.listCircuits(app.State.authToken);
-                items = JsonHelper.extractList(circList, 'circuits');
-                if ~isempty(items)
-                    fallbackCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
-                    if ~isempty(fallbackCid)
-                        data = app.BackendSvc.listBackends(app.State.authToken, fallbackCid);
-                        if obj.hasBackends(data); return; end
-                    end
-                end
-            catch
-                app.logEvent('WARN', 'Fallback circuit lookup failed');
-            end
-            % Last resort: basic list (may be empty)
-            try
-                data = app.BackendSvc.listBackends(app.State.authToken, '');
-            catch ME; Logger.debug('BackendsViewModel', 'fetchBackends basic list: %s', ME.message); end
-        end
-
-        function tf = hasBackends(~, data)
-            tf = false;
-            if isstruct(data) && isfield(data, 'backends')
-                tf = ~isempty(data.backends);
-            end
-        end
+        % fetchBackends and hasBackendsData moved to Static methods
+        % so they can run on backgroundPool without capturing obj/app.
 
         function row = getSelectedRow(obj)
             app = obj.App;
@@ -467,8 +440,10 @@ classdef BackendsViewModel < handle
             app.BackendKpiLabels{4}.Text = 'Loading…';
             % Async-fetch calibration age so the KPI strip never blocks
             if ~isempty(primaryName)
+                backendSvc = app.BackendSvc;
+                token      = app.State.authToken;
                 AsyncRunner.run( ...
-                    @() app.BackendSvc.getBackend(primaryName, app.State.authToken), ...
+                    @() backendSvc.getBackend(primaryName, token), ...
                     @(detail) BackendsViewModel.applyCalibrationAge(app, 4, detail), ...
                     @(ME) BackendsViewModel.calibrationAgeError(app, 4, ME));
             else
@@ -484,9 +459,11 @@ classdef BackendsViewModel < handle
             fid = tData{row, 5};
             if isnumeric(fid) && ~isnan(fid); app.BackendKpiLabels{3}.Text = sprintf('%.4f', fid); end
             app.BackendKpiLabels{4}.Text = 'Loading…';
-            primary = char(string(tData{row,2}));
+            primary    = char(string(tData{row,2}));
+            backendSvc = app.BackendSvc;
+            token      = app.State.authToken;
             AsyncRunner.run( ...
-                @() app.BackendSvc.getBackend(primary, app.State.authToken), ...
+                @() backendSvc.getBackend(primary, token), ...
                 @(detail) BackendsViewModel.applyCalibrationAge(app, 4, detail), ...
                 @(ME) BackendsViewModel.calibrationAgeError(app, 4, ME));
         end
@@ -514,9 +491,11 @@ classdef BackendsViewModel < handle
             % aren't blocked by the HTTP round-trip. Callers are expected
             % to have already invoked showLoading; both terminal handlers
             % call hideLoading.
-            pid = app.State.currentProjectId;
+            pid        = app.State.currentProjectId;
+            backendSvc = app.BackendSvc;
+            token      = app.State.authToken;
             AsyncRunner.run( ...
-                @() app.BackendSvc.saveSelection(pid, string(primaryName), string(backupName), app.State.authToken), ...
+                @() backendSvc.saveSelection(pid, string(primaryName), string(backupName), token), ...
                 @(~) BackendsViewModel.onPersistDone(app, primaryName, backupName), ...
                 @(ME) BackendsViewModel.onPersistError(app, ME));
         end
@@ -593,6 +572,44 @@ classdef BackendsViewModel < handle
             app.hideLoading();
             app.logEvent('ERROR', sprintf('Save selection FAILED: %s', ME.message));
             app.showError('Save Backend Selection', ME);
+        end
+
+        function data = fetchBackends(backendSvc, circuitSvc, token, cid)
+            % fetchBackends  Fetch backend list with fallback chain.
+            %   Static method — runs on backgroundPool.  Must not reference
+            %   app or any ViewModel instance.
+            data = struct('backends', {{}});
+            if ~isempty(cid)
+                try
+                    data = backendSvc.listBackends(token, cid);
+                    if BackendsViewModel.hasBackendsData(data); return; end
+                catch
+                    Logger.debug('BackendsViewModel', 'Enriched backend list failed for selected circuit');
+                end
+            end
+            try
+                circList = circuitSvc.listCircuits(token);
+                items = JsonHelper.extractList(circList, 'circuits');
+                if ~isempty(items)
+                    fallbackCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
+                    if ~isempty(fallbackCid)
+                        data = backendSvc.listBackends(token, fallbackCid);
+                        if BackendsViewModel.hasBackendsData(data); return; end
+                    end
+                end
+            catch
+                Logger.debug('BackendsViewModel', 'Fallback circuit lookup failed');
+            end
+            try
+                data = backendSvc.listBackends(token, '');
+            catch ME; Logger.debug('BackendsViewModel', 'fetchBackends basic list: %s', ME.message); end
+        end
+
+        function tf = hasBackendsData(data)
+            tf = false;
+            if isstruct(data) && isfield(data, 'backends')
+                tf = ~isempty(data.backends);
+            end
         end
     end
 end

@@ -17,16 +17,18 @@ classdef ReportsViewModel < handle
             fmt         = char(app.ReportFormatDropdown.Value);
             sections    = char(app.ReportSectionsField.Value);
             token       = app.State.authToken;
+            projectSvc  = app.ProjectSvc;
+            reportSvc   = app.ReportSvc;
             if app.State.hasProject()
                 pid = app.State.currentProjectId;
                 app.logEvent('API', sprintf('POST /api/projects/%s/reports — title: %s  format: %s', ...
                     pid, reportTitle, fmt));
-                workFcn = @() app.ProjectSvc.generateReport(pid, reportTitle, fmt, sections, token);
+                workFcn = @() projectSvc.generateReport(pid, reportTitle, fmt, sections, token);
             else
                 jobId = app.State.selectedJobId;
                 app.logEvent('API', sprintf('POST /api/reports/generate — title: %s  format: %s  job: %s', ...
                     reportTitle, fmt, jobId));
-                workFcn = @() app.ReportSvc.generateReport(reportTitle, fmt, sections, jobId, token);
+                workFcn = @() reportSvc.generateReport(reportTitle, fmt, sections, jobId, token);
             end
             app.showLoading(Labels.get('loading_report', 'Generating report...'));
             AsyncRunner.run(workFcn, ...
@@ -48,8 +50,10 @@ classdef ReportsViewModel < handle
                     rid = char(app.State.reportId);
                     app.logEvent('API', sprintf('GET /api/reports/%s/download', rid));
                     app.showLoading(Labels.get('loading_downloading', 'Downloading report...'));
+                    svc   = app.ReportSvc;
+                    token = app.State.authToken;
                     AsyncRunner.run( ...
-                        @() app.ReportSvc.downloadReport(rid, app.State.authToken), ...
+                        @() svc.downloadReport(rid, token), ...
                         @(data) obj.onDownloadComplete(app, sel, data), ...
                         @(ME)   obj.onDownloadError(app, sel, ME));
                     return;

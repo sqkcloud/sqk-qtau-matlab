@@ -17,14 +17,24 @@ classdef AnalysisViewModel < handle
             if ~app.State.isAuthenticated(); return; end
             app.logEvent('API', 'GET /api/circuits — loading circuit list for Analysis');
             app.showLoading(Labels.get('loading_circuits', 'Loading circuits...'));
+            circSvc = app.CircuitSvc;
+            token   = app.State.authToken;
+            AsyncRunner.run( ...
+                @() circSvc.listCircuits(token), ...
+                @(data) obj.onEnterCircuitsLoaded(data), ...
+                @(ME)   obj.onEnterCircuitsError(ME));
+        end
+
+        function onEnterCircuitsLoaded(obj, data)
+            app = obj.App;
             try
-                data = app.CircuitSvc.listCircuits(app.State.authToken);
                 items = JsonHelper.extractList(data, 'circuits');
                 if isempty(items); items = JsonHelper.asList(data); end
                 n = numel(items);
                 if n == 0
                     app.AnalysisCircuitDropdown.Items     = {'(no circuits)'};
                     app.AnalysisCircuitDropdown.ItemsData = {''};
+                    app.hideLoading();
                     return;
                 end
                 names = cell(1, n);
@@ -38,7 +48,6 @@ classdef AnalysisViewModel < handle
                 end
                 app.AnalysisCircuitDropdown.Items     = names;
                 app.AnalysisCircuitDropdown.ItemsData = ids;
-                % Prefer the already-selected circuit (e.g. from Upload); fall back to first
                 selId = char(app.State.selectedCircuitId);
                 idx   = find(strcmp(ids, selId), 1);
                 if ~isempty(idx)
@@ -51,11 +60,16 @@ classdef AnalysisViewModel < handle
                 app.logEvent('API', sprintf('Circuit list loaded — %d circuit(s), selected: %s', ...
                     n, char(app.AnalysisCircuitDropdown.Value)));
                 obj.LastRefresh = tic;
-                app.hideLoading();
             catch ME
-                app.hideLoading();
-                app.logEvent('WARN', sprintf('Failed to load circuits: %s', ME.message));
+                app.logEvent('WARN', sprintf('Failed to populate circuits: %s', ME.message));
             end
+            app.hideLoading();
+        end
+
+        function onEnterCircuitsError(obj, ME)
+            app = obj.App;
+            app.hideLoading();
+            app.logEvent('WARN', sprintf('Failed to load circuits: %s', ME.message));
         end
 
         function onCircuitSelected(obj, circuitId)
@@ -84,8 +98,10 @@ classdef AnalysisViewModel < handle
             app.logEvent('API', sprintf('POST /api/circuits/%s/analyze — circuit: %s  name: %s', ...
                 cid, cid, app.State.selectedCircuitName));
             app.showLoading(Labels.get('loading_analyzing', 'Analyzing circuit...'));
+            circSvc = app.CircuitSvc;
+            token   = app.State.authToken;
             AsyncRunner.run( ...
-                @() app.CircuitSvc.analyzeCircuit(cid, app.State.authToken), ...
+                @() circSvc.analyzeCircuit(cid, token), ...
                 @(data) obj.onAnalyzeComplete(app, cid, data), ...
                 @(ME) obj.onAnalyzeError(app, cid, ME));
         end

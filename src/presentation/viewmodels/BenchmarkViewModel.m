@@ -94,8 +94,9 @@ classdef BenchmarkViewModel < handle
             app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config', pid));
             ctx = struct('pid', pid, 'cid', circuitId, 'backend', backendName, ...
                 'shots', shots, 'opt', opt, 'mitig', mitig, 'strategy', strategy);
+            projSvc = app.ProjectSvc;
             AsyncRunner.run( ...
-                @() app.ProjectSvc.saveBenchmarkConfig(pid, circuitId, backendName, shots, opt, mitig, strategy, token), ...
+                @() projSvc.saveBenchmarkConfig(pid, circuitId, backendName, shots, opt, mitig, strategy, token), ...
                 @(configResp) obj.onSaveBenchmarkConfigComplete(app, ctx, configResp), ...
                 @(ME)         obj.onBenchmarkError(app, ME));
         end
@@ -106,8 +107,10 @@ classdef BenchmarkViewModel < handle
             % Step 2 — chained async: compare transpilation strategies
             strategies = obj.buildStrategiesList(ctx.strategy);
             app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config/compare-strategies', ctx.pid));
+            projSvc = app.ProjectSvc;
+            token   = app.State.authToken;
             AsyncRunner.run( ...
-                @() app.ProjectSvc.compareStrategies(ctx.pid, ctx.cid, ctx.backend, strategies, app.State.authToken), ...
+                @() projSvc.compareStrategies(ctx.pid, ctx.cid, ctx.backend, strategies, token), ...
                 @(compData) obj.onCompareStrategiesComplete(app, ctx, compData), ...
                 @(ME)       obj.onCompareStrategiesFallback(app, ctx, ME));
         end
@@ -219,8 +222,10 @@ classdef BenchmarkViewModel < handle
                 circuitId, backendName, shots, opt, mitig));
             app.showLoading(Labels.get('loading_submitting_bench', ...
                 'Submitting benchmark to IBM Quantum...'));
+            jobSvc = app.JobSvc;
+            token  = app.State.authToken;
             AsyncRunner.run( ...
-                @() app.JobSvc.submitJob(payload, app.State.authToken), ...
+                @() jobSvc.submitJob(payload, token), ...
                 @(data) obj.onSubmitBenchmarkComplete(app, circuitId, backendName, data), ...
                 @(ME)   obj.onSubmitBenchmarkError(app, circuitId, backendName, ME));
         end
@@ -251,8 +256,10 @@ classdef BenchmarkViewModel < handle
             % IBM runtime broken after login". Refetch /settings/ibm-config
             % and surface the actual cause instead of a generic error.
             if contains(ME.message, '503') || contains(ME.message, 'Service Unavailable')
+                settSvc = app.SettingsSvc;
+                tok     = app.State.authToken;
                 AsyncRunner.run( ...
-                    @() app.SettingsSvc.getIbmConfig(app.State.authToken), ...
+                    @() settSvc.getIbmConfig(tok), ...
                     @(cfg) BenchmarkViewModel.explain503(app, cfg, cid, backendName), ...
                     @(~)   app.showError('Submit Benchmark to IBM', ME));
                 return;
@@ -265,52 +272,69 @@ classdef BenchmarkViewModel < handle
         function onLoadBenchmark(obj)
             app = obj.App;
             if ~app.State.isAuthenticated(); return; end
+            app.showLoading(Labels.get('loading_benchmark_entry', 'Loading benchmark data...'));
 
-            % Step 1: Populate circuit dropdown
-            obj.loadCircuits();
+            % Capture parameters on UI thread
+            token  = app.State.authToken;
+            pid    = '';
+            if app.State.hasProject(); pid = char(app.State.currentProjectId); end
+            selCid = char(app.State.selectedCircuitId);
+            circSvc   = app.CircuitSvc;
+            projSvc   = app.ProjectSvc;
+            backSvc   = app.BackendSvc;
 
-            % Step 2: Load saved benchmark config to get circuit_id BEFORE loading backends.
-            %   GET /api/backends requires circuit_id to return the full backend list;
-            %   without it the endpoint only returns project-registered backends (often empty).
-            if app.State.hasProject()
-                try
-                    data = app.ProjectSvc.getBenchmarkConfig( ...
-                        app.State.currentProjectId, app.State.authToken);
-                    status = char(JsonHelper.pick(data, {'status'}));
-                    if strcmp(status, 'configured')
-                        % Restore circuit_id into AppState so loadBackends can use it
-                        cid = char(JsonHelper.pick(data, {'circuit_id'}));
-                        if ~isempty(cid) && strlength(cid) > 0
-                            app.State.selectedCircuitId = string(cid);
-                            obj.selectDropdownValue(app.BenchmarkCircuitDropdown, cid);
-                        end
-                    end
-                catch ME
-                    app.logEvent('DEBUG', sprintf('No existing benchmark config: %s', ME.message));
-                    data = [];
-                    status = '';
-                end
-            else
-                data = [];
-                status = '';
+            % Run all data fetching off the UI thread
+            AsyncRunner.run( ...
+                @() BenchmarkViewModel.fetchEntryData(circSvc, projSvc, backSvc, token, pid, selCid), ...
+                @(R) obj.applyEntryData(app, R), ...
+                @(ME) obj.onLoadBenchmarkError(app, ME));
+        end
+    end
+
+    methods (Access = private)
+
+        % ── Entry data callback (runs on main thread) ───────────────────
+
+        function applyEntryData(obj, app, R)
+            % Apply circuits to dropdown
+            try
+                obj.applyCircuitDropdown(R.circuits);
+            catch ME
+                app.logEvent('DEBUG', sprintf('applyCircuitDropdown: %s', ME.message));
             end
 
-            % Step 3: Load backends WITH circuit_id now available in AppState
-            obj.loadBackends();
+            % Restore benchmark config & circuit selection
+            data   = R.benchConfig;
+            status = R.benchStatus;
+            if ~isempty(data) && strcmp(status, 'configured')
+                cid = char(JsonHelper.pick(data, {'circuit_id'}));
+                if ~isempty(cid) && strlength(cid) > 0
+                    app.State.selectedCircuitId = string(cid);
+                    obj.selectDropdownValue(app.BenchmarkCircuitDropdown, cid);
+                end
+            end
 
-            % Step 4: Restore remaining config fields if a saved config was loaded
+            % Apply backends to dropdown
+            try
+                obj.populateBackendDropdown(R.backends);
+            catch ME
+                app.logEvent('DEBUG', sprintf('populateBackendDropdown: %s', ME.message));
+                app.BenchmarkBackendSelect.Items     = {'(no backends)'};
+                app.BenchmarkBackendSelect.ItemsData = {''};
+                app.BenchmarkBackendSelect.Value     = '';
+            end
+
+            % Restore remaining config fields
             if ~isempty(data) && strcmp(status, 'configured')
                 bn = char(JsonHelper.pick(data, {'backend_name'}));
                 if ~isempty(bn) && strlength(bn) > 0
                     app.State.selectedBackend = string(bn);
                     obj.selectDropdownValue(app.BenchmarkBackendSelect, bn);
                 end
-
                 s = JsonHelper.toDouble(JsonHelper.pick(data, {'shots'}));
                 o = JsonHelper.toDouble(JsonHelper.pick(data, {'optimization_level'}));
                 if s > 0; app.BenchmarkShotsField.Value = s; end
                 if o >= 0; app.BenchmarkOptField.Value = o; end
-
                 em = char(JsonHelper.pick(data, {'error_mitigation'}));
                 ts = char(JsonHelper.pick(data, {'transpilation_strategy'}));
                 if ~isempty(em)
@@ -319,17 +343,47 @@ classdef BenchmarkViewModel < handle
                 if ~isempty(ts)
                     try app.BenchmarkStrategyDropdown.Value = ts; catch ME; Logger.debug('BenchmarkViewModel', 'restoreStrategyDropdown: %s', ME.message); end
                 end
-
                 obj.displayExecutionPlan(data, s, o, em, ts);
-                obj.LastRefresh = tic;
                 app.logEvent('LOAD', 'Loaded existing benchmark config from server');
             end
+            obj.LastRefresh = tic;
+            app.hideLoading();
         end
-    end
 
-    methods (Access = private)
+        function onLoadBenchmarkError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('WARN', sprintf('Benchmark entry load failed: %s', ME.message));
+        end
 
-        % ── Populate circuit dropdown ────────────────────────────────────
+        function applyCircuitDropdown(obj, data)
+            app = obj.App;
+            items = JsonHelper.extractList(data, 'circuits');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.BenchmarkCircuitDropdown.Items     = {'(no circuits)'};
+                app.BenchmarkCircuitDropdown.ItemsData = {''};
+                app.BenchmarkCircuitDropdown.Value     = '';
+                return;
+            end
+            names = cell(1, n);
+            ids   = cell(1, n);
+            for i = 1:n
+                ids{i}   = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
+                names{i} = char(JsonHelper.pick(items(i), {'name','circuit_name','filename'}));
+                if isempty(names{i}) || strlength(names{i}) == 0
+                    names{i} = ids{i};
+                end
+            end
+            app.BenchmarkCircuitDropdown.Items     = names;
+            app.BenchmarkCircuitDropdown.ItemsData = ids;
+            if app.State.hasCircuit()
+                obj.selectDropdownValue(app.BenchmarkCircuitDropdown, char(app.State.selectedCircuitId));
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d circuits into benchmark dropdown', n));
+        end
+
+        % ── Populate circuit dropdown (legacy, kept for onCircuitSelected) ─
 
         function loadCircuits(obj)
             app = obj.App;
@@ -549,6 +603,67 @@ classdef BenchmarkViewModel < handle
     end
 
     methods (Static, Access = private)
+
+        function R = fetchEntryData(circSvc, projSvc, backSvc, token, pid, selCid)
+            % fetchEntryData  Fetch circuits, benchmark config, and backends
+            %   in one background task. Returns a struct with all results.
+            R = struct('circuits', [], 'benchConfig', [], 'benchStatus', '', 'backends', struct('backends', {{}}));
+
+            % 1. List circuits
+            try
+                R.circuits = circSvc.listCircuits(token);
+            catch ME
+                Logger.debug('BenchmarkViewModel', 'fetchEntryData circuits: %s', ME.message);
+            end
+
+            % 2. Load benchmark config (may update selected circuit)
+            if ~isempty(pid)
+                try
+                    R.benchConfig = projSvc.getBenchmarkConfig(pid, token);
+                    R.benchStatus = char(JsonHelper.pick(R.benchConfig, {'status'}));
+                    % If config has a circuit_id, use it for backend fetch
+                    if strcmp(R.benchStatus, 'configured')
+                        cfgCid = char(JsonHelper.pick(R.benchConfig, {'circuit_id'}));
+                        if ~isempty(cfgCid) && strlength(cfgCid) > 0
+                            selCid = cfgCid;
+                        end
+                    end
+                catch ME
+                    Logger.debug('BenchmarkViewModel', 'fetchEntryData benchConfig: %s', ME.message);
+                end
+            end
+
+            % 3. Load backends (same fallback chain as loadBackends)
+            if ~isempty(selCid) && strlength(selCid) > 0
+                try
+                    R.backends = backSvc.listBackends(token, selCid);
+                    if BenchmarkViewModel.hasBackendItems(R.backends); return; end
+                catch; end
+            end
+            % Fallback: use any circuit from the project
+            try
+                items = JsonHelper.extractList(R.circuits, 'circuits');
+                if ~isempty(items)
+                    fallCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
+                    if ~isempty(fallCid) && strlength(fallCid) > 0
+                        R.backends = backSvc.listBackends(token, fallCid);
+                        if BenchmarkViewModel.hasBackendItems(R.backends); return; end
+                    end
+                end
+            catch; end
+            % Last resort: basic list
+            try
+                R.backends = backSvc.listBackends(token, '');
+            catch; end
+        end
+
+        function tf = hasBackendItems(data)
+            tf = false;
+            if isstruct(data) && isfield(data, 'backends')
+                tf = ~isempty(data.backends);
+            end
+        end
+
         function explain503(app, cfg, cid, backendName)
             % Post-failure diagnostic — called after a 503 from /jobs/submit
             % to surface the real server-side runtime state.

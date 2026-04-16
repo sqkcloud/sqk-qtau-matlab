@@ -246,10 +246,19 @@ classdef ProjectService < handle
         function data = generateReport(obj, projectId, title, format, sections, token)
             ep = sprintf('/api/projects/%s/reports', FastAPIClient.encodePathSegment(projectId));
             Logger.info('ProjectService', 'generateReport → POST %s (format: %s)', ep, char(format));
+            % API expects 'sections' as an array of strings, not a plain string.
+            secStr = strtrim(char(sections));
+            if isempty(secStr) || strcmpi(secStr, 'all')
+                secCell = {'circuit_summary','feature_analysis','benchmark_comparison', ...
+                           'backend_explorer','prediction','optimization','execution_results', ...
+                           'detailed_analysis'};
+            else
+                secCell = strtrim(strsplit(secStr, ','));
+            end
             payload = struct( ...
                 'title',    char(title), ...
-                'format',   char(format), ...
-                'sections', char(sections));
+                'format',   lower(char(format)), ...
+                'sections', {secCell});
             try
                 data = obj.Client.postAuthJson(ep, payload, token);
                 Logger.info('ProjectService', 'generateReport → report generated for project: %s', char(projectId));

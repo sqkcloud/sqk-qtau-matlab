@@ -96,7 +96,7 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.BenchmarkVm, ttl)
                         app.BenchmarkVm.onLoadBenchmark();
                     end
-                case 'DetailedAnalysis'
+                case 'Detailed Analysis'
                     % On first entry, paint seeded demo charts so the layout
                     % isn't empty. Skipped on subsequent entries so any live
                     % data from Refresh buttons is preserved.
@@ -137,17 +137,17 @@ classdef NavigationManager
                     if isempty(app.JobsVm); app.JobsVm = JobsViewModel(app); end
                 case 'Results'
                     if isempty(app.ResultsVm); app.ResultsVm = ResultsViewModel(app); end
-                case 'DetailedAnalysis'
+                case 'Detailed Analysis'
                     if isempty(app.DetailedAnalysisVm); app.DetailedAnalysisVm = DetailedAnalysisViewModel(app); end
-                case 'BenchmarkDashboard'
+                case 'Benchmark Dashboard'
                     if isempty(app.BenchmarkDashboardVm); app.BenchmarkDashboardVm = BenchmarkDashboardViewModel(app); end
                 case 'Reports'
                     if isempty(app.ReportsVm); app.ReportsVm = ReportsViewModel(app); end
                 case 'Settings'
                     if isempty(app.SettingsVm); app.SettingsVm = SettingsViewModel(app); end
-                case 'QECSimulation'
+                case 'QEC Simulation'
                     if isempty(app.QecSimulationVm); app.QecSimulationVm = QecSimulationViewModel(app); end
-                case 'QECVisualization'
+                case 'QEC Visualization'
                     if isempty(app.QecVisualizationVm); app.QecVisualizationVm = QecVisualizationViewModel(app); end
             end
         end
