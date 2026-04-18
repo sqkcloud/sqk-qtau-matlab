@@ -64,11 +64,12 @@ fprintf('[4/4] Submitting jobs ...\n');
 
 % Job configuration presets
 jobConfigs = { ...
-    struct('backend', 'ibm_brisbane',   'shots', 1024, 'opt', 1); ...
-    struct('backend', 'ibm_sherbrooke', 'shots', 4096, 'opt', 2); ...
-    struct('backend', 'ibm_kyoto',      'shots', 8192, 'opt', 3); ...
-    struct('backend', 'ibm_osaka',      'shots', 2048, 'opt', 1); ...
-    struct('backend', 'ibm_brisbane',   'shots', 4096, 'opt', 2); ...
+    struct('backend', 'ibm_boston',     'shots', 1024, 'opt', 1); ...
+    struct('backend', 'ibm_fez',        'shots', 4096, 'opt', 2); ...
+    struct('backend', 'ibm_pittsburgh', 'shots', 8192, 'opt', 3); ...
+    struct('backend', 'ibm_kingston',   'shots', 2048, 'opt', 1); ...
+    struct('backend', 'ibm_miami',      'shots', 4096, 'opt', 2); ...
+    struct('backend', 'ibm_marrakesh',  'shots', 2048, 'opt', 2); ...
 };
 
 jobIds = {};
@@ -105,16 +106,37 @@ for i = 1:nSubmit
 end
 
 % 4b. Project-scoped jobs (POST /api/projects/{id}/jobs)
+% Circuits are owned by a specific project; the project-scoped endpoint rejects
+% circuits from other projects with 404. Fetch per-project circuits via the
+% X-Project-Id header (same pattern as seed_circuits.m uses on upload).
 projectCount = 0;
 nProjJobs = min(nProj, 5);
+authHdr = {'Authorization', char("Bearer " + token); 'Accept', 'application/json'};
 
 for i = 1:nProjJobs
     proj = projects(i);
     pid  = string(proj.project_id);
     name = string(proj.name);
 
-    circIdx = mod(i - 1, nCirc) + 1;
-    circ    = circuits(circIdx);
+    projGetOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
+        'HeaderFields', [authHdr; {'X-Project-Id', char(pid)}]);
+    try
+        projCircResp = webread([BASE_URL '/api/circuits'], projGetOpts);
+        if isstruct(projCircResp) && isfield(projCircResp, 'circuits')
+            projCircuits = projCircResp.circuits;
+        else
+            projCircuits = projCircResp;
+        end
+    catch
+        projCircuits = [];
+    end
+
+    if isempty(projCircuits)
+        fprintf('  Project SKIPPED (no circuits): %-30s\n', name);
+        continue;
+    end
+
+    circ    = projCircuits(1);
     cid     = string(circ.circuit_id);
 
     cfgIdx = mod(i - 1, numel(jobConfigs)) + 1;

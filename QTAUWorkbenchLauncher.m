@@ -62,7 +62,7 @@ end
 % serve stale file-path mappings left over from previous path layouts.
 rehash;
 
-fprintf('\n');
+fprintf('\n');clear
 fprintf('  ╔══════════════════════════════════════════════════╗\n');
 fprintf('  ║   QDash Workbench — QTAU Connector Workspace     ║\n');
 fprintf('  ╚══════════════════════════════════════════════════╝\n');

@@ -81,7 +81,7 @@ configs = { ...
 };
 
 % Backend names to pair with circuits
-backendNames = {'ibm_brisbane', 'ibm_sherbrooke', 'ibm_kyoto', 'ibm_osaka'};
+backendNames = {'ibm_boston', 'ibm_fez', 'ibm_pittsburgh', 'ibm_kingston', 'ibm_miami', 'ibm_marrakesh'};
 
 configCount  = 0;
 compareCount = 0;

@@ -221,7 +221,7 @@ classdef WelcomeViewModel < handle
             catch urlErr
                 if strcmp(urlErr.identifier, 'FastAPIClient:insecureBaseUrl') || ...
                    strcmp(urlErr.identifier, 'FastAPIClient:invalidBaseUrl')
-                    app.LoginDlgStatusLabel.FontColor = [0.851 0.188 0.145];
+                    app.LoginDlgStatusLabel.FontColor = Theme.COLOR_DANGER;
                     app.LoginDlgStatusLabel.Text = Labels.get('error_login_insecure_url', ...
                         'Base URL must use https:// (or http://localhost for development).');
                     return;
@@ -281,7 +281,7 @@ classdef WelcomeViewModel < handle
 
             catch ME
                 if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
-                    app.LoginDlgStatusLabel.FontColor = [0.851 0.188 0.145];
+                    app.LoginDlgStatusLabel.FontColor = Theme.COLOR_DANGER;
                     if contains(ME.message, '401')
                         app.LoginDlgStatusLabel.Text = Labels.get('error_login_unauthorized', 'The Username or Password is incorrect.');
                     elseif contains(ME.message, {'connection','connect','timeout','Timeout','Send failure','Broken pipe','refused'}, 'IgnoreCase', true)

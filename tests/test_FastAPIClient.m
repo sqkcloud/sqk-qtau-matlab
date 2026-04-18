@@ -22,7 +22,7 @@ classdef test_FastAPIClient < matlab.unittest.TestCase
 
     methods (TestMethodSetup)
         function createClient(testCase)
-            testCase.Client = FastAPIClient('http://localhost:5715');
+            testCase.Client = FastAPIClient('http://34.42.87.190:5715');
         end
     end
 
@@ -32,7 +32,7 @@ classdef test_FastAPIClient < matlab.unittest.TestCase
 
         function testConstructorSetsBaseUrl(testCase)
             testCase.verifyEqual(char(testCase.Client.BaseUrl), ...
-                'http://localhost:5715');
+                'http://34.42.87.190:5715');
         end
 
         function testConstructorDefaultTimeout(testCase)
@@ -76,9 +76,11 @@ classdef test_FastAPIClient < matlab.unittest.TestCase
                 @() FastAPIClient.assertSafeBaseUrl('https://api.example.com'));
         end
 
-        function testHttpLoopbackAccepted(testCase)
+        function testHttpSharedDevServerAccepted(testCase)
+            % Plain HTTP is accepted for the shared QTAU API server and the
+            % loopback aliases (development / staging only).
             testCase.verifyWarningFree( ...
-                @() FastAPIClient.assertSafeBaseUrl('http://localhost:5715'));
+                @() FastAPIClient.assertSafeBaseUrl('http://34.42.87.190:5715'));
             testCase.verifyWarningFree( ...
                 @() FastAPIClient.assertSafeBaseUrl('http://127.0.0.1:5715'));
         end

@@ -40,14 +40,15 @@ function PredictionScreen(app)
         'Text', Labels.get('prediction_headline_initial', ...
             'Run a prediction to see the recommended backend and expected fidelity.'), ...
         'FontSize', 13, 'FontWeight', 'bold', ...
-        'FontColor', [0.30 0.36 0.48], ...
-        'BackgroundColor', [0.94 0.97 1.00], ...
+        'FontColor', Theme.COLOR_LABEL, ...
+        'BackgroundColor', Theme.COLOR_ACCENT_BG, ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
         'WordWrap', 'on', 'Interpreter', 'none');
     app.PredictionHeadlineLabel.Layout.Row = 2; app.PredictionHeadlineLabel.Layout.Column = [1 3];
 
     % ── Row 3, Col 1: Prediction Summary table ───────────────────────────────
-    metricPanel = uipanel(g, 'Title', Labels.get('prediction_panel_summary', 'Prediction Summary'));
+    metricPanel = uipanel(g, 'Title', Labels.get('prediction_panel_summary', 'Prediction Summary'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     metricPanel.Layout.Row = 3; metricPanel.Layout.Column = 1;
     metricPanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -69,7 +70,8 @@ function PredictionScreen(app)
     app.styleTable(app.PredictionTable);
 
     % ── Row 3, Col 2: Probability Distribution chart ─────────────────────────
-    distPanel = uipanel(g, 'Title', Labels.get('prediction_panel_dist', 'Probability Distribution'));
+    distPanel = uipanel(g, 'Title', Labels.get('prediction_panel_dist', 'Probability Distribution'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     distPanel.Layout.Row = 3; distPanel.Layout.Column = 2;
     distPanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -88,7 +90,8 @@ function PredictionScreen(app)
         'FontSize', 11, 'Interpreter', 'none');
 
     % ── Row 3, Col 3: Error Budget breakdown chart ───────────────────────────
-    budgetPanel = uipanel(g, 'Title', Labels.get('prediction_panel_budget', 'Error Budget'));
+    budgetPanel = uipanel(g, 'Title', Labels.get('prediction_panel_budget', 'Error Budget'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     budgetPanel.Layout.Row = 3; budgetPanel.Layout.Column = 3;
     budgetPanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -106,13 +109,14 @@ function PredictionScreen(app)
         'FontSize', 11, 'Interpreter', 'none');
 
     % ── Row 4: Action bar ────────────────────────────────────────────────────
-    submitPanel = uipanel(g, 'Title', Labels.get('prediction_panel_action'));
+    submitPanel = uipanel(g, 'Title', Labels.get('prediction_panel_action'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     submitPanel.Layout.Row = 4; submitPanel.Layout.Column = [1 3];
-    submitPanel.BackgroundColor = [0.94 0.97 1.00];
+    submitPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     sg = uigridlayout(submitPanel, [1 5]);
     sg.ColumnWidth = {'1x', 170, 110, 130, 140};
-    sg.Padding = [14 8 14 8]; sg.BackgroundColor = [0.94 0.97 1.00];
+    sg.Padding = [14 8 14 8]; sg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(sg, 'Text', Labels.get('prediction_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

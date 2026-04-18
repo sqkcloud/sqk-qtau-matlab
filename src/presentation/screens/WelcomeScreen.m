@@ -20,7 +20,8 @@ function WelcomeScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Hero banner (full width) ─────────────────────────────────────────────
-    hero = uipanel(g, 'Title', Labels.get('welcome_panel_project_launch'));
+    hero = uipanel(g, 'Title', Labels.get('welcome_panel_project_launch'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     hero.Layout.Row = 1; hero.Layout.Column = 1;
     hero.BackgroundColor = Theme.COLOR_CARD;
     hg = uigridlayout(hero, [1 5]);
@@ -54,7 +55,8 @@ function WelcomeScreen(app)
     btn4.ButtonPushedFcn = @(~,~)app.onSelectSection('Settings');
 
     % ── Recent Projects (full width) ─────────────────────────────────────────
-    projPanel = uipanel(g, 'Title', Labels.get('welcome_panel_recent_projects'));
+    projPanel = uipanel(g, 'Title', Labels.get('welcome_panel_recent_projects'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     projPanel.Layout.Row = 2; projPanel.Layout.Column = 1;
     projPanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -65,20 +67,20 @@ function WelcomeScreen(app)
     pg.BackgroundColor = Theme.COLOR_CARD;
 
     % Active Project box
-    activeBox = uipanel(pg, 'Title', '');
+    activeBox = uipanel(pg, 'Title', '', 'BorderType', 'line', ...
+        'BorderColor', Theme.COLOR_DIVIDER);
     activeBox.Layout.Row = 1; activeBox.Layout.Column = 1;
-    activeBox.BackgroundColor = [0.93 0.96 1.00];
-    activeBox.BorderType = 'none';
+    activeBox.BackgroundColor = Theme.COLOR_ACCENT_BG;
     abg = uigridlayout(activeBox, [1 2]);
     abg.ColumnWidth = {'fit', '1x'};
     abg.Padding = [12 6 12 6]; abg.ColumnSpacing = 8;
-    abg.BackgroundColor = [0.93 0.96 1.00];
+    abg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     activeLbl = uilabel(abg, 'Text', Labels.get('welcome_active_project_label', 'Active Project:'), ...
-        'FontSize', 13, 'FontWeight', 'bold', 'FontColor', [0.13 0.33 0.73]);
+        'FontSize', 13, 'FontWeight', 'bold', 'FontColor', Theme.COLOR_PRIMARY);
     activeLbl.Layout.Row = 1; activeLbl.Layout.Column = 1;
     activeLbl.VerticalAlignment = 'center';
     app.ActiveProjectLabel = uilabel(abg, 'Text', Labels.get('welcome_active_project_none', 'None'), ...
-        'FontSize', 13, 'FontColor', [0.25 0.30 0.40]);
+        'FontSize', 13, 'FontColor', Theme.COLOR_HEADING);
     app.ActiveProjectLabel.Layout.Row = 1; app.ActiveProjectLabel.Layout.Column = 2;
     app.ActiveProjectLabel.VerticalAlignment = 'center';
 

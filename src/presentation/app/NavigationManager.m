@@ -17,11 +17,20 @@ classdef NavigationManager
             try PopupMenuManager.dismissPopups(app); catch; end
             names = fieldnames(app.SectionPanels);
             for i = 1:numel(names)
-                app.SectionPanels.(names{i}).Visible = 'off';
+                panel = app.SectionPanels.(names{i});
+                if isempty(panel) || ~isvalid(panel)
+                    Logger.debug('NavigationManager', ...
+                        'skipping invalid panel: %s', names{i});
+                    continue;
+                end
+                panel.Visible = 'off';
             end
             safeKey = matlab.lang.makeValidName(char(key));
             if isfield(app.SectionPanels, safeKey)
-                app.SectionPanels.(safeKey).Visible = 'on';
+                panel = app.SectionPanels.(safeKey);
+                if ~isempty(panel) && isvalid(panel)
+                    panel.Visible = 'on';
+                end
             end
             app.SectionTitleLabel.Text    = key;
             app.SectionSubtitleLabel.Text = NavigationManager.sectionSubtitleFor(key);
@@ -173,7 +182,7 @@ classdef NavigationManager
                 app.BodyGrid.ColumnWidth = {56, '1x'};
                 app.NavToggleButton.Text = char(9776);  % ☰
             else
-                app.BodyGrid.ColumnWidth = {230, '1x'};
+                app.BodyGrid.ColumnWidth = {260, '1x'};
                 app.NavToggleButton.Text = char(8801);  % ≡
             end
             NavigationManager.renderNavHtml(app, char(app.NavList.Value), app.NavCollapsed);
@@ -202,20 +211,22 @@ classdef NavigationManager
             icons = NavigationManager.navIcons();
             labels = NavigationManager.navLabels();
 
-            activeBg  = '#4a7dd2';  % [0.29 0.49 0.82]
-            normalBg  = '#293d63';  % [0.16 0.24 0.39]
-            normalFg  = '#ebf5ff';  % [0.92 0.96 1.00]
-            hoverBg   = '#34507a';
+            activeBg   = Theme.toHex(Theme.NAV_ACTIVE_BG);
+            activeFg   = Theme.toHex(Theme.NAV_ACTIVE_FG);
+            normalBg   = Theme.toHex(Theme.NAV_BG);
+            normalFg   = Theme.toHex(Theme.NAV_FG);
+            hoverBg    = Theme.toHex(Theme.NAV_HOVER_BG);
+            bodyBg     = Theme.toHex(Theme.NAV_BG);
 
             css = [ ...
                 'html,body{margin:0;padding:0;height:100%;overflow-y:auto;overflow-x:hidden;' ...
-                'background:#1e304f;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;}' ...
+                'background:' bodyBg ';font-family:-apple-system,"Segoe UI",Roboto,sans-serif;}' ...
                 '.nav{display:flex;flex-direction:column;gap:6px;padding:0;}' ...
                 '.btn{display:flex;align-items:center;border:none;border-radius:6px;' ...
                 'cursor:pointer;font-weight:700;font-size:14px;color:' normalFg ';' ...
                 'background:' normalBg ';transition:background 0.15s;}' ...
                 '.btn:hover{background:' hoverBg ';}' ...
-                '.btn.active{background:' activeBg ';color:#fff;}' ...
+                '.btn.active{background:' activeBg ';color:' activeFg ';}' ...
                 '.icon{display:inline-flex;align-items:center;justify-content:center;' ...
                 'width:22px;height:22px;font-size:16px;flex-shrink:0;text-align:center;}' ...
                 '.label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'];
@@ -333,7 +344,7 @@ classdef NavigationManager
                                     max(1, app.ContentContainer.Position(4))];
             panel.AutoResizeChildren = 'on';
             panel.Scrollable         = 'on';
-            panel.BackgroundColor    = [0.96 0.97 0.99];
+            panel.BackgroundColor    = Theme.COLOR_BG;
             safeKey = matlab.lang.makeValidName(char(key));
             app.SectionPanels.(safeKey) = panel;
         end

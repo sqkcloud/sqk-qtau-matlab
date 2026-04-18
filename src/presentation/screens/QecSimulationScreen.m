@@ -68,7 +68,8 @@ function QecSimulationScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Code Configuration Panel (left, row 2) ──────────────────────────
-    codePanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_code', 'Code Configuration'));
+    codePanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_code', 'Code Configuration'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     codePanel.Layout.Row = 2; codePanel.Layout.Column = 1;
     codePanel.BackgroundColor = Theme.COLOR_CARD;
     codePanel.FontWeight = 'bold';
@@ -122,7 +123,8 @@ function QecSimulationScreen(app)
         'Visible', 'off');
 
     % ── Noise Configuration Panel (right, row 2) ─────────────────────────
-    noisePanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_noise', 'Noise Configuration'));
+    noisePanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_noise', 'Noise Configuration'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     noisePanel.Layout.Row = 2; noisePanel.Layout.Column = 3;
     noisePanel.BackgroundColor = Theme.COLOR_CARD;
     noisePanel.FontWeight = 'bold';
@@ -168,7 +170,8 @@ function QecSimulationScreen(app)
         'Limits', [100 10000], 'Step', 100);
 
     % ── Fidelity vs Error Rate chart (left, row 3) ───────────────────────
-    fidPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_fidelity', 'Fidelity vs Error Rate'));
+    fidPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_fidelity', 'Fidelity vs Error Rate'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     fidPanel.Layout.Row = 3; fidPanel.Layout.Column = 1;
     fidPanel.BackgroundColor = Theme.COLOR_CARD;
     fpg = uigridlayout(fidPanel, [1 1]);
@@ -185,7 +188,8 @@ function QecSimulationScreen(app)
     app.QecFidelityAxes.YLabel.String = Labels.get('qec_sim_plot_fidelity_y', 'Logical Qubit Fidelity');
 
     % ── Syndrome Distribution chart (right, row 3) ───────────────────────
-    synPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_syndrome', 'Syndrome Distribution'));
+    synPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_syndrome', 'Syndrome Distribution'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     synPanel.Layout.Row = 3; synPanel.Layout.Column = 3;
     synPanel.BackgroundColor = Theme.COLOR_CARD;
     spg = uigridlayout(synPanel, [1 1]);
@@ -199,7 +203,8 @@ function QecSimulationScreen(app)
     app.QecSyndromeAxes.YLabel.String = Labels.get('qec_sim_plot_syndrome_y', 'Frequency');
 
     % ── Correction Success (left, row 4) ──────────────────────────────────
-    successPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_success', 'Correction Success Rate'));
+    successPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_success', 'Correction Success Rate'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     successPanel.Layout.Row = 4; successPanel.Layout.Column = 1;
     successPanel.BackgroundColor = Theme.COLOR_CARD;
     scpg = uigridlayout(successPanel, [1 1]);
@@ -212,7 +217,8 @@ function QecSimulationScreen(app)
     app.QecSuccessAxes.Title.String = 'Correction Success Rate (demo)';
 
     % ── Results Table (right, row 4) ──────────────────────────────────────
-    resultsPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_results', 'Simulation Results'));
+    resultsPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_results', 'Simulation Results'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     resultsPanel.Layout.Row = 4; resultsPanel.Layout.Column = 3;
     resultsPanel.BackgroundColor = Theme.COLOR_CARD;
     rpg = uigridlayout(resultsPanel, [1 1]);

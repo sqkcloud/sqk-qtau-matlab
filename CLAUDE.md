@@ -132,7 +132,7 @@ Access patterns: `AppConfig.get(key, default)`, `AppConfig.getDouble(key, defaul
 
 ## Backend API
 
-FastAPIClient talks to a FastAPI server (default `http://localhost:5715`). Auth is username/password POST → Bearer token. The MATLAB client uses **75 endpoints** across 9 categories (auth, projects, circuits, backends, benchmarks, predictions, jobs, reports, settings). Full endpoint contract is in `docs/fastapi_contract.md` and `docs/openapi.json`.
+FastAPIClient talks to a FastAPI server (default `http://34.42.87.190:5715`). Auth is username/password POST → Bearer token. The MATLAB client uses **75 endpoints** across 9 categories (auth, projects, circuits, backends, benchmarks, predictions, jobs, reports, settings). Full endpoint contract is in `docs/fastapi_contract.md` and `docs/openapi.json`.
 
 ## Seed Scripts (14)
 

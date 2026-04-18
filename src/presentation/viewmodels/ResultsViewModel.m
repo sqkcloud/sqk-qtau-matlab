@@ -52,6 +52,19 @@ classdef ResultsViewModel < handle
 
         function onRefreshResultsError(~, app, jobId, ME)
             app.hideLoading();
+            % The backend returns 409 Conflict when the job has not reached
+            % the `completed` state yet — that's a normal condition for
+            % queued/running jobs, not an error. Show an informative note
+            % in the status pane instead of a red alert modal.
+            if contains(ME.identifier, 'HTTP409')
+                app.logEvent('API', sprintf('Results not ready (job: %s) — job not yet completed', jobId));
+                app.setStatus(app.ResultJsonArea, { ...
+                    sprintf('Job: %s', jobId), ...
+                    'Results are not available yet.', ...
+                    'The job is still queued or running — results appear after completion.', ...
+                    'Tip: check the Jobs screen for live status and use Refresh once status = completed.'});
+                return;
+            end
             app.logEvent('ERROR', sprintf('Results FAILED (job: %s): %s', jobId, ME.message));
             app.setStatus(app.ResultJsonArea, {'Results load failed.', ME.message});
             app.showError('Refresh Results', ME);

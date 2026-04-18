@@ -64,7 +64,8 @@ function QecVisualizationScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Bloch Sphere 3D (left, row 2) ────────────────────────────────────
-    blochPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_bloch', 'Logical Qubit Bloch Sphere'));
+    blochPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_bloch', 'Logical Qubit Bloch Sphere'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     blochPanel.Layout.Row = 2; blochPanel.Layout.Column = 1;
     blochPanel.BackgroundColor = Theme.COLOR_CARD;
     bpg = uigridlayout(blochPanel, [1 1]);
@@ -74,7 +75,8 @@ function QecVisualizationScreen(app)
     drawBlochSphereDemo(app.QecBlochAxes, [0 0 1]);
 
     % ── Surface Code Lattice (right, row 2) ──────────────────────────────
-    latticePanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_lattice', 'Surface Code Lattice'));
+    latticePanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_lattice', 'Surface Code Lattice'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     latticePanel.Layout.Row = 2; latticePanel.Layout.Column = 3;
     latticePanel.BackgroundColor = Theme.COLOR_CARD;
     lpg = uigridlayout(latticePanel, [1 1]);
@@ -84,7 +86,8 @@ function QecVisualizationScreen(app)
     drawSurfaceCodeDemo(app.QecLatticeAxes, 3);
 
     % ── Fidelity Decay Over Rounds (left, row 3) ─────────────────────────
-    decayPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_decay', 'Fidelity Decay Over Rounds'));
+    decayPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_decay', 'Fidelity Decay Over Rounds'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     decayPanel.Layout.Row = 3; decayPanel.Layout.Column = 1;
     decayPanel.BackgroundColor = Theme.COLOR_CARD;
     dpg = uigridlayout(decayPanel, [1 1]);
@@ -102,7 +105,8 @@ function QecVisualizationScreen(app)
     app.QecDecayAxes.YLim = [0 1.05];
 
     % ── Error Weight Distribution (right, row 3) ─────────────────────────
-    ewPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_errweight', 'Error Weight Distribution'));
+    ewPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_errweight', 'Error Weight Distribution'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     ewPanel.Layout.Row = 3; ewPanel.Layout.Column = 3;
     ewPanel.BackgroundColor = Theme.COLOR_CARD;
     ewpg = uigridlayout(ewPanel, [1 1]);

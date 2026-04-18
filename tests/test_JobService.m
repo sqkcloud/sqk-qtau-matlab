@@ -42,7 +42,7 @@ classdef test_JobService < matlab.unittest.TestCase
         % ── submitJob ────────────────────────────────────────────────────
 
         function testSubmitJobPosts(testCase)
-            payload = struct('circuit_id', 'c1', 'backend_name', 'ibm_brisbane', ...
+            payload = struct('circuit_id', 'c1', 'backend_name', 'ibm_boston', ...
                 'shots', 4096, 'optimization_level', 3);
             testCase.Service.submitJob(payload, 'tok');
             testCase.verifyEqual(char(testCase.Stub.LastMethod), 'postAuthJson');

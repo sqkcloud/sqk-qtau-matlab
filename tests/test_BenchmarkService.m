@@ -52,27 +52,27 @@ classdef test_BenchmarkService < matlab.unittest.TestCase
         % ── getSystemMetrics ─────────────────────────────────────────────
 
         function testGetSystemMetricsUsesBackendName(testCase)
-            testCase.Service.getSystemMetrics('ibm_brisbane', 'tok');
+            testCase.Service.getSystemMetrics('ibm_boston', 'tok');
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), ...
-                '/api/benchmark/system-metrics/ibm_brisbane'));
+                '/api/benchmark/system-metrics/ibm_boston'));
         end
 
         % ── getBackendScorecard ──────────────────────────────────────────
 
         function testGetBackendScorecardUsesProjectAndBackend(testCase)
-            testCase.Service.getBackendScorecard('proj2', 'ibm_osaka', 'tok');
+            testCase.Service.getBackendScorecard('proj2', 'ibm_kingston', 'tok');
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), '/api/benchmark/scorecard'));
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'proj2'));
-            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_osaka'));
+            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_kingston'));
         end
 
         % ── getBenchmarkRegression ───────────────────────────────────────
 
         function testGetBenchmarkRegressionUsesCorrectEndpoint(testCase)
-            testCase.Service.getBenchmarkRegression('proj3', 'ibm_kyoto', 'tok');
+            testCase.Service.getBenchmarkRegression('proj3', 'ibm_pittsburgh', 'tok');
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), '/api/benchmark/regression'));
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'proj3'));
-            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_kyoto'));
+            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_pittsburgh'));
         end
 
         % ── getCircuitClassification ─────────────────────────────────────

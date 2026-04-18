@@ -20,11 +20,12 @@ function ReportsScreen(app)
 
     % ── Column divider (rows 1) ───────────────────────────────────────────────
     div = uipanel(g, 'Title', ''); div.Layout.Row = 1; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Report Generator (left) ───────────────────────────────────────────────
-    genPanel = uipanel(g, 'Title', Labels.get('reports_panel_generator'));
+    genPanel = uipanel(g, 'Title', Labels.get('reports_panel_generator'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     genPanel.Layout.Row = 1; genPanel.Layout.Column = 1; genPanel.BackgroundColor = Theme.COLOR_CARD;
 
     gg = uigridlayout(genPanel, [5 2]);
@@ -33,13 +34,13 @@ function ReportsScreen(app)
     gg.Padding = [16 12 16 12]; gg.RowSpacing = 8; gg.BackgroundColor = Theme.COLOR_CARD;
 
     lbl = uilabel(gg, 'Text', Labels.get('reports_label_title'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 1; lbl.Layout.Column = 1;
     app.ReportTitleField = uieditfield(gg, 'text', 'Value', Labels.get('reports_title_default', 'Quantum Run Report'));
     app.ReportTitleField.Layout.Row = 1; app.ReportTitleField.Layout.Column = 2;
 
     lbl = uilabel(gg, 'Text', Labels.get('reports_label_format'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 2; lbl.Layout.Column = 1;
     fmtItems   = Labels.items('reports_format_items', {'PDF','Word (docx)','HTML','MATLAB Live Script'});
     fmtDefault = Labels.get('reports_format_default', 'PDF');
@@ -47,7 +48,7 @@ function ReportsScreen(app)
     app.ReportFormatDropdown.Layout.Row = 2; app.ReportFormatDropdown.Layout.Column = 2;
 
     lbl = uilabel(gg, 'Text', Labels.get('reports_label_sections'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 3; lbl.Layout.Column = 1;
     app.ReportSectionsField = uieditfield(gg, 'text', 'Value', Labels.get('reports_sections_default', 'all'));
     app.ReportSectionsField.Layout.Row = 3; app.ReportSectionsField.Layout.Column = 2;
@@ -66,7 +67,8 @@ function ReportsScreen(app)
     app.ReportStatusArea.Value = strsplit(Labels.get('reports_status_initial'), '\n');
 
     % ── Report Preview (right) ────────────────────────────────────────────────
-    previewPanel = uipanel(g, 'Title', Labels.get('reports_panel_preview'));
+    previewPanel = uipanel(g, 'Title', Labels.get('reports_panel_preview'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     previewPanel.Layout.Row = 1; previewPanel.Layout.Column = 3; previewPanel.BackgroundColor = Theme.COLOR_CARD;
 
     pvg = uigridlayout(previewPanel, [2 1]);
@@ -82,14 +84,15 @@ function ReportsScreen(app)
         'Tooltip', 'Generated report files (newest first)');
 
     % ── Distribution actions (full width) ────────────────────────────────────
-    actionPanel = uipanel(g, 'Title', Labels.get('reports_panel_distribute'));
+    actionPanel = uipanel(g, 'Title', Labels.get('reports_panel_distribute'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     actionPanel.Layout.Row = 2; actionPanel.Layout.Column = [1 3]; actionPanel.BackgroundColor = Theme.COLOR_CARD;
 
     ag = uigridlayout(actionPanel, [1 4]);
     ag.RowHeight = {34}; ag.ColumnWidth = {'1x', 110, 110, 100};
     ag.Padding = [14 10 14 10]; ag.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(ag, 'Text', Labels.get('reports_distribute_desc'));
-    desc.FontSize = 13; desc.FontColor = [0.28 0.36 0.48];
+    desc.FontSize = 13; desc.FontColor = Theme.COLOR_LABEL;
     desc.Layout.Row = 1; desc.Layout.Column = 1; desc.WordWrap = 'on';
     b = uibutton(ag, 'Text', [char(8595) ' ' Labels.get('reports_btn_download_pdf')]);
     b.Layout.Row = 1; b.Layout.Column = 2; app.styleBtn(b, 'primary');
@@ -102,13 +105,14 @@ function ReportsScreen(app)
     b.FontSize = 14;
 
     % ── Workflow Complete action bar ───────────────────────────────────────────
-    bottom = uipanel(g, 'Title', Labels.get('reports_panel_workflow'));
+    bottom = uipanel(g, 'Title', Labels.get('reports_panel_workflow'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     bottom.Layout.Row = 3; bottom.Layout.Column = [1 3];
-    bottom.BackgroundColor = [0.94 0.97 1.00];
+    bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     bg = uigridlayout(bottom, [1 3]);
     bg.ColumnWidth = {'1x', 170, 170};
-    bg.Padding = [14 8 14 8]; bg.BackgroundColor = [0.94 0.97 1.00];
+    bg.Padding = [14 8 14 8]; bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(bg, 'Text', Labels.get('reports_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

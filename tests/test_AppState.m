@@ -147,8 +147,8 @@ classdef test_AppState < matlab.unittest.TestCase
             testCase.State.selectedFile       = "circuit.qasm";
             testCase.State.selectedCircuitId  = "c1";
             testCase.State.selectedCircuitName = "My Circuit";
-            testCase.State.selectedBackend    = "ibm_brisbane";
-            testCase.State.backupBackend      = "ibm_osaka";
+            testCase.State.selectedBackend    = "ibm_boston";
+            testCase.State.backupBackend      = "ibm_kingston";
             testCase.State.selectedJobId      = "j1";
             testCase.State.predictionId       = "pred1";
             testCase.State.reportId           = "rep1";

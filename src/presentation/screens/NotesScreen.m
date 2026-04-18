@@ -55,7 +55,8 @@ function NotesScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Markdown notes editor (left) ─────────────────────────────────────────
-    editorPanel = uipanel(g, 'Title', Labels.get('notes_panel_editor'));
+    editorPanel = uipanel(g, 'Title', Labels.get('notes_panel_editor'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     editorPanel.Layout.Row = 2; editorPanel.Layout.Column = 1; editorPanel.BackgroundColor = Theme.COLOR_CARD;
 
     eg = uigridlayout(editorPanel, [1 1]);
@@ -75,7 +76,8 @@ function NotesScreen(app)
         '## Next steps', ''};
 
     % ── Pre-submission Runbook (right) ────────────────────────────────────────
-    checkPanel = uipanel(g, 'Title', Labels.get('notes_panel_runbook'));
+    checkPanel = uipanel(g, 'Title', Labels.get('notes_panel_runbook'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     checkPanel.Layout.Row = 2; checkPanel.Layout.Column = 3; checkPanel.BackgroundColor = Theme.COLOR_CARD;
 
     cpg = uigridlayout(checkPanel, [2 1]);

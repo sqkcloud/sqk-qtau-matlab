@@ -43,7 +43,7 @@ All settings live in `resources/` — no source code changes needed.
 To change the backend URL, edit `resources/app.properties`:
 
 ```properties
-base_url=http://localhost:5715
+base_url=http://34.42.87.190:5715
 login_path=/api/auth/login
 http_timeout=30
 ```

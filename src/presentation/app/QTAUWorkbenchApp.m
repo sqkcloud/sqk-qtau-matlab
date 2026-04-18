@@ -37,6 +37,10 @@ classdef QTAUWorkbenchApp < handle
         NavCollapsed = false
 
         ContentShell
+        ShellGrid                    % uigridlayout inside ContentShell
+        HeaderSectionPanel           % card holding section title + subtitle
+        HeaderSectionGrid            % uigridlayout inside HeaderSectionPanel
+        HeaderSectionSep             % thin divider below HeaderSectionPanel
         ContentContainer
         SectionTitleLabel
         SectionSubtitleLabel
@@ -355,6 +359,12 @@ classdef QTAUWorkbenchApp < handle
     methods
         function app = QTAUWorkbenchApp()
             Logger.info('QTAUWorkbenchApp', '=== QTAUWorkbenchApp initializing ===');
+
+            % Load the persisted theme BEFORE any UI is built so every
+            % panel, label, and overlay picks up the correct palette on
+            % first render (no initial flash-of-light-theme for Dark users).
+            Theme.setActive(Theme.loadPersisted());
+
             app.State         = AppState();
             Logger.info('QTAUWorkbenchApp', 'AppState created — baseUrl: %s', char(app.State.baseUrl));
 
@@ -451,6 +461,115 @@ classdef QTAUWorkbenchApp < handle
 
         function showError(app, context, ME)
             OverlayManager.showError(app, context, ME);
+        end
+
+        % -- Theming ----------------------------------------------------------
+        function applyTheme(app, themeName)
+            % Hot-swap the active theme and rebuild every themed surface.
+            % AppState (auth token, project id, etc.) is preserved because
+            % it lives off the UI tree. Screens rebuild through their
+            % existing Screen*(app) functions, which read Theme.* to pick
+            % up the new palette.
+            app.logEvent('CONFIG', sprintf('Theme change → %s', char(themeName)));
+            Theme.setActive(themeName);
+
+            % 0. Flip MATLAB's built-in figure Theme first — this cascades
+            %    the base styling (scrollbars, focus rings, default
+            %    uitable/dropdown/editfield/axes colors) across all
+            %    existing components BEFORE we start our manual repaint.
+            %    Anything we miss in the rebuild still comes out correct.
+            Theme.applyFigureMode(app.UIFigure, themeName);
+
+            currentKey = 'Welcome';
+            try
+                if ~isempty(app.NavList) && isvalid(app.NavList)
+                    currentKey = char(app.NavList.Value);
+                end
+            catch; end
+
+            % 1. Close any modal dialogs (the Display settings dialog is
+            %    itself usually the trigger — re-opening in the new theme
+            %    is a cleaner UX than trying to live-repaint it).
+            try
+                modals = findall(groot, 'Type', 'figure', 'WindowStyle', 'modal');
+                for i = 1:numel(modals)
+                    if isvalid(modals(i)) && modals(i) ~= app.UIFigure
+                        delete(modals(i));
+                    end
+                end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'close modals: %s', ME.message); end
+
+            % 2. Main figure + root chrome (header bar, nav rail, section
+            %    title card, divider, toggle button, header user menu).
+            try
+                LayoutBuilder.repaintChrome(app);
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'chrome repaint: %s', ME.message); end
+
+            % 3. Nav HTML re-rendered from the palette.
+            try
+                NavigationManager.renderNavHtml(app, currentKey, app.NavCollapsed);
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'nav repaint: %s', ME.message); end
+
+            % 4. Destroy and rebuild all section panels so each screen's
+            %    color literals are re-read from the active Theme.
+            try
+                names = fieldnames(app.SectionPanels);
+                for i = 1:numel(names)
+                    p = app.SectionPanels.(names{i});
+                    if ~isempty(p) && isvalid(p); delete(p); end
+                end
+                app.SectionPanels = struct();
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'panel teardown: %s', ME.message); end
+
+            % Reset per-VM freshness caches so data refetches on re-entry.
+            vms = {'WelcomeVm','DashboardVm','CircuitsVm','NotesVm','UploadVm', ...
+                   'AnalysisVm','BackendsVm','BenchmarkVm','PredictionVm','JobsVm', ...
+                   'ResultsVm','DetailedAnalysisVm','BenchmarkDashboardVm', ...
+                   'QecSimulationVm','QecVisualizationVm','ReportsVm','SettingsVm'};
+            for i = 1:numel(vms)
+                try
+                    vm = app.(vms{i});
+                    if ~isempty(vm) && isprop(vm, 'LastRefresh')
+                        vm.LastRefresh = [];
+                    end
+                catch; end
+            end
+
+            % 5. Rebuild each screen. try/catch per-screen so a single
+            %    broken rebuild doesn't take down the rest.
+            screenFns = {@WelcomeScreen, @DashboardScreen, @CircuitsScreen, ...
+                         @NotesScreen, @UploadScreen, @AnalysisScreen, ...
+                         @BackendsScreen, @BenchmarkScreen, @PredictionScreen, ...
+                         @JobsScreen, @ResultsScreen, @DetailedAnalysisScreen, ...
+                         @BenchmarkDashboardScreen, @QecSimulationScreen, ...
+                         @QecVisualizationScreen, @ReportsScreen, @SettingsScreen};
+            for i = 1:numel(screenFns)
+                try
+                    screenFns{i}(app);
+                catch ME
+                    Logger.warn('QTAUWorkbenchApp', ...
+                        'Rebuild of %s failed: %s', func2str(screenFns{i}), ME.message);
+                end
+            end
+
+            % 6. Restore the previously-active screen.
+            try
+                app.onSelectSection(currentKey);
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'restore section: %s', ME.message); end
+
+            % 7. Auth overlay regenerate if currently visible.
+            try
+                if ~isempty(app.AuthOverlay) && isvalid(app.AuthOverlay) ...
+                        && strcmp(app.AuthOverlay.Visible, 'on')
+                    delete(app.AuthOverlay);
+                    app.AuthOverlay = [];
+                    LayoutBuilder.buildAuthOverlay(app);
+                    OverlayManager.showAuthOverlay(app);
+                end
+            catch ME; Logger.debug('QTAUWorkbenchApp', 'auth overlay: %s', ME.message); end
+
+            NavigationManager.forceInitialLayout(app);
+            app.logEvent('CONFIG', sprintf('Theme applied: %s', char(themeName)));
         end
 
         function logEvent(app, category, msg)
@@ -717,7 +836,11 @@ classdef QTAUWorkbenchApp < handle
         function buildUI(app)
             app.UIFigure = uifigure('Name', 'QTAU Connector Workspace', ...
                 'Position', [80 40 1600 940], ...
-                'Color', [0.97 0.98 1.00], 'Visible', 'off');
+                'Color', Theme.COLOR_BG, 'Visible', 'off');
+            % R2025a+ built-in theme cascade — handles uitable/uidropdown/
+            % uieditfield/uiaxes defaults so our custom palette only has to
+            % paint bespoke surfaces (panels, uihtml, nav, overlays).
+            Theme.applyFigureMode(app.UIFigure, Theme.activeName());
             app.UIFigure.AutoResizeChildren    = 'off';
             app.UIFigure.SizeChangedFcn        = @(~,~)app.onResizeUI();
             app.UIFigure.WindowButtonDownFcn   = @(~,~)app.onFigMouseDown();

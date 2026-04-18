@@ -89,7 +89,8 @@ function DetailedAnalysisScreen(app)
     % ═════════════════════════════════════════════════════════════════════════
 
     % ── Row 2, Col 1: Measured vs Ideal State Distribution (bar + errorbar) ──
-    comparePanel = uipanel(g, 'Title', Labels.get('detailed_panel_compare'));
+    comparePanel = uipanel(g, 'Title', Labels.get('detailed_panel_compare'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 1;
     comparePanel.BackgroundColor = PW;
     cpg = uigridlayout(comparePanel, [1 1]);
@@ -98,7 +99,8 @@ function DetailedAnalysisScreen(app)
     app.styleAxes(app.CompareAxes);
 
     % ── Row 2, Col 2: Cross-Qubit Error Rate Heatmap (imagesc) ───────────────
-    heatmapPanel = uipanel(g, 'Title', Labels.get('detailed_panel_heatmap'));
+    heatmapPanel = uipanel(g, 'Title', Labels.get('detailed_panel_heatmap'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     heatmapPanel.Layout.Row = 2; heatmapPanel.Layout.Column = 2;
     heatmapPanel.BackgroundColor = PW;
     hpg = uigridlayout(heatmapPanel, [1 1]);
@@ -107,7 +109,8 @@ function DetailedAnalysisScreen(app)
     app.styleAxes(app.ErrorHeatmapAxes);
 
     % ── Row 2, Col 3: Temporal Stability with ±1σ Confidence Band ────────────
-    temporalPanel = uipanel(g, 'Title', Labels.get('detailed_panel_temporal'));
+    temporalPanel = uipanel(g, 'Title', Labels.get('detailed_panel_temporal'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     temporalPanel.Layout.Row = 2; temporalPanel.Layout.Column = 3;
     temporalPanel.BackgroundColor = PW;
     tpg = uigridlayout(temporalPanel, [1 1]);
@@ -120,7 +123,8 @@ function DetailedAnalysisScreen(app)
     % ═════════════════════════════════════════════════════════════════════════
 
     % ── Row 3, Col 1: T1 vs T2 Coherence Scatter (colour = readout fidelity) ─
-    qubitPanel = uipanel(g, 'Title', Labels.get('detailed_panel_qubit'));
+    qubitPanel = uipanel(g, 'Title', Labels.get('detailed_panel_qubit'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     qubitPanel.Layout.Row = 3; qubitPanel.Layout.Column = 1;
     qubitPanel.BackgroundColor = PW;
     qpg = uigridlayout(qubitPanel, [1 1]);
@@ -129,7 +133,8 @@ function DetailedAnalysisScreen(app)
     app.styleAxes(app.QubitAxes);
 
     % ── Row 3, Col 2: Randomized Benchmarking Decay Curve ────────────────────
-    rbPanel = uipanel(g, 'Title', Labels.get('detailed_panel_rb'));
+    rbPanel = uipanel(g, 'Title', Labels.get('detailed_panel_rb'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     rbPanel.Layout.Row = 3; rbPanel.Layout.Column = 2;
     rbPanel.BackgroundColor = PW;
     rpg = uigridlayout(rbPanel, [1 1]);
@@ -138,7 +143,8 @@ function DetailedAnalysisScreen(app)
     app.styleAxes(app.RBDecayAxes);
 
     % ── Row 3, Col 3: Enhanced Interpretation & Diagnostics ──────────────────
-    insightPanel = uipanel(g, 'Title', Labels.get('detailed_panel_insight'));
+    insightPanel = uipanel(g, 'Title', Labels.get('detailed_panel_insight'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     insightPanel.Layout.Row = 3; insightPanel.Layout.Column = 3;
     insightPanel.BackgroundColor = PW;
     ipg = uigridlayout(insightPanel, [1 1]);

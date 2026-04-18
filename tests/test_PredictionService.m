@@ -42,7 +42,7 @@ classdef test_PredictionService < matlab.unittest.TestCase
         % ── predict ──────────────────────────────────────────────────────
 
         function testPredictPostsToCorrectEndpoint(testCase)
-            testCase.Service.predict('circ1', 'ibm_brisbane', 4096, 3, 'tok');
+            testCase.Service.predict('circ1', 'ibm_boston', 4096, 3, 'tok');
             testCase.verifyEqual(char(testCase.Stub.LastMethod), 'postAuthJson');
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), '/api/predict'));
         end
@@ -66,16 +66,16 @@ classdef test_PredictionService < matlab.unittest.TestCase
         function testPredictAcceptsCellArrayOfBackends(testCase)
             % Multi-backend cross-comparison: the service must forward
             % a cell array verbatim so the API can rank each backend.
-            testCase.Service.predict('c', {'ibm_brisbane','ibm_sherbrooke'}, 1024, 2, 'tok');
+            testCase.Service.predict('c', {'ibm_boston','ibm_fez'}, 1024, 2, 'tok');
             p = testCase.Stub.LastPayload;
-            testCase.verifyEqual(p.backend_names, {'ibm_brisbane','ibm_sherbrooke'});
+            testCase.verifyEqual(p.backend_names, {'ibm_boston','ibm_fez'});
         end
 
         function testPredictAcceptsStringBackend(testCase)
             % Accept a MATLAB string scalar and promote to a singleton
             % cell array for wire serialization.
-            testCase.Service.predict('c', "ibm_brisbane", 1024, 2, 'tok');
-            testCase.verifyEqual(testCase.Stub.LastPayload.backend_names, {'ibm_brisbane'});
+            testCase.Service.predict('c', "ibm_boston", 1024, 2, 'tok');
+            testCase.verifyEqual(testCase.Stub.LastPayload.backend_names, {'ibm_boston'});
         end
 
         function testPredictRoundsShots(testCase)

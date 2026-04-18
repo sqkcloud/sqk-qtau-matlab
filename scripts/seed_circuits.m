@@ -1,21 +1,25 @@
 % seed_circuits.m ──────────────────────────────────────────────────────────────
-% Uploads 10 sample OpenQASM 2.0 circuits via the QTAU Connector REST API.
+% Uploads 10 sample OpenQASM 2.0 circuits to every project via the QTAU
+% Connector REST API. Each upload is scoped to its project with the
+% `X-Project-Id` request header so /api/circuits returns the circuits
+% regardless of which project is active.
 %
 % Usage:
 %   >> run('scripts/seed_circuits.m')
 %
-% Provides data for: Upload screen, Analysis screen
-% Downstream: seed_benchmarks, seed_predictions, seed_jobs depend on these
+% Provides data for: Upload screen, Analysis screen, Circuits screen
+% Prerequisite : seed_projects.m (projects must exist)
+% Downstream   : seed_benchmarks, seed_predictions, seed_jobs
 % ──────────────────────────────────────────────────────────────────────────────
 
-fprintf('\n=== QTAU Seed: Uploading 10 sample circuits ===\n\n');
+fprintf('\n=== QTAU Seed: Uploading 10 sample circuits to every project ===\n\n');
 
 % ── Configuration ────────────────────────────────────────────────────────────
 cfg      = seed_helpers.loadConfig();
 BASE_URL = cfg.base_url;
 
 % ── Step 1: Authenticate ────────────────────────────────────────────────────
-fprintf('[1/4] Logging in as "%s" ... ', cfg.username);
+fprintf('[1/5] Logging in as "%s" ... ', cfg.username);
 try
     token = seed_helpers.login(BASE_URL, cfg.login_path, cfg.username, cfg.password);
     fprintf('OK\n');
@@ -24,8 +28,29 @@ catch ME
     return;
 end
 
-% ── Step 2: Define circuits ──────────────────────────────────────────────────
-fprintf('[2/4] Preparing circuit data ...\n');
+% ── Step 2: Fetch projects ───────────────────────────────────────────────────
+fprintf('[2/5] Fetching projects ... ');
+getOpts = seed_helpers.getOpts(token);
+try
+    projResp = webread([BASE_URL '/api/projects'], getOpts);
+    if isstruct(projResp) && isfield(projResp, 'projects')
+        projects = projResp.projects;
+    else
+        projects = projResp;
+    end
+    nProj = numel(projects);
+    fprintf('found %d projects\n', nProj);
+catch ME
+    fprintf('FAILED (%s)\n', ME.message);
+    return;
+end
+if nProj == 0
+    fprintf('  No projects found. Run seed_projects.m first.\n');
+    return;
+end
+
+% ── Step 3: Define circuits ──────────────────────────────────────────────────
+fprintf('[3/5] Preparing circuit data ...\n');
 
 circuits = { ...
 % ── 1. Bell State (2 qubits) ────────────────────────────────────────────────
@@ -279,62 +304,82 @@ struct( ...
         'measure q -> c;\n'])) ...
 };
 
-% ── Step 3: Delete existing circuits (re-upload ensures fresh validation) ────
-fprintf('[3/4] Deleting existing circuits ... ');
-getOpts = seed_helpers.getOpts(token);
-deleteOpts = weboptions('Timeout', 30, 'RequestMethod', 'delete', ...
-    'HeaderFields', {'Authorization', char("Bearer " + token)});
-deleteCount = 0;
-try
-    circResp = webread([BASE_URL '/api/circuits'], getOpts);
-    if isstruct(circResp) && isfield(circResp, 'circuits')
-        items = circResp.circuits;
-    else
-        items = circResp;
-    end
-    for k = 1:numel(items)
-        try
-            delUrl = sprintf('%s/api/circuits/%s', BASE_URL, char(string(items(k).circuit_id)));
-            webread(delUrl, deleteOpts);
-            deleteCount = deleteCount + 1;
-        catch
-            % 204 No Content is expected; ignore errors
-            deleteCount = deleteCount + 1;
-        end
-    end
-    fprintf('deleted %d\n', deleteCount);
-catch
-    fprintf('(none found or could not check)\n');
-end
-
-% ── Step 4: Upload circuits ──────────────────────────────────────────────────
-fprintf('[4/4] Uploading circuits ...\n');
+% ── Step 4: Clear existing circuits and upload per-project ───────────────────
+fprintf('[4/5] Clearing existing circuits per project ...\n');
 
 uploadUrl = [BASE_URL '/api/circuits/upload'];
-opts = seed_helpers.postOpts(token);
+authHdr   = {'Authorization', char("Bearer " + token); ...
+             'Accept',        'application/json'};
+
+projectDeleteCount = 0;
+for p = 1:nProj
+    pid  = char(string(projects(p).project_id));
+    name = char(string(projects(p).name));
+
+    projGetOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
+        'HeaderFields', [authHdr; {'X-Project-Id', pid}]);
+    projDelOpts = weboptions('Timeout', 30, 'RequestMethod', 'delete', ...
+        'HeaderFields', [authHdr; {'X-Project-Id', pid}]);
+
+    try
+        circResp = webread([BASE_URL '/api/circuits'], projGetOpts);
+        if isstruct(circResp) && isfield(circResp, 'circuits')
+            items = circResp.circuits;
+        else
+            items = circResp;
+        end
+        nDel = 0;
+        for k = 1:numel(items)
+            try
+                delUrl = sprintf('%s/api/circuits/%s', BASE_URL, ...
+                    char(string(items(k).circuit_id)));
+                webread(delUrl, projDelOpts);
+            catch
+                % 204 No Content is expected; ignore errors
+            end
+            nDel = nDel + 1;
+        end
+        projectDeleteCount = projectDeleteCount + nDel;
+        fprintf('  [%2d/%d] %-40s  deleted %d\n', p, nProj, name, nDel);
+    catch
+        fprintf('  [%2d/%d] %-40s  (none / skipped)\n', p, nProj, name);
+    end
+end
+fprintf('  → %d circuits deleted across all projects\n', projectDeleteCount);
+
+% ── Step 5: Upload circuits into every project ──────────────────────────────
+fprintf('[5/5] Uploading circuits into every project ...\n');
 
 successCount = 0;
 circuitIds   = {};
 
-for i = 1:numel(circuits)
-    circ = circuits{i};
+for p = 1:nProj
+    pid  = char(string(projects(p).project_id));
+    name = char(string(projects(p).name));
 
-    try
-        resp = webwrite(uploadUrl, circ, opts);
-        cid = string(resp.circuit_id);
-        circuitIds{end+1} = cid; %#ok<SAGROW>
-        successCount = successCount + 1;
-        valid = 'valid';
-        if isfield(resp, 'is_valid') && ~resp.is_valid
-            valid = 'INVALID';
+    opts = weboptions('Timeout', 30, ...
+        'MediaType', 'application/json', 'ContentType', 'json', ...
+        'HeaderFields', [authHdr; {'X-Project-Id', pid}]);
+
+    projectSuccess = 0;
+    for i = 1:numel(circuits)
+        circ = circuits{i};
+        try
+            resp = webwrite(uploadUrl, circ, opts);
+            cid  = string(resp.circuit_id);
+            circuitIds{end+1} = cid; %#ok<SAGROW>
+            projectSuccess = projectSuccess + 1;
+            successCount   = successCount + 1;
+        catch ME
+            fprintf('    ! %-30s → %s\n', circ.name, ME.message);
         end
-        fprintf('  [%2d/10] Uploaded: %-35s  id=%s  (%s)\n', i, circ.name, cid, valid);
-    catch ME
-        fprintf('  [%2d/10] FAILED:  %-35s  %s\n', i, circ.name, ME.message);
     end
+    fprintf('  [%2d/%d] %-40s  uploaded %d/%d\n', ...
+        p, nProj, name, projectSuccess, numel(circuits));
 end
 
-fprintf('\n=== Done: %d uploaded out of 10 ===\n', successCount);
+fprintf('\n=== Done: %d uploads across %d projects (10 circuits each) ===\n', ...
+    successCount, nProj);
 if ~isempty(circuitIds)
     fprintf('Circuit IDs available in workspace variable "circuitIds"\n\n');
 end

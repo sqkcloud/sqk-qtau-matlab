@@ -19,7 +19,8 @@ function BackendsScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Backend KPI cards (full width) ────────────────────────────────────────
-    cards = uipanel(g, 'Title', Labels.get('backends_panel_explorer'));
+    cards = uipanel(g, 'Title', Labels.get('backends_panel_explorer'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     cards.Layout.Row = 1; cards.Layout.Column = [1 3]; cards.BackgroundColor = Theme.COLOR_CARD;
 
     cg = uigridlayout(cards, [2 4]);
@@ -40,14 +41,17 @@ function BackendsScreen(app)
 
     app.BackendKpiLabels = cell(1, 4);
     for i = 1:4
-        p = uipanel(cg, 'Title', ''); p.Layout.Row = 2; p.Layout.Column = i;
-        p.BackgroundColor = Theme.COLOR_BG;
+        p = uipanel(cg, 'Title', '', 'BorderType', 'line', ...
+            'BorderColor', Theme.COLOR_DIVIDER);
+        p.Layout.Row = 2; p.Layout.Column = i;
+        p.BackgroundColor = Theme.COLOR_CARD;
         pg = uigridlayout(p, [1 2]); pg.ColumnWidth = {5,'1x'}; pg.Padding = [0 0 0 0];
-        pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_BG;
-        strip = uipanel(pg, 'Title', ''); strip.Layout.Row = 1; strip.Layout.Column = 1;
+        pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_CARD;
+        strip = uipanel(pg, 'Title', '', 'BorderType', 'none');
+        strip.Layout.Row = 1; strip.Layout.Column = 1;
         strip.BackgroundColor = cardAccents{i};
         inner = uigridlayout(pg, [2 1]); inner.Layout.Row = 1; inner.Layout.Column = 2;
-        inner.RowHeight = {18,'1x'}; inner.Padding = [8 8 8 8]; inner.BackgroundColor = Theme.COLOR_BG;
+        inner.RowHeight = {18,'1x'}; inner.Padding = [8 8 8 8]; inner.BackgroundColor = Theme.COLOR_CARD;
         l1 = uilabel(inner, 'Text', cardNames{i}, 'FontColor', Theme.COLOR_MUTED, 'FontSize', 11);
         l1.Layout.Row = 1; l1.Layout.Column = 1;
         l2 = uilabel(inner, 'Text', cardDefault{i}, 'FontWeight', 'bold', 'FontSize', 17, 'WordWrap', 'on');
@@ -61,7 +65,8 @@ function BackendsScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Available Backends table (left) ──────────────────────────────────────
-    tablePanel = uipanel(g, 'Title', Labels.get('backends_panel_table'));
+    tablePanel = uipanel(g, 'Title', Labels.get('backends_panel_table'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     tablePanel.Layout.Row = 2; tablePanel.Layout.Column = 1; tablePanel.BackgroundColor = Theme.COLOR_CARD;
 
     tg = uigridlayout(tablePanel, [3 1]);
@@ -110,7 +115,7 @@ function BackendsScreen(app)
     app.BackendTable.Layout.Row = 2; app.BackendTable.Layout.Column = 1;
     app.BackendTable.Data = {};
     app.styleTable(app.BackendTable);
-    addStyle(app.BackendTable, uistyle('HorizontalAlignment','center', 'FontColor', [0.55 0.55 0.55]), 'column', 1);
+    addStyle(app.BackendTable, uistyle('HorizontalAlignment','center', 'FontColor', Theme.COLOR_MUTED), 'column', 1);
 
     % Pagination row (inside table panel, under the table)
     pagGrid = uigridlayout(tg, [1 3]);
@@ -130,7 +135,7 @@ function BackendsScreen(app)
     app.BackendsPageLabel.Layout.Row = 1; app.BackendsPageLabel.Layout.Column = 2;
     app.BackendsPageLabel.HorizontalAlignment = 'center';
     app.BackendsPageLabel.FontSize = 12; app.BackendsPageLabel.FontWeight = 'bold';
-    app.BackendsPageLabel.FontColor = [0.20 0.30 0.55];
+    app.BackendsPageLabel.FontColor = Theme.COLOR_PRIMARY;
 
     % Next (char(9654) — same as Circuits)
     app.BackendsNextBtn = uibutton(pagGrid, 'Text', ['Next ' char(9654)], ...
@@ -144,7 +149,8 @@ function BackendsScreen(app)
     app.UIFigure.WindowButtonDownFcn = @(src, evt) handleBackendsMouseDown(app, prevFcn, src, evt);
 
     % ── Calibration notes (right) ─────────────────────────────────────────────
-    detailPanel = uipanel(g, 'Title', Labels.get('backends_panel_notes'));
+    detailPanel = uipanel(g, 'Title', Labels.get('backends_panel_notes'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     detailPanel.Layout.Row = 2; detailPanel.Layout.Column = 3; detailPanel.BackgroundColor = Theme.COLOR_CARD;
 
     dg2 = uigridlayout(detailPanel, [1 1]);
@@ -153,13 +159,14 @@ function BackendsScreen(app)
     app.BackendStatusArea.Value = {Labels.get('backends_status_initial')};
 
     % ── Action bar ────────────────────────────────────────────────────────────
-    nextPanel = uipanel(g, 'Title', Labels.get('backends_panel_action'));
+    nextPanel = uipanel(g, 'Title', Labels.get('backends_panel_action'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 3];
-    nextPanel.BackgroundColor = [0.94 0.97 1.00];
+    nextPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     ng = uigridlayout(nextPanel, [1 4]);
     ng.ColumnWidth = {'1x', 220, 150, 150};
-    ng.Padding = [14 8 14 8]; ng.BackgroundColor = [0.94 0.97 1.00];
+    ng.Padding = [14 8 14 8]; ng.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(ng, 'Text', Labels.get('backends_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

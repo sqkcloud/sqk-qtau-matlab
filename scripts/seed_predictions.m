@@ -63,10 +63,10 @@ end
 fprintf('[4/4] Running predictions ...\n');
 
 backendSets = { ...
-    {{'ibm_brisbane', 'ibm_sherbrooke'}}; ...
-    {{'ibm_kyoto', 'ibm_brisbane'}}; ...
-    {{'ibm_sherbrooke', 'ibm_osaka'}}; ...
-    {{'ibm_brisbane'}}; ...
+    {{'ibm_boston', 'ibm_fez'}}; ...
+    {{'ibm_pittsburgh', 'ibm_kingston'}}; ...
+    {{'ibm_miami', 'ibm_marrakesh'}}; ...
+    {{'ibm_boston'}}; ...
 };
 
 % 4a. Standalone predictions (POST /api/predict)
@@ -95,16 +95,37 @@ for i = 1:nPredict
 end
 
 % 4b. Project-scoped predictions (POST /api/projects/{id}/predict)
+% Each circuit belongs to a specific project (assigned at upload time), so we
+% must fetch circuits scoped to that project via the X-Project-Id header —
+% a project-scoped predict rejects circuits from other projects with 404.
 projectCount = 0;
 nProjPredict = min(nProj, 5);
+authHdr = {'Authorization', char("Bearer " + token); 'Accept', 'application/json'};
 
 for i = 1:nProjPredict
     proj = projects(i);
     pid  = string(proj.project_id);
     name = string(proj.name);
 
-    circIdx  = mod(i - 1, nCirc) + 1;
-    circ     = circuits(circIdx);
+    projGetOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
+        'HeaderFields', [authHdr; {'X-Project-Id', char(pid)}]);
+    try
+        projCircResp = webread([BASE_URL '/api/circuits'], projGetOpts);
+        if isstruct(projCircResp) && isfield(projCircResp, 'circuits')
+            projCircuits = projCircResp.circuits;
+        else
+            projCircuits = projCircResp;
+        end
+    catch
+        projCircuits = [];
+    end
+
+    if isempty(projCircuits)
+        fprintf('  Project SKIPPED (no circuits): %-30s\n', name);
+        continue;
+    end
+
+    circ     = projCircuits(1);
     cid      = string(circ.circuit_id);
     bIdx     = mod(i - 1, numel(backendSets)) + 1;
     backends = backendSets{bIdx}{1};

@@ -1,6 +1,6 @@
 # FastAPI Endpoint Contract — QTAU MATLAB Connector
 
-This document describes the REST API endpoints consumed by the MATLAB client (`FastAPIClient.m` and service classes). The backend is a FastAPI server (default `http://localhost:5715`).
+This document describes the REST API endpoints consumed by the MATLAB client (`FastAPIClient.m` and service classes). The backend is a FastAPI server (default `http://34.42.87.190:5715`).
 
 All authenticated endpoints require a `Bearer` token in the `Authorization` header and a `X-Project-Id` header for project-scoped operations.
 

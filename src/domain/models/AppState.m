@@ -12,7 +12,7 @@ classdef AppState < handle
     properties
         % ── Network ──────────────────────────────────────────────────────────
         % Loaded from resources/app.properties key "base_url".
-        % Fallback: http://localhost:5715
+        % Fallback: http://34.42.87.190:5715
         baseUrl string = ""
 
         % ── Authentication ───────────────────────────────────────────────────
@@ -78,8 +78,9 @@ classdef AppState < handle
 
     methods
         function obj = AppState()
-            % Load base URL from app.properties; fall back to localhost.
-            obj.baseUrl = string(AppConfig.get('base_url', 'http://localhost:5715'));
+            % Load base URL from app.properties; fall back to the shared
+            % QTAU API server at 34.42.87.190:5715.
+            obj.baseUrl = string(AppConfig.get('base_url', 'http://34.42.87.190:5715'));
             fprintf('[AppState] Base URL loaded from config: %s\n', char(obj.baseUrl));
         end
 

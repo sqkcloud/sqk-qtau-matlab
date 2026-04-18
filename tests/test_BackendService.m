@@ -50,28 +50,28 @@ classdef test_BackendService < matlab.unittest.TestCase
         % ── getBackend ───────────────────────────────────────────────────
 
         function testGetBackendIncludesName(testCase)
-            testCase.Service.getBackend('ibm_brisbane', 'tok');
-            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_brisbane'));
+            testCase.Service.getBackend('ibm_boston', 'tok');
+            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_boston'));
         end
 
         % ── getCalibration ───────────────────────────────────────────────
 
         function testGetCalibrationUsesCorrectEndpoint(testCase)
-            testCase.Service.getCalibration('ibm_osaka', 'tok');
-            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_osaka/calibration'));
+            testCase.Service.getCalibration('ibm_kingston', 'tok');
+            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_kingston/calibration'));
         end
 
         % ── getTopology ──────────────────────────────────────────────────
 
         function testGetTopologyUsesCorrectEndpoint(testCase)
-            testCase.Service.getTopology('ibm_kyoto', 'tok');
-            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_kyoto/topology'));
+            testCase.Service.getTopology('ibm_pittsburgh', 'tok');
+            testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'ibm_pittsburgh/topology'));
         end
 
         % ── compareBackends ──────────────────────────────────────────────
 
         function testCompareBackendsPosts(testCase)
-            testCase.Service.compareBackends({'ibm_brisbane','ibm_osaka'}, 'circ1', 'tok');
+            testCase.Service.compareBackends({'ibm_boston','ibm_kingston'}, 'circ1', 'tok');
             testCase.verifyEqual(char(testCase.Stub.LastMethod), 'postAuthJson');
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), '/api/backends/compare'));
         end

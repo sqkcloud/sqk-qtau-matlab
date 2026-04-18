@@ -20,7 +20,8 @@ function ResultsScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Results KPI cards (full width, toolbar-style) ─────────────────────────
-    hero = uipanel(g, 'Title', Labels.get('results_panel_hero'));
+    hero = uipanel(g, 'Title', Labels.get('results_panel_hero'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     hero.Layout.Row = 1; hero.Layout.Column = [1 3]; hero.BackgroundColor = Theme.COLOR_CARD;
 
     hg = uigridlayout(hero, [2 1]);
@@ -59,14 +60,17 @@ function ResultsScreen(app)
         Labels.get('results_kpi_ideal',      'Ideal overlap'),       '—', Theme.COLOR_PURPLE; ...
         Labels.get('results_kpi_validation', 'Validation status'),   '—', Theme.COLOR_AMBER};
     for i = 1:4
-        p = uipanel(cardsRow, 'Title', ''); p.Layout.Row = 1; p.Layout.Column = i;
-        p.BackgroundColor = Theme.COLOR_BG;
+        p = uipanel(cardsRow, 'Title', '', 'BorderType', 'line', ...
+            'BorderColor', Theme.COLOR_DIVIDER);
+        p.Layout.Row = 1; p.Layout.Column = i;
+        p.BackgroundColor = Theme.COLOR_CARD;
         pg = uigridlayout(p, [1 2]); pg.ColumnWidth = {5,'1x'}; pg.Padding = [0 0 0 0];
-        pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_BG;
-        strip = uipanel(pg, 'Title', ''); strip.Layout.Row = 1; strip.Layout.Column = 1;
+        pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_CARD;
+        strip = uipanel(pg, 'Title', '', 'BorderType', 'none');
+        strip.Layout.Row = 1; strip.Layout.Column = 1;
         strip.BackgroundColor = cards{i,3};
         inner = uigridlayout(pg, [2 1]); inner.Layout.Row = 1; inner.Layout.Column = 2;
-        inner.RowHeight = {18,'1x'}; inner.Padding = [8 8 8 8]; inner.BackgroundColor = Theme.COLOR_BG;
+        inner.RowHeight = {18,'1x'}; inner.Padding = [8 8 8 8]; inner.BackgroundColor = Theme.COLOR_CARD;
         l1 = uilabel(inner, 'Text', cards{i,1}, 'FontSize', 11, 'FontColor', Theme.COLOR_MUTED);
         l1.Layout.Row = 1; l1.Layout.Column = 1;
         l2 = uilabel(inner, 'Text', cards{i,2}, 'FontWeight', 'bold', 'FontSize', 17, 'WordWrap', 'on');
@@ -79,7 +83,8 @@ function ResultsScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Measured vs Predicted Summary (left) ──────────────────────────────────
-    summaryPanel = uipanel(g, 'Title', Labels.get('results_panel_summary'));
+    summaryPanel = uipanel(g, 'Title', Labels.get('results_panel_summary'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     summaryPanel.Layout.Row = 2; summaryPanel.Layout.Column = 1; summaryPanel.BackgroundColor = Theme.COLOR_CARD;
 
     sg = uigridlayout(summaryPanel, [2 1]);
@@ -95,7 +100,8 @@ function ResultsScreen(app)
     app.ResultJsonArea.Value = {Labels.get('results_summary_initial')};
 
     % ── Distribution Review (right) ───────────────────────────────────────────
-    comparePanel = uipanel(g, 'Title', Labels.get('results_panel_dist'));
+    comparePanel = uipanel(g, 'Title', Labels.get('results_panel_dist'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 3; comparePanel.BackgroundColor = Theme.COLOR_CARD;
 
     cg = uigridlayout(comparePanel, [2 1]);
@@ -114,13 +120,14 @@ function ResultsScreen(app)
         '- Validate against prior predictions'};
 
     % ── Action bar ────────────────────────────────────────────────────────────
-    bottom = uipanel(g, 'Title', Labels.get('results_panel_action'));
+    bottom = uipanel(g, 'Title', Labels.get('results_panel_action'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     bottom.Layout.Row = 3; bottom.Layout.Column = [1 3];
-    bottom.BackgroundColor = [0.94 0.97 1.00];
+    bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     bg = uigridlayout(bottom, [1 3]);
     bg.ColumnWidth = {'1x', 195, 150};
-    bg.Padding = [14 8 14 8]; bg.BackgroundColor = [0.94 0.97 1.00];
+    bg.Padding = [14 8 14 8]; bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(bg, 'Text', Labels.get('results_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

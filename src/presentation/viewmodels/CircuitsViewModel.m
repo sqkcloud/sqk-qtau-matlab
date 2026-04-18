@@ -165,12 +165,21 @@ classdef CircuitsViewModel < handle
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
 
+            bgColor    = Theme.COLOR_BG;
+            cardBg     = Theme.COLOR_CARD;
+            cardBorder = Theme.COLOR_DIVIDER;
+            titleColor = Theme.COLOR_HEADING;
+            subtColor  = Theme.COLOR_MUTED;
+            labelColor = Theme.COLOR_LABEL;
+            accentBlue = Theme.COLOR_PRIMARY;
+
             dlg = uifigure( ...
                 'Name', 'Edit Circuit', ...
                 'Position', [dlgX dlgY dlgW dlgH], ...
                 'WindowStyle', 'modal', ...
                 'Resize', 'off', ...
-                'Color', [0.95 0.96 0.98]);
+                'Color', bgColor);
+            Theme.applyFigureMode(dlg, Theme.activeName());
 
             outerGrid = uigridlayout(dlg, [3 3]);
             outerGrid.RowHeight     = {16, '1x', 16};
@@ -178,12 +187,12 @@ classdef CircuitsViewModel < handle
             outerGrid.Padding       = [0 0 0 0];
             outerGrid.RowSpacing    = 0;
             outerGrid.ColumnSpacing = 0;
-            outerGrid.BackgroundColor = [0.95 0.96 0.98];
+            outerGrid.BackgroundColor = bgColor;
 
             card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
-                'BackgroundColor', [1 1 1], ...
-                'HighlightColor', [0.88 0.89 0.92], ...
-                'BorderColor', [0.88 0.89 0.92]);
+                'BackgroundColor', cardBg, ...
+                'HighlightColor', cardBorder, ...
+                'BorderColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
             cg = uigridlayout(card, [14 1]);
@@ -197,24 +206,24 @@ classdef CircuitsViewModel < handle
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [36 24 36 20];
             cg.RowSpacing  = 2;
-            cg.BackgroundColor = [1 1 1];
+            cg.BackgroundColor = cardBg;
 
             % Title + subtitle
             tmp = uilabel(cg, 'Text', 'Edit Circuit', ...
                 'FontSize', 19, 'FontWeight', 'bold', ...
-                'FontColor', [0.15 0.18 0.24], ...
+                'FontColor', titleColor, ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
             tmp.Layout.Row = 1;
 
             tmp = uilabel(cg, 'Text', 'Update circuit metadata and QASM content', ...
-                'FontSize', 11, 'FontColor', [0.45 0.50 0.58], ...
+                'FontSize', 11, 'FontColor', subtColor, ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
             tmp.Layout.Row = 2;
 
             % Circuit Name
             tmp = uilabel(cg, 'Text', 'Circuit Name', ...
                 'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+                'FontColor', labelColor, 'VerticalAlignment', 'bottom');
             tmp.Layout.Row = 4;
             nameField = uieditfield(cg, 'text', 'Value', curName, 'FontSize', 13);
             nameField.Layout.Row = 5;
@@ -223,19 +232,19 @@ classdef CircuitsViewModel < handle
             cfLblGrid = uigridlayout(cg, [1 2]);
             cfLblGrid.Layout.Row = 6;
             cfLblGrid.ColumnWidth = {'1x', '1x'}; cfLblGrid.Padding = [0 0 0 0];
-            cfLblGrid.ColumnSpacing = 12; cfLblGrid.BackgroundColor = [1 1 1];
+            cfLblGrid.ColumnSpacing = 12; cfLblGrid.BackgroundColor = cardBg;
             uilabel(cfLblGrid, 'Text', 'Category', ...
                 'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+                'FontColor', labelColor, 'VerticalAlignment', 'bottom');
             uilabel(cfLblGrid, 'Text', 'Format', ...
                 'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+                'FontColor', labelColor, 'VerticalAlignment', 'bottom');
 
             % Category + Format (side by side — fields row)
             cfGrid = uigridlayout(cg, [1 2]);
             cfGrid.Layout.Row = 7;
             cfGrid.ColumnWidth = {'1x', '1x'}; cfGrid.Padding = [0 0 0 0];
-            cfGrid.ColumnSpacing = 12; cfGrid.BackgroundColor = [1 1 1];
+            cfGrid.ColumnSpacing = 12; cfGrid.BackgroundColor = cardBg;
 
             catItems = {'Oracle', 'Fourier', 'Sampling', 'Optimization', ...
                 'Search', 'Simulation', 'Entanglement', 'Arithmetic', ...
@@ -256,7 +265,7 @@ classdef CircuitsViewModel < handle
             % Source
             tmp = uilabel(cg, 'Text', 'Source', ...
                 'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+                'FontColor', labelColor, 'VerticalAlignment', 'bottom');
             tmp.Layout.Row = 8;
             srcField = uieditfield(cg, 'text', 'Value', curSrc, 'FontSize', 13);
             srcField.Layout.Row = 9;
@@ -266,16 +275,16 @@ classdef CircuitsViewModel < handle
             infoGrid.Layout.Row = 10;
             infoGrid.ColumnWidth = {'fit', 'fit', 'fit', '1x'};
             infoGrid.Padding = [0 0 0 0]; infoGrid.ColumnSpacing = 6;
-            infoGrid.BackgroundColor = [1 1 1];
-            uilabel(infoGrid, 'Text', 'Qubits', 'FontSize', 11, 'FontColor', [0.45 0.50 0.58]);
-            uilabel(infoGrid, 'Text', curQb, 'FontSize', 11, 'FontColor', [0.20 0.40 0.75], 'FontWeight', 'bold');
-            uilabel(infoGrid, 'Text', 'Depth', 'FontSize', 11, 'FontColor', [0.45 0.50 0.58]);
-            uilabel(infoGrid, 'Text', curDp, 'FontSize', 11, 'FontColor', [0.20 0.40 0.75], 'FontWeight', 'bold');
+            infoGrid.BackgroundColor = cardBg;
+            uilabel(infoGrid, 'Text', 'Qubits', 'FontSize', 11, 'FontColor', subtColor);
+            uilabel(infoGrid, 'Text', curQb, 'FontSize', 11, 'FontColor', accentBlue, 'FontWeight', 'bold');
+            uilabel(infoGrid, 'Text', 'Depth', 'FontSize', 11, 'FontColor', subtColor);
+            uilabel(infoGrid, 'Text', curDp, 'FontSize', 11, 'FontColor', accentBlue, 'FontWeight', 'bold');
 
             % Circuit Content (QASM editor)
             tmp = uilabel(cg, 'Text', 'Circuit Content (OpenQASM)', ...
                 'FontSize', 11, 'FontWeight', 'bold', ...
-                'FontColor', [0.30 0.34 0.42], 'VerticalAlignment', 'bottom');
+                'FontColor', labelColor, 'VerticalAlignment', 'bottom');
             tmp.Layout.Row = 11;
             contentField = uitextarea(cg, 'Value', curContent, ...
                 'FontSize', 12, 'FontName', 'Courier New');
@@ -286,7 +295,7 @@ classdef CircuitsViewModel < handle
             btnBar.Layout.Row = 13;
             btnBar.ColumnWidth = {'1x', '1x'};
             btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
-            btnBar.BackgroundColor = [1 1 1];
+            btnBar.BackgroundColor = cardBg;
 
             cancelBtn = uibutton(btnBar, 'Text', [char(10006) ' Cancel'], ...
                 'ButtonPushedFcn', @(~,~)delete(dlg));
@@ -302,7 +311,7 @@ classdef CircuitsViewModel < handle
 
             % Status label
             statusLbl = uilabel(cg, 'Text', '', ...
-                'FontSize', 11, 'FontColor', [0.84 0.18 0.18], ...
+                'FontSize', 11, 'FontColor', Theme.COLOR_DANGER, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
             statusLbl.Layout.Row = 14;
         end
@@ -364,7 +373,7 @@ classdef CircuitsViewModel < handle
 
             try
                 statusLbl.Text = Labels.get('circuits_status_saving', 'Saving...');
-                statusLbl.FontColor = [0.3 0.3 0.6];
+                statusLbl.FontColor = Theme.COLOR_MUTED;
                 drawnow;
                 app.CircuitSvc.updateCircuit(cid, patch, app.State.authToken);
                 app.logEvent('API', sprintf('Circuit updated: %s', cid));
@@ -372,7 +381,7 @@ classdef CircuitsViewModel < handle
                 obj.onLoadCircuits();
             catch ME
                 statusLbl.Text = sprintf('%s %s', Labels.get('circuits_error_save_failed', 'Save failed:'), ME.message);
-                statusLbl.FontColor = [0.7 0.15 0.15];
+                statusLbl.FontColor = Theme.COLOR_DANGER;
                 app.logEvent('ERROR', sprintf('updateCircuit FAILED: %s', ME.message));
             end
         end

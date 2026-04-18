@@ -71,10 +71,13 @@ function DashboardScreen(app)
 
     app.DashKpiLabels = cell(1, 4);
     for i = 1:4
-        p = uipanel(kb, 'Title', ''); p.Layout.Row = 1; p.Layout.Column = i; p.BackgroundColor = Theme.COLOR_CARD;
+        p = uipanel(kb, 'Title', '', 'BorderType', 'line', ...
+            'BorderColor', Theme.COLOR_DIVIDER);
+        p.Layout.Row = 1; p.Layout.Column = i; p.BackgroundColor = Theme.COLOR_CARD;
         pg = uigridlayout(p, [1 2]); pg.ColumnWidth = {Theme.DIVIDER_WIDTH,'1x'}; pg.Padding = [0 0 0 0];
         pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_CARD;
-        strip = uipanel(pg, 'Title', ''); strip.Layout.Row = 1; strip.Layout.Column = 1;
+        strip = uipanel(pg, 'Title', '', 'BorderType', 'none');
+        strip.Layout.Row = 1; strip.Layout.Column = 1;
         strip.BackgroundColor = kpiAccents{i};
         inner = uigridlayout(pg, [2 1]); inner.Layout.Row = 1; inner.Layout.Column = 2;
         inner.RowHeight = {18,'1x'}; inner.Padding = Theme.KPI_INNER_PAD; inner.BackgroundColor = Theme.COLOR_CARD;
@@ -89,20 +92,22 @@ function DashboardScreen(app)
     % ── Column divider (spans rows 3-4) ──────────────────────────────────────
     div = uipanel(g, 'Title', '');
     div.Layout.Row = [3 4]; div.Layout.Column = 2;
-    div.BackgroundColor = [0.87 0.90 0.93]; div.BorderType = 'none';
+    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
     app.attachColumnDivider(div, g);
 
     % ── Executive Summary (left, row 3) ──────────────────────────────────────
-    summaryPanel = uipanel(g, 'Title', Labels.get('dashboard_panel_executive_summary'));
-    summaryPanel.Layout.Row = 3; summaryPanel.Layout.Column = 1; summaryPanel.BackgroundColor = [1 1 1];
-    gp1 = uigridlayout(summaryPanel, [1 1]); gp1.BackgroundColor = [1 1 1]; gp1.Padding = [14 12 14 12];
+    summaryPanel = uipanel(g, 'Title', Labels.get('dashboard_panel_executive_summary'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
+    summaryPanel.Layout.Row = 3; summaryPanel.Layout.Column = 1; summaryPanel.BackgroundColor = Theme.COLOR_CARD;
+    gp1 = uigridlayout(summaryPanel, [1 1]); gp1.BackgroundColor = Theme.COLOR_CARD; gp1.Padding = [14 12 14 12];
     app.DashboardSummaryArea = uitextarea(gp1, 'Editable', 'off'); app.DashboardSummaryArea.FontSize = 13;
     app.DashboardSummaryArea.Value = {Labels.get('dashboard_status_initial')};
 
     % ── Storyboard Readiness (left, row 4) ───────────────────────────────────
-    pipeline = uipanel(g, 'Title', Labels.get('dashboard_panel_storyboard'));
-    pipeline.Layout.Row = 4; pipeline.Layout.Column = 1; pipeline.BackgroundColor = [1 1 1];
-    pg = uigridlayout(pipeline, [1 1]); pg.BackgroundColor = [1 1 1]; pg.Padding = [14 12 14 12];
+    pipeline = uipanel(g, 'Title', Labels.get('dashboard_panel_storyboard'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
+    pipeline.Layout.Row = 4; pipeline.Layout.Column = 1; pipeline.BackgroundColor = Theme.COLOR_CARD;
+    pg = uigridlayout(pipeline, [1 1]); pg.BackgroundColor = Theme.COLOR_CARD; pg.Padding = [14 12 14 12];
     app.DashReadinessArea = uitextarea(pg, 'Editable', 'off'); app.DashReadinessArea.FontSize = 12;
     app.DashReadinessArea.Value = { ...
         'Stage map (auto-updated on refresh):', ...
@@ -116,18 +121,20 @@ function DashboardScreen(app)
     % ── Status / Raw (right, row 3) ───────────────────────────────────────────
     % Interactive JSON tree viewer (see src/presentation/JsonTreeView.m).
     % Populated from DashboardViewModel via JsonTreeView.setData(...).
-    rawPanel = uipanel(g, 'Title', Labels.get('dashboard_panel_status_raw'));
-    rawPanel.Layout.Row = 3; rawPanel.Layout.Column = 3; rawPanel.BackgroundColor = [1 1 1];
-    gp2 = uigridlayout(rawPanel, [1 1]); gp2.BackgroundColor = [1 1 1]; gp2.Padding = [0 0 0 0];
+    rawPanel = uipanel(g, 'Title', Labels.get('dashboard_panel_status_raw'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
+    rawPanel.Layout.Row = 3; rawPanel.Layout.Column = 3; rawPanel.BackgroundColor = Theme.COLOR_CARD;
+    gp2 = uigridlayout(rawPanel, [1 1]); gp2.BackgroundColor = Theme.COLOR_CARD; gp2.Padding = [0 0 0 0];
     app.DashboardStatusArea = JsonTreeView.attach(gp2);
     JsonTreeView.setMessage(app.DashboardStatusArea, ...
         Labels.get('dashboard_raw_initial', 'Awaiting dashboard response — click Refresh.'));
 
     % ── Recent Activity (right, row 4) ───────────────────────────────────────
-    activity = uipanel(g, 'Title', Labels.get('dashboard_panel_recent_activity'));
-    activity.Layout.Row = 4; activity.Layout.Column = 3; activity.BackgroundColor = [1 1 1];
+    activity = uipanel(g, 'Title', Labels.get('dashboard_panel_recent_activity'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
+    activity.Layout.Row = 4; activity.Layout.Column = 3; activity.BackgroundColor = Theme.COLOR_CARD;
     ag = uigridlayout(activity, [2 1]); ag.RowHeight = {'1x', 30};
-    ag.Padding = [14 12 14 12]; ag.RowSpacing = 6; ag.BackgroundColor = [1 1 1];
+    ag.Padding = [14 12 14 12]; ag.RowSpacing = 6; ag.BackgroundColor = Theme.COLOR_CARD;
     app.DashActivityTable = uitable(ag);
     app.DashActivityTable.Layout.Row = 1; app.DashActivityTable.Layout.Column = 1;
     app.DashActivityTable.ColumnName = Labels.cols('dashboard_table_cols_activity', {'Time','Action','Status'});
@@ -137,7 +144,7 @@ function DashboardScreen(app)
     % Pagination row
     pgRow = uigridlayout(ag, [1 4]); pgRow.Layout.Row = 2; pgRow.Layout.Column = 1;
     pgRow.ColumnWidth = {'1x', 70, 80, 70}; pgRow.Padding = [0 0 0 0];
-    pgRow.ColumnSpacing = 4; pgRow.BackgroundColor = [1 1 1];
+    pgRow.ColumnSpacing = 4; pgRow.BackgroundColor = Theme.COLOR_CARD;
 
     uilabel(pgRow, 'Text', ''); % spacer
 
@@ -152,7 +159,7 @@ function DashboardScreen(app)
     app.DashActivityPageLabel.Layout.Row = 1; app.DashActivityPageLabel.Layout.Column = 3;
     app.DashActivityPageLabel.HorizontalAlignment = 'center';
     app.DashActivityPageLabel.FontSize = 13; app.DashActivityPageLabel.FontWeight = 'bold';
-    app.DashActivityPageLabel.FontColor = [0.20 0.30 0.55];
+    app.DashActivityPageLabel.FontColor = Theme.COLOR_PRIMARY;
 
     app.DashActivityNextBtn = uibutton(pgRow, 'Text', ...
         [Labels.get('dashboard_btn_next_activity', 'Next') ' ' char(9654)], ...

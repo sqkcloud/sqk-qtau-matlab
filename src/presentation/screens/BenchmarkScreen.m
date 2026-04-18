@@ -25,7 +25,8 @@ function BenchmarkScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Configuration form (left) ─────────────────────────────────────────────
-    config = uipanel(g, 'Title', Labels.get('benchmark_panel_config'));
+    config = uipanel(g, 'Title', Labels.get('benchmark_panel_config'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     config.Layout.Row = 1; config.Layout.Column = 1; config.BackgroundColor = Theme.COLOR_CARD;
 
     cg = uigridlayout(config, [6 2]);
@@ -35,7 +36,7 @@ function BenchmarkScreen(app)
 
     % Row 1: Circuit selector
     lbl = uilabel(cg, 'Text', Labels.get('benchmark_label_circuit'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 1; lbl.Layout.Column = 1;
     app.BenchmarkCircuitDropdown = uidropdown(cg, ...
         'Items', {'(select circuit)'}, 'ItemsData', {''}, 'Value', '', ...
@@ -44,7 +45,7 @@ function BenchmarkScreen(app)
 
     % Row 2: Backend selector
     lbl = uilabel(cg, 'Text', Labels.get('benchmark_label_backend'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 2; lbl.Layout.Column = 1;
     app.BenchmarkBackendSelect = uidropdown(cg, ...
         'Items', {'(select backend)'}, 'ItemsData', {''}, 'Value', '', ...
@@ -53,7 +54,7 @@ function BenchmarkScreen(app)
 
     % Row 3: Shots + Optimization Level (same row, nested grid)
     shotsLbl = uilabel(cg, 'Text', Labels.get('benchmark_label_shots'));
-    shotsLbl.FontColor = [0.35 0.42 0.52];
+    shotsLbl.FontColor = Theme.COLOR_LABEL;
     shotsLbl.Layout.Row = 3; shotsLbl.Layout.Column = 1;
     shotOptGrid = uigridlayout(cg, [1 4]);
     shotOptGrid.Layout.Row = 3; shotOptGrid.Layout.Column = 2;
@@ -65,7 +66,7 @@ function BenchmarkScreen(app)
     app.BenchmarkShotsField.Layout.Row = 1; app.BenchmarkShotsField.Layout.Column = 1;
 
     optLbl = uilabel(shotOptGrid, 'Text', Labels.get('benchmark_label_opt_level'));
-    optLbl.FontColor = [0.35 0.42 0.52]; optLbl.HorizontalAlignment = 'right';
+    optLbl.FontColor = Theme.COLOR_LABEL; optLbl.HorizontalAlignment = 'right';
     optLbl.Layout.Row = 1; optLbl.Layout.Column = 3;
 
     app.BenchmarkOptField = uieditfield(shotOptGrid, 'numeric', 'Value', 3);
@@ -74,7 +75,7 @@ function BenchmarkScreen(app)
 
     % Row 4: Error Mitigation
     lbl = uilabel(cg, 'Text', Labels.get('benchmark_label_mitigation'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 4; lbl.Layout.Column = 1;
     mitigItems  = Labels.items('benchmark_mitigation_items', ...
         {'None','Measurement mitigation','Zero-noise extrapolation','Readout calibration','Dynamical decoupling'});
@@ -87,7 +88,7 @@ function BenchmarkScreen(app)
 
     % Row 5: Transpilation Strategy
     lbl = uilabel(cg, 'Text', Labels.get('benchmark_label_strategy'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 5; lbl.Layout.Column = 1;
     stratItems   = Labels.items('benchmark_strategy_items', {'SABRE (recommended)','Stochastic','Basic'});
     stratValues  = Labels.items('benchmark_strategy_values', {'sabre','stochastic','basic'});
@@ -124,7 +125,8 @@ function BenchmarkScreen(app)
     app.BenchmarkSubmitButton.Tooltip = 'POST /api/jobs/submit — actually runs the benchmark circuit on IBM Quantum';
 
     % ── Execution Plan (right) ────────────────────────────────────────────────
-    estimate = uipanel(g, 'Title', Labels.get('benchmark_panel_plan'));
+    estimate = uipanel(g, 'Title', Labels.get('benchmark_panel_plan'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     estimate.Layout.Row = 1; estimate.Layout.Column = 3; estimate.BackgroundColor = Theme.COLOR_CARD;
 
     eg = uigridlayout(estimate, [1 1]);
@@ -133,7 +135,8 @@ function BenchmarkScreen(app)
     app.BenchmarkStatusArea.Value = {Labels.get('benchmark_status_initial')};
 
     % ── Strategy comparison table (full width) ────────────────────────────────
-    comparePanel = uipanel(g, 'Title', Labels.get('benchmark_panel_compare'));
+    comparePanel = uipanel(g, 'Title', Labels.get('benchmark_panel_compare'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     comparePanel.Layout.Row = 2; comparePanel.Layout.Column = [1 3]; comparePanel.BackgroundColor = Theme.COLOR_CARD;
     comparePanel.Scrollable = 'on';
 
@@ -146,13 +149,14 @@ function BenchmarkScreen(app)
     app.styleTable(app.BenchmarkStrategyTable);
 
     % ── Action bar ────────────────────────────────────────────────────────────
-    nextPanel = uipanel(g, 'Title', Labels.get('benchmark_panel_action'));
+    nextPanel = uipanel(g, 'Title', Labels.get('benchmark_panel_action'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 3];
-    nextPanel.BackgroundColor = [0.94 0.97 1.00];
+    nextPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     ng = uigridlayout(nextPanel, [1 3]);
     ng.ColumnWidth = {'1x', 165, 165};
-    ng.Padding = [14 8 14 8]; ng.BackgroundColor = [0.94 0.97 1.00];
+    ng.Padding = [14 8 14 8]; ng.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(ng, 'Text', Labels.get('benchmark_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

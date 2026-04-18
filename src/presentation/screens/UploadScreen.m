@@ -21,20 +21,20 @@ function UploadScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Active Project indicator (full width) — hidden from UI ─────────
-    projPanel = uipanel(g, 'Title', '');
+    projPanel = uipanel(g, 'Title', '', 'BorderType', 'line', ...
+        'BorderColor', Theme.COLOR_DIVIDER);
     projPanel.Layout.Row = 1; projPanel.Layout.Column = [1 3];
-    projPanel.BackgroundColor = [0.91 0.95 1.00];
-    projPanel.BorderType = 'line';
+    projPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
     projPanel.Visible = 'off';
 
     pg = uigridlayout(projPanel, [1 2]);
     pg.ColumnWidth = {120, '1x'};
     pg.Padding = [14 4 14 4]; pg.ColumnSpacing = 8;
-    pg.BackgroundColor = [0.91 0.95 1.00];
+    pg.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     lbl = uilabel(pg, 'Text', Labels.get('upload_label_active_project'));
     lbl.FontSize = 13; lbl.FontWeight = 'bold';
-    lbl.FontColor = [0.20 0.30 0.55];
+    lbl.FontColor = Theme.COLOR_PRIMARY;
     lbl.Layout.Row = 1; lbl.Layout.Column = 1;
 
     projName = app.State.currentProjectName;
@@ -43,12 +43,13 @@ function UploadScreen(app)
     end
     app.UploadActiveProjectLabel = uilabel(pg, 'Text', char(projName));
     app.UploadActiveProjectLabel.FontSize = 13;
-    app.UploadActiveProjectLabel.FontColor = [0.14 0.18 0.26];
+    app.UploadActiveProjectLabel.FontColor = Theme.COLOR_HEADING;
     app.UploadActiveProjectLabel.Layout.Row = 1;
     app.UploadActiveProjectLabel.Layout.Column = 2;
 
     % ── Circuit upload + preview (full width) ─────────────────────────────
-    dropPanel = uipanel(g, 'Title', Labels.get('upload_panel_upload_manager'));
+    dropPanel = uipanel(g, 'Title', Labels.get('upload_panel_upload_manager'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     dropPanel.Layout.Row = 2; dropPanel.Layout.Column = [1 3]; dropPanel.BackgroundColor = Theme.COLOR_CARD;
 
     dg = uigridlayout(dropPanel, [4 4]);
@@ -61,7 +62,7 @@ function UploadScreen(app)
     info.Layout.Row = 1; info.Layout.Column = [1 4]; info.WordWrap = 'on';
 
     lbl = uilabel(dg, 'Text', Labels.get('upload_label_file'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 2; lbl.Layout.Column = 1;
     app.UploadFileField = uieditfield(dg, 'text', 'Value', '');
     app.UploadFileField.Layout.Row = 2; app.UploadFileField.Layout.Column = 2;
@@ -83,8 +84,8 @@ function UploadScreen(app)
     app.CircuitPreviewArea = uitextarea(dg, 'Editable', 'on');
     app.CircuitPreviewArea.Layout.Row = 4; app.CircuitPreviewArea.Layout.Column = [1 4];
     app.CircuitPreviewArea.FontName = 'Courier New'; app.CircuitPreviewArea.FontSize = 13;
-    app.CircuitPreviewArea.BackgroundColor = [0.97 0.98 1.00];
-    app.CircuitPreviewArea.FontColor = [0.14 0.18 0.26];
+    app.CircuitPreviewArea.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    app.CircuitPreviewArea.FontColor = Theme.COLOR_HEADING;
     app.CircuitPreviewArea.Value = { ...
         'OPENQASM 2.0;', 'include "qelib1.inc";', '', ...
         'qreg q[27];', 'creg c[27];', '', ...
@@ -97,7 +98,8 @@ function UploadScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Format and Metadata (left) ────────────────────────────────────────
-    metaPanel = uipanel(g, 'Title', Labels.get('upload_panel_format_meta'));
+    metaPanel = uipanel(g, 'Title', Labels.get('upload_panel_format_meta'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     metaPanel.Layout.Row = 3; metaPanel.Layout.Column = 1; metaPanel.BackgroundColor = Theme.COLOR_CARD;
 
     mg = uigridlayout(metaPanel, [3 4]);
@@ -108,7 +110,7 @@ function UploadScreen(app)
 
     % Row 1 — Input Format (left) + Category (right)
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_format'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 1; lbl.Layout.Column = 1;
     app.UploadFormatDropdown = uidropdown(mg, ...
         'Items', {'OpenQASM 2.0','OpenQASM 3','Qiskit JSON','MATLAB struct'}, ...
@@ -117,7 +119,7 @@ function UploadScreen(app)
     app.UploadFormatDropdown.Layout.Row = 1; app.UploadFormatDropdown.Layout.Column = 2;
 
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_category'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 1; lbl.Layout.Column = 3;
     app.CircuitCategoryDropdown = uidropdown(mg, ...
         'Items', {'Oracle','Fourier','Sampling','Optimization','Search','Simulation','Other'}, ...
@@ -126,7 +128,7 @@ function UploadScreen(app)
 
     % Row 2 — Circuit Name (full width)
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_name'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 2; lbl.Layout.Column = 1;
     app.CircuitNameField = uieditfield(mg, 'text', 'Value', '');
     app.CircuitNameField.Layout.Row = 2; app.CircuitNameField.Layout.Column = [2 4];
@@ -134,14 +136,15 @@ function UploadScreen(app)
 
     % Row 3 — Metadata label
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_metadata'));
-    lbl.FontColor = [0.35 0.42 0.52];
+    lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 3; lbl.Layout.Column = 1;
     app.CircuitMetadataArea = uieditfield(mg, 'text', 'Value', 'QASMBench');
     app.CircuitMetadataArea.FontSize = 12;
     app.CircuitMetadataArea.Layout.Row = 3; app.CircuitMetadataArea.Layout.Column = [2 4];
 
     % ── Circuit Statistics (right) ────────────────────────────────────────
-    statsPanel = uipanel(g, 'Title', Labels.get('upload_panel_stats'));
+    statsPanel = uipanel(g, 'Title', Labels.get('upload_panel_stats'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     statsPanel.Layout.Row = 3; statsPanel.Layout.Column = 3; statsPanel.BackgroundColor = Theme.COLOR_CARD;
 
     spg = uigridlayout(statsPanel, [1 1]);
@@ -150,7 +153,8 @@ function UploadScreen(app)
     app.CircuitStatsArea.HTMLSource = CircuitDiagram.wrapHtml(Labels.get('upload_stats_initial'));
 
     % ── Project Circuits table (full width) — hidden ─────────────────────
-    circPanel = uipanel(g, 'Title', Labels.get('upload_panel_project_circuits'));
+    circPanel = uipanel(g, 'Title', Labels.get('upload_panel_project_circuits'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     circPanel.Layout.Row = 4; circPanel.Layout.Column = [1 3];
     circPanel.BackgroundColor = Theme.COLOR_CARD;
     circPanel.Visible = 'off';
@@ -183,12 +187,13 @@ function UploadScreen(app)
     app.styleBtn(app.UploadDeleteCircuitBtn, 'ghost');
 
     % ── Action bar ────────────────────────────────────────────────────────
-    actionPanel = uipanel(g, 'Title', Labels.get('upload_panel_action'));
+    actionPanel = uipanel(g, 'Title', Labels.get('upload_panel_action'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     actionPanel.Layout.Row = 5; actionPanel.Layout.Column = [1 3];
-    actionPanel.BackgroundColor = [0.94 0.97 1.00];
+    actionPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     ag = uigridlayout(actionPanel, [1 3]); ag.ColumnWidth = {'1x',170,150};
-    ag.Padding = [14 8 14 8]; ag.BackgroundColor = [0.94 0.97 1.00];
+    ag.Padding = [14 8 14 8]; ag.BackgroundColor = Theme.COLOR_ACCENT_BG;
     msg = uilabel(ag, 'Text', Labels.get('upload_action_msg'));
     msg.FontSize = 13; msg.FontWeight = 'bold'; msg.Layout.Row = 1; msg.Layout.Column = 1;
     msg.VerticalAlignment = 'center'; msg.WordWrap = 'on';

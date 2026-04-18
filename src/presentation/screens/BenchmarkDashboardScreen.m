@@ -27,7 +27,7 @@ function BenchmarkDashboardScreen(app)
     toolbar.BackgroundColor = Theme.COLOR_BG;
 
     backLbl = uilabel(toolbar, 'Text', 'Backend', ...
-        'FontSize', 13, 'FontColor', [0.35 0.42 0.52], ...
+        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
         'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
     backLbl.Layout.Row = 1; backLbl.Layout.Column = 1;
 
@@ -49,7 +49,8 @@ function BenchmarkDashboardScreen(app)
     app.styleBtn(exportBtn, 'ghost');
 
     % ── Row 2: System Metrics KPI cards ──────────────────────────────────
-    kpiPanel = uipanel(g, 'Title', 'System Benchmark Metrics');
+    kpiPanel = uipanel(g, 'Title', 'System Benchmark Metrics', ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     kpiPanel.Layout.Row = 2; kpiPanel.Layout.Column = [1 3];
     kpiPanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -65,22 +66,23 @@ function BenchmarkDashboardScreen(app)
 
     app.BenchmarkKpiLabels = cell(1, 5);
     for i = 1:5
-        p = uipanel(kg, 'Title', '');
+        p = uipanel(kg, 'Title', '', 'BorderType', 'line', ...
+            'BorderColor', Theme.COLOR_DIVIDER);
         p.Layout.Row = 1; p.Layout.Column = i;
-        p.BackgroundColor = Theme.COLOR_BG;
+        p.BackgroundColor = Theme.COLOR_CARD;
 
         pg = uigridlayout(p, [1 2]);
         pg.ColumnWidth = {5, '1x'}; pg.Padding = [0 0 0 0];
-        pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_BG;
+        pg.ColumnSpacing = 0; pg.BackgroundColor = Theme.COLOR_CARD;
 
-        strip = uipanel(pg, 'Title', '');
+        strip = uipanel(pg, 'Title', '', 'BorderType', 'none');
         strip.Layout.Row = 1; strip.Layout.Column = 1;
         strip.BackgroundColor = cardAccents{i};
 
         inner = uigridlayout(pg, [2 1]);
         inner.Layout.Row = 1; inner.Layout.Column = 2;
         inner.RowHeight = {18, '1x'}; inner.Padding = [8 8 8 8];
-        inner.BackgroundColor = Theme.COLOR_BG;
+        inner.BackgroundColor = Theme.COLOR_CARD;
 
         l1 = uilabel(inner, 'Text', cardNames{i}, ...
             'FontColor', Theme.COLOR_MUTED, 'FontSize', 11);
@@ -99,7 +101,8 @@ function BenchmarkDashboardScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Row 3 Left: Volumetric Fidelity Heatmap ─────────────────────────
-    volPanel = uipanel(g, 'Title', 'Volumetric Fidelity Map');
+    volPanel = uipanel(g, 'Title', 'Volumetric Fidelity Map', ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     volPanel.Layout.Row = 3; volPanel.Layout.Column = 1;
     volPanel.BackgroundColor = Theme.COLOR_CARD;
     vpg = uigridlayout(volPanel, [1 1]);
@@ -111,7 +114,8 @@ function BenchmarkDashboardScreen(app)
     app.styleAxes(app.VolumetricAxes);
 
     % ── Row 3 Right: Backend Scorecard Radar Chart ───────────────────────
-    radarPanel = uipanel(g, 'Title', 'Backend Scorecard');
+    radarPanel = uipanel(g, 'Title', 'Backend Scorecard', ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     radarPanel.Layout.Row = 3; radarPanel.Layout.Column = 3;
     radarPanel.BackgroundColor = Theme.COLOR_CARD;
     rpg = uigridlayout(radarPanel, [1 1]);
@@ -123,7 +127,8 @@ function BenchmarkDashboardScreen(app)
     title(app.ScorecardAxes, 'Backend Scorecard');
 
     % ── Row 4 Left: Prediction Calibration scatter ───────────────────────
-    calPanel = uipanel(g, 'Title', 'Prediction Calibration');
+    calPanel = uipanel(g, 'Title', 'Prediction Calibration', ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     calPanel.Layout.Row = 4; calPanel.Layout.Column = 1;
     calPanel.BackgroundColor = Theme.COLOR_CARD;
     cpg = uigridlayout(calPanel, [1 1]);
@@ -135,7 +140,8 @@ function BenchmarkDashboardScreen(app)
     app.styleAxes(app.CalibrationAxes);
 
     % ── Row 4 Right: Benchmark Regression time-series ────────────────────
-    regPanel = uipanel(g, 'Title', 'Benchmark Regression');
+    regPanel = uipanel(g, 'Title', 'Benchmark Regression', ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     regPanel.Layout.Row = 4; regPanel.Layout.Column = 3;
     regPanel.BackgroundColor = Theme.COLOR_CARD;
     rrpg = uigridlayout(regPanel, [1 1]);

@@ -51,7 +51,8 @@ function JobsScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Job Monitoring table (left) ───────────────────────────────────────────
-    jobPanel = uipanel(g, 'Title', Labels.get('jobs_panel_monitoring'));
+    jobPanel = uipanel(g, 'Title', Labels.get('jobs_panel_monitoring'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     jobPanel.Layout.Row = 2; jobPanel.Layout.Column = 1; jobPanel.BackgroundColor = Theme.COLOR_CARD;
 
     jg = uigridlayout(jobPanel, [1 1]);
@@ -63,7 +64,8 @@ function JobsScreen(app)
     app.styleTable(app.JobsTable);
 
     % ── Live Monitor Notes (right) ────────────────────────────────────────────
-    trendPanel = uipanel(g, 'Title', Labels.get('jobs_panel_live_notes'));
+    trendPanel = uipanel(g, 'Title', Labels.get('jobs_panel_live_notes'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     trendPanel.Layout.Row = 2; trendPanel.Layout.Column = 3; trendPanel.BackgroundColor = Theme.COLOR_CARD;
 
     tg = uigridlayout(trendPanel, [1 1]);
@@ -75,16 +77,17 @@ function JobsScreen(app)
         'Select a row to set the active job for Cancel/Pause/Results.'};
 
     % ── Detailed Job Logs (full width, dark terminal) ─────────────────────────
-    logPanel = uipanel(g, 'Title', Labels.get('jobs_panel_logs'));
+    logPanel = uipanel(g, 'Title', Labels.get('jobs_panel_logs'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     logPanel.Layout.Row = 3; logPanel.Layout.Column = [1 3];
-    logPanel.BackgroundColor = [0.06 0.08 0.12];
+    logPanel.BackgroundColor = Theme.CONSOLE_BG;
 
     lg = uigridlayout(logPanel, [1 1]);
-    lg.Padding = [12 10 12 10]; lg.BackgroundColor = [0.06 0.08 0.12];
+    lg.Padding = [12 10 12 10]; lg.BackgroundColor = Theme.CONSOLE_BG;
     app.JobLogsArea = uitextarea(lg, 'Editable', 'off');
     app.JobLogsArea.FontName = 'Courier New'; app.JobLogsArea.FontSize = 12;
-    app.JobLogsArea.BackgroundColor = [0.06 0.08 0.12];
-    app.JobLogsArea.FontColor = [0.72 0.94 0.64];
+    app.JobLogsArea.BackgroundColor = Theme.CONSOLE_BG;
+    app.JobLogsArea.FontColor = Theme.CONSOLE_FG;
     app.JobLogsArea.Value = {Labels.get('jobs_logs_initial', '[awaiting job data…]')};
 
     Logger.info('JobsScreen', 'Jobs tab UI built successfully');

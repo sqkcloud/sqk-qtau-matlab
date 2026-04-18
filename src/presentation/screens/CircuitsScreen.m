@@ -16,7 +16,8 @@ function CircuitsScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Circuits table (full width) ───────────────────────────────────────
-    tablePanel = uipanel(g, 'Title', Labels.get('circuits_panel_table', 'Project Circuits'));
+    tablePanel = uipanel(g, 'Title', Labels.get('circuits_panel_table', 'Project Circuits'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     tablePanel.Layout.Row = 1; tablePanel.Layout.Column = 1;
     tablePanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -63,15 +64,15 @@ function CircuitsScreen(app)
     app.UIFigure.WindowButtonDownFcn = @(src, evt) handleCircuitsMouseDown(app, prevFcn, src, evt);
 
     % ── Pagination + Upload bar ───────────────────────────────────────────
-    barPanel = uipanel(g, 'Title', '');
+    barPanel = uipanel(g, 'Title', '', 'BorderType', 'line', ...
+        'BorderColor', Theme.COLOR_DIVIDER);
     barPanel.Layout.Row = 2; barPanel.Layout.Column = 1;
-    barPanel.BackgroundColor = [0.94 0.97 1.00];
-    barPanel.BorderType = 'none';
+    barPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     bg = uigridlayout(barPanel, [1 5]);
     bg.ColumnWidth = {'1x', 80, 90, 80, 140};
     bg.Padding = [10 4 10 4]; bg.ColumnSpacing = 8;
-    bg.BackgroundColor = [0.94 0.97 1.00];
+    bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     % Spacer
     spacer = uilabel(bg, 'Text', '');
@@ -90,7 +91,7 @@ function CircuitsScreen(app)
     app.CircuitsPageLabel.Layout.Row = 1; app.CircuitsPageLabel.Layout.Column = 3;
     app.CircuitsPageLabel.HorizontalAlignment = 'center';
     app.CircuitsPageLabel.FontSize = 13; app.CircuitsPageLabel.FontWeight = 'bold';
-    app.CircuitsPageLabel.FontColor = [0.20 0.30 0.55];
+    app.CircuitsPageLabel.FontColor = Theme.COLOR_PRIMARY;
 
     % Next button
     app.CircuitsNextBtn = uibutton(bg, 'Text', ...

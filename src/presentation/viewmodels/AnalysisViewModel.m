@@ -160,12 +160,13 @@ classdef AnalysisViewModel < handle
                 dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
                 dlg = uifigure('Name', 'QASMBench Similarity Visualization', ...
                     'Position', [dlgX dlgY dlgW dlgH], ...
-                    'Resize', 'on', 'Color', [1 1 1]);
+                    'Resize', 'on', 'Color', Theme.COLOR_BG);
+                Theme.applyFigureMode(dlg, Theme.activeName());
 
                 rootGrid = uigridlayout(dlg, [3 1]);
                 rootGrid.RowHeight = {'1x', 1, 40};
                 rootGrid.Padding = [0 0 0 0]; rootGrid.RowSpacing = 0;
-                rootGrid.BackgroundColor = [1 1 1];
+                rootGrid.BackgroundColor = Theme.COLOR_BG;
 
                 % ── Tab group ───────────────────────────────────────────────
                 tg = uitabgroup(rootGrid);
@@ -180,13 +181,13 @@ classdef AnalysisViewModel < handle
                 %   a calibrated interpretation of the top match.
                 % ══════════════════════════════════════════════════════════════
                 tab1 = uitab(tg, 'Title', 'QASMBench Similarity Visualization');
-                tab1.BackgroundColor = [1 1 1];
+                tab1.BackgroundColor = Theme.COLOR_CARD;
 
                 dg = uigridlayout(tab1, [2 2]);
                 dg.RowHeight = {40, '1x'};
                 dg.ColumnWidth = {'2x', '1x'};
                 dg.Padding = [18 14 18 12]; dg.RowSpacing = 8; dg.ColumnSpacing = 16;
-                dg.BackgroundColor = [1 1 1];
+                dg.BackgroundColor = Theme.COLOR_CARD;
 
                 % ── Header: current circuit + headline summary ──────────────
                 curCircName = char(app.State.selectedCircuitName);
@@ -197,7 +198,7 @@ classdef AnalysisViewModel < handle
                                      'Closest of %d matches:  %s  (%.1f%%)'], ...
                                     curCircName, n, dispNames{topIdx}, topSim*100), ...
                     'FontSize', 13, 'FontWeight', 'bold', ...
-                    'FontColor', [0.15 0.22 0.38], ...
+                    'FontColor', Theme.COLOR_HEADING, ...
                     'VerticalAlignment', 'center', ...
                     'Interpreter', 'none');
                 headerLbl.Layout.Row = 1; headerLbl.Layout.Column = [1 2];
@@ -282,17 +283,17 @@ classdef AnalysisViewModel < handle
 
                 % ── Right: Match Profile side panel ────────────────────────
                 profilePanel = uipanel(dg, 'Title', 'Match Profile', ...
-                    'FontWeight', 'bold', 'BackgroundColor', [0.98 0.99 1.00], ...
+                    'FontWeight', 'bold', 'BackgroundColor', Theme.COLOR_ACCENT_BG, ...
                     'ForegroundColor', [0.20 0.28 0.45]);
                 profilePanel.Layout.Row = 2; profilePanel.Layout.Column = 2;
 
                 ppg = uigridlayout(profilePanel, [1 1]);
                 ppg.Padding = [12 10 12 10];
-                ppg.BackgroundColor = [0.98 0.99 1.00];
+                ppg.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
                 profileArea = uitextarea(ppg, 'Editable', 'off');
                 profileArea.FontSize = 12;
-                profileArea.FontColor = [0.18 0.22 0.30];
+                profileArea.FontColor = Theme.COLOR_HEADING;
                 profileArea.Value = AnalysisViewModel.buildMatchProfileText( ...
                     curCircName, dispNames, sims, cats, notes, uniqueCats, topIdx);
 
@@ -300,10 +301,10 @@ classdef AnalysisViewModel < handle
                 % Tab 2: Circuit Diagram
                 % ══════════════════════════════════════════════════════════════
                 tab2 = uitab(tg, 'Title', 'Circuit Diagram');
-                tab2.BackgroundColor = [1 1 1];
+                tab2.BackgroundColor = Theme.COLOR_CARD;
 
                 tab2Grid = uigridlayout(tab2, [1 1]);
-                tab2Grid.Padding = [16 14 16 10]; tab2Grid.BackgroundColor = [1 1 1];
+                tab2Grid.Padding = [16 14 16 10]; tab2Grid.BackgroundColor = Theme.COLOR_CARD;
                 diagramHtml = uihtml(tab2Grid);
                 diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
 
@@ -348,13 +349,13 @@ classdef AnalysisViewModel < handle
                 % ── Separator line ─────────────────────────────────────────
                 sep = uipanel(rootGrid, 'Title', '', 'BorderType', 'none');
                 sep.Layout.Row = 2; sep.Layout.Column = 1;
-                sep.BackgroundColor = [0.85 0.87 0.90];
+                sep.BackgroundColor = Theme.COLOR_DIVIDER;
 
                 % ── Close button (right-aligned) ───────────────────────────
                 btnGrid = uigridlayout(rootGrid, [1 2]);
                 btnGrid.Layout.Row = 3; btnGrid.Layout.Column = 1;
                 btnGrid.ColumnWidth = {'1x', 140};
-                btnGrid.Padding = [16 4 16 4]; btnGrid.BackgroundColor = [1 1 1];
+                btnGrid.Padding = [16 4 16 4]; btnGrid.BackgroundColor = Theme.COLOR_CARD;
                 closeBtn = uibutton(btnGrid, 'Text', 'Close', ...
                     'FontSize', 13, ...
                     'ButtonPushedFcn', @(~,~) delete(dlg));
@@ -871,7 +872,7 @@ classdef AnalysisViewModel < handle
                     ' meas: 2%%).'], ...
                     curName, round(curDepth), round(curWidth), ...
                     sq, tq, curFid*100, regime, matchLine);
-                app.QVInfoLabel.FontColor = [0.22 0.27 0.35];
+                app.QVInfoLabel.FontColor = Theme.COLOR_HEADING;
 
                 Logger.info('AnalysisViewModel', ...
                     'Complexity landscape rendered — %s d=%d w=%d fid=%.2f', ...

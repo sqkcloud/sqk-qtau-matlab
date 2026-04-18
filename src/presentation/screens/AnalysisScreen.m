@@ -28,7 +28,7 @@ function AnalysisScreen(app)
     topBar.BackgroundColor = Theme.COLOR_BG;
 
     circLbl = uilabel(topBar, 'Text', Labels.get('analysis_label_circuit', 'Circuit'), ...
-        'FontSize', 13, 'FontColor', [0.35 0.42 0.52], ...
+        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
         'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
     circLbl.Layout.Row = 1; circLbl.Layout.Column = 1;
 
@@ -50,7 +50,8 @@ function AnalysisScreen(app)
     app.attachColumnDivider(div, g);
 
     % ── Extracted Features (left) ─────────────────────────────────────────────
-    p1 = uipanel(g, 'Title', Labels.get('analysis_panel_features'));
+    p1 = uipanel(g, 'Title', Labels.get('analysis_panel_features'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     p1.Layout.Row = 2; p1.Layout.Column = 1; p1.BackgroundColor = Theme.COLOR_CARD;
 
     g1 = uigridlayout(p1, [1 2]);
@@ -67,7 +68,8 @@ function AnalysisScreen(app)
         'feature extraction results.'};
 
     % ── QASMBench Similarity (right) ─────────────────────────────────────────
-    p2 = uipanel(g, 'Title', Labels.get('analysis_panel_similarity'));
+    p2 = uipanel(g, 'Title', Labels.get('analysis_panel_similarity'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     p2.Layout.Row = 2; p2.Layout.Column = 3; p2.BackgroundColor = Theme.COLOR_CARD;
 
     g2 = uigridlayout(p2, [1 1]);
@@ -82,7 +84,8 @@ function AnalysisScreen(app)
 
     % ── Quantum Volume heatmap (full width) ──────────────────────────────────
     qvPanel = uipanel(g, 'Title', Labels.get('analysis_panel_qv', ...
-        'Quantum Volume — Circuit Depth vs Width'));
+        'Quantum Volume — Circuit Depth vs Width'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     qvPanel.Layout.Row = 3; qvPanel.Layout.Column = [1 3];
     qvPanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -102,18 +105,19 @@ function AnalysisScreen(app)
     app.QVInfoLabel = uilabel(qvGrid, ...
         'Text', Labels.get('analysis_qv_initial', ...
             'Run analysis to populate the Quantum Volume chart.'), ...
-        'FontSize', 12, 'FontColor', [0.45 0.50 0.58], ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
         'WordWrap', 'on', 'VerticalAlignment', 'top');
     app.QVInfoLabel.Layout.Row = 1; app.QVInfoLabel.Layout.Column = 2;
 
     % ── Action bar ────────────────────────────────────────────────────────────
-    exportPanel = uipanel(g, 'Title', Labels.get('analysis_panel_decision'));
+    exportPanel = uipanel(g, 'Title', Labels.get('analysis_panel_decision'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     exportPanel.Layout.Row = 4; exportPanel.Layout.Column = [1 3];
-    exportPanel.BackgroundColor = [0.94 0.97 1.00];
+    exportPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     eg = uigridlayout(exportPanel, [1 4]);
     eg.ColumnWidth = {'1x', 150, 170, 120};
-    eg.Padding = [14 8 14 8]; eg.BackgroundColor = [0.94 0.97 1.00];
+    eg.Padding = [14 8 14 8]; eg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(eg, 'Text', Labels.get('analysis_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

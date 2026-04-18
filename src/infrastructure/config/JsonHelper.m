@@ -121,11 +121,15 @@ classdef JsonHelper
                 rows{i,1} = char(JsonHelper.pick(items(i), {'job_record_id','job_id','id'}));
                 rows{i,2} = char(JsonHelper.pick(items(i), {'backend_name','backend'}));
                 rows{i,3} = char(JsonHelper.pick(items(i), {'status'}));
-                pct = JsonHelper.pick(items(i), {'progress_pct','progress','completion_pct'});
-                if isnumeric(pct)
-                    rows{i,4} = sprintf('%.0f%%', pct * 100);
+                pctStr = string(JsonHelper.pick(items(i), {'progress_pct','progress','completion_pct'}));
+                pctNum = str2double(pctStr);
+                if ~isnan(pctNum)
+                    % Backend returns 0-100 (e.g. queued=10, running=50);
+                    % legacy callers may send 0-1, so scale up those too.
+                    if pctNum <= 1.0 && pctNum > 0; pctNum = pctNum * 100; end
+                    rows{i,4} = sprintf('%.0f%%', pctNum);
                 else
-                    rows{i,4} = char(pct);
+                    rows{i,4} = char(pctStr);
                 end
                 rows{i,5} = char(JsonHelper.pick(items(i), {'created_at','submitted_at'}));
             end
@@ -327,6 +331,10 @@ classdef JsonHelper
     methods (Static, Access = private)
 
         function val = toStr(v)
+            % JSON null decodes to [] in MATLAB — return "" so downstream
+            % callers see a blank cell instead of the literal "[]" that
+            % jsonencode([]) would produce.
+            if isempty(v); val = ""; return; end
             if isstring(v) && isscalar(v); val = v; return; end
             if ischar(v);   val = string(v); return; end
             if isnumeric(v) && isscalar(v); val = string(v); return; end
