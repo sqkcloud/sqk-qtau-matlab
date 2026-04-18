@@ -50,12 +50,15 @@ classdef BenchmarkDashboardViewModel < handle
             if isempty(backendName); backendName = char(app.State.selectedBackend); end
             pid    = '';
             if app.State.hasProject(); pid = char(app.State.currentProjectId); end
-            header = app.State.bearerHeader();
-            svc    = app.BenchmarkSvc;
+            % Services expect the raw bearer token — FastAPIClient.authHeaders
+            % prepends the "Bearer " prefix itself. Passing bearerHeader()
+            % here produced "Bearer Bearer <token>" and every call 401ed.
+            token = app.State.authToken;
+            svc   = app.BenchmarkSvc;
 
             % Run all 5 API fetches off the UI thread in one async task
             AsyncRunner.run( ...
-                @() BenchmarkDashboardViewModel.fetchAllData(svc, backendName, pid, header), ...
+                @() BenchmarkDashboardViewModel.fetchAllData(svc, backendName, pid, token), ...
                 @(results) obj.applyAllData(app, backendName, results), ...
                 @(ME)      obj.onRefreshError(app, ME));
         end
@@ -406,32 +409,33 @@ classdef BenchmarkDashboardViewModel < handle
 
         % ── Data fetching (runs off UI thread) ───────────────────────────
 
-        function results = fetchAllData(svc, backendName, pid, header)
+        function results = fetchAllData(svc, backendName, pid, token)
             % fetchAllData  Run all 5 API calls and return a struct of
             %   results.  Each call is wrapped in try-catch so a single
-            %   failure doesn't abort the others.
+            %   failure doesn't abort the others. The failures are logged
+            %   at WARN level so the user can see why panels are empty.
             results = struct('metrics', [], 'volumetric', [], ...
                 'scorecard', [], 'calibration', [], 'regression', []);
 
             if ~isempty(backendName)
-                try results.metrics = svc.getSystemMetrics(backendName, header);
-                catch ME; Logger.debug('BenchmarkDashboardViewModel', 'fetchMetrics: %s', ME.message); end
+                try results.metrics = svc.getSystemMetrics(backendName, token);
+                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchMetrics (%s): %s', backendName, ME.message); end
             end
             if ~isempty(pid)
-                try results.volumetric = svc.getVolumetricData(pid, header);
-                catch ME; Logger.debug('BenchmarkDashboardViewModel', 'fetchVolumetric: %s', ME.message); end
+                try results.volumetric = svc.getVolumetricData(pid, token);
+                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchVolumetric: %s', ME.message); end
             end
             if ~isempty(backendName) && ~isempty(pid)
-                try results.scorecard = svc.getBackendScorecard(pid, backendName, header);
-                catch ME; Logger.debug('BenchmarkDashboardViewModel', 'fetchScorecard: %s', ME.message); end
+                try results.scorecard = svc.getBackendScorecard(pid, backendName, token);
+                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchScorecard (%s): %s', backendName, ME.message); end
             end
             if ~isempty(pid)
-                try results.calibration = svc.getPredictionCalibration(pid, header);
-                catch ME; Logger.debug('BenchmarkDashboardViewModel', 'fetchCalibration: %s', ME.message); end
+                try results.calibration = svc.getPredictionCalibration(pid, token);
+                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchCalibration: %s', ME.message); end
             end
             if ~isempty(backendName) && ~isempty(pid)
-                try results.regression = svc.getBenchmarkRegression(pid, backendName, header);
-                catch ME; Logger.debug('BenchmarkDashboardViewModel', 'fetchRegression: %s', ME.message); end
+                try results.regression = svc.getBenchmarkRegression(pid, backendName, token);
+                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchRegression (%s): %s', backendName, ME.message); end
             end
         end
     end
