@@ -118,8 +118,8 @@ classdef Theme
         end
 
         function name = loadPersisted()
-            % Returns the saved theme name, or 'light' if unset / invalid.
-            name = 'light';
+            % Returns the saved theme name, or 'dracula' if unset / invalid.
+            name = 'dracula';
             try
                 if ispref('QTAUWorkbench', 'theme')
                     candidate = getpref('QTAUWorkbench', 'theme');
@@ -220,8 +220,8 @@ classdef Theme
                 if nargin >= 2; storedName = newName; end
             end
             if isempty(storedPal)
-                storedPal  = Theme.loadPalette('light');
-                storedName = 'light';
+                storedName = Theme.loadPersisted();
+                storedPal  = Theme.loadPalette(storedName);
             end
             pal  = storedPal;
             name = storedName;
