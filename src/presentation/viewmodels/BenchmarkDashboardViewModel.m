@@ -15,6 +15,14 @@ classdef BenchmarkDashboardViewModel < handle
             obj.App = app;
         end
 
+        % ── Entry hook (called on screen activation) ─────────────────────
+        function onEnter(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            obj.loadBackends();
+            obj.onRefreshAll();
+        end
+
         % ── Refresh All ──────────────────────────────────────────────────
         function onRefreshAll(obj)
             app = obj.App;
@@ -22,6 +30,18 @@ classdef BenchmarkDashboardViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_login_required', 'Please login first.'), 'Auth Required');
                 return;
             end
+
+            % Ensure the backend dropdown is populated before a refresh —
+            % protects the Refresh All button when the user skips onEnter.
+            try
+                items = app.BenchmarkBackendDropdown.Items;
+                if isempty(items) || (numel(items) == 1 && strcmp(items{1}, '(none)'))
+                    obj.loadBackends();
+                end
+            catch ME
+                Logger.debug('BenchmarkDashboardViewModel', 'dropdown guard: %s', ME.message);
+            end
+
             app.showLoading();
 
             % Capture parameters on UI thread before dispatching
@@ -38,6 +58,103 @@ classdef BenchmarkDashboardViewModel < handle
                 @() BenchmarkDashboardViewModel.fetchAllData(svc, backendName, pid, header), ...
                 @(results) obj.applyAllData(app, backendName, results), ...
                 @(ME)      obj.onRefreshError(app, ME));
+        end
+
+        % ── Backend dropdown population ──────────────────────────────────
+        function loadBackends(obj)
+            % Populate BenchmarkBackendDropdown via BackendService with a
+            % 3-tier fallback, mirroring BenchmarkViewModel.loadBackends:
+            %   1. list scoped to the currently-selected circuit
+            %   2. list for the first circuit in the project
+            %   3. basic list without circuit filter
+            app = obj.App;
+            token = app.State.authToken;
+
+            cid = '';
+            if app.State.hasCircuit(); cid = char(app.State.selectedCircuitId); end
+            if ~isempty(cid) && strlength(cid) > 0
+                try
+                    data = app.BackendSvc.listBackends(token, cid);
+                    if obj.hasBackendData(data)
+                        obj.populateBackendDropdown(data);
+                        return;
+                    end
+                catch ME
+                    Logger.debug('BenchmarkDashboardViewModel', 'loadBackends circuit: %s', ME.message);
+                end
+            end
+
+            try
+                circList = app.CircuitSvc.listCircuits(token);
+                items = JsonHelper.extractList(circList, 'circuits');
+                if ~isempty(items)
+                    fallbackCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
+                    if ~isempty(fallbackCid) && strlength(fallbackCid) > 0
+                        data = app.BackendSvc.listBackends(token, fallbackCid);
+                        if obj.hasBackendData(data)
+                            obj.populateBackendDropdown(data);
+                            return;
+                        end
+                    end
+                end
+            catch ME
+                Logger.debug('BenchmarkDashboardViewModel', 'loadBackends fallback circuit: %s', ME.message);
+            end
+
+            try
+                data = app.BackendSvc.listBackends(token, '');
+                if obj.hasBackendData(data)
+                    obj.populateBackendDropdown(data);
+                    return;
+                end
+            catch ME
+                Logger.debug('BenchmarkDashboardViewModel', 'loadBackends basic list: %s', ME.message);
+            end
+
+            app.BenchmarkBackendDropdown.Items     = {'(no backends)'};
+            app.BenchmarkBackendDropdown.ItemsData = {''};
+            app.BenchmarkBackendDropdown.Value     = '';
+            app.logEvent('WARN', 'No backends found for benchmark dashboard dropdown');
+        end
+
+        function tf = hasBackendData(~, data)
+            tf = false;
+            if isstruct(data) && isfield(data, 'backends')
+                tf = ~isempty(data.backends);
+            end
+        end
+
+        function populateBackendDropdown(obj, data)
+            app = obj.App;
+            items = JsonHelper.extractList(data, 'backends');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            names = cell(1, n);
+            for i = 1:n
+                names{i} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+            end
+            app.BenchmarkBackendDropdown.Items     = names;
+            app.BenchmarkBackendDropdown.ItemsData = names;
+
+            if strlength(app.State.selectedBackend) > 0
+                match = find(strcmp(names, char(app.State.selectedBackend)), 1);
+                if ~isempty(match)
+                    app.BenchmarkBackendDropdown.Value = names{match};
+                end
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d backends into benchmark dashboard dropdown', n));
+        end
+
+        % ── Backend dropdown change ──────────────────────────────────────
+        function onBackendChanged(obj, backendName)
+            app = obj.App;
+            bn = char(backendName);
+            if isempty(bn); return; end
+            % Persist selection so other screens (Benchmark, Backends) pick
+            % up the same choice via AppState.selectedBackend.
+            app.State.selectedBackend = string(bn);
+            app.logEvent('BENCH', sprintf('Backend changed → %s', bn));
+            obj.onRefreshAll();
         end
 
         % ── Export Data (placeholder) ────────────────────────────────────
@@ -78,7 +195,16 @@ classdef BenchmarkDashboardViewModel < handle
 
         % ── System Metrics ───────────────────────────────────────────────
         function applySystemMetrics(~, app, backendName, data)
-            if isempty(data); return; end
+            if isempty(data)
+                % Reset KPI cards when no backend selected so stale values
+                % from a previous backend don't linger.
+                if ~isempty(app.BenchmarkKpiLabels)
+                    for k = 1:numel(app.BenchmarkKpiLabels)
+                        app.BenchmarkKpiLabels{k}.Text = '--';
+                    end
+                end
+                return;
+            end
             try
                 qv    = JsonHelper.pick(data, 'quantum_volume', '--');
                 clops = JsonHelper.pick(data, 'clops', '--');
@@ -112,21 +238,20 @@ classdef BenchmarkDashboardViewModel < handle
         end
 
         % ── Volumetric Heatmap ───────────────────────────────────────────
-        function applyVolumetric(~, app, data)
+        function applyVolumetric(obj, app, data)
             if isempty(data); return; end
             try
                 points = JsonHelper.pick(data, 'data_points', {});
                 ax = app.VolumetricAxes;
                 cla(ax);
-                if isempty(points)
-                    text(ax, 0.5, 0.5, 'No data yet', ...
-                        'HorizontalAlignment', 'center', 'FontSize', 14, ...
-                        'Units', 'normalized');
+                if obj.isEmptyList(points)
+                    obj.showEmptyAxesMessage(ax, ...
+                        'No volumetric data for this project yet.', ...
+                        'Submit and complete benchmark jobs to populate this map.');
                     return;
                 end
-                widths = cellfun(@(p) JsonHelper.pick(p, 'width', 1), points);
-                depths = cellfun(@(p) JsonHelper.pick(p, 'depth', 1), points);
-                fids   = cellfun(@(p) JsonHelper.pick(p, 'fidelity', 0), points);
+                [widths, depths, fids] = obj.extractFields(points, ...
+                    {'width','depth','fidelity'}, [1 1 0]);
                 scatter(ax, depths, widths, 50, fids, 'filled');
                 colormap(ax, parula);
                 colorbar(ax);
@@ -142,13 +267,20 @@ classdef BenchmarkDashboardViewModel < handle
 
         % ── Backend Scorecard (Radar Chart) ──────────────────────────────
         function applyScorecard(~, app, backendName, data)
-            if isempty(data); return; end
+            ax = app.ScorecardAxes;
+            if isempty(backendName) || isempty(data)
+                cla(ax);
+                ax.ThetaTick = [0 90 180 270];
+                ax.ThetaTickLabel = {'Capacity','Scalability','Accuracy','Runtime'};
+                ax.RLim = [0 10];
+                title(ax, 'Backend Scorecard');
+                return;
+            end
             try
                 cap = JsonHelper.pick(JsonHelper.pick(data, 'capacity', struct()), 'score', 5);
                 scl = JsonHelper.pick(JsonHelper.pick(data, 'scalability', struct()), 'score', 5);
                 acc = JsonHelper.pick(JsonHelper.pick(data, 'accuracy', struct()), 'score', 5);
                 rtm = JsonHelper.pick(JsonHelper.pick(data, 'runtime', struct()), 'score', 5);
-                ax = app.ScorecardAxes;
                 cla(ax);
                 angles = linspace(0, 2*pi, 5);
                 values = [cap scl acc rtm cap];
@@ -164,7 +296,7 @@ classdef BenchmarkDashboardViewModel < handle
         end
 
         % ── Prediction Calibration (Scatter) ─────────────────────────────
-        function applyCalibration(~, app, data)
+        function applyCalibration(obj, app, data)
             if isempty(data); return; end
             try
                 points = JsonHelper.pick(data, 'data_points', {});
@@ -172,14 +304,14 @@ classdef BenchmarkDashboardViewModel < handle
                 corr = JsonHelper.pick(data, 'correlation', 0);
                 ax = app.CalibrationAxes;
                 cla(ax);
-                if isempty(points)
-                    text(ax, 0.5, 0.5, 'No calibration data', ...
-                        'HorizontalAlignment', 'center', 'FontSize', 14, ...
-                        'Units', 'normalized');
+                if obj.isEmptyList(points)
+                    obj.showEmptyAxesMessage(ax, ...
+                        'No prediction calibration data yet.', ...
+                        'Run predictions and complete the corresponding jobs to populate this chart.');
                     return;
                 end
-                preds   = cellfun(@(p) JsonHelper.pick(p, 'predicted_fidelity', 0), points);
-                actuals = cellfun(@(p) JsonHelper.pick(p, 'actual_fidelity', 0), points);
+                [preds, actuals] = obj.extractFields(points, ...
+                    {'predicted_fidelity','actual_fidelity'}, [0 0]);
                 scatter(ax, preds, actuals, 36, Theme.COLOR_PRIMARY, 'filled');
                 hold(ax, 'on');
                 plot(ax, [0 1], [0 1], '--', 'Color', Theme.COLOR_PURPLE, 'LineWidth', 1.2);
@@ -195,19 +327,27 @@ classdef BenchmarkDashboardViewModel < handle
         end
 
         % ── Benchmark Regression (Time Series) ──────────────────────────
-        function applyRegression(~, app, backendName, data)
+        function applyRegression(obj, app, backendName, data)
+            ax = app.RegressionAxes;
+            if isempty(backendName)
+                cla(ax);
+                obj.showEmptyAxesMessage(ax, ...
+                    'Select a backend to see fidelity regression.', '');
+                title(ax, 'Fidelity over Time');
+                return;
+            end
             if isempty(data); return; end
             try
                 points = JsonHelper.pick(data, 'data_points', {});
-                ax = app.RegressionAxes;
                 cla(ax);
-                if isempty(points)
-                    text(ax, 0.5, 0.5, 'No regression data', ...
-                        'HorizontalAlignment', 'center', 'FontSize', 14, ...
-                        'Units', 'normalized');
+                if obj.isEmptyList(points)
+                    obj.showEmptyAxesMessage(ax, ...
+                        sprintf('No completed jobs yet on %s.', backendName), ...
+                        'Submit and complete benchmark circuits on this backend.');
+                    title(ax, ['Fidelity Trend: ' backendName]);
                     return;
                 end
-                fids = cellfun(@(p) JsonHelper.pick(p, 'fidelity', 0), points);
+                fids = obj.extractFields(points, {'fidelity'}, 0);
                 plot(ax, 1:numel(fids), fids, '-o', ...
                     'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.4, 'MarkerSize', 4);
                 title(ax, ['Fidelity Trend: ' backendName]);
@@ -217,6 +357,47 @@ classdef BenchmarkDashboardViewModel < handle
                 app.styleAxes(ax);
             catch ex
                 app.logEvent('WARN', ['Regression apply failed: ' ex.message]);
+            end
+        end
+
+        % ── Shared helpers ───────────────────────────────────────────────
+        function tf = isEmptyList(~, points)
+            tf = isempty(points) || (iscell(points) && isempty(points)) ...
+                || (isstruct(points) && numel(points) == 0);
+        end
+
+        function showEmptyAxesMessage(~, ax, msg, hint)
+            cla(ax);
+            if strlength(string(hint)) > 0
+                text(ax, 0.5, 0.55, msg, ...
+                    'HorizontalAlignment', 'center', 'FontSize', 13, ...
+                    'FontWeight', 'bold', 'Color', Theme.COLOR_MUTED, ...
+                    'Units', 'normalized');
+                text(ax, 0.5, 0.42, hint, ...
+                    'HorizontalAlignment', 'center', 'FontSize', 11, ...
+                    'Color', Theme.COLOR_MUTED, 'Units', 'normalized');
+            else
+                text(ax, 0.5, 0.5, msg, ...
+                    'HorizontalAlignment', 'center', 'FontSize', 13, ...
+                    'FontWeight', 'bold', 'Color', Theme.COLOR_MUTED, ...
+                    'Units', 'normalized');
+            end
+        end
+
+        function varargout = extractFields(~, points, fields, defaults)
+            % Pull a parallel numeric vector per requested field from either
+            % a struct array or cell array of structs.
+            n = numel(points);
+            varargout = cell(1, numel(fields));
+            for k = 1:numel(fields)
+                out = zeros(1, n);
+                for i = 1:n
+                    if iscell(points); p = points{i}; else; p = points(i); end
+                    v = JsonHelper.pick(p, fields{k}, defaults(k));
+                    if isnumeric(v) && isscalar(v); out(i) = v;
+                    else; out(i) = defaults(k); end
+                end
+                varargout{k} = out;
             end
         end
     end

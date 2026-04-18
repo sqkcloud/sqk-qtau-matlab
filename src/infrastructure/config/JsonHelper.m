@@ -28,20 +28,52 @@ classdef JsonHelper
         end
 
         % pick  Walk a dotted-path list and return the first non-empty value
-        %       found in data.  Supports fallback chains:
-        %         JsonHelper.pick(d, {'access_token', 'data.access_token'})
-        function value = pick(data, paths)
+        %       found in data.
+        %
+        %   paths: char, scalar string, or cell array / string array of dotted
+        %          paths.  The first path yielding a non-empty value wins.
+        %   default (optional): returned when no path yields a value.  When
+        %          provided, a FOUND value is returned in its raw JSON form
+        %          (numeric, logical, struct, cell, string) — callers that
+        %          need numeric math on the result pass a default.  When
+        %          omitted, the returned value is coerced to string form
+        %          (back-compat with the original two-arg signature).
+        %
+        %   Examples:
+        %     JsonHelper.pick(d, {'access_token','data.access_token'})  % string
+        %     JsonHelper.pick(d, 'quantum_volume', '--')                % raw
+        %     JsonHelper.pick(d, {'fidelity','f'}, 0)                   % numeric
+        function value = pick(data, paths, default)
+            % Normalize paths to a cell array of char vectors.
+            if ischar(paths)
+                paths = {paths};
+            elseif isstring(paths)
+                paths = cellstr(paths);
+            end
+
+            data = JsonHelper.decodeIfJson(data);
+
+            if nargin >= 3
+                % Raw-value mode with default fallback.
+                for i = 1:numel(paths)
+                    [found, raw] = JsonHelper.pickRawOne(data, string(paths{i}));
+                    if found; value = raw; return; end
+                end
+                value = default;
+                return;
+            end
+
+            % Back-compat string-form mode: return first non-blank stringified value.
             value = "";
-            data  = JsonHelper.decodeIfJson(data);
             for i = 1:numel(paths)
-                value = JsonHelper.pickOne(data, string(paths{i}));
-                if strlength(strtrim(string(value))) > 0
-                    return;
+                v = JsonHelper.pickOne(data, string(paths{i}));
+                if strlength(strtrim(string(v))) > 0
+                    value = v; return;
                 end
             end
         end
 
-        % pickOne  Navigate a single dotted path within a struct hierarchy.
+        % pickOne  Navigate a single dotted path, return toStr result.
         function value = pickOne(data, path)
             value  = "";
             parts  = split(string(path), '.');
@@ -55,6 +87,27 @@ classdef JsonHelper
                 end
             end
             value = JsonHelper.toStr(cursor);
+        end
+
+        % pickRawOne  Navigate a single dotted path, return (found, raw).
+        %   found=false when the path does not resolve, or when it resolves
+        %   to an empty value (JSON null decodes to []).
+        function [found, value] = pickRawOne(data, path)
+            found = false;
+            value = [];
+            parts  = split(string(path), '.');
+            cursor = data;
+            for k = 1:numel(parts)
+                key = char(parts(k));
+                if isstruct(cursor) && isfield(cursor, key)
+                    cursor = cursor.(key);
+                else
+                    return;
+                end
+            end
+            if isempty(cursor); return; end
+            found = true;
+            value = cursor;
         end
 
         % ── DTO row mappers ───────────────────────────────────────────────────

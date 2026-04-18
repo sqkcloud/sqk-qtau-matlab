@@ -114,6 +114,11 @@ classdef NavigationManager
                             && isempty(app.CompareAxes.Children)
                         app.DetailedAnalysisVm.plotAllDemos();
                     end
+                case 'Benchmark Dashboard'
+                    if ~isempty(app.BenchmarkDashboardVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.BenchmarkDashboardVm, ttl)
+                        app.BenchmarkDashboardVm.onEnter();
+                    end
                 case 'Settings'
                     if ~isempty(app.SettingsVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.SettingsVm, ttl)
