@@ -11,18 +11,13 @@ function BenchmarkScreen(app)
     Logger.info('BenchmarkScreen', 'Building Benchmark tab UI');
     t = app.createSectionPage('Benchmark');
 
-    g = uigridlayout(t, [3 3]);
+    g = uigridlayout(t, [3 2]);
     g.RowHeight     = {330, '1x', 72};
-    g.ColumnWidth   = {'1.05x', 6, '1x'};
+    g.ColumnWidth   = {'1.05x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
-
-    % ── Column divider (row 1) ────────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 1; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
 
     % ── Configuration form (left) ─────────────────────────────────────────────
     config = uipanel(g, 'Title', Labels.get('benchmark_panel_config'), ...
@@ -127,7 +122,7 @@ function BenchmarkScreen(app)
     % ── Execution Plan (right) ────────────────────────────────────────────────
     estimate = uipanel(g, 'Title', Labels.get('benchmark_panel_plan'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    estimate.Layout.Row = 1; estimate.Layout.Column = 3; estimate.BackgroundColor = Theme.COLOR_CARD;
+    estimate.Layout.Row = 1; estimate.Layout.Column = 2; estimate.BackgroundColor = Theme.COLOR_CARD;
 
     eg = uigridlayout(estimate, [1 1]);
     eg.Padding = [16 12 16 12]; eg.BackgroundColor = Theme.COLOR_CARD;
@@ -137,7 +132,7 @@ function BenchmarkScreen(app)
     % ── Strategy comparison table (full width) ────────────────────────────────
     comparePanel = uipanel(g, 'Title', Labels.get('benchmark_panel_compare'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = [1 3]; comparePanel.BackgroundColor = Theme.COLOR_CARD;
+    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = [1 2]; comparePanel.BackgroundColor = Theme.COLOR_CARD;
     comparePanel.Scrollable = 'on';
 
     comp = uigridlayout(comparePanel, [1 1]);
@@ -151,7 +146,7 @@ function BenchmarkScreen(app)
     % ── Action bar ────────────────────────────────────────────────────────────
     nextPanel = uipanel(g, 'Title', Labels.get('benchmark_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 3];
+    nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 2];
     nextPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     ng = uigridlayout(nextPanel, [1 3]);

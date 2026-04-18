@@ -12,17 +12,17 @@ function AnalysisScreen(app)
     Logger.info('AnalysisScreen', 'Building Analysis tab UI');
     t = app.createSectionPage('Analysis');
 
-    g = uigridlayout(t, [4 3]);
+    g = uigridlayout(t, [4 2]);
     g.RowHeight     = {34, '1x', '1x', 72};
-    g.ColumnWidth   = {'1x', 6, '1.15x'};
+    g.ColumnWidth   = {'1x', '1.15x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Circuit selector + Analyze button ────────────────────────────────────
     topBar = uigridlayout(g, [1 3]);
-    topBar.Layout.Row = 1; topBar.Layout.Column = [1 3];
+    topBar.Layout.Row = 1; topBar.Layout.Column = [1 2];
     topBar.ColumnWidth = {90, '1x', 110};
     topBar.Padding = [0 0 0 0]; topBar.ColumnSpacing = 8;
     topBar.BackgroundColor = Theme.COLOR_BG;
@@ -43,11 +43,6 @@ function AnalysisScreen(app)
     app.styleBtn(app.AnalyzeButton, 'primary');
     app.AnalyzeButton.FontSize = 14;
     app.AnalyzeButton.Tooltip = 'POST /api/circuits/{id}/analyze + match-benchmarks';
-
-    % ── Column divider ────────────────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
 
     % ── Extracted Features (left) ─────────────────────────────────────────────
     p1 = uipanel(g, 'Title', Labels.get('analysis_panel_features'), ...
@@ -70,7 +65,7 @@ function AnalysisScreen(app)
     % ── QASMBench Similarity (right) ─────────────────────────────────────────
     p2 = uipanel(g, 'Title', Labels.get('analysis_panel_similarity'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    p2.Layout.Row = 2; p2.Layout.Column = 3; p2.BackgroundColor = Theme.COLOR_CARD;
+    p2.Layout.Row = 2; p2.Layout.Column = 2; p2.BackgroundColor = Theme.COLOR_CARD;
 
     g2 = uigridlayout(p2, [1 1]);
     g2.RowHeight = {'1x'}; g2.Padding = [12 10 12 10]; g2.BackgroundColor = Theme.COLOR_CARD;
@@ -86,7 +81,7 @@ function AnalysisScreen(app)
     qvPanel = uipanel(g, 'Title', Labels.get('analysis_panel_qv', ...
         'Quantum Volume — Circuit Depth vs Width'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    qvPanel.Layout.Row = 3; qvPanel.Layout.Column = [1 3];
+    qvPanel.Layout.Row = 3; qvPanel.Layout.Column = [1 2];
     qvPanel.BackgroundColor = Theme.COLOR_CARD;
 
     qvGrid = uigridlayout(qvPanel, [1 2]);
@@ -112,7 +107,7 @@ function AnalysisScreen(app)
     % ── Action bar ────────────────────────────────────────────────────────────
     exportPanel = uipanel(g, 'Title', Labels.get('analysis_panel_decision'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    exportPanel.Layout.Row = 4; exportPanel.Layout.Column = [1 3];
+    exportPanel.Layout.Row = 4; exportPanel.Layout.Column = [1 2];
     exportPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     eg = uigridlayout(exportPanel, [1 4]);

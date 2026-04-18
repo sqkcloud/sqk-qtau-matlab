@@ -10,17 +10,17 @@ function JobsScreen(app)
     Logger.info('JobsScreen', 'Building Jobs tab UI');
     t = app.createSectionPage('Jobs');
 
-    g = uigridlayout(t, [3 3]);
+    g = uigridlayout(t, [3 2]);
     g.RowHeight     = {34, '1x', 190};
-    g.ColumnWidth   = {'1.2x', 6, '1x'};
+    g.ColumnWidth   = {'1.2x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────────
     top = uigridlayout(g, [1 4]);
-    top.Layout.Row = 1; top.Layout.Column = [1 3];
+    top.Layout.Row = 1; top.Layout.Column = [1 2];
     top.ColumnWidth = {'1x', 110, 110, 100};
     top.Padding = [0 0 0 0]; top.BackgroundColor = Theme.COLOR_BG;
 
@@ -45,11 +45,6 @@ function JobsScreen(app)
     app.PauseJobButton.FontSize = 14;
     app.PauseJobButton.Tooltip = 'POST /api/jobs/{id}/pause';
 
-    % ── Column divider ────────────────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
-
     % ── Job Monitoring table (left) ───────────────────────────────────────────
     jobPanel = uipanel(g, 'Title', Labels.get('jobs_panel_monitoring'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
@@ -66,7 +61,7 @@ function JobsScreen(app)
     % ── Live Monitor Notes (right) ────────────────────────────────────────────
     trendPanel = uipanel(g, 'Title', Labels.get('jobs_panel_live_notes'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    trendPanel.Layout.Row = 2; trendPanel.Layout.Column = 3; trendPanel.BackgroundColor = Theme.COLOR_CARD;
+    trendPanel.Layout.Row = 2; trendPanel.Layout.Column = 2; trendPanel.BackgroundColor = Theme.COLOR_CARD;
 
     tg = uigridlayout(trendPanel, [1 1]);
     tg.Padding = [12 10 12 10]; tg.BackgroundColor = Theme.COLOR_CARD;
@@ -79,7 +74,7 @@ function JobsScreen(app)
     % ── Detailed Job Logs (full width, dark terminal) ─────────────────────────
     logPanel = uipanel(g, 'Title', Labels.get('jobs_panel_logs'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    logPanel.Layout.Row = 3; logPanel.Layout.Column = [1 3];
+    logPanel.Layout.Row = 3; logPanel.Layout.Column = [1 2];
     logPanel.BackgroundColor = Theme.CONSOLE_BG;
 
     lg = uigridlayout(logPanel, [1 1]);

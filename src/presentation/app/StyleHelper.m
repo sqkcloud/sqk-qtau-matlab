@@ -9,6 +9,8 @@ classdef StyleHelper
         function styleBtn(btn, variant)
             % Apply the active-palette style to any uibutton.
             %   variant: 'primary' | 'secondary' | 'success' | 'danger' | 'ghost'
+            %   All variants share the same FontColor and FontWeight —
+            %   only the BackgroundColor differentiates variants.
             btn.FontSize   = 14;
             btn.FontWeight = 'normal';
             btn.BackgroundColor = Theme.BTN_BG_DEFAULT;
@@ -16,22 +18,14 @@ classdef StyleHelper
             switch lower(char(variant))
                 case 'primary'
                     btn.BackgroundColor = Theme.COLOR_ACCENT_BG;
-                    btn.FontColor       = Theme.COLOR_PRIMARY;
-                    btn.FontWeight      = 'bold';
                 case 'secondary'
                     btn.BackgroundColor = Theme.BTN_BG_SECONDARY;
-                    btn.FontColor       = Theme.BTN_FG_SECONDARY;
                 case 'success'
                     btn.BackgroundColor = StyleHelper.tintBg(Theme.COLOR_SUCCESS, 0.85);
-                    btn.FontColor       = Theme.COLOR_SUCCESS;
-                    btn.FontWeight      = 'bold';
                 case 'danger'
                     btn.BackgroundColor = StyleHelper.tintBg(Theme.COLOR_DANGER, 0.85);
-                    btn.FontColor       = Theme.COLOR_DANGER;
-                    btn.FontWeight      = 'bold';
                 case 'ghost'
                     btn.BackgroundColor = Theme.BTN_BG_GHOST;
-                    btn.FontColor       = Theme.BTN_FG_GHOST;
             end
         end
 

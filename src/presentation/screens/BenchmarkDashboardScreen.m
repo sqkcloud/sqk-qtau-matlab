@@ -11,17 +11,17 @@ function BenchmarkDashboardScreen(app)
     Logger.info('BenchmarkDashboardScreen', 'Building Benchmark Dashboard tab UI');
     t = app.createSectionPage('Benchmark Dashboard');
 
-    g = uigridlayout(t, [4 3]);
+    g = uigridlayout(t, [4 2]);
     g.RowHeight     = {34, 120, '1.2x', '1x'};
-    g.ColumnWidth   = {'1x', 6, '1x'};
+    g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 0;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Row 1: Toolbar ───────────────────────────────────────────────────
     toolbar = uigridlayout(g, [1 4]);
-    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
+    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 2];
     toolbar.ColumnWidth = {90, '1x', 110, 110};
     toolbar.Padding = [0 0 0 0]; toolbar.ColumnSpacing = 8;
     toolbar.BackgroundColor = Theme.COLOR_BG;
@@ -53,7 +53,7 @@ function BenchmarkDashboardScreen(app)
     % ── Row 2: System Metrics KPI cards ──────────────────────────────────
     kpiPanel = uipanel(g, 'Title', 'System Benchmark Metrics', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    kpiPanel.Layout.Row = 2; kpiPanel.Layout.Column = [1 3];
+    kpiPanel.Layout.Row = 2; kpiPanel.Layout.Column = [1 2];
     kpiPanel.BackgroundColor = Theme.COLOR_CARD;
 
     kg = uigridlayout(kpiPanel, [1 5]);
@@ -96,12 +96,6 @@ function BenchmarkDashboardScreen(app)
         app.BenchmarkKpiLabels{i} = l2;
     end
 
-    % ── Column divider (rows 3-4) ────────────────────────────────────────
-    div = uipanel(g, 'Title', '');
-    div.Layout.Row = [3 4]; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
-
     % ── Row 3 Left: Volumetric Fidelity Heatmap ─────────────────────────
     volPanel = uipanel(g, 'Title', 'Volumetric Fidelity Map', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
@@ -118,7 +112,7 @@ function BenchmarkDashboardScreen(app)
     % ── Row 3 Right: Backend Scorecard Radar Chart ───────────────────────
     radarPanel = uipanel(g, 'Title', 'Backend Scorecard', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    radarPanel.Layout.Row = 3; radarPanel.Layout.Column = 3;
+    radarPanel.Layout.Row = 3; radarPanel.Layout.Column = 2;
     radarPanel.BackgroundColor = Theme.COLOR_CARD;
     rpg = uigridlayout(radarPanel, [1 1]);
     rpg.Padding = [10 10 10 10]; rpg.BackgroundColor = Theme.COLOR_CARD;
@@ -144,7 +138,7 @@ function BenchmarkDashboardScreen(app)
     % ── Row 4 Right: Benchmark Regression time-series ────────────────────
     regPanel = uipanel(g, 'Title', 'Benchmark Regression', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    regPanel.Layout.Row = 4; regPanel.Layout.Column = 3;
+    regPanel.Layout.Row = 4; regPanel.Layout.Column = 2;
     regPanel.BackgroundColor = Theme.COLOR_CARD;
     rrpg = uigridlayout(regPanel, [1 1]);
     rrpg.Padding = [10 10 10 10]; rrpg.BackgroundColor = Theme.COLOR_CARD;

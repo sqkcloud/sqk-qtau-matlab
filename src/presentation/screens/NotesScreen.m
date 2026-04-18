@@ -3,24 +3,23 @@
 %   Layout:
 %     Row 1 (toolbar, 42 px)   — heading + Save Notes / Load Notes / Clear buttons.
 %     Row 2 ('1x')             — Markdown editor (left) | Pre-submission runbook (right).
-%     Divider (col 2, 6 px)    — drag-to-resize.
 %
 %   All visible strings come from resources/labels.properties via Labels.
 function NotesScreen(app)
     Logger.info('NotesScreen', 'Building Notes tab UI');
     t = app.createSectionPage('Notes');
 
-    g = uigridlayout(t, [2 3]);
+    g = uigridlayout(t, [2 2]);
     g.RowHeight     = {34, '1x'};
-    g.ColumnWidth   = {'1.2x', 6, '1x'};
+    g.ColumnWidth   = {'1.2x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────────
     topRow = uigridlayout(g, [1 4]);
-    topRow.Layout.Row = 1; topRow.Layout.Column = [1 3];
+    topRow.Layout.Row = 1; topRow.Layout.Column = [1 2];
     topRow.ColumnWidth = {'1x', 90, 100, 80};
     topRow.Padding = [0 0 0 0];
     topRow.BackgroundColor = Theme.COLOR_BG;
@@ -49,11 +48,6 @@ function NotesScreen(app)
     app.ClearNotesButton.FontSize = 14;
     app.styleBtn(app.ClearNotesButton, 'ghost');
 
-    % ── Column divider ────────────────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
-
     % ── Markdown notes editor (left) ─────────────────────────────────────────
     editorPanel = uipanel(g, 'Title', Labels.get('notes_panel_editor'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
@@ -78,7 +72,7 @@ function NotesScreen(app)
     % ── Pre-submission Runbook (right) ────────────────────────────────────────
     checkPanel = uipanel(g, 'Title', Labels.get('notes_panel_runbook'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    checkPanel.Layout.Row = 2; checkPanel.Layout.Column = 3; checkPanel.BackgroundColor = Theme.COLOR_CARD;
+    checkPanel.Layout.Row = 2; checkPanel.Layout.Column = 2; checkPanel.BackgroundColor = Theme.COLOR_CARD;
 
     cpg = uigridlayout(checkPanel, [2 1]);
     cpg.RowHeight = {'1x', 60};

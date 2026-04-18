@@ -44,8 +44,6 @@ classdef QTAUWorkbenchApp < handle
         ContentContainer
         SectionTitleLabel
         SectionSubtitleLabel
-        DragState = struct('active', false, 'grid', [], 'startX', 0, 'col1W', 0, 'col3W', 0)
-        ColumnDividers = {}
 
         EventLog  = {}
         EventLogArea
@@ -731,27 +729,6 @@ classdef QTAUWorkbenchApp < handle
             end
         end
 
-        % -- Column divider registration ---------------------------------------
-        function attachColumnDivider(app, divPanel, g)
-            comps = {divPanel};
-            try
-                for ch = divPanel.Children(:)'
-                    comps{end+1} = ch; %#ok
-                    try
-                        for gc = ch.Children(:)'
-                            comps{end+1} = gc; %#ok
-                        end
-                    catch ME; Logger.debug('QTAUWorkbenchApp', 'divider grandchild traversal: %s', ME.message); end
-                end
-            catch ME; Logger.debug('QTAUWorkbenchApp', 'divider child traversal: %s', ME.message); end
-            app.ColumnDividers{end+1} = struct('comps', {comps}, 'grid', g);
-            divPanel.Tooltip = 'Drag left/right to resize panels';
-            cb = @(~,~)app.onDividerDown(g);
-            for j = 1:numel(comps)
-                try; comps{j}.ButtonDownFcn = cb; catch ME; Logger.debug('QTAUWorkbenchApp', 'divider ButtonDownFcn assignment: %s', ME.message); end
-            end
-        end
-
         % -- Header user menu --------------------------------------------------
         function toggleHeaderUserMenu(app)
             if app.HeaderUserMenuPanel.Visible == "on"
@@ -774,60 +751,6 @@ classdef QTAUWorkbenchApp < handle
             end
         end
 
-        % -- Drag / resize callbacks -------------------------------------------
-        function onFigMouseDown(app)
-            if app.DragState.active; return; end
-            try
-                clicked = app.UIFigure.CurrentObject;
-                if isempty(clicked); return; end
-                for k = 1:numel(app.ColumnDividers)
-                    entry = app.ColumnDividers{k};
-                    for j = 1:numel(entry.comps)
-                        try
-                            if isvalid(entry.comps{j}) && isequal(clicked, entry.comps{j})
-                                app.onDividerDown(entry.grid); return;
-                            end
-                        catch ME; Logger.debug('QTAUWorkbenchApp', 'divider component match: %s', ME.message); end
-                    end
-                end
-            catch ME; Logger.debug('QTAUWorkbenchApp', 'onFigMouseDown: %s', ME.message); end
-        end
-
-        function onDividerDown(app, g)
-            try
-                cw = g.ColumnWidth;
-                try; availW = max(300, app.ContentShell.Position(3) - 70); catch; availW = 900; end
-                if isnumeric(cw{1})
-                    w1 = cw{1}; w3 = cw{3};
-                else
-                    n1 = str2double(strtrim(strrep(char(cw{1}), 'x', '')));
-                    n3 = str2double(strtrim(strrep(char(cw{3}), 'x', '')));
-                    if isnan(n1); n1 = 1; end; if isnan(n3); n3 = 1; end
-                    w1 = availW * n1 / (n1 + n3);
-                    w3 = availW * n3 / (n1 + n3);
-                end
-                app.DragState.active = true; app.DragState.grid = g;
-                app.DragState.startX = app.UIFigure.CurrentPoint(1);
-                app.DragState.col1W  = w1; app.DragState.col3W = w3;
-                app.UIFigure.Pointer = 'lrdrag';
-            catch; app.DragState.active = false; end
-        end
-
-        function onFigMouseMove(app)
-            if ~app.DragState.active; return; end
-            try
-                dx = app.UIFigure.CurrentPoint(1) - app.DragState.startX;
-                app.DragState.grid.ColumnWidth = {max(120, app.DragState.col1W + dx), 6, ...
-                                                   max(120, app.DragState.col3W - dx)};
-            catch; app.DragState.active = false; app.UIFigure.Pointer = 'arrow'; end
-        end
-
-        function onFigMouseUp(app)
-            if app.DragState.active
-                app.DragState.active = false;
-                app.UIFigure.Pointer = 'arrow';
-            end
-        end
     end
 
     % ── Private: UI construction (delegates to LayoutBuilder) ─────────────────
@@ -843,9 +766,6 @@ classdef QTAUWorkbenchApp < handle
             Theme.applyFigureMode(app.UIFigure, Theme.activeName());
             app.UIFigure.AutoResizeChildren    = 'off';
             app.UIFigure.SizeChangedFcn        = @(~,~)app.onResizeUI();
-            app.UIFigure.WindowButtonDownFcn   = @(~,~)app.onFigMouseDown();
-            app.UIFigure.WindowButtonMotionFcn = @(~,~)app.onFigMouseMove();
-            app.UIFigure.WindowButtonUpFcn     = @(~,~)app.onFigMouseUp();
 
             app.RootGrid = uigridlayout(app.UIFigure, [2 1]);
             app.RootGrid.RowHeight   = {52, '1x'};

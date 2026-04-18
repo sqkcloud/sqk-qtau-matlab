@@ -11,46 +11,46 @@ function QecSimulationScreen(app)
     Logger.info('QecSimulationScreen', 'Building QEC Simulation tab UI');
     t = app.createSectionPage('QEC Simulation');
 
-    g = uigridlayout(t, [4 3]);
+    g = uigridlayout(t, [4 2]);
     g.RowHeight     = {34, 260, '1.4x', '0.8x'};
-    g.ColumnWidth   = {'1x', 6, '1x'};
+    g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────
     toolbar = uigridlayout(g, [1 2]);
-    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
+    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 2];
     toolbar.ColumnWidth = {'1x', 180};
     toolbar.Padding = [0 0 0 0];
     toolbar.BackgroundColor = Theme.COLOR_BG;
 
     leftBtns = uigridlayout(toolbar, [1 4]);
     leftBtns.Layout.Row = 1; leftBtns.Layout.Column = 1;
-    leftBtns.ColumnWidth = {130, 140, 130, 70};
+    leftBtns.ColumnWidth = {130, 165, 130, 70};
     leftBtns.Padding = [0 0 0 0]; leftBtns.ColumnSpacing = 8;
     leftBtns.BackgroundColor = Theme.COLOR_BG;
 
-    app.QecRunButton = uibutton(leftBtns, 'Text', Labels.get('qec_sim_btn_run', 'Run Simulation'), ...
+    app.QecRunButton = uibutton(leftBtns, 'Text', [char(9883) ' ' Labels.get('qec_sim_btn_run', 'Run Simulation')], ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onRunSimulation());
     app.QecRunButton.Layout.Row = 1; app.QecRunButton.Layout.Column = 1;
     app.styleBtn(app.QecRunButton, 'primary');
     app.QecRunButton.FontSize = 14;
 
-    app.QecSweepButton = uibutton(leftBtns, 'Text', Labels.get('qec_sim_btn_sweep', 'Sweep Error Rates'), ...
+    app.QecSweepButton = uibutton(leftBtns, 'Text', [char(8596) ' ' Labels.get('qec_sim_btn_sweep', 'Sweep Error Rates')], ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onSweepErrorRates());
     app.QecSweepButton.Layout.Row = 1; app.QecSweepButton.Layout.Column = 2;
     app.styleBtn(app.QecSweepButton, 'secondary');
     app.QecSweepButton.FontSize = 14;
 
-    app.QecCompareButton = uibutton(leftBtns, 'Text', Labels.get('qec_sim_btn_compare', 'Compare Codes'), ...
+    app.QecCompareButton = uibutton(leftBtns, 'Text', [char(8646) ' ' Labels.get('qec_sim_btn_compare', 'Compare Codes')], ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onCompareCodes());
     app.QecCompareButton.Layout.Row = 1; app.QecCompareButton.Layout.Column = 3;
     app.styleBtn(app.QecCompareButton, 'secondary');
     app.QecCompareButton.FontSize = 14;
 
-    app.QecClearButton = uibutton(leftBtns, 'Text', Labels.get('qec_sim_btn_clear', 'Clear'), ...
+    app.QecClearButton = uibutton(leftBtns, 'Text', [char(10005) ' ' Labels.get('qec_sim_btn_clear', 'Clear')], ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onClear());
     app.QecClearButton.Layout.Row = 1; app.QecClearButton.Layout.Column = 4;
     app.styleBtn(app.QecClearButton, 'ghost');
@@ -60,12 +60,6 @@ function QecSimulationScreen(app)
         'ButtonPushedFcn', @(~,~)app.onSelectSection('QEC Visualization'));
     nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 2;
     app.styleBtn(nextBtn, 'primary');
-
-    % ── Column divider (rows 2-4) ────────────────────────────────────────
-    div = uipanel(g, 'Title', '');
-    div.Layout.Row = [2 4]; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
 
     % ── Code Configuration Panel (left, row 2) ──────────────────────────
     codePanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_code', 'Code Configuration'), ...
@@ -125,7 +119,7 @@ function QecSimulationScreen(app)
     % ── Noise Configuration Panel (right, row 2) ─────────────────────────
     noisePanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_noise', 'Noise Configuration'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    noisePanel.Layout.Row = 2; noisePanel.Layout.Column = 3;
+    noisePanel.Layout.Row = 2; noisePanel.Layout.Column = 2;
     noisePanel.BackgroundColor = Theme.COLOR_CARD;
     noisePanel.FontWeight = 'bold';
     npg = uigridlayout(noisePanel, [4 2]);
@@ -190,7 +184,7 @@ function QecSimulationScreen(app)
     % ── Syndrome Distribution chart (right, row 3) ───────────────────────
     synPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_syndrome', 'Syndrome Distribution'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    synPanel.Layout.Row = 3; synPanel.Layout.Column = 3;
+    synPanel.Layout.Row = 3; synPanel.Layout.Column = 2;
     synPanel.BackgroundColor = Theme.COLOR_CARD;
     spg = uigridlayout(synPanel, [1 1]);
     spg.Padding = [10 10 10 10]; spg.BackgroundColor = Theme.COLOR_CARD;
@@ -219,7 +213,7 @@ function QecSimulationScreen(app)
     % ── Results Table (right, row 4) ──────────────────────────────────────
     resultsPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_results', 'Simulation Results'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    resultsPanel.Layout.Row = 4; resultsPanel.Layout.Column = 3;
+    resultsPanel.Layout.Row = 4; resultsPanel.Layout.Column = 2;
     resultsPanel.BackgroundColor = Theme.COLOR_CARD;
     rpg = uigridlayout(resultsPanel, [1 1]);
     rpg.Padding = [10 10 10 10]; rpg.BackgroundColor = Theme.COLOR_CARD;

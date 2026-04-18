@@ -14,17 +14,17 @@ function DashboardScreen(app)
     Logger.info('DashboardScreen', 'Building Dashboard tab UI');
     t = app.createSectionPage('Dashboard');
 
-    g = uigridlayout(t, [4 3]);
+    g = uigridlayout(t, [4 2]);
     g.RowHeight     = {Theme.BTN_ROW_HEIGHT, Theme.ACTION_BAR_HEIGHT, '1x', '1x'};
-    g.ColumnWidth   = {'1.4x', Theme.DIVIDER_WIDTH, '1x'};
+    g.ColumnWidth   = {'1.4x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────────
     toolbar = uigridlayout(g, [1 3]);
-    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
+    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 2];
     toolbar.ColumnWidth = {'1x', Theme.BTN_WIDTH, 100};
     toolbar.Padding = [0 0 0 0];
     toolbar.BackgroundColor = Theme.COLOR_BG;
@@ -48,7 +48,7 @@ function DashboardScreen(app)
 
     % ── KPI card bar ──────────────────────────────────────────────────────────
     kpiBar = uipanel(g, 'Title', '');
-    kpiBar.Layout.Row = 2; kpiBar.Layout.Column = [1 3];
+    kpiBar.Layout.Row = 2; kpiBar.Layout.Column = [1 2];
     kpiBar.BackgroundColor = Theme.COLOR_BG;
     kpiBar.BorderType = 'none';
 
@@ -89,12 +89,6 @@ function DashboardScreen(app)
         app.DashKpiLabels{i} = l2;
     end
 
-    % ── Column divider (spans rows 3-4) ──────────────────────────────────────
-    div = uipanel(g, 'Title', '');
-    div.Layout.Row = [3 4]; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
-
     % ── Executive Summary (left, row 3) ──────────────────────────────────────
     summaryPanel = uipanel(g, 'Title', Labels.get('dashboard_panel_executive_summary'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
@@ -123,7 +117,7 @@ function DashboardScreen(app)
     % Populated from DashboardViewModel via JsonTreeView.setData(...).
     rawPanel = uipanel(g, 'Title', Labels.get('dashboard_panel_status_raw'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    rawPanel.Layout.Row = 3; rawPanel.Layout.Column = 3; rawPanel.BackgroundColor = Theme.COLOR_CARD;
+    rawPanel.Layout.Row = 3; rawPanel.Layout.Column = 2; rawPanel.BackgroundColor = Theme.COLOR_CARD;
     gp2 = uigridlayout(rawPanel, [1 1]); gp2.BackgroundColor = Theme.COLOR_CARD; gp2.Padding = [0 0 0 0];
     app.DashboardStatusArea = JsonTreeView.attach(gp2);
     JsonTreeView.setMessage(app.DashboardStatusArea, ...
@@ -132,7 +126,7 @@ function DashboardScreen(app)
     % ── Recent Activity (right, row 4) ───────────────────────────────────────
     activity = uipanel(g, 'Title', Labels.get('dashboard_panel_recent_activity'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    activity.Layout.Row = 4; activity.Layout.Column = 3; activity.BackgroundColor = Theme.COLOR_CARD;
+    activity.Layout.Row = 4; activity.Layout.Column = 2; activity.BackgroundColor = Theme.COLOR_CARD;
     ag = uigridlayout(activity, [2 1]); ag.RowHeight = {'1x', 30};
     ag.Padding = [14 12 14 12]; ag.RowSpacing = 6; ag.BackgroundColor = Theme.COLOR_CARD;
     app.DashActivityTable = uitable(ag);

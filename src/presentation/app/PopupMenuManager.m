@@ -32,7 +32,7 @@ classdef PopupMenuManager
                 'ButtonPushedFcn', @(~,~)app.WelcomeVm.onEditProject());
             app.ProjectsPopupEditBtn.Layout.Row = 1;
             app.ProjectsPopupEditBtn.BackgroundColor = Theme.COLOR_CARD;
-            app.ProjectsPopupEditBtn.FontColor = Theme.COLOR_HEADING;
+            app.ProjectsPopupEditBtn.FontColor = Theme.BTN_FG_DEFAULT;
 
             app.ProjectsPopupDeleteBtn = uibutton(pg, 'Text', ...
                 [' ' char(10005) '  ' Labels.get('project_ctx_delete', 'Delete')], ...
@@ -41,7 +41,7 @@ classdef PopupMenuManager
                 'ButtonPushedFcn', @(~,~)app.WelcomeVm.onDeleteProject());
             app.ProjectsPopupDeleteBtn.Layout.Row = 2;
             app.ProjectsPopupDeleteBtn.BackgroundColor = Theme.COLOR_CARD;
-            app.ProjectsPopupDeleteBtn.FontColor = Theme.COLOR_DANGER;
+            app.ProjectsPopupDeleteBtn.FontColor = Theme.BTN_FG_DEFAULT;
         end
 
         function showProjectPopup(app, x, y)
@@ -87,7 +87,7 @@ classdef PopupMenuManager
                 'ButtonPushedFcn', @(~,~)app.onCircuitsPopupAnalyze());
             analyzeBtn.Layout.Row = 1;
             analyzeBtn.BackgroundColor = Theme.COLOR_CARD;
-            analyzeBtn.FontColor = Theme.COLOR_PRIMARY;
+            analyzeBtn.FontColor = Theme.BTN_FG_DEFAULT;
 
             app.CircuitsPopupEditBtn = uibutton(pg, 'Text', ...
                 [' ' char(9999) '  ' Labels.get('circuit_ctx_edit', 'Edit')], ...
@@ -96,7 +96,7 @@ classdef PopupMenuManager
                 'ButtonPushedFcn', @(~,~)app.onCircuitsPopupEdit());
             app.CircuitsPopupEditBtn.Layout.Row = 2;
             app.CircuitsPopupEditBtn.BackgroundColor = Theme.COLOR_CARD;
-            app.CircuitsPopupEditBtn.FontColor = Theme.COLOR_HEADING;
+            app.CircuitsPopupEditBtn.FontColor = Theme.BTN_FG_DEFAULT;
 
             app.CircuitsPopupDeleteBtn = uibutton(pg, 'Text', ...
                 [' ' char(10005) '  ' Labels.get('circuit_ctx_delete', 'Delete')], ...
@@ -105,7 +105,7 @@ classdef PopupMenuManager
                 'ButtonPushedFcn', @(~,~)app.onCircuitsPopupDelete());
             app.CircuitsPopupDeleteBtn.Layout.Row = 3;
             app.CircuitsPopupDeleteBtn.BackgroundColor = Theme.COLOR_CARD;
-            app.CircuitsPopupDeleteBtn.FontColor = Theme.COLOR_DANGER;
+            app.CircuitsPopupDeleteBtn.FontColor = Theme.BTN_FG_DEFAULT;
         end
 
         function showCircuitsPopup(app, x, y)
@@ -149,21 +149,21 @@ classdef PopupMenuManager
                 'HorizontalAlignment', 'left', 'FontSize', 13, ...
                 'ButtonPushedFcn', @(~,~)app.BackendsVm.onCtxSetPrimary());
             b1.Layout.Row = 1;
-            b1.BackgroundColor = Theme.COLOR_CARD; b1.FontColor = Theme.COLOR_PRIMARY;
+            b1.BackgroundColor = Theme.COLOR_CARD; b1.FontColor = Theme.BTN_FG_DEFAULT;
 
             % Set as Backup (char(9744) — empty checkbox)
             b2 = uibutton(pg, 'Text', [' ' char(9744) '  Set as Backup'], ...
                 'HorizontalAlignment', 'left', 'FontSize', 13, ...
                 'ButtonPushedFcn', @(~,~)app.BackendsVm.onCtxSetBackup());
             b2.Layout.Row = 2;
-            b2.BackgroundColor = Theme.COLOR_CARD; b2.FontColor = Theme.COLOR_HEADING;
+            b2.BackgroundColor = Theme.COLOR_CARD; b2.FontColor = Theme.BTN_FG_DEFAULT;
 
             % View Details (char(8505) — info)
             b3 = uibutton(pg, 'Text', [' ' char(8505) '  View Details'], ...
                 'HorizontalAlignment', 'left', 'FontSize', 13, ...
                 'ButtonPushedFcn', @(~,~)app.BackendsVm.onCtxViewDetails());
             b3.Layout.Row = 3;
-            b3.BackgroundColor = Theme.COLOR_CARD; b3.FontColor = Theme.COLOR_HEADING;
+            b3.BackgroundColor = Theme.COLOR_CARD; b3.FontColor = Theme.BTN_FG_DEFAULT;
         end
 
         function showBackendsPopup(app, x, y)

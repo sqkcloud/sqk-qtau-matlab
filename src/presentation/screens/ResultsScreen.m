@@ -11,18 +11,18 @@ function ResultsScreen(app)
     Logger.info('ResultsScreen', 'Building Results tab UI');
     t = app.createSectionPage('Results');
 
-    g = uigridlayout(t, [3 3]);
+    g = uigridlayout(t, [3 2]);
     g.RowHeight     = {120, '1x', 72};
-    g.ColumnWidth   = {'1.15x', 6, '1x'};
+    g.ColumnWidth   = {'1.15x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Results KPI cards (full width, toolbar-style) ─────────────────────────
     hero = uipanel(g, 'Title', Labels.get('results_panel_hero'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    hero.Layout.Row = 1; hero.Layout.Column = [1 3]; hero.BackgroundColor = Theme.COLOR_CARD;
+    hero.Layout.Row = 1; hero.Layout.Column = [1 2]; hero.BackgroundColor = Theme.COLOR_CARD;
 
     hg = uigridlayout(hero, [2 1]);
     hg.RowHeight = {34, '1x'};
@@ -77,11 +77,6 @@ function ResultsScreen(app)
         l2.Layout.Row = 2; l2.Layout.Column = 1;
     end
 
-    % ── Column divider ────────────────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
-
     % ── Measured vs Predicted Summary (left) ──────────────────────────────────
     summaryPanel = uipanel(g, 'Title', Labels.get('results_panel_summary'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
@@ -102,7 +97,7 @@ function ResultsScreen(app)
     % ── Distribution Review (right) ───────────────────────────────────────────
     comparePanel = uipanel(g, 'Title', Labels.get('results_panel_dist'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 3; comparePanel.BackgroundColor = Theme.COLOR_CARD;
+    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 2; comparePanel.BackgroundColor = Theme.COLOR_CARD;
 
     cg = uigridlayout(comparePanel, [2 1]);
     cg.RowHeight = {'1x',100}; cg.Padding = [12 10 12 10]; cg.BackgroundColor = Theme.COLOR_CARD;
@@ -122,7 +117,7 @@ function ResultsScreen(app)
     % ── Action bar ────────────────────────────────────────────────────────────
     bottom = uipanel(g, 'Title', Labels.get('results_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    bottom.Layout.Row = 3; bottom.Layout.Column = [1 3];
+    bottom.Layout.Row = 3; bottom.Layout.Column = [1 2];
     bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     bg = uigridlayout(bottom, [1 3]);

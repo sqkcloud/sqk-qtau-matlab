@@ -19,7 +19,7 @@ function PredictionScreen(app)
     g.ColumnWidth   = {'1x', '1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 10;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Row 1: Toolbar ───────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ function PredictionScreen(app)
     tmp = uibutton(sg, 'Text', [char(9678) ' Benchmark'], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Benchmark'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'ghost');
-    tmp = uibutton(sg, 'Text', Labels.get('prediction_btn_save', 'Save Prediction'));
+    tmp = uibutton(sg, 'Text', [char(10004) ' ' Labels.get('prediction_btn_save', 'Save Prediction')]);
     tmp.Layout.Row = 1; tmp.Layout.Column = 5; app.styleBtn(tmp, 'secondary');
 
     Logger.info('PredictionScreen', 'Prediction tab UI built successfully');

@@ -10,18 +10,13 @@ function ReportsScreen(app)
     Logger.info('ReportsScreen', 'Building Reports tab UI');
     t = app.createSectionPage('Reports');
 
-    g = uigridlayout(t, [3 3]);
+    g = uigridlayout(t, [3 2]);
     g.RowHeight     = {'1x', 72, 72};
-    g.ColumnWidth   = {'1.05x', 6, '1x'};
+    g.ColumnWidth   = {'1.05x', '1x'};
     g.Padding       = [16 16 16 16];
-    g.RowSpacing    = 12;
-    g.ColumnSpacing = 4;
+    g.RowSpacing    = Theme.GRID_ROW_SPACING;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
-
-    % ── Column divider (rows 1) ───────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 1; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
 
     % ── Report Generator (left) ───────────────────────────────────────────────
     genPanel = uipanel(g, 'Title', Labels.get('reports_panel_generator'), ...
@@ -69,7 +64,7 @@ function ReportsScreen(app)
     % ── Report Preview (right) ────────────────────────────────────────────────
     previewPanel = uipanel(g, 'Title', Labels.get('reports_panel_preview'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    previewPanel.Layout.Row = 1; previewPanel.Layout.Column = 3; previewPanel.BackgroundColor = Theme.COLOR_CARD;
+    previewPanel.Layout.Row = 1; previewPanel.Layout.Column = 2; previewPanel.BackgroundColor = Theme.COLOR_CARD;
 
     pvg = uigridlayout(previewPanel, [2 1]);
     pvg.RowHeight = {34,'1x'}; pvg.Padding = [12 10 12 10]; pvg.BackgroundColor = Theme.COLOR_CARD;
@@ -86,7 +81,7 @@ function ReportsScreen(app)
     % ── Distribution actions (full width) ────────────────────────────────────
     actionPanel = uipanel(g, 'Title', Labels.get('reports_panel_distribute'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    actionPanel.Layout.Row = 2; actionPanel.Layout.Column = [1 3]; actionPanel.BackgroundColor = Theme.COLOR_CARD;
+    actionPanel.Layout.Row = 2; actionPanel.Layout.Column = [1 2]; actionPanel.BackgroundColor = Theme.COLOR_CARD;
 
     ag = uigridlayout(actionPanel, [1 4]);
     ag.RowHeight = {34}; ag.ColumnWidth = {'1x', 110, 110, 100};
@@ -107,7 +102,7 @@ function ReportsScreen(app)
     % ── Workflow Complete action bar ───────────────────────────────────────────
     bottom = uipanel(g, 'Title', Labels.get('reports_panel_workflow'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    bottom.Layout.Row = 3; bottom.Layout.Column = [1 3];
+    bottom.Layout.Row = 3; bottom.Layout.Column = [1 2];
     bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     bg = uigridlayout(bottom, [1 3]);

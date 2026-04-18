@@ -10,17 +10,17 @@ function QecVisualizationScreen(app)
     Logger.info('QecVisualizationScreen', 'Building QEC Visualization tab UI');
     t = app.createSectionPage('QEC Visualization');
 
-    g = uigridlayout(t, [3 3]);
+    g = uigridlayout(t, [3 2]);
     g.RowHeight     = {34, '1.6x', '1x'};
-    g.ColumnWidth   = {'1x', 6, '1x'};
+    g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────
     toolbar = uigridlayout(g, [1 2]);
-    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
+    toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 2];
     toolbar.ColumnWidth = {'1x', 150};
     toolbar.Padding = [0 0 0 0];
     toolbar.BackgroundColor = Theme.COLOR_BG;
@@ -57,12 +57,6 @@ function QecVisualizationScreen(app)
     nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 2;
     app.styleBtn(nextBtn, 'primary');
 
-    % ── Column divider (rows 2-3) ────────────────────────────────────────
-    div = uipanel(g, 'Title', '');
-    div.Layout.Row = [2 3]; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
-
     % ── Bloch Sphere 3D (left, row 2) ────────────────────────────────────
     blochPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_bloch', 'Logical Qubit Bloch Sphere'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
@@ -77,7 +71,7 @@ function QecVisualizationScreen(app)
     % ── Surface Code Lattice (right, row 2) ──────────────────────────────
     latticePanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_lattice', 'Surface Code Lattice'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    latticePanel.Layout.Row = 2; latticePanel.Layout.Column = 3;
+    latticePanel.Layout.Row = 2; latticePanel.Layout.Column = 2;
     latticePanel.BackgroundColor = Theme.COLOR_CARD;
     lpg = uigridlayout(latticePanel, [1 1]);
     lpg.Padding = [6 6 6 6]; lpg.BackgroundColor = Theme.COLOR_CARD;
@@ -107,7 +101,7 @@ function QecVisualizationScreen(app)
     % ── Error Weight Distribution (right, row 3) ─────────────────────────
     ewPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_errweight', 'Error Weight Distribution'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    ewPanel.Layout.Row = 3; ewPanel.Layout.Column = 3;
+    ewPanel.Layout.Row = 3; ewPanel.Layout.Column = 2;
     ewPanel.BackgroundColor = Theme.COLOR_CARD;
     ewpg = uigridlayout(ewPanel, [1 1]);
     ewpg.Padding = [10 10 10 10]; ewpg.BackgroundColor = Theme.COLOR_CARD;

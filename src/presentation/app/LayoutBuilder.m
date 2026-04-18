@@ -20,7 +20,7 @@ classdef LayoutBuilder
             logoHost = uigridlayout(app.HeaderGrid, [1 1]);
             logoHost.Layout.Row = 1; logoHost.Layout.Column = 1;
             logoHost.RowHeight = {'1x'}; logoHost.ColumnWidth = {'1x'};
-            logoHost.Padding = [0 0 10 0];
+            logoHost.Padding = [10 0 10 0];
             logoHost.RowSpacing = 0; logoHost.ColumnSpacing = 0;
             logoHost.BackgroundColor = Theme.NAV_BG;
 
@@ -53,9 +53,13 @@ classdef LayoutBuilder
             subtitle.FontColor = Theme.NAV_FG;
             subtitle.Layout.Row = 1; subtitle.Layout.Column = 2;
 
-            headerRight = uigridlayout(app.HeaderGrid, [1 3]);
+            % Login hyperlink and the logged-in user hyperlink share the
+             % same grid cell (column 2) so that hiding one never leaves a
+             % ghost "fit" column behind. Their visibility is toggled by
+             % updateHeaderAuthButtons based on authentication state.
+            headerRight = uigridlayout(app.HeaderGrid, [1 2]);
             headerRight.Layout.Row = 1; headerRight.Layout.Column = 3;
-            headerRight.ColumnWidth = {'fit', 'fit', 'fit'};
+            headerRight.ColumnWidth = {'fit', 'fit'};
             headerRight.Padding = [0 0 4 0]; headerRight.ColumnSpacing = 10;
             headerRight.BackgroundColor = Theme.NAV_BG;
 
@@ -81,13 +85,14 @@ classdef LayoutBuilder
                 'HyperlinkClickedFcn', @(~,~)app.toggleHeaderUserMenu(), ...
                 'FontSize', 14, 'FontWeight', 'bold', 'FontColor', Theme.NAV_FG, ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 3;
+            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 2;
             app.HeaderUserLabel.Visible = 'off';
             app.HeaderUserLabel.VisitedColor = Theme.NAV_FG;
 
             app.HeaderUserMenuPanel = uipanel(app.UIFigure, 'Title', '', ...
                 'Position', [0 0 180 76], 'Visible', 'off', ...
-                'BackgroundColor', Theme.COLOR_CARD, 'BorderType', 'line');
+                'BackgroundColor', Theme.COLOR_CARD, ...
+                'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
             mg = uigridlayout(app.HeaderUserMenuPanel, [2 1]);
             mg.RowHeight = {32, 32}; mg.ColumnWidth = {'1x'};
             mg.Padding = [4 4 4 4]; mg.RowSpacing = 2;
@@ -95,13 +100,13 @@ classdef LayoutBuilder
 
             accountBtn = uibutton(mg, 'Text', [char(9881) '  ' Labels.get('header_menu_my_account', 'My Account')], ...
                 'HorizontalAlignment', 'left', 'FontSize', 15, ...
-                'FontColor', Theme.COLOR_HEADING, 'BackgroundColor', Theme.COLOR_CARD, ...
+                'FontColor', Theme.BTN_FG_DEFAULT, 'BackgroundColor', Theme.COLOR_CARD, ...
                 'ButtonPushedFcn', @(~,~)app.onHeaderMenuAction('account'));
             accountBtn.Layout.Row = 1; accountBtn.Layout.Column = 1;
 
             logoutBtn = uibutton(mg, 'Text', [char(9211) '  ' Labels.get('header_menu_logout', 'Logout')], ...
                 'HorizontalAlignment', 'left', 'FontSize', 15, ...
-                'FontColor', Theme.COLOR_DANGER, 'BackgroundColor', Theme.COLOR_CARD, ...
+                'FontColor', Theme.BTN_FG_DEFAULT, 'BackgroundColor', Theme.COLOR_CARD, ...
                 'ButtonPushedFcn', @(~,~)app.onHeaderMenuAction('logout'));
             logoutBtn.Layout.Row = 2; logoutBtn.Layout.Column = 1;
         end
@@ -139,7 +144,7 @@ classdef LayoutBuilder
             app.NavToggleButton = uibutton(topRow, 'push', 'Text', char(8801), ...
                 'ButtonPushedFcn', @(~,~)app.onToggleNav());
             app.NavToggleButton.Layout.Row = 1; app.NavToggleButton.Layout.Column = 2;
-            app.NavToggleButton.FontSize = 18; app.NavToggleButton.FontWeight = 'bold';
+            app.NavToggleButton.FontSize = 18; app.NavToggleButton.FontWeight = 'normal';
             app.NavToggleButton.BackgroundColor = Theme.NAV_HOVER_BG;
             app.NavToggleButton.FontColor = Theme.NAV_FG;
 

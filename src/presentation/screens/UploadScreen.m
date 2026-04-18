@@ -12,18 +12,18 @@ function UploadScreen(app)
     Logger.info('UploadScreen', 'Building Upload tab UI');
     t = app.createSectionPage('Upload');
 
-    g = uigridlayout(t, [5 3]);
+    g = uigridlayout(t, [5 2]);
     g.RowHeight     = {0, '1x', 200, 0, 72};
-    g.ColumnWidth   = {'1.15x', 6, '1x'};
+    g.ColumnWidth   = {'1.15x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Active Project indicator (full width) — hidden from UI ─────────
     projPanel = uipanel(g, 'Title', '', 'BorderType', 'line', ...
         'BorderColor', Theme.COLOR_DIVIDER);
-    projPanel.Layout.Row = 1; projPanel.Layout.Column = [1 3];
+    projPanel.Layout.Row = 1; projPanel.Layout.Column = [1 2];
     projPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
     projPanel.Visible = 'off';
 
@@ -50,7 +50,7 @@ function UploadScreen(app)
     % ── Circuit upload + preview (full width) ─────────────────────────────
     dropPanel = uipanel(g, 'Title', Labels.get('upload_panel_upload_manager'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    dropPanel.Layout.Row = 2; dropPanel.Layout.Column = [1 3]; dropPanel.BackgroundColor = Theme.COLOR_CARD;
+    dropPanel.Layout.Row = 2; dropPanel.Layout.Column = [1 2]; dropPanel.BackgroundColor = Theme.COLOR_CARD;
 
     dg = uigridlayout(dropPanel, [4 4]);
     dg.RowHeight   = {26, 34, 4, '1x'};
@@ -74,7 +74,7 @@ function UploadScreen(app)
     app.styleBtn(app.BrowseButton, 'ghost');
     app.BrowseButton.FontSize = 14;
 
-    app.UploadButton = uibutton(dg, 'Text', [char(8593) ' ' Labels.get('upload_btn_upload')], ...
+    app.UploadButton = uibutton(dg, 'Text', [char(10004) ' ' Labels.get('upload_btn_upload')], ...
         'ButtonPushedFcn', @(~,~)app.UploadVm.onUploadCircuit());
     app.UploadButton.Layout.Row = 2; app.UploadButton.Layout.Column = 4;
     app.styleBtn(app.UploadButton, 'primary');
@@ -91,11 +91,6 @@ function UploadScreen(app)
         'qreg q[27];', 'creg c[27];', '', ...
         '// Load a circuit file to see its content here.', ...
         'measure q -> c;'};
-
-    % ── Column divider ────────────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 3; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
 
     % ── Format and Metadata (left) ────────────────────────────────────────
     metaPanel = uipanel(g, 'Title', Labels.get('upload_panel_format_meta'), ...
@@ -145,7 +140,7 @@ function UploadScreen(app)
     % ── Circuit Statistics (right) ────────────────────────────────────────
     statsPanel = uipanel(g, 'Title', Labels.get('upload_panel_stats'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    statsPanel.Layout.Row = 3; statsPanel.Layout.Column = 3; statsPanel.BackgroundColor = Theme.COLOR_CARD;
+    statsPanel.Layout.Row = 3; statsPanel.Layout.Column = 2; statsPanel.BackgroundColor = Theme.COLOR_CARD;
 
     spg = uigridlayout(statsPanel, [1 1]);
     spg.Padding = [4 4 4 4]; spg.BackgroundColor = Theme.COLOR_CARD;
@@ -155,7 +150,7 @@ function UploadScreen(app)
     % ── Project Circuits table (full width) — hidden ─────────────────────
     circPanel = uipanel(g, 'Title', Labels.get('upload_panel_project_circuits'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    circPanel.Layout.Row = 4; circPanel.Layout.Column = [1 3];
+    circPanel.Layout.Row = 4; circPanel.Layout.Column = [1 2];
     circPanel.BackgroundColor = Theme.COLOR_CARD;
     circPanel.Visible = 'off';
 
@@ -189,7 +184,7 @@ function UploadScreen(app)
     % ── Action bar ────────────────────────────────────────────────────────
     actionPanel = uipanel(g, 'Title', Labels.get('upload_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    actionPanel.Layout.Row = 5; actionPanel.Layout.Column = [1 3];
+    actionPanel.Layout.Row = 5; actionPanel.Layout.Column = [1 2];
     actionPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     ag = uigridlayout(actionPanel, [1 3]); ag.ColumnWidth = {'1x',170,150};

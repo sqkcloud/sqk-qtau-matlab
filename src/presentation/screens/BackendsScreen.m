@@ -10,18 +10,18 @@ function BackendsScreen(app)
     Logger.info('BackendsScreen', 'Building Backends tab UI');
     t = app.createSectionPage('Backends');
 
-    g = uigridlayout(t, [3 3]);
+    g = uigridlayout(t, [3 2]);
     g.RowHeight     = {118, '1x', 72};
-    g.ColumnWidth   = {'1.3x', 6, '1x'};
+    g.ColumnWidth   = {'1.3x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
-    g.ColumnSpacing = 4;
+    g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Backend KPI cards (full width) ────────────────────────────────────────
     cards = uipanel(g, 'Title', Labels.get('backends_panel_explorer'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    cards.Layout.Row = 1; cards.Layout.Column = [1 3]; cards.BackgroundColor = Theme.COLOR_CARD;
+    cards.Layout.Row = 1; cards.Layout.Column = [1 2]; cards.BackgroundColor = Theme.COLOR_CARD;
 
     cg = uigridlayout(cards, [2 4]);
     cg.RowHeight = {26,'1x'};
@@ -58,11 +58,6 @@ function BackendsScreen(app)
         l2.Layout.Row = 2; l2.Layout.Column = 1;
         app.BackendKpiLabels{i} = l2;
     end
-
-    % ── Column divider ────────────────────────────────────────────────────────
-    div = uipanel(g, 'Title', ''); div.Layout.Row = 2; div.Layout.Column = 2;
-    div.BackgroundColor = Theme.COLOR_DIVIDER; div.BorderType = 'none';
-    app.attachColumnDivider(div, g);
 
     % ── Available Backends table (left) ──────────────────────────────────────
     tablePanel = uipanel(g, 'Title', Labels.get('backends_panel_table'), ...
@@ -151,7 +146,7 @@ function BackendsScreen(app)
     % ── Calibration notes (right) ─────────────────────────────────────────────
     detailPanel = uipanel(g, 'Title', Labels.get('backends_panel_notes'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    detailPanel.Layout.Row = 2; detailPanel.Layout.Column = 3; detailPanel.BackgroundColor = Theme.COLOR_CARD;
+    detailPanel.Layout.Row = 2; detailPanel.Layout.Column = 2; detailPanel.BackgroundColor = Theme.COLOR_CARD;
 
     dg2 = uigridlayout(detailPanel, [1 1]);
     dg2.Padding = [12 10 12 10]; dg2.BackgroundColor = Theme.COLOR_CARD;
@@ -161,7 +156,7 @@ function BackendsScreen(app)
     % ── Action bar ────────────────────────────────────────────────────────────
     nextPanel = uipanel(g, 'Title', Labels.get('backends_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 3];
+    nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 2];
     nextPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     ng = uigridlayout(nextPanel, [1 4]);
