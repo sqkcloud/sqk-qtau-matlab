@@ -37,46 +37,79 @@ classdef QecSimulationViewModel < handle
             nPoints = round(AppConfig.getDouble('qec_sweep_points', 50));
             app.logEvent('QEC', sprintf('Sweeping error rates (%d points)', nPoints));
             app.showLoading(Labels.get('qec_loading_sweep', 'Sweeping error rates...'));
-            try
-                params = obj.readParams();
-                pRange = linspace(0, 0.5, nPoints);
-                sweep = app.QecEngine.sweepErrorRate( ...
-                    params.codeType, params.noiseModel, pRange, ...
-                    params.initialState, params.nRounds);
 
-                obj.plotSweep(sweep);
-                app.logEvent('QEC', sprintf('Sweep complete — %d data points', nPoints));
-                app.hideLoading();
-            catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('QEC sweep failed: %s', ME.message));
-                app.showError('QEC Sweep', ME);
-            end
+            % Capture parameters on the UI thread before dispatching —
+            % the background task can't touch app.* safely.
+            params = obj.readParams();
+            pRange = linspace(0, 0.5, nPoints);
+            engine = app.QecEngine;
+
+            AsyncRunner.run( ...
+                @() engine.sweepErrorRate(params.codeType, params.noiseModel, pRange, ...
+                                          params.initialState, params.nRounds), ...
+                @(sweep) obj.onSweepComplete(sweep, nPoints), ...
+                @(ME)    obj.onSweepError(ME));
         end
 
         function onCompareCodes(obj)
             app = obj.App;
+            % Compare runs (nCodes × nPoints × nTrials) Monte-Carlo shots; at
+            % the single-sweep defaults (50 × 1000) that is 250k trials per
+            % code and locks the UI for 20+ seconds. Use a coarser sweep
+            % here so the qualitative trend is still visible but the user
+            % doesn't sit through a freeze.
             app.logEvent('QEC', 'Comparing all QEC codes');
             app.showLoading(Labels.get('qec_loading_compare', 'Comparing QEC codes...'));
+
+            params = obj.readParams();
+            codes      = {'bitflip3', 'phaseflip3', 'shor9', 'steane7', 'perfect5'};
+            codeLabels = {'Bit-Flip(3)', 'Phase-Flip(3)', 'Shor(9)', 'Steane(7)', 'Perfect(5)'};
+            nPoints    = round(AppConfig.getDouble('qec_compare_points', 20));
+            pRange     = linspace(0, 0.5, nPoints);
+            engine     = app.QecEngine;
+
+            AsyncRunner.run( ...
+                @() engine.compareCodes(codes, params.noiseModel, pRange, ...
+                                        params.initialState, params.nRounds), ...
+                @(results) obj.onCompareComplete(results, codeLabels, pRange, codes), ...
+                @(ME)      obj.onCompareError(ME));
+        end
+
+        function onSweepComplete(obj, sweep, nPoints)
+            app = obj.App;
             try
-                params = obj.readParams();
-                codes = {'bitflip3', 'phaseflip3', 'shor9', 'steane7', 'perfect5'};
-                codeLabels = {'Bit-Flip(3)', 'Phase-Flip(3)', 'Shor(9)', 'Steane(7)', 'Perfect(5)'};
-                nPoints = round(AppConfig.getDouble('qec_sweep_points', 50));
-                pRange = linspace(0, 0.5, nPoints);
+                obj.plotSweep(sweep);
+                app.logEvent('QEC', sprintf('Sweep complete — %d data points', nPoints));
+            catch ME
+                app.logEvent('ERROR', sprintf('Sweep render failed: %s', ME.message));
+            end
+            app.hideLoading();
+        end
 
-                results = app.QecEngine.compareCodes( ...
-                    codes, params.noiseModel, pRange, params.initialState, params.nRounds);
+        function onSweepError(obj, ME)
+            app = obj.App;
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('QEC sweep failed: %s', ME.message));
+            app.showError('QEC Sweep', ME);
+        end
 
+        function onCompareComplete(obj, results, codeLabels, pRange, codes)
+            app = obj.App;
+            try
                 obj.plotComparison(results, codeLabels, pRange);
                 app.logEvent('QEC', sprintf('Comparison complete — %d codes evaluated', numel(codes)));
                 app.State.logActivity(sprintf('QEC compare — %d codes', numel(codes)), 'Success');
-                app.hideLoading();
             catch ME
-                app.hideLoading();
-                app.logEvent('ERROR', sprintf('QEC compare failed: %s', ME.message));
-                app.showError('QEC Compare', ME);
+                app.logEvent('ERROR', sprintf('Compare render failed: %s', ME.message));
             end
+            app.hideLoading();
+        end
+
+        function onCompareError(obj, ME)
+            app = obj.App;
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('QEC compare failed: %s', ME.message));
+            app.showError('QEC Compare', ME);
         end
 
         function onClear(obj)
