@@ -469,8 +469,8 @@ classdef DialogBuilder
             % tuned so the Run / Generate Report / Close buttons render
             % at the same ~44 px height as other action-bar buttons in
             % the app (e.g. the Analysis screen's Next / Visualize row).
-            cg = uigridlayout(card, [3 1]);
-            cg.RowHeight = {40, '1x', 52};
+            cg = uigridlayout(card, [4 1]);
+            cg.RowHeight = {40, '1x', 1, 52};
             cg.ColumnWidth = {'1x'};
             cg.Padding = [18 14 18 14];
             cg.RowSpacing = 10;
@@ -515,7 +515,7 @@ classdef DialogBuilder
             app.QmcModeDropdown = uidropdown(form, ...
                 'Items',     {'Statevector (local)', 'IBM Runtime'}, ...
                 'ItemsData', {'statevector',          'runtime'}, ...
-                'Value',     'statevector');
+                'Value',     'runtime');
 
             uilabel(form, 'Text', 'Backend (runtime)', 'FontColor', labelColor);
             % Populated from BackendService at open time; see
@@ -681,15 +681,21 @@ classdef DialogBuilder
             xlabel(app.QmcZneAxes, 'Noise factor (1.0 = native hardware)');
             ylabel(app.QmcZneAxes, 'Amplitude estimate');
 
-            % ── Footer: Run / Generate Report / Close ─────────────────
-            % Column widths (120 / 160 / 100) and padding ([8 8 8 8])
-            % + an explicit footer row height (44) pin these buttons to
+            % ── Divider: 1px horizontal rule between body and footer ──
+            divider = uipanel(cg, ...
+                'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_DIVIDER);
+            divider.Layout.Row = 3; divider.Layout.Column = 1;
+
+            % ── Footer: Run / Download IBM Log / Generate Report / Close ──
+            % Column widths (120 / 150 / 160 / 100) and padding ([8 8 8 8])
+            % + an explicit footer row height (36) pin these buttons to
             % the same footprint as other action bars in the app (e.g.
             % the Analysis screen's Next / Back / Visualize row).
-            footer = uigridlayout(cg, [1 4]);
-            footer.Layout.Row = 3; footer.Layout.Column = 1;
+            footer = uigridlayout(cg, [1 5]);
+            footer.Layout.Row = 4; footer.Layout.Column = 1;
             footer.RowHeight = {36};
-            footer.ColumnWidth = {'1x', 120, 160, 100};
+            footer.ColumnWidth = {'1x', 120, 150, 160, 100};
             footer.Padding = [8 8 8 8]; footer.ColumnSpacing = 10;
             footer.BackgroundColor = cardBg;
 
@@ -704,18 +710,31 @@ classdef DialogBuilder
             app.styleBtn(app.QmcRunButton, 'primary');
             app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
 
+            app.QmcDownloadLogButton = uibutton(footer, ...
+                'Text', [char(8681) ' Download IBM Log'], ...
+                'ButtonPushedFcn', @(~,~)app.AnalysisVm.onDownloadIbmLog());
+            app.QmcDownloadLogButton.Layout.Row = 1; app.QmcDownloadLogButton.Layout.Column = 3;
+            app.styleBtn(app.QmcDownloadLogButton, 'ghost');
+            app.QmcDownloadLogButton.Enable = 'off';
+            app.QmcDownloadLogButton.Tooltip = ...
+                'GET /api/circuits/{id}/qae/ibm-log — available after a successful IBM Runtime run';
+
             app.QmcReportButton = uibutton(footer, ...
                 'Text', [char(9636) ' Generate Report'], ...
                 'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateQaeReport());
-            app.QmcReportButton.Layout.Row = 1; app.QmcReportButton.Layout.Column = 3;
+            app.QmcReportButton.Layout.Row = 1; app.QmcReportButton.Layout.Column = 4;
             app.styleBtn(app.QmcReportButton, 'secondary');
             app.QmcReportButton.Tooltip = 'Generate PDF (also available from Reports screen)';
 
             closeBtn = uibutton(footer, ...
                 'Text', [char(10005) ' Close'], ...
-                'ButtonPushedFcn', @(~,~) delete(app.QmcDialog));
-            closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 4;
+                'ButtonPushedFcn', @(~,~) app.AnalysisVm.onCloseQaeDialog());
+            closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 5;
             app.styleBtn(closeBtn, 'ghost');
+
+            % Clicking the window "X" also routes through the same
+            % teardown path so any in-flight QAE poll timer is stopped.
+            app.QmcDialog.CloseRequestFcn = @(~,~) app.AnalysisVm.onCloseQaeDialog();
 
             % Rehydration (render of any cached result) is performed by
             % the caller in AnalysisViewModel.onOpenQaeDialog so the

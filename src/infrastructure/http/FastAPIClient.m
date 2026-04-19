@@ -132,11 +132,14 @@ classdef FastAPIClient < handle
             end
         end
 
-        % POST JSON with Bearer token
-        function data = postAuthJson(obj, endpoint, payload, token)
+        % POST JSON with Bearer token. Optional timeoutSec overrides
+        % the default obj.Timeout for long-running endpoints (e.g. IBM
+        % Runtime QAE where the server waits on QPU execution).
+        function data = postAuthJson(obj, endpoint, payload, token, timeoutSec)
+            if nargin < 5 || isempty(timeoutSec); timeoutSec = obj.Timeout; end
             url = char(obj.BaseUrl + string(endpoint));
             Logger.http('POST', url);
-            opts = weboptions('Timeout', obj.Timeout, ...
+            opts = weboptions('Timeout', double(timeoutSec), ...
                 'MediaType', 'application/json', 'ContentType', 'json', ...
                 'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
             try

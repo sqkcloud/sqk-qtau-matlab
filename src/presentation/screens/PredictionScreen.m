@@ -22,15 +22,38 @@ function PredictionScreen(app)
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
-    % ── Row 1: Toolbar ───────────────────────────────────────────────────────
-    toolbar = uigridlayout(g, [1 2]);
+    % ── Row 1: Toolbar — Circuit | Backend | Predict ────────────────────────
+    toolbar = uigridlayout(g, [1 6]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
-    toolbar.ColumnWidth = {'1x', 150};
-    toolbar.Padding = [0 0 0 0]; toolbar.BackgroundColor = Theme.COLOR_BG;
+    toolbar.ColumnWidth = {70, '1x', 70, '1x', 20, 150};
+    toolbar.Padding = [0 0 0 0]; toolbar.ColumnSpacing = 8;
+    toolbar.BackgroundColor = Theme.COLOR_BG;
+
+    circLbl = uilabel(toolbar, 'Text', Labels.get('prediction_label_circuit', 'Circuit'), ...
+        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+    circLbl.Layout.Row = 1; circLbl.Layout.Column = 1;
+
+    app.PredictionCircuitDropdown = uidropdown(toolbar, ...
+        'Items', {'(loading...)'}, 'ItemsData', {''}, 'Value', '', ...
+        'ValueChangedFcn', @(src,~)app.PredictionVm.onCircuitSelected(src.Value));
+    app.PredictionCircuitDropdown.Layout.Row = 1;
+    app.PredictionCircuitDropdown.Layout.Column = 2;
+
+    bendLbl = uilabel(toolbar, 'Text', Labels.get('prediction_label_backend', 'Backend'), ...
+        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+    bendLbl.Layout.Row = 1; bendLbl.Layout.Column = 3;
+
+    app.PredictionBackendDropdown = uidropdown(toolbar, ...
+        'Items', {'(loading...)'}, 'ItemsData', {''}, 'Value', '', ...
+        'ValueChangedFcn', @(src,~)app.PredictionVm.onBackendSelected(src.Value));
+    app.PredictionBackendDropdown.Layout.Row = 1;
+    app.PredictionBackendDropdown.Layout.Column = 4;
 
     app.PredictButton = uibutton(toolbar, 'Text', [char(9881) ' ' Labels.get('prediction_btn_run', 'Run Prediction')], ...
         'ButtonPushedFcn', @(~,~)app.PredictionVm.onRunPrediction());
-    app.PredictButton.Layout.Row = 1; app.PredictButton.Layout.Column = 2;
+    app.PredictButton.Layout.Row = 1; app.PredictButton.Layout.Column = 6;
     app.styleBtn(app.PredictButton, 'primary');
     app.PredictButton.FontSize = 14;
     app.PredictButton.Tooltip = 'POST /api/predict with current circuit + backend + benchmark config';

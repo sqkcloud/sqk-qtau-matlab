@@ -13,22 +13,70 @@ classdef ResultsViewModel < handle
 
         function onRefreshResults(obj)
             app = obj.App;
-            if ~app.State.isAuthenticated() || ~app.State.hasJob()
-                uialert(app.UIFigure, Labels.get('error_no_job'), 'Results', 'Icon', 'warning'); return;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), ...
+                    'Results', 'Icon', 'warning');
+                return;
             end
-            jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /api/jobs/%s/results', jobId));
+            app.logEvent('API', 'GET /api/jobs — hunting for a completed job to display');
             app.showLoading(Labels.get('loading_results', 'Loading results...'));
-            svc   = app.JobSvc;
-            token = app.State.authToken;
+            jobSvc = app.JobSvc;
+            token  = app.State.authToken;
+            % Ask the jobs list for a completed job first, then fetch its
+            % results. Relying on State.selectedJobId (typically the first
+            % row in the Jobs table, which is usually queued/running) gave
+            % us HTTP 409 every time and left this screen blank.
             AsyncRunner.run( ...
-                @() svc.getResults(jobId, token), ...
-                @(data) obj.onRefreshResultsComplete(app, jobId, data), ...
-                @(ME)   obj.onRefreshResultsError(app, jobId, ME));
+                @() jobSvc.listJobs(token, 0, 100), ...
+                @(list) obj.onJobsListedForResults(app, list), ...
+                @(ME)   obj.onRefreshResultsError(app, char(app.State.selectedJobId), ME));
         end
     end
 
     methods (Access = private)
+        function onJobsListedForResults(obj, app, list)
+            items = JsonHelper.extractList(list, 'jobs');
+            if isempty(items); items = JsonHelper.asList(list); end
+            completedId = '';
+            for i = 1:numel(items)
+                status = lower(char(string(JsonHelper.pick(items(i), {'status'}))));
+                if any(strcmp(status, {'completed', 'done', 'success'}))
+                    completedId = char(string(JsonHelper.pick(items(i), ...
+                        {'job_record_id','job_id','id'})));
+                    if ~isempty(completedId); break; end
+                end
+            end
+
+            % Fall back to whatever is currently selected if no completed
+            % job exists — at least the user will still see the "not
+            % ready" message explaining why.
+            if isempty(completedId)
+                if strlength(app.State.selectedJobId) > 0
+                    completedId = char(app.State.selectedJobId);
+                else
+                    app.hideLoading();
+                    app.setStatus(app.ResultJsonArea, { ...
+                        'No jobs have completed yet.', ...
+                        'Results will appear here after at least one job reaches status = completed.', ...
+                        'Tip: open the Jobs screen to monitor live progress.'});
+                    return;
+                end
+            else
+                % Keep global state in sync so e.g. the Detailed Analysis
+                % screen — which also reads app.State.selectedJobId — shows
+                % the same job the Results screen is displaying.
+                app.State.selectedJobId = string(completedId);
+            end
+
+            app.logEvent('API', sprintf('GET /api/jobs/%s/results', completedId));
+            svc   = app.JobSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.getResults(completedId, token), ...
+                @(data) obj.onRefreshResultsComplete(app, completedId, data), ...
+                @(ME)   obj.onRefreshResultsError(app, completedId, ME));
+        end
+
         function onRefreshResultsComplete(obj, app, jobId, data)
             rows = JsonHelper.resultsToRows(data);
             if ~isempty(rows)

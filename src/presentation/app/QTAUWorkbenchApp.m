@@ -215,6 +215,7 @@ classdef QTAUWorkbenchApp < handle
         QmcRiskDropdown
         QmcRunButton
         QmcReportButton
+        QmcDownloadLogButton    % Download IBM Runtime execution log (runtime mode only)
         QmcKpiLabels
         QmcGreeksLabels      % Delta / Gamma / Vega / Theta / Rho labels
         QmcPathAxes          % Loss / path distribution with VaR threshold
@@ -232,6 +233,8 @@ classdef QTAUWorkbenchApp < handle
         QmcOptionTypeDropdown
         QmcNotionalField
         QmcLastResult = []   % struct cache of most recent QAE response
+        QmcActiveJobId = ''  % job_id of the currently-polling async QAE job ('' when idle)
+        QmcPollTimer = []    % MATLAB timer driving QAE job polling (empty when idle)
     end
 
     % ── Backends tab ──────────────────────────────────────────────────────────
@@ -266,6 +269,8 @@ classdef QTAUWorkbenchApp < handle
     % ── Prediction tab ────────────────────────────────────────────────────────
     properties
         PredictButton
+        PredictionCircuitDropdown   % Circuit selector on the Prediction toolbar
+        PredictionBackendDropdown   % Backend selector on the Prediction toolbar
         PredictionTable
         PredictionDistAxes      % Probability distribution bar chart
         PredictionBudgetAxes    % Error budget breakdown bar chart

@@ -190,27 +190,41 @@ classdef JsonHelper
 
         % jobsToRows  Map /jobs response → 5-column cell matrix
         %   Job ID | Backend | Status | Progress | Created
-        function rows = jobsToRows(data)
-            rows  = cell(0, 5);
+        function rows = jobsToRows(data, circuitNameMap)
+            % 6-column layout: Job ID | Circuit | Backend | Status |
+            % Progress | Created. `circuitNameMap` (optional) is a
+            % containers.Map keyed by circuit_id → display name; when
+            % supplied, the Circuit cell shows the name, otherwise it
+            % falls back to the raw circuit_id.
+            if nargin < 2; circuitNameMap = containers.Map(); end
+            rows  = cell(0, 6);
             items = JsonHelper.extractListSafe(data, 'jobs');
             n = numel(items);
             if n == 0; return; end
-            rows = cell(n, 5);
+            rows = cell(n, 6);
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'job_record_id','job_id','id'}));
-                rows{i,2} = char(JsonHelper.pick(items(i), {'backend_name','backend'}));
-                rows{i,3} = char(JsonHelper.pick(items(i), {'status'}));
+
+                cid = char(JsonHelper.pick(items(i), {'circuit_id'}));
+                if isKey(circuitNameMap, cid)
+                    rows{i,2} = circuitNameMap(cid);
+                else
+                    rows{i,2} = cid;
+                end
+
+                rows{i,3} = char(JsonHelper.pick(items(i), {'backend_name','backend'}));
+                rows{i,4} = upper(char(JsonHelper.pick(items(i), {'status'})));
                 pctStr = string(JsonHelper.pick(items(i), {'progress_pct','progress','completion_pct'}));
                 pctNum = str2double(pctStr);
                 if ~isnan(pctNum)
                     % Backend returns 0-100 (e.g. queued=10, running=50);
                     % legacy callers may send 0-1, so scale up those too.
                     if pctNum <= 1.0 && pctNum > 0; pctNum = pctNum * 100; end
-                    rows{i,4} = sprintf('%.0f%%', pctNum);
+                    rows{i,5} = sprintf('%.0f%%', pctNum);
                 else
-                    rows{i,4} = char(pctStr);
+                    rows{i,5} = char(pctStr);
                 end
-                rows{i,5} = char(JsonHelper.pick(items(i), {'created_at','submitted_at'}));
+                rows{i,6} = char(JsonHelper.pick(items(i), {'created_at','submitted_at'}));
             end
         end
 

@@ -2,17 +2,20 @@ classdef QaeService < handle
     % QaeService  Domain service for Quantum Amplitude Estimation /
     %             Quantum Monte-Carlo analysis.
     %
-    %   Wraps the FastAPI endpoints added for the "Quantum Monte Carlo
-    %   Simulation (Quantum Amplitude Estimation)" section on the
-    %   Analysis screen:
+    %   Wraps the FastAPI endpoints for the "Quantum Monte Carlo
+    %   Simulation" section on the Analysis screen:
     %
-    %     POST /api/circuits/{id}/qae/analyze
-    %     GET  /api/circuits/{id}/qae/result
+    %     POST   /api/circuits/{id}/qae/analyze      (queues async job)
+    %     GET    /api/qae/jobs/{job_id}              (polls state)
+    %     DELETE /api/qae/jobs/{job_id}              (cancels)
+    %     GET    /api/circuits/{id}/qae/result       (last cached result)
+    %     GET    /api/circuits/{id}/qae/ibm-log      (IBM execution log)
     %
-    %   Supports both 'statevector' (local Qiskit Aer simulation, no IBM
-    %   credentials) and 'runtime' (IBM Qiskit Runtime via QiskitRuntimeService
-    %   on the server). If 'runtime' returns HTTP 503 because credentials
-    %   are not configured, the caller may retry in 'statevector' mode.
+    %   The analyze endpoint is async: submitAnalyze returns immediately
+    %   with {job_id, status:"queued"}, then the ViewModel polls
+    %   getAnalyzeJob every few seconds until status becomes
+    %   completed/failed/cancelled. IBM Runtime QPU queue times (minutes
+    %   to hours) would otherwise blow past any HTTP timeout.
 
     properties (Access = private)
         Client FastAPIClient
@@ -24,7 +27,9 @@ classdef QaeService < handle
             Logger.info('QaeService', 'Initialized');
         end
 
-        % Run a QAE / QMC analysis on a stored circuit.
+        % Queue a QAE / QMC analysis as an async job. Returns an envelope
+        % {job_id, status:"queued", circuit_id, execution_mode, backend, created_at}
+        % that the caller polls via getAnalyzeJob.
         %   mode          : 'statevector' | 'runtime'
         %   shots         : Monte-Carlo-equivalent shot count
         %   epsilon       : target estimation error (0.001 – 0.5)
@@ -39,7 +44,7 @@ classdef QaeService < handle
         %       correlation — cell-of-row-vectors forming an NxN matrix
         %       compute_greeks — logical
         %   token         : bearer token
-        function data = analyze(obj, circuitId, mode, shots, epsilon, ...
+        function envelope = submitAnalyze(obj, circuitId, mode, shots, epsilon, ...
                                 confidence, numEvalQubits, riskMetric, ...
                                 backend, opts, token)
             if nargin < 11
@@ -68,13 +73,44 @@ classdef QaeService < handle
             end
             if isfield(payload, 'mitigation'); mitLog = payload.mitigation; else; mitLog = 'none'; end
             Logger.info('QaeService', ...
-                'analyze → POST %s (mode=%s shots=%d eps=%.4f mitigation=%s)', ...
+                'submitAnalyze → POST %s (mode=%s shots=%d eps=%.4f mitigation=%s)', ...
                 endpoint, char(mode), shots, epsilon, mitLog);
             try
-                data = obj.Client.postAuthJson(endpoint, payload, token);
-                Logger.info('QaeService', 'analyze → response received');
+                % The server returns HTTP 202 and only needs to persist
+                % the doc + hand off to the worker, so a short timeout is
+                % plenty here (long waits live inside the poll loop).
+                envelope = obj.Client.postAuthJson(endpoint, payload, token, 30);
+                Logger.info('QaeService', 'submitAnalyze → job %s queued', ...
+                    char(JsonHelper.pick(envelope, {'job_id'}, '?')));
             catch ME
-                Logger.error('QaeService', 'analyze FAILED: %s', ME.message);
+                Logger.error('QaeService', 'submitAnalyze FAILED: %s', ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Poll the state of a queued/running/terminal QAE job.
+        % Returns the full state envelope; when status='completed' the
+        % envelope's .result field contains the full QaeResult payload
+        % (same shape as the legacy synchronous response).
+        function state = getAnalyzeJob(obj, jobId, token)
+            endpoint = sprintf('/api/qae/jobs/%s', char(jobId));
+            try
+                state = obj.Client.getAuth(endpoint, token);
+            catch ME
+                Logger.debug('QaeService', 'getAnalyzeJob(%s): %s', char(jobId), ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Mark a queued/running QAE job as cancelled. Already-completed
+        % jobs are returned unchanged.
+        function state = cancelAnalyzeJob(obj, jobId, token)
+            endpoint = sprintf('/api/qae/jobs/%s', char(jobId));
+            Logger.info('QaeService', 'cancelAnalyzeJob → DELETE %s', endpoint);
+            try
+                state = obj.Client.deleteAuth(endpoint, token);
+            catch ME
+                Logger.warn('QaeService', 'cancelAnalyzeJob(%s): %s', char(jobId), ME.message);
                 rethrow(ME);
             end
         end
@@ -87,6 +123,26 @@ classdef QaeService < handle
                 data = obj.Client.getAuth(endpoint, token);
             catch ME
                 Logger.debug('QaeService', 'getLast: %s', ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % Download the IBM Runtime execution log for the circuit's cached
+        % QAE result (requires the most recent analyze to have run in
+        % 'runtime' mode — the server reads runtime_job_id from the
+        % persisted qae document).
+        %   fmt       : 'json' | 'jsonl'
+        %   localPath : destination file path (caller typically passes a
+        %               tempname; caller then uiputfile/copyfile to user)
+        function localPath = downloadIbmLog(obj, circuitId, token, fmt, localPath)
+            if nargin < 4 || isempty(fmt); fmt = 'json'; end
+            endpoint = sprintf('/api/circuits/%s/qae/ibm-log?fmt=%s', ...
+                char(circuitId), char(fmt));
+            Logger.info('QaeService', 'downloadIbmLog → GET %s', endpoint);
+            try
+                localPath = obj.Client.downloadFileAuth(endpoint, token, localPath);
+            catch ME
+                Logger.error('QaeService', 'downloadIbmLog FAILED: %s', ME.message);
                 rethrow(ME);
             end
         end

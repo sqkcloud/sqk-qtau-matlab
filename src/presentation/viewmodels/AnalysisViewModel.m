@@ -128,9 +128,11 @@ classdef AnalysisViewModel < handle
                     cached = app.QaeSvc.getLast(cid, token);
                     app.QmcLastResult = cached;
                     obj.renderQmcResult(app, cached);
+                    AnalysisViewModel.toggleIbmLogButton(app, cached);
                 end
             catch ME
                 Logger.debug('AnalysisViewModel', 'No cached QAE result: %s', ME.message);
+                AnalysisViewModel.toggleIbmLogButton(app, []);
             end
         end
 
@@ -251,10 +253,86 @@ classdef AnalysisViewModel < handle
 
             qaeSvc = app.QaeSvc;
             token  = app.State.authToken;
+            % Submit the async job. The server enqueues the work and
+            % returns {job_id, status:"queued"} in a few hundred ms;
+            % long IBM waits happen inside the poll loop, not on this
+            % HTTP call.
+            try
+                envelope = qaeSvc.submitAnalyze(cid, mode, shots, epsilon, ...
+                    confidence, n, risk, backend, opts, token);
+            catch ME
+                obj.onQaeError(app, ME);
+                return;
+            end
+            jobId = char(JsonHelper.pick(envelope, {'job_id'}, ''));
+            if isempty(jobId)
+                obj.onQaeError(app, MException('QTAU:QaeSubmit', ...
+                    'Server did not return a job_id.'));
+                return;
+            end
+            app.QmcActiveJobId = jobId;
+            app.logEvent('API', sprintf('QAE job %s queued (mode=%s) — polling every 3s', jobId, mode));
+            obj.startQaePoll(app, jobId);
+        end
+
+        function onCloseQaeDialog(obj)
+            % Teardown: stop polling timer, hide overlay, destroy dialog.
+            % The async QAE job (if any) is left running on the server;
+            % the user can reopen the popup and getLast will show the
+            % result when it completes.
+            app = obj.App;
+            try; obj.stopQaePoll(app); catch; end
+            try; app.hideLoading(); catch; end
+            app.QmcActiveJobId = '';
+            try
+                if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
+                    delete(app.QmcDialog);
+                end
+            catch
+            end
+        end
+
+        function onDownloadIbmLog(obj)
+            app = obj.App;
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            if ~app.State.isAuthenticated()
+                uialert(alertParent, Labels.get('error_not_authenticated'), ...
+                    'Download IBM Log', 'Icon', 'warning');
+                return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(alertParent, 'Select a circuit first.', ...
+                    'Download IBM Log', 'Icon', 'warning');
+                return;
+            end
+            runtimeJobId = '';
+            if ~isempty(app.QmcLastResult)
+                runtimeJobId = char(JsonHelper.pick(app.QmcLastResult, ...
+                    {'runtime_job_id'}, ''));
+            end
+            if isempty(runtimeJobId)
+                uialert(alertParent, ...
+                    ['No IBM Runtime job is associated with the cached QMC result. ' ...
+                     'Switch Execution Mode to "IBM Runtime" and Run QMC first.'], ...
+                    'Download IBM Log', 'Icon', 'warning');
+                return;
+            end
+            cid      = char(app.State.selectedCircuitId);
+            circName = char(app.State.selectedCircuitName);
+            token    = app.State.authToken;
+            qaeSvc   = app.QaeSvc;
+            % JSONL matches the reference schema in
+            % samples/aqs-qmc/outputs_hybrid_mc_qdist_stable/quantum_exec_log.jsonl —
+            % one record per IBM job submission with the keys
+            % subcircuit_id/backend/shots/status/job_id/counts/error.
+            fmt      = 'jsonl';
+            tmpPath  = fullfile(tempdir, sprintf('quantum_exec_log_%s.%s', runtimeJobId, fmt));
+            app.logEvent('API', sprintf('GET /api/circuits/%s/qae/ibm-log (job=%s)', cid, runtimeJobId));
+            app.showLoading('Fetching IBM Runtime log...');
             AsyncRunner.run( ...
-                @() qaeSvc.analyze(cid, mode, shots, epsilon, confidence, n, risk, backend, opts, token), ...
-                @(data) obj.onQaeComplete(app, data), ...
-                @(ME)   obj.onQaeError(app, ME));
+                @() qaeSvc.downloadIbmLog(cid, token, fmt, tmpPath), ...
+                @(savedPath) obj.onIbmLogDownloaded(app, savedPath, runtimeJobId, circName, fmt), ...
+                @(ME)        obj.onIbmLogError(app, ME));
         end
 
         function onGenerateQaeReport(obj)
@@ -693,6 +771,47 @@ classdef AnalysisViewModel < handle
             tf = isstruct(data) && isfield(data, 'backends') && ~isempty(data.backends);
         end
 
+        function s = prettyJobStatus(status, serverMessage)
+            % Convert a raw status+message into something user-friendly
+            % for the loading overlay.
+            if ~isempty(serverMessage)
+                s = serverMessage;
+                return;
+            end
+            switch lower(char(status))
+                case 'queued';    s = 'Queued — waiting for backend';
+                case 'running';   s = 'Running Quantum Monte Carlo simulation';
+                case 'completed'; s = 'Completed';
+                case 'failed';    s = 'Failed';
+                case 'cancelled'; s = 'Cancelled';
+                otherwise;        s = char(status);
+            end
+        end
+
+        function toggleIbmLogButton(app, data)
+            % Enable the Download IBM Log button only when the cached
+            % QAE result carries a non-empty runtime_job_id (set by the
+            % server when execution_mode='runtime'). Statevector runs
+            % leave the field empty → keep the button disabled.
+            try
+                if ~isprop(app, 'QmcDownloadLogButton') || ...
+                        isempty(app.QmcDownloadLogButton) || ...
+                        ~isvalid(app.QmcDownloadLogButton)
+                    return;
+                end
+                jobId = '';
+                if ~isempty(data)
+                    jobId = char(JsonHelper.pick(data, {'runtime_job_id'}, ''));
+                end
+                if ~isempty(jobId)
+                    app.QmcDownloadLogButton.Enable = 'on';
+                else
+                    app.QmcDownloadLogButton.Enable = 'off';
+                end
+            catch
+            end
+        end
+
         function parent = qmcAlertParent(app)
             % Pick the right uialert parent so the alert draws on top
             % of the Quantum Monte Carlo modal popup when it is open —
@@ -748,10 +867,148 @@ classdef AnalysisViewModel < handle
             app.hideLoading();
             app.QmcLastResult = data;
             obj.renderQmcResult(app, data);
+            AnalysisViewModel.toggleIbmLogButton(app, data);
             app.logEvent('API', sprintf('QMC / QAE complete — amp=%.4f speedup=%.1fx', ...
                 JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
                 JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
             app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
+        end
+
+        function startQaePoll(obj, app, jobId)
+            % Kick off a 3s MATLAB timer that polls GET /api/qae/jobs/{id}
+            % until the job reaches a terminal state. UI work happens on
+            % the main thread so we don't need AsyncRunner here — each
+            % tick does one fast HTTP GET.
+            obj.stopQaePoll(app);
+            app.showLoading('Queued — waiting for backend...');
+            t = timer( ...
+                'ExecutionMode', 'fixedSpacing', ...
+                'Period',        3.0, ...
+                'StartDelay',    0.0, ...
+                'BusyMode',      'drop', ...
+                'Name',          ['QaePoll-' char(jobId)], ...
+                'TimerFcn',      @(src,~) obj.onQaePollTick(app, jobId, src));
+            app.QmcPollTimer = t;
+            start(t);
+        end
+
+        function stopQaePoll(~, app)
+            try
+                if ~isempty(app.QmcPollTimer) && isvalid(app.QmcPollTimer)
+                    stop(app.QmcPollTimer);
+                    delete(app.QmcPollTimer);
+                end
+            catch
+            end
+            app.QmcPollTimer = [];
+        end
+
+        function onQaePollTick(obj, app, jobId, timerObj)
+            % One poll iteration. Swallows transient HTTP errors and
+            % lets the timer try again on the next tick.
+            if isempty(app.QmcActiveJobId) || ~strcmp(app.QmcActiveJobId, jobId)
+                % Job was superseded or cancelled; stop this timer.
+                try; stop(timerObj); delete(timerObj); catch; end
+                return;
+            end
+            try
+                state = app.QaeSvc.getAnalyzeJob(jobId, app.State.authToken);
+            catch ME
+                Logger.debug('AnalysisViewModel', 'QAE poll transient: %s', ME.message);
+                return;
+            end
+            status = lower(char(JsonHelper.pick(state, {'status'}, 'queued')));
+            progress = JsonHelper.pickNumeric(state, 'progress_pct', 0);
+            msg = char(JsonHelper.pick(state, {'message'}, ''));
+            % Refresh the loading overlay with the latest step.
+            displayMsg = sprintf('%s (%d%%)', AnalysisViewModel.prettyJobStatus(status, msg), round(progress));
+            try; app.showLoading(displayMsg); catch; end
+
+            switch status
+                case {'completed'}
+                    obj.stopQaePoll(app);
+                    app.QmcActiveJobId = '';
+                    result = JsonHelper.pick(state, {'result'}, []);
+                    if isempty(result)
+                        obj.onQaeError(app, MException('QTAU:QaeEmpty', ...
+                            'Job completed but server returned no result payload.'));
+                        return;
+                    end
+                    obj.onQaeComplete(app, result);
+                case {'failed'}
+                    obj.stopQaePoll(app);
+                    app.QmcActiveJobId = '';
+                    errMsg = char(JsonHelper.pick(state, {'error'}, ''));
+                    if isempty(errMsg); errMsg = msg; end
+                    if isempty(errMsg); errMsg = 'QAE job failed on the server.'; end
+                    obj.onQaeError(app, MException('QTAU:QaeFailed', '%s', errMsg));
+                case {'cancelled'}
+                    obj.stopQaePoll(app);
+                    app.QmcActiveJobId = '';
+                    app.hideLoading();
+                    uialert(AnalysisViewModel.qmcAlertParent(app), ...
+                        'Quantum Monte Carlo job was cancelled.', ...
+                        'Quantum Monte Carlo', 'Icon', 'info');
+                otherwise
+                    % queued / running — keep polling.
+            end
+        end
+
+        function onIbmLogDownloaded(~, app, tmpPath, runtimeJobId, circName, fmt)
+            app.hideLoading();
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            if isempty(tmpPath) || exist(tmpPath, 'file') ~= 2
+                uialert(alertParent, 'IBM log download finished but the local file is missing.', ...
+                    'Download IBM Log', 'Icon', 'error');
+                return;
+            end
+            if isempty(fmt); fmt = 'jsonl'; end
+            ext = ['.' char(fmt)];
+            safeName = regexprep(char(circName), '[^A-Za-z0-9_\-]', '_');
+            if isempty(safeName); safeName = 'circuit'; end
+            backendName = '';
+            try
+                if ~isempty(app.QmcLastResult)
+                    backendName = char(JsonHelper.pick(app.QmcLastResult, {'backend'}, ''));
+                end
+            catch
+            end
+            safeBackend = regexprep(char(backendName), '[^A-Za-z0-9_\-]', '_');
+            if isempty(safeBackend); safeBackend = 'ibm_backend'; end
+            stamp = char(datetime('now', 'Format', 'yyyyMMdd'));
+            defaultName = sprintf('ExecLog_%s_%s_%s%s', safeBackend, safeName, stamp, ext);
+            [fileName, pathName] = uiputfile( ...
+                {'*.jsonl', 'JSON Lines (*.jsonl)'; ...
+                 '*.json',  'JSON (*.json)'; ...
+                 '*.*',     'All Files (*.*)'}, ...
+                'Save IBM Runtime log', defaultName);
+            if isequal(fileName, 0)
+                uialert(alertParent, ...
+                    sprintf('IBM log downloaded to:\n%s', tmpPath), ...
+                    'Download IBM Log', 'Icon', 'success');
+                return;
+            end
+            target = fullfile(pathName, fileName);
+            try
+                copyfile(tmpPath, target, 'f');
+                app.logEvent('API', sprintf('IBM log %s saved to %s', runtimeJobId, target));
+                uialert(alertParent, ...
+                    sprintf('IBM Runtime log saved to:\n%s', target), ...
+                    'Download IBM Log', 'Icon', 'success');
+            catch ME
+                Logger.warn('AnalysisViewModel', 'IBM log copy failed: %s', ME.message);
+                uialert(alertParent, ...
+                    sprintf('IBM log downloaded to:\n%s\n\nCould not copy to chosen path: %s', ...
+                            tmpPath, ME.message), ...
+                    'Download IBM Log', 'Icon', 'warning');
+            end
+        end
+
+        function onIbmLogError(~, app, ME)
+            app.hideLoading();
+            uialert(AnalysisViewModel.qmcAlertParent(app), ME.message, ...
+                'Download IBM Log', 'Icon', 'error');
+            Logger.error('AnalysisViewModel', 'IBM log download failed: %s', ME.message);
         end
 
         function onQaeError(~, app, ME)
@@ -883,6 +1140,7 @@ classdef AnalysisViewModel < handle
                 catch; end
             end
             app.QmcLastResult = [];
+            AnalysisViewModel.toggleIbmLogButton(app, []);
         end
 
         function renderQmcResult(~, app, data)

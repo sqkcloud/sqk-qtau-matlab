@@ -90,6 +90,11 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.BackendsVm, ttl)
                         app.BackendsVm.onRefreshBackends();
                     end
+                case 'Prediction'
+                    if ~isempty(app.PredictionVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.PredictionVm, ttl)
+                        app.PredictionVm.onEnter();
+                    end
                 case 'Jobs'
                     if ~isempty(app.JobsVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.JobsVm, ttl)
