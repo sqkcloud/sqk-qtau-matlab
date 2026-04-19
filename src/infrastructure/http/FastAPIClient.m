@@ -114,6 +114,24 @@ classdef FastAPIClient < handle
             end
         end
 
+        % GET with Bearer token → save response body to a local file.
+        % Used for binary downloads (PDF, HTML, JSON report files) where
+        % the server replies with a FileResponse stream.
+        function localPath = downloadFileAuth(obj, endpoint, token, localPath)
+            url = char(obj.BaseUrl + string(endpoint));
+            Logger.http('GET(download)', url);
+            opts = weboptions('Timeout', max(obj.Timeout, 120), ...
+                'ContentType', 'raw', ...
+                'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
+            try
+                websave(char(localPath), url, opts);
+                Logger.debug('FastAPIClient', 'DOWNLOAD %s → %s', endpoint, char(localPath));
+            catch ME
+                Logger.error('FastAPIClient', 'DOWNLOAD %s FAILED: %s', endpoint, ME.message);
+                rethrow(ME);
+            end
+        end
+
         % POST JSON with Bearer token
         function data = postAuthJson(obj, endpoint, payload, token)
             url = char(obj.BaseUrl + string(endpoint));

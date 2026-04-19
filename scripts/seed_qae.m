@@ -85,34 +85,74 @@ circuit = struct( ...
     'source',   'AQS-QMC reference', ...
     'content',  qasmText);
 
-% ── Step 4: Upload into every project ───────────────────────────────────────
-fprintf('[4/5] Uploading QAE reference circuit into every project ...\n');
+% ── Step 4: Upload (or reuse existing) per project ──────────────────────────
+% Idempotent: if a circuit with the same name already exists in the
+% project (re-run of the seed, or shared via seed_qasmbench), skip the
+% upload and reuse that circuit_id. The server enforces a unique
+% (project_id, name) index and would otherwise reply HTTP 409 Conflict.
+fprintf('[4/5] Upload-or-reuse QAE reference circuit in every project ...\n');
 
 uploadUrl = [BASE_URL '/api/circuits/upload'];
 authHdr   = {'Authorization', char("Bearer " + token); ...
              'Accept',        'application/json'};
 
 uploadedIds = cell(nProj, 1);
-successCount = 0;
+uploadedCount = 0;
+reusedCount   = 0;
+failedCount   = 0;
 for p = 1:nProj
     pid  = char(string(projects(p).project_id));
     name = char(string(projects(p).name));
-    opts = weboptions('Timeout', 60, ...
+    projHdr = [authHdr; {'X-Project-Id', pid}];
+    postOpts = weboptions('Timeout', 60, ...
         'MediaType', 'application/json', 'ContentType', 'json', ...
-        'HeaderFields', [authHdr; {'X-Project-Id', pid}]);
+        'HeaderFields', projHdr);
+    listOpts = weboptions('Timeout', 30, 'ContentType', 'json', ...
+        'HeaderFields', projHdr);
+
+    % --- Look for an existing circuit with the target name --------------
+    cid = '';
     try
-        resp = webwrite(uploadUrl, circuit, opts);
+        listResp = webread([BASE_URL '/api/circuits'], listOpts);
+        if isstruct(listResp) && isfield(listResp, 'circuits')
+            items = listResp.circuits;
+        else
+            items = listResp;
+        end
+        for k = 1:numel(items)
+            if isfield(items(k), 'name') && strcmp(char(string(items(k).name)), circuit.name)
+                cid = char(string(items(k).circuit_id));
+                break;
+            end
+        end
+    catch
+        % Project may be empty or the list call failed — fall through to
+        % the upload path below and let that surface the real error.
+    end
+
+    if ~isempty(cid)
+        uploadedIds{p} = cid;
+        reusedCount = reusedCount + 1;
+        fprintf('  [%2d/%d] %-40s  reused     → %s\n', p, nProj, name, cid);
+        continue;
+    end
+
+    % --- Otherwise upload a fresh copy ---------------------------------
+    try
+        resp = webwrite(uploadUrl, circuit, postOpts);
         cid  = char(string(resp.circuit_id));
         uploadedIds{p} = cid;
-        successCount = successCount + 1;
-        fprintf('  [%2d/%d] %-40s  uploaded → %s\n', p, nProj, name, cid);
+        uploadedCount = uploadedCount + 1;
+        fprintf('  [%2d/%d] %-40s  uploaded   → %s\n', p, nProj, name, cid);
     catch ME
         uploadedIds{p} = '';
+        failedCount = failedCount + 1;
         fprintf('  [%2d/%d] %-40s  FAILED (%s)\n', p, nProj, name, ME.message);
     end
 end
 
-fprintf('  → %d/%d uploads succeeded\n', successCount, nProj);
+fprintf('  → %d uploaded, %d reused, %d failed (out of %d projects)\n', ...
+    uploadedCount, reusedCount, failedCount, nProj);
 
 % ── Step 5: Run QAE analysis on every uploaded circuit ──────────────────────
 % Statevector mode is used so the seed does not require IBM Runtime
@@ -161,13 +201,13 @@ for p = 1:nProj
     end
 end
 
-fprintf('\n=== Done: %d uploads, %d QAE analyses across %d projects ===\n', ...
-    successCount, analyzed, nProj);
+fprintf('\n=== Done: %d uploaded, %d reused, %d QAE analyses across %d projects ===\n', ...
+    uploadedCount, reusedCount, analyzed, nProj);
 fprintf('Open the Analysis screen → "Quantum Amplitude Estimation" popup to\n');
 fprintf('see path PDF, VaR thresholds, CDF, convergence, amplitude bar,\n');
 fprintf('Greeks (Δ, Γ, Vega, Θ, ρ), and Zero-Noise Extrapolation curve.\n\n');
 
-if successCount > 0
+if (uploadedCount + reusedCount) > 0
     uploadedIds = uploadedIds(~cellfun(@isempty, uploadedIds));
-    fprintf('Uploaded circuit IDs available in workspace variable "uploadedIds"\n\n');
+    fprintf('Circuit IDs available in workspace variable "uploadedIds"\n\n');
 end

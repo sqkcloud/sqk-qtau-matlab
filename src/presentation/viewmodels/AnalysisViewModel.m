@@ -116,6 +116,9 @@ classdef AnalysisViewModel < handle
                 return;
             end
             DialogBuilder.buildQmcDialog(app);
+            % Populate the backend dropdown from BackendService so the
+            % popup mirrors the Backends screen's list.
+            obj.loadQmcBackends();
             % Best-effort: pre-populate with the last cached result for
             % this circuit so returning users see data immediately.
             try
@@ -131,18 +134,75 @@ classdef AnalysisViewModel < handle
             end
         end
 
+        % Populate app.QmcBackendField (uidropdown) using BackendService,
+        % mirroring BenchmarkDashboardViewModel.loadBackends' 3-tier
+        % fallback (selected circuit → first circuit → unscoped list).
+        function loadQmcBackends(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            token = app.State.authToken;
+
+            cid = '';
+            if app.State.hasCircuit(); cid = char(app.State.selectedCircuitId); end
+
+            backendSvc = app.BackendSvc;
+            circSvc    = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() AnalysisViewModel.fetchBackendList(backendSvc, circSvc, cid, token), ...
+                @(data) obj.onQmcBackendsLoaded(app, data), ...
+                @(ME)   obj.onQmcBackendsError(app, ME));
+        end
+
+        function onQmcBackendsLoaded(~, app, data)
+            if isempty(app.QmcBackendField) || ~isvalid(app.QmcBackendField); return; end
+            items = JsonHelper.extractList(data, 'backends');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.QmcBackendField.Items     = {'(no backends)'};
+                app.QmcBackendField.ItemsData = {''};
+                app.QmcBackendField.Value     = '';
+                return;
+            end
+            names = cell(1, n);
+            for i = 1:n
+                names{i} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+            end
+            app.QmcBackendField.Items     = names;
+            app.QmcBackendField.ItemsData = names;
+            % Prefer the currently-selected backend if present, else first.
+            sel = char(app.State.selectedBackend);
+            match = find(strcmp(names, sel), 1);
+            if ~isempty(match)
+                app.QmcBackendField.Value = names{match};
+            else
+                app.QmcBackendField.Value = names{1};
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d backends into QMC dropdown', n));
+        end
+
+        function onQmcBackendsError(~, app, ME)
+            if ~isempty(app.QmcBackendField) && isvalid(app.QmcBackendField)
+                app.QmcBackendField.Items     = {'(load failed)'};
+                app.QmcBackendField.ItemsData = {''};
+                app.QmcBackendField.Value     = '';
+            end
+            Logger.warn('AnalysisViewModel', 'QMC backend load failed: %s', ME.message);
+        end
+
         % Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)
         %   Runs a QAE analysis on the selected circuit via the FastAPI
         %   backend and refreshes the Analysis screen's QMC section.
         function onRunQaeAnalysis(obj)
             app = obj.App;
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
             if ~app.State.isAuthenticated()
-                uialert(app.UIFigure, Labels.get('error_not_authenticated'), ...
+                uialert(alertParent, Labels.get('error_not_authenticated'), ...
                     'Quantum Monte Carlo', 'Icon', 'warning');
                 return;
             end
             if ~app.State.hasCircuit()
-                uialert(app.UIFigure, ...
+                uialert(alertParent, ...
                     'Select an uploaded circuit first (e.g. an AQS-QMC VaR circuit).', ...
                     'Quantum Monte Carlo', 'Icon', 'warning');
                 return;
@@ -183,7 +243,11 @@ classdef AnalysisViewModel < handle
             if isfield(opts,'mitigation'); mitLog = opts.mitigation; else; mitLog = 'none'; end
             app.logEvent('API', sprintf('POST /api/circuits/%s/qae/analyze — mode=%s shots=%d mitig=%s', ...
                 cid, mode, shots, mitLog));
-            app.showLoading('Running Quantum Amplitude Estimation...');
+            % Wipe every KPI / Greek / chart on the popup so the user sees
+            % empty controls while the server is running rather than stale
+            % values from a previous run.
+            obj.resetQmcUi(app);
+            app.showLoading('Running Quantum Monte Carlo simulation...');
 
             qaeSvc = app.QaeSvc;
             token  = app.State.authToken;
@@ -195,19 +259,20 @@ classdef AnalysisViewModel < handle
 
         function onGenerateQaeReport(obj)
             app = obj.App;
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
             if ~app.State.isAuthenticated()
-                uialert(app.UIFigure, Labels.get('error_not_authenticated'), ...
+                uialert(alertParent, Labels.get('error_not_authenticated'), ...
                     'Generate Report', 'Icon', 'warning');
                 return;
             end
             if ~app.State.hasCircuit()
-                uialert(app.UIFigure, 'Select a circuit before generating the report.', ...
+                uialert(alertParent, 'Select a circuit before generating the report.', ...
                     'Generate Report', 'Icon', 'warning');
                 return;
             end
             cid = app.State.selectedCircuitId;
             if isempty(app.QmcLastResult)
-                choice = uiconfirm(app.UIFigure, ...
+                choice = uiconfirm(alertParent, ...
                     'No QMC/QAE analysis has been run on this circuit yet. Run it now with current settings before generating the PDF?', ...
                     'Generate Report', 'Options', {'Run and generate', 'Cancel'}, ...
                     'DefaultOption', 1, 'CancelOption', 2);
@@ -597,6 +662,85 @@ classdef AnalysisViewModel < handle
             if ~isempty(cur); parts{end+1} = cur; end
         end
 
+        function data = fetchBackendList(backendSvc, circSvc, cid, token)
+            % 3-tier fallback for populating the QMC Backend dropdown:
+            %   1. list scoped to the currently-selected circuit
+            %   2. list scoped to the first circuit in the project
+            %   3. basic unscoped list
+            if ~isempty(cid) && strlength(string(cid)) > 0
+                try
+                    data = backendSvc.listBackends(token, cid);
+                    if AnalysisViewModel.hasBackends(data); return; end
+                catch
+                end
+            end
+            try
+                circList = circSvc.listCircuits(token);
+                items = JsonHelper.extractList(circList, 'circuits');
+                if ~isempty(items)
+                    fallbackCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
+                    if ~isempty(fallbackCid) && strlength(string(fallbackCid)) > 0
+                        data = backendSvc.listBackends(token, fallbackCid);
+                        if AnalysisViewModel.hasBackends(data); return; end
+                    end
+                end
+            catch
+            end
+            data = backendSvc.listBackends(token, '');
+        end
+
+        function tf = hasBackends(data)
+            tf = isstruct(data) && isfield(data, 'backends') && ~isempty(data.backends);
+        end
+
+        function parent = qmcAlertParent(app)
+            % Pick the right uialert parent so the alert draws on top
+            % of the Quantum Monte Carlo modal popup when it is open —
+            % parenting to app.UIFigure leaves the alert behind the
+            % popup because the popup is its own uifigure window.
+            parent = app.UIFigure;
+            try
+                if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog) ...
+                        && strcmp(app.QmcDialog.Visible, 'on')
+                    parent = app.QmcDialog;
+                end
+            catch
+            end
+        end
+
+        function savedPath = pollAndDownloadReport(reportSvc, reportId, token)
+            % Poll GET /reports/{id} until status='ready' (or 'completed'),
+            % then stream the file to a temp path and return it. Caller
+            % can uiputfile and copy to the user's chosen destination.
+            deadline = tic;
+            maxSeconds = 60;
+            pause_s = 0.75;
+            status = '';
+            fmt = '';
+            while toc(deadline) < maxSeconds
+                meta = reportSvc.getReport(reportId, token);
+                status = lower(char(JsonHelper.pick(meta, {'status'}, '')));
+                fmt    = lower(char(JsonHelper.pick(meta, {'format'}, 'pdf')));
+                if any(strcmp(status, {'ready', 'completed', 'success', 'done'}))
+                    break;
+                elseif any(strcmp(status, {'failed', 'error'}))
+                    msg = char(JsonHelper.pick(meta, {'message','error'}, ...
+                        'Report generation failed on the server.'));
+                    error('QTAU:ReportFailed', '%s', msg);
+                end
+                pause(pause_s);
+            end
+            if ~any(strcmp(status, {'ready', 'completed', 'success', 'done'}))
+                error('QTAU:ReportTimeout', ...
+                    'Report did not reach ready state within %d seconds.', maxSeconds);
+            end
+            if isempty(fmt); fmt = 'pdf'; end
+            ext = ['.' fmt];
+            if strcmp(ext, '.') || strcmp(ext, '..'); ext = '.pdf'; end
+            savedPath = fullfile(tempdir, sprintf('qmc_report_%s%s', reportId, ext));
+            reportSvc.downloadReportFile(reportId, token, savedPath);
+        end
+
     end
 
     methods (Access = private)
@@ -612,36 +756,133 @@ classdef AnalysisViewModel < handle
 
         function onQaeError(~, app, ME)
             app.hideLoading();
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
             isRuntime503 = contains(string(ME.message), '503') || ...
                            contains(lower(string(ME.message)), 'runtime is not configured');
             if isRuntime503
-                uialert(app.UIFigure, ...
+                uialert(alertParent, ...
                     sprintf(['IBM Qiskit Runtime is not configured on the server.\n' ...
                              'Switch Execution Mode to "Statevector (local)" and try again.\n\n%s'], ...
                              ME.message), ...
                     'Quantum Monte Carlo', 'Icon', 'warning');
             else
-                uialert(app.UIFigure, ME.message, 'Quantum Monte Carlo', 'Icon', 'error');
+                uialert(alertParent, ME.message, 'Quantum Monte Carlo', 'Icon', 'error');
             end
             Logger.error('AnalysisViewModel', 'QAE failed: %s', ME.message);
         end
 
-        function onQaeReportGenerated(~, app, data)
-            app.hideLoading();
+        function onQaeReportGenerated(obj, app, data)
             reportId = char(JsonHelper.pick(data, {'report_id'}, ''));
             status   = char(JsonHelper.pick(data, {'status'}, 'unknown'));
             app.logEvent('API', sprintf('Report generated — id=%s status=%s', reportId, status));
-            uialert(app.UIFigure, ...
-                sprintf(['Quantum Monte Carlo report generated.\n\n' ...
-                         'Report ID: %s\nStatus: %s\n\n' ...
-                         'Open the Reports screen to download the PDF.'], reportId, status), ...
-                'Generate Report', 'Icon', 'success');
+            if isempty(reportId)
+                app.hideLoading();
+                uialert(AnalysisViewModel.qmcAlertParent(app), ...
+                    'The server did not return a report_id; cannot download.', ...
+                    'Generate Report', 'Icon', 'error');
+                return;
+            end
+
+            % Poll until status='ready', then stream the file to disk.
+            % Generation is synchronous in the current backend but we
+            % poll defensively in case it flips to async in the future.
+            app.showLoading('Downloading PDF report...');
+            reportSvc = app.ReportSvc;
+            token     = app.State.authToken;
+            circName  = char(app.State.selectedCircuitName);
+            AsyncRunner.run( ...
+                @() AnalysisViewModel.pollAndDownloadReport(reportSvc, reportId, token), ...
+                @(savedPath) obj.onQaeReportDownloaded(app, reportId, savedPath, circName), ...
+                @(ME)        obj.onQaeReportError(app, ME));
+        end
+
+        function onQaeReportDownloaded(~, app, reportId, tmpPath, circName)
+            app.hideLoading();
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            % Ask the user where to save the final copy; default to a
+            % filename that includes the circuit name for findability.
+            if ~isempty(tmpPath) && exist(tmpPath, 'file') == 2
+                [~, ~, ext] = fileparts(tmpPath);
+                if isempty(ext); ext = '.pdf'; end
+                safeName = regexprep(char(circName), '[^A-Za-z0-9_\-]', '_');
+                if isempty(safeName); safeName = 'report'; end
+                stamp = char(datetime('now', 'Format', 'yyyyMMdd'));
+                defaultName = sprintf('Report_%s_%s%s', safeName, stamp, ext);
+                [fileName, pathName] = uiputfile( ...
+                    {['*' ext], ['Report (' ext ')']; '*.*', 'All Files (*.*)'}, ...
+                    'Save QMC report', defaultName);
+                if isequal(fileName, 0)
+                    Logger.info('AnalysisViewModel', 'Save cancelled; temp file: %s', tmpPath);
+                    uialert(alertParent, ...
+                        sprintf('Report downloaded to:\n%s\n\nOpen the Reports screen any time to re-download.', tmpPath), ...
+                        'Generate Report', 'Icon', 'success');
+                    return;
+                end
+                target = fullfile(pathName, fileName);
+                try
+                    copyfile(tmpPath, target, 'f');
+                    app.logEvent('API', sprintf('Report %s saved to %s', reportId, target));
+                    uialert(alertParent, ...
+                        sprintf('Quantum Monte Carlo report saved to:\n%s', target), ...
+                        'Generate Report', 'Icon', 'success');
+                catch ME
+                    Logger.warn('AnalysisViewModel', 'Copy to user path failed: %s', ME.message);
+                    uialert(alertParent, ...
+                        sprintf('Report downloaded to:\n%s\n\nCould not copy to chosen path: %s', ...
+                                tmpPath, ME.message), ...
+                        'Generate Report', 'Icon', 'warning');
+                end
+            else
+                uialert(alertParent, ...
+                    'Download finished but the local file is missing.', ...
+                    'Generate Report', 'Icon', 'error');
+            end
         end
 
         function onQaeReportError(~, app, ME)
             app.hideLoading();
-            uialert(app.UIFigure, ME.message, 'Generate Report', 'Icon', 'error');
+            uialert(AnalysisViewModel.qmcAlertParent(app), ME.message, ...
+                'Generate Report', 'Icon', 'error');
             Logger.error('AnalysisViewModel', 'QAE report failed: %s', ME.message);
+        end
+
+        function resetQmcUi(~, app)
+            % Clear all KPI / Greek text and all plot axes on the QMC
+            % popup. Called at the start of each Run QMC so the user
+            % sees blanks while the API call is in flight rather than
+            % stale values from the previous analysis.
+            try
+                if ~isempty(app.QmcKpiLabels)
+                    for i = 1:numel(app.QmcKpiLabels)
+                        try; app.QmcKpiLabels{i}.Text = '—'; catch; end
+                    end
+                end
+            catch; end
+            try
+                if ~isempty(app.QmcGreeksLabels)
+                    for i = 1:numel(app.QmcGreeksLabels)
+                        try; app.QmcGreeksLabels{i}.Text = '—'; catch; end
+                    end
+                end
+            catch; end
+            axesHandles = {app.QmcPathAxes, app.QmcCdfAxes, ...
+                           app.QmcConvergenceAxes, app.QmcAmpAxes, ...
+                           app.QmcZneAxes};
+            for k = 1:numel(axesHandles)
+                ax = axesHandles{k};
+                try
+                    if ~isempty(ax) && isvalid(ax)
+                        cla(ax);
+                        lg = get(ax, 'Legend'); if ~isempty(lg); delete(lg); end
+                        ax.XGrid = 'off'; ax.YGrid = 'off';
+                        ax.XScale = 'linear'; ax.YScale = 'linear';
+                        ax.XTick = []; ax.YTick = [];
+                        title(ax, '');
+                        xlabel(ax, ''); ylabel(ax, '');
+                    end
+                catch; end
+            end
+            app.QmcLastResult = [];
         end
 
         function renderQmcResult(~, app, data)
@@ -666,15 +907,18 @@ classdef AnalysisViewModel < handle
             end
 
             % Extract path_distribution once; used by both the loss
-            % histogram and the CDF overlay.
+            % histogram and the CDF overlay. jsondecode returns a
+            % homogeneous JSON array of objects as a *struct array*
+            % (not a cell array), so accept both shapes here.
             xs = []; ps = []; losses = [];
             try
                 pdf = JsonHelper.pick(data, {'path_distribution'}, []);
-                if iscell(pdf) && ~isempty(pdf)
-                    xs = zeros(numel(pdf), 1);
-                    ps = zeros(numel(pdf), 1);
-                    for i = 1:numel(pdf)
-                        item = pdf{i};
+                n = numel(pdf);
+                if n > 0 && (iscell(pdf) || isstruct(pdf))
+                    xs = zeros(n, 1);
+                    ps = zeros(n, 1);
+                    for i = 1:n
+                        if iscell(pdf); item = pdf{i}; else; item = pdf(i); end
                         xs(i) = JsonHelper.pickNumeric(item, 'value', i);
                         ps(i) = JsonHelper.pickNumeric(item, 'probability', 0);
                     end
@@ -751,15 +995,17 @@ classdef AnalysisViewModel < handle
                 Logger.warn('AnalysisViewModel', 'CDF render: %s', ME.message);
             end
 
-            % (3) QAE vs classical MC convergence (log-log)
+            % (3) QAE vs classical MC convergence (log-log). Same
+            % cell-vs-struct-array caveat as path_distribution above.
             try
                 conv = JsonHelper.pick(data, {'convergence'}, []);
-                if iscell(conv) && ~isempty(conv)
-                    ns   = zeros(numel(conv), 1);
-                    qae  = zeros(numel(conv), 1);
-                    mc   = zeros(numel(conv), 1);
-                    for i = 1:numel(conv)
-                        item = conv{i};
+                nConv = numel(conv);
+                if nConv > 0 && (iscell(conv) || isstruct(conv))
+                    ns   = zeros(nConv, 1);
+                    qae  = zeros(nConv, 1);
+                    mc   = zeros(nConv, 1);
+                    for i = 1:nConv
+                        if iscell(conv); item = conv{i}; else; item = conv(i); end
                         ns(i)  = JsonHelper.pickNumeric(item, 'samples',             1);
                         qae(i) = JsonHelper.pickNumeric(item, 'qae_error',           NaN);
                         mc(i)  = JsonHelper.pickNumeric(item, 'classical_mc_error',  NaN);
@@ -814,11 +1060,12 @@ classdef AnalysisViewModel < handle
                     cla(app.QmcZneAxes);
                     curve = JsonHelper.pick(data, {'mitigation_curve'}, []);
                     mit   = JsonHelper.pick(data, {'mitigation'}, 'none');
-                    if iscell(curve) && ~isempty(curve)
-                        nf = zeros(numel(curve), 1);
-                        amps = zeros(numel(curve), 1);
-                        for i = 1:numel(curve)
-                            item = curve{i};
+                    nCurve = numel(curve);
+                    if nCurve > 0 && (iscell(curve) || isstruct(curve))
+                        nf = zeros(nCurve, 1);
+                        amps = zeros(nCurve, 1);
+                        for i = 1:nCurve
+                            if iscell(curve); item = curve{i}; else; item = curve(i); end
                             nf(i)   = JsonHelper.pickNumeric(item, 'noise_factor', i - 1);
                             amps(i) = JsonHelper.pickNumeric(item, 'amplitude',    NaN);
                         end

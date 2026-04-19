@@ -431,8 +431,8 @@ classdef DialogBuilder
             %   so AnalysisViewModel.renderQmcResult can continue to update
             %   them via the cached app handles.
             figPos = app.UIFigure.Position;
-            dlgW = min(1150, max(900, round(figPos(3) * 0.82)));
-            dlgH = min(720,  max(560, round(figPos(4) * 0.82)));
+            dlgW = min(1500, max(1200, round(figPos(3) * 0.92)));
+            dlgH = min(1080, max(880,  round(figPos(4) * 0.95)));
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
 
@@ -443,7 +443,7 @@ classdef DialogBuilder
             labelColor = Theme.COLOR_LABEL;
 
             app.QmcDialog = uifigure( ...
-                'Name', 'Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)', ...
+                'Name', 'Quantum Monte Carlo Simulation', ...
                 'Position', [dlgX dlgY dlgW dlgH], ...
                 'WindowStyle', 'modal', ...
                 'Resize', 'on', ...
@@ -465,7 +465,10 @@ classdef DialogBuilder
                 'BorderColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            % Inside the card: header / body / footer.
+            % Inside the card: header / body / footer. Footer row is
+            % tuned so the Run / Generate Report / Close buttons render
+            % at the same ~44 px height as other action-bar buttons in
+            % the app (e.g. the Analysis screen's Next / Visualize row).
             cg = uigridlayout(card, [3 1]);
             cg.RowHeight = {40, '1x', 52};
             cg.ColumnWidth = {'1x'};
@@ -474,23 +477,17 @@ classdef DialogBuilder
             cg.BackgroundColor = cardBg;
 
             % ── Header ─────────────────────────────────────────────────
-            headerRow = uigridlayout(cg, [1 2]);
+            headerRow = uigridlayout(cg, [1 1]);
             headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
-            headerRow.ColumnWidth = {'1x', 110};
+            headerRow.ColumnWidth = {'1x'};
             headerRow.Padding = [0 0 0 0]; headerRow.ColumnSpacing = 8;
             headerRow.BackgroundColor = cardBg;
 
             titleLbl = uilabel(headerRow, ...
-                'Text', 'Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)', ...
+                'Text', 'Quantum Monte Carlo Simulation', ...
                 'FontSize', 16, 'FontWeight', 'bold', 'FontColor', titleColor, ...
                 'VerticalAlignment', 'center');
             titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
-
-            closeTopBtn = uibutton(headerRow, ...
-                'Text', [char(10005) ' Close'], ...
-                'ButtonPushedFcn', @(~,~) delete(app.QmcDialog));
-            closeTopBtn.Layout.Row = 1; closeTopBtn.Layout.Column = 2;
-            app.styleBtn(closeTopBtn, 'ghost');
 
             % ── Body: controls+KPI (left)  |  plots (right) ────────────
             body = uigridlayout(cg, [1 2]);
@@ -521,7 +518,13 @@ classdef DialogBuilder
                 'Value',     'statevector');
 
             uilabel(form, 'Text', 'Backend (runtime)', 'FontColor', labelColor);
-            app.QmcBackendField = uieditfield(form, 'text', 'Value', 'ibm_marrakesh');
+            % Populated from BackendService at open time; see
+            % AnalysisViewModel.loadQmcBackends. Starts with a placeholder
+            % so the dropdown is usable before the async call completes.
+            app.QmcBackendField = uidropdown(form, ...
+                'Items',     {'(loading...)'}, ...
+                'ItemsData', {''}, ...
+                'Value',     '');
 
             uilabel(form, 'Text', 'Shots', 'FontColor', labelColor);
             app.QmcShotsField = uispinner(form, ...
@@ -552,7 +555,7 @@ classdef DialogBuilder
             app.QmcMitigationDropdown = uidropdown(form, ...
                 'Items',     {'None', 'Zero-Noise Extrapolation', 'Probabilistic Error Cancellation'}, ...
                 'ItemsData', {'none',  'zne',                       'pec'}, ...
-                'Value',     'none');
+                'Value',     'zne');
 
             sep2 = uilabel(form, 'Text', 'Market scenario (real-time)', ...
                 'FontWeight', 'bold', 'FontColor', titleColor);
@@ -679,10 +682,15 @@ classdef DialogBuilder
             ylabel(app.QmcZneAxes, 'Amplitude estimate');
 
             % ── Footer: Run / Generate Report / Close ─────────────────
+            % Column widths (120 / 160 / 100) and padding ([8 8 8 8])
+            % + an explicit footer row height (44) pin these buttons to
+            % the same footprint as other action bars in the app (e.g.
+            % the Analysis screen's Next / Back / Visualize row).
             footer = uigridlayout(cg, [1 4]);
             footer.Layout.Row = 3; footer.Layout.Column = 1;
-            footer.ColumnWidth = {'1x', 200, 200, 120};
-            footer.Padding = [0 0 0 0]; footer.ColumnSpacing = 10;
+            footer.RowHeight = {36};
+            footer.ColumnWidth = {'1x', 120, 160, 100};
+            footer.Padding = [8 8 8 8]; footer.ColumnSpacing = 10;
             footer.BackgroundColor = cardBg;
 
             uilabel(footer, 'Text', ...
@@ -690,11 +698,10 @@ classdef DialogBuilder
                 'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
 
             app.QmcRunButton = uibutton(footer, ...
-                'Text', [char(9883) ' Run QMC / QAE'], ...
+                'Text', [char(9883) ' Run QMC'], ...
                 'ButtonPushedFcn', @(~,~)app.AnalysisVm.onRunQaeAnalysis());
             app.QmcRunButton.Layout.Row = 1; app.QmcRunButton.Layout.Column = 2;
             app.styleBtn(app.QmcRunButton, 'primary');
-            app.QmcRunButton.FontSize = 14;
             app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
 
             app.QmcReportButton = uibutton(footer, ...
@@ -702,7 +709,6 @@ classdef DialogBuilder
                 'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateQaeReport());
             app.QmcReportButton.Layout.Row = 1; app.QmcReportButton.Layout.Column = 3;
             app.styleBtn(app.QmcReportButton, 'secondary');
-            app.QmcReportButton.FontSize = 14;
             app.QmcReportButton.Tooltip = 'Generate PDF (also available from Reports screen)';
 
             closeBtn = uibutton(footer, ...

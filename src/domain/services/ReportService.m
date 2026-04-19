@@ -110,6 +110,15 @@ classdef ReportService < handle
             end
         end
 
+        % Stream the report file to disk. Returns the saved local path.
+        % The server responds with a FileResponse (application/pdf etc.);
+        % this wrapper handles the binary GET via FastAPIClient.downloadFileAuth.
+        function savedPath = downloadReportFile(obj, reportId, token, localPath)
+            ep = sprintf('/api/reports/%s/download', FastAPIClient.encodePathSegment(reportId));
+            Logger.info('ReportService', 'downloadReportFile → GET %s → %s', ep, char(localPath));
+            savedPath = obj.Client.downloadFileAuth(ep, token, localPath);
+        end
+
         % Share a report by email.
         function data = shareReport(obj, reportId, email, token)
             ep = sprintf('/api/reports/%s/share', FastAPIClient.encodePathSegment(reportId));

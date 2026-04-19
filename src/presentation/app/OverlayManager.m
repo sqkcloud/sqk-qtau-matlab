@@ -14,10 +14,21 @@ classdef OverlayManager
                 if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
                     delete(app.ActivityOverlay);
                 end
-                figW = app.UIFigure.Position(3);
-                figH = app.UIFigure.Position(4);
+                % When a modal secondary dialog (e.g. the Quantum Monte Carlo
+                % popup) is open, MATLAB renders it in its own window so an
+                % overlay parented to the main UIFigure would sit behind it.
+                % Parent the overlay to whichever figure is currently on top.
+                host = app.UIFigure;
+                try
+                    if isprop(app, 'QmcDialog') && ~isempty(app.QmcDialog) ...
+                            && isvalid(app.QmcDialog) && strcmp(app.QmcDialog.Visible, 'on')
+                        host = app.QmcDialog;
+                    end
+                catch; end
+                figW = host.Position(3);
+                figH = host.Position(4);
                 % Use uihtml as a full-figure overlay with semi-transparent backdrop
-                app.ActivityOverlay = uihtml(app.UIFigure);
+                app.ActivityOverlay = uihtml(host);
                 app.ActivityOverlay.Position = [0 0 figW figH];
                 % Elapsed timer JS (only rendered when showTimer is true)
                 if showTimer
