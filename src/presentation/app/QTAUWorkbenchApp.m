@@ -72,6 +72,7 @@ classdef QTAUWorkbenchApp < handle
         SettingsSvc     % SettingsService
         QecEngine       % QecEngineService (local computation, no HTTP)
         BenchmarkSvc    % BenchmarkService
+        QaeSvc          % QaeService (Quantum Amplitude Estimation / QMC)
     end
 
     % ── Screen callback services ──────────────────────────────────────────────
@@ -201,6 +202,36 @@ classdef QTAUWorkbenchApp < handle
         AnalysisCompareArea
         QVHeatmapAxes
         QVInfoLabel
+        % Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)
+        %   Hosted inside the modal popup built by DialogBuilder.buildQmcDialog;
+        %   the launcher button lives on the Analysis toolbar.
+        QmcOpenButton
+        QmcDialog                  % uifigure handle while the popup is open
+        QmcModeDropdown
+        QmcBackendField
+        QmcShotsField
+        QmcEpsilonField
+        QmcConfidenceField
+        QmcRiskDropdown
+        QmcRunButton
+        QmcReportButton
+        QmcKpiLabels
+        QmcGreeksLabels      % Delta / Gamma / Vega / Theta / Rho labels
+        QmcPathAxes          % Loss / path distribution with VaR threshold
+        QmcConvergenceAxes   % QAE 1/N vs classical MC 1/√N
+        QmcCdfAxes           % Cumulative loss distribution
+        QmcAmpAxes           % Amplitude-estimation bar chart
+        QmcZneAxes           % Zero-noise extrapolation curve
+        % Advanced controls
+        QmcMitigationDropdown
+        QmcSpotField
+        QmcStrikeField
+        QmcVolField
+        QmcRateField
+        QmcTenorField
+        QmcOptionTypeDropdown
+        QmcNotionalField
+        QmcLastResult = []   % struct cache of most recent QAE response
     end
 
     % ── Backends tab ──────────────────────────────────────────────────────────
@@ -379,6 +410,7 @@ classdef QTAUWorkbenchApp < handle
             app.SettingsSvc   = app.Services.SettingsSvc;
             app.QecEngine     = app.Services.QecEngine;
             app.BenchmarkSvc  = app.Services.BenchmarkSvc;
+            app.QaeSvc        = app.Services.QaeSvc;
 
             Logger.info('QTAUWorkbenchApp', 'Services ready — creating WelcomeVm (lazy init for others)');
             app.WelcomeVm = WelcomeViewModel(app);

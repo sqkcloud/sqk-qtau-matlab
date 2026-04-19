@@ -1,11 +1,17 @@
 % AnalysisTab  Populates the Analysis section panel.
 %
 %   Layout:
-%     Row 1 (34 px):   Circuit selector + Analyze button.
+%     Row 1 (34 px):   Circuit selector + Analyze + Quantum Amplitude
+%                      Estimation launcher button.
 %     Row 2 ('1x'):    Extracted Features tree + annotation (left) |
 %                      QASMBench Similarity table + comparison notes (right).
 %     Row 3 ('1x'):    Quantum Volume heatmap (full width).
 %     Row 4 (72 px):   Action bar — Next: Backends / Back: Upload.
+%
+%   The Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)
+%   UI lives in a modal popup (see DialogBuilder.buildQmcDialog) so the
+%   main Analysis screen stays focused on feature extraction and
+%   similarity review.
 %
 %   All visible strings come from resources/labels.properties via Labels.
 function AnalysisScreen(app)
@@ -20,10 +26,10 @@ function AnalysisScreen(app)
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
-    % ── Circuit selector + Analyze button ────────────────────────────────────
-    topBar = uigridlayout(g, [1 3]);
+    % ── Circuit selector + Analyze + QAE launcher ────────────────────────────
+    topBar = uigridlayout(g, [1 4]);
     topBar.Layout.Row = 1; topBar.Layout.Column = [1 2];
-    topBar.ColumnWidth = {90, '1x', 110};
+    topBar.ColumnWidth = {90, '1x', 110, 260};
     topBar.Padding = [0 0 0 0]; topBar.ColumnSpacing = 8;
     topBar.BackgroundColor = Theme.COLOR_BG;
 
@@ -43,6 +49,18 @@ function AnalysisScreen(app)
     app.styleBtn(app.AnalyzeButton, 'primary');
     app.AnalyzeButton.FontSize = 14;
     app.AnalyzeButton.Tooltip = 'POST /api/circuits/{id}/analyze + match-benchmarks';
+
+    % Launcher for the Quantum Monte Carlo Simulation (Quantum Amplitude
+    % Estimation) popup. The full control + plot UI lives in the modal
+    % dialog built by DialogBuilder.buildQmcDialog.
+    app.QmcOpenButton = uibutton(topBar, ...
+        'Text', [char(9883) ' Quantum Amplitude Estimation'], ...
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onOpenQaeDialog());
+    app.QmcOpenButton.Layout.Row = 1; app.QmcOpenButton.Layout.Column = 4;
+    app.styleBtn(app.QmcOpenButton, 'secondary');
+    app.QmcOpenButton.FontSize = 14;
+    app.QmcOpenButton.Tooltip = ...
+        'Open the Quantum Monte Carlo Simulation (Quantum Amplitude Estimation) popup';
 
     % ── Extracted Features (left) ─────────────────────────────────────────────
     p1 = uipanel(g, 'Title', Labels.get('analysis_panel_features'), ...

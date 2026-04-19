@@ -15,22 +15,54 @@ classdef ReportService < handle
         end
 
         % Generate a report from the current pipeline state.
-        function data = generateReport(obj, title, format, sections, jobId, token)
-            Logger.info('ReportService', 'generateReport → POST /api/reports/generate (format: %s  job: %s)', ...
-                char(format), char(jobId));
-            secStr = strtrim(char(sections));
-            if isempty(secStr) || strcmpi(secStr, 'all')
-                secCell = {'circuit_summary','feature_analysis','benchmark_comparison', ...
-                           'backend_explorer','prediction','optimization','execution_results', ...
-                           'detailed_analysis'};
+        %   Backward-compatible 6-arg form kept for ReportsScreen flow:
+        %       generateReport(title, format, sections, jobId, token)
+        %   Extended 8-arg form for new analyses (e.g. Quantum Monte Carlo):
+        %       generateReport(title, reportType, format, circuitId, predictionId, jobId, sections, token)
+        function data = generateReport(obj, title, formatOrType, sectionsOrFormat, ...
+                                       jobIdOrCircuitId, tokenOrPredictionId, ...
+                                       maybeJobId, maybeSections, maybeToken)
+            if nargin >= 9
+                % Extended 8-argument call
+                reportType = char(formatOrType);
+                format     = lower(char(sectionsOrFormat));
+                circuitId  = char(jobIdOrCircuitId);
+                predictionId = char(tokenOrPredictionId);
+                jobId        = char(maybeJobId);
+                sections     = maybeSections;
+                token        = maybeToken;
             else
-                secCell = strtrim(strsplit(secStr, ','));
+                reportType = 'technical';
+                format     = lower(char(formatOrType));
+                circuitId  = '';
+                predictionId = '';
+                jobId      = char(jobIdOrCircuitId);
+                sections   = sectionsOrFormat;
+                token      = tokenOrPredictionId;
+            end
+            Logger.info('ReportService', ...
+                'generateReport → POST /api/reports/generate (type=%s format=%s job=%s circuit=%s)', ...
+                reportType, format, jobId, circuitId);
+            if iscell(sections)
+                secCell = sections;
+            else
+                secStr = strtrim(char(sections));
+                if isempty(secStr) || strcmpi(secStr, 'all')
+                    secCell = {'circuit_summary','feature_analysis','benchmark_comparison', ...
+                               'backend_explorer','prediction','optimization','execution_results', ...
+                               'detailed_analysis'};
+                else
+                    secCell = strtrim(strsplit(secStr, ','));
+                end
             end
             payload = struct( ...
-                'title',    char(title), ...
-                'format',   lower(char(format)), ...
-                'sections', {secCell}, ...
-                'job_id',   char(jobId));
+                'title',       char(title), ...
+                'report_type', reportType, ...
+                'format',      format, ...
+                'sections',    {secCell});
+            if ~isempty(jobId);         payload.job_record_id = jobId;       end
+            if ~isempty(circuitId);     payload.circuit_id    = circuitId;   end
+            if ~isempty(predictionId);  payload.prediction_id = predictionId; end
             try
                 data = obj.Client.postAuthJson('/api/reports/generate', payload, token);
                 Logger.info('ReportService', 'generateReport → report generation complete');

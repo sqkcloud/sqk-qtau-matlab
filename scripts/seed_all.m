@@ -14,6 +14,9 @@
 %   7. seed_reports     — Reports screen: generated reports
 %   8. seed_notes       — Notes screen: markdown notes + checklists
 %   9. seed_settings    — Settings screen: user preferences
+%  10. seed_qae         — Analysis screen: Quantum Amplitude Estimation
+%                         (uploads AQS-QMC VaR reference circuit and caches
+%                         a statevector-mode QAE analysis on each)
 %
 % Each script is self-contained and can also be run independently.
 % If a script fails, the orchestrator continues with the next one.
@@ -42,6 +45,7 @@ seedScripts = { ...
     'seed_reports',     'Reports screen (reports)'; ...
     'seed_notes',       'Notes screen (notes + checklists)'; ...
     'seed_settings',    'Settings screen (preferences)'; ...
+    'seed_qae',         'Analysis screen (Quantum Amplitude Estimation)'; ...
 };
 
 nScripts = size(seedScripts, 1);

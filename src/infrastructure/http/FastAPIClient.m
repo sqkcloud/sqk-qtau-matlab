@@ -387,9 +387,14 @@ classdef FastAPIClient < handle
         end
 
         function data = uploadViaHttpNet(url, filePath, extraFields, token, timeout, projectId)
-            % matlab.net.http multipart upload (R2016b+)
+            % matlab.net.http multipart upload.
+            %   Builds the multipart/form-data body manually (raw bytes +
+            %   custom boundary) to avoid depending on the FormField /
+            %   MultipartFormProvider constructor signatures, which have
+            %   shifted between MATLAB releases (R2025b currently rejects
+            %   the 4-arg FormField ctor that worked in earlier versions).
             import matlab.net.http.*
-            import matlab.net.http.io.*
+            import matlab.net.http.field.*
             import matlab.net.*
 
             [~, fname, ext] = fileparts(filePath);
@@ -400,33 +405,47 @@ classdef FastAPIClient < handle
                 error('FastAPIClient:fileNotFound', 'Cannot open file: %s', filePath);
             end
             closeFile = onCleanup(@() fclose(fid));
-            bytes = fread(fid, '*uint8');
+            fileBytes = fread(fid, '*uint8')';  % row vector uint8
 
-            dispValue = sprintf('form-data; name="file"; filename="%s"', fileName);
+            % Unique boundary marker, unlikely to collide with file contents.
+            boundary = sprintf('----QDashBoundary%s%06d', ...
+                datestr(now, 'yyyymmddHHMMSSFFF'), randi(999999));
+            CRLF = uint8([13 10]);
 
-            filePart = FormField('file', bytes, ...
-                field.ContentTypeField('application/octet-stream'), ...
-                field.GenericField('Content-Disposition', dispValue));
-
-            parts = {filePart};
+            body = uint8([]);
+            % Extra text fields come first (order doesn't matter to FastAPI).
             if isstruct(extraFields)
                 fnames = fieldnames(extraFields);
                 for i = 1:numel(fnames)
                     val = extraFields.(fnames{i});
                     if isnumeric(val); val = num2str(val); end
-                    parts{end+1} = FormField(fnames{i}, char(val)); %#ok
+                    header = sprintf(['--%s\r\n' ...
+                                      'Content-Disposition: form-data; name="%s"\r\n' ...
+                                      '\r\n'], boundary, fnames{i});
+                    body = [body, uint8(header), uint8(char(val)), CRLF]; %#ok<AGROW>
                 end
             end
+            % File part last.
+            fileHeader = sprintf(['--%s\r\n' ...
+                                  'Content-Disposition: form-data; name="file"; filename="%s"\r\n' ...
+                                  'Content-Type: application/octet-stream\r\n' ...
+                                  '\r\n'], boundary, fileName);
+            body = [body, uint8(fileHeader), fileBytes, CRLF];
+            % Closing boundary.
+            body = [body, uint8(sprintf('--%s--\r\n', boundary))];
 
-            provider = MultipartFormProvider(parts{:});
-            hdrs     = [field.GenericField('Authorization', ['Bearer ' char(token)]), ...
-                        field.GenericField('Accept', 'application/json')];
+            hdrs = [ContentTypeField(['multipart/form-data; boundary=' boundary]), ...
+                    GenericField('Authorization', ['Bearer ' char(token)]), ...
+                    GenericField('Accept', 'application/json')];
             if nargin >= 6 && strlength(string(projectId)) > 0
-                hdrs = [hdrs, field.GenericField('X-Project-Id', char(projectId))];
+                hdrs = [hdrs, GenericField('X-Project-Id', char(projectId))];
             end
-            req      = RequestMessage(RequestMethod.POST, hdrs, provider);
-            opts     = HTTPOptions('ConnectTimeout', timeout);
-            resp     = req.send(URI(url), opts);
+
+            msgBody = MessageBody();
+            msgBody.Payload = body;
+            req  = RequestMessage(RequestMethod.POST, hdrs, msgBody);
+            opts = HTTPOptions('ConnectTimeout', timeout);
+            resp = req.send(URI(url), opts);
 
             httpStatus = double(resp.StatusCode);
             bodyData = resp.Body.Data;

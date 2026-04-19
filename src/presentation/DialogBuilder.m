@@ -124,10 +124,12 @@ classdef DialogBuilder
             pwHtml = [ ...
                 '<html><head><style>' ...
                 '*{box-sizing:border-box;margin:0;padding:0;}' ...
-                'body{height:100%;display:flex;align-items:center;background:transparent;' ...
+                'html,body{height:100%;background:transparent;color-scheme:dark;}' ...
+                'body{display:flex;align-items:center;' ...
                 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' ...
                 '.pw-wrap{position:relative;width:100%;display:flex;align-items:center;}' ...
                 'input{width:100%;height:34px;padding:6px 38px 6px 10px;font-size:14px;' ...
+                '-webkit-appearance:none;appearance:none;' ...
                 'color:' inputFg ';border:1px solid ' inputBorder ';border-radius:6px;outline:none;background:' inputBg ';}' ...
                 'input:focus{border-color:' inputFocus ';box-shadow:0 0 0 2px rgba(67,97,238,0.18);}' ...
                 'input::placeholder{color:' placeholderC ';}' ...
@@ -420,6 +422,302 @@ classdef DialogBuilder
             Logger.info('DialogBuilder', 'Edit Project dialog shown for: %s', char(projectId));
         end
 
+        function buildQmcDialog(app)
+            % Modal popup hosting the Quantum Monte Carlo Simulation
+            %   (Quantum Amplitude Estimation) UI. Called from the Analysis
+            %   screen's launcher button. The controls + plots that live
+            %   inside (app.QmcModeDropdown, QmcRunButton, QmcPathAxes,
+            %   QmcConvergenceAxes, QmcKpiLabels, ...) are populated here
+            %   so AnalysisViewModel.renderQmcResult can continue to update
+            %   them via the cached app handles.
+            figPos = app.UIFigure.Position;
+            dlgW = min(1150, max(900, round(figPos(3) * 0.82)));
+            dlgH = min(720,  max(560, round(figPos(4) * 0.82)));
+            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
+            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
+
+            bgColor    = Theme.COLOR_BG;
+            cardBg     = Theme.COLOR_CARD;
+            cardBorder = Theme.COLOR_DIVIDER;
+            titleColor = Theme.COLOR_HEADING;
+            labelColor = Theme.COLOR_LABEL;
+
+            app.QmcDialog = uifigure( ...
+                'Name', 'Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)', ...
+                'Position', [dlgX dlgY dlgW dlgH], ...
+                'WindowStyle', 'modal', ...
+                'Resize', 'on', ...
+                'Color', bgColor, ...
+                'CloseRequestFcn', @(src,~) delete(src));
+            Theme.applyFigureMode(app.QmcDialog, Theme.activeName());
+
+            outerGrid = uigridlayout(app.QmcDialog, [3 3]);
+            outerGrid.RowHeight     = {16, '1x', 16};
+            outerGrid.ColumnWidth   = {24, '1x', 24};
+            outerGrid.Padding       = [0 0 0 0];
+            outerGrid.RowSpacing    = 0;
+            outerGrid.ColumnSpacing = 0;
+            outerGrid.BackgroundColor = bgColor;
+
+            card = uipanel(outerGrid, 'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', cardBg, ...
+                'HighlightColor', cardBorder, ...
+                'BorderColor', cardBorder);
+            card.Layout.Row = 2; card.Layout.Column = 2;
+
+            % Inside the card: header / body / footer.
+            cg = uigridlayout(card, [3 1]);
+            cg.RowHeight = {40, '1x', 52};
+            cg.ColumnWidth = {'1x'};
+            cg.Padding = [18 14 18 14];
+            cg.RowSpacing = 10;
+            cg.BackgroundColor = cardBg;
+
+            % ── Header ─────────────────────────────────────────────────
+            headerRow = uigridlayout(cg, [1 2]);
+            headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
+            headerRow.ColumnWidth = {'1x', 110};
+            headerRow.Padding = [0 0 0 0]; headerRow.ColumnSpacing = 8;
+            headerRow.BackgroundColor = cardBg;
+
+            titleLbl = uilabel(headerRow, ...
+                'Text', 'Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)', ...
+                'FontSize', 16, 'FontWeight', 'bold', 'FontColor', titleColor, ...
+                'VerticalAlignment', 'center');
+            titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
+
+            closeTopBtn = uibutton(headerRow, ...
+                'Text', [char(10005) ' Close'], ...
+                'ButtonPushedFcn', @(~,~) delete(app.QmcDialog));
+            closeTopBtn.Layout.Row = 1; closeTopBtn.Layout.Column = 2;
+            app.styleBtn(closeTopBtn, 'ghost');
+
+            % ── Body: controls+KPI (left)  |  plots (right) ────────────
+            body = uigridlayout(cg, [1 2]);
+            body.Layout.Row = 2; body.Layout.Column = 1;
+            body.ColumnWidth = {320, '1x'};
+            body.Padding = [0 0 0 0]; body.ColumnSpacing = Theme.GRID_ROW_SPACING;
+            body.BackgroundColor = cardBg;
+
+            left = uigridlayout(body, [3 1]);
+            left.Layout.Row = 1; left.Layout.Column = 1;
+            left.RowHeight = {'1x', 'fit', 'fit'};
+            left.Padding = [0 0 0 0]; left.RowSpacing = 10;
+            left.BackgroundColor = cardBg;
+
+            % Controls form — scrollable so the advanced block fits.
+            left.Scrollable = 'on';
+            form = uigridlayout(left, [16 2]);
+            form.Layout.Row = 1; form.Layout.Column = 1;
+            form.RowHeight = repmat({28}, 1, 16);
+            form.ColumnWidth = {130, '1x'};
+            form.Padding = [0 0 0 0]; form.RowSpacing = 5; form.ColumnSpacing = 8;
+            form.BackgroundColor = cardBg;
+
+            uilabel(form, 'Text', 'Execution mode', 'FontColor', labelColor);
+            app.QmcModeDropdown = uidropdown(form, ...
+                'Items',     {'Statevector (local)', 'IBM Runtime'}, ...
+                'ItemsData', {'statevector',          'runtime'}, ...
+                'Value',     'statevector');
+
+            uilabel(form, 'Text', 'Backend (runtime)', 'FontColor', labelColor);
+            app.QmcBackendField = uieditfield(form, 'text', 'Value', 'ibm_marrakesh');
+
+            uilabel(form, 'Text', 'Shots', 'FontColor', labelColor);
+            app.QmcShotsField = uispinner(form, ...
+                'Value', 4096, 'Limits', [128 100000], 'Step', 512);
+
+            uilabel(form, 'Text', 'Epsilon', 'FontColor', labelColor);
+            app.QmcEpsilonField = uispinner(form, ...
+                'Value', 0.01, 'Limits', [0.001 0.5], 'Step', 0.005, ...
+                'ValueDisplayFormat', '%.3f');
+
+            uilabel(form, 'Text', 'Confidence', 'FontColor', labelColor);
+            app.QmcConfidenceField = uispinner(form, ...
+                'Value', 0.95, 'Limits', [0.80 0.999], 'Step', 0.01, ...
+                'ValueDisplayFormat', '%.3f');
+
+            uilabel(form, 'Text', 'Risk metric', 'FontColor', labelColor);
+            app.QmcRiskDropdown = uidropdown(form, ...
+                'Items',     {'Option price',  'VaR 95%', 'VaR 99%', 'CVaR 95%'}, ...
+                'ItemsData', {'option_price',  'var_95',  'var_99',  'cvar_95'}, ...
+                'Value',     'var_95');
+
+            % ── Advanced section heading ─────────────────────────────
+            sep1 = uilabel(form, 'Text', 'Error mitigation', ...
+                'FontWeight', 'bold', 'FontColor', titleColor);
+            sep1.Layout.Column = [1 2];
+
+            uilabel(form, 'Text', 'Mitigation', 'FontColor', labelColor);
+            app.QmcMitigationDropdown = uidropdown(form, ...
+                'Items',     {'None', 'Zero-Noise Extrapolation', 'Probabilistic Error Cancellation'}, ...
+                'ItemsData', {'none',  'zne',                       'pec'}, ...
+                'Value',     'none');
+
+            sep2 = uilabel(form, 'Text', 'Market scenario (real-time)', ...
+                'FontWeight', 'bold', 'FontColor', titleColor);
+            sep2.Layout.Column = [1 2];
+
+            uilabel(form, 'Text', 'Spot / Strike', 'FontColor', labelColor);
+            ssRow = uigridlayout(form, [1 2]);
+            ssRow.ColumnWidth = {'1x', '1x'}; ssRow.ColumnSpacing = 6;
+            ssRow.Padding = [0 0 0 0]; ssRow.BackgroundColor = cardBg;
+            app.QmcSpotField   = uispinner(ssRow, 'Value', 100, 'Limits', [0.01 1e6], 'Step', 1, 'ValueDisplayFormat', '%.2f');
+            app.QmcStrikeField = uispinner(ssRow, 'Value', 100, 'Limits', [0.01 1e6], 'Step', 1, 'ValueDisplayFormat', '%.2f');
+
+            uilabel(form, 'Text', 'Volatility σ', 'FontColor', labelColor);
+            app.QmcVolField = uispinner(form, 'Value', 0.20, 'Limits', [0.01 2.0], 'Step', 0.01, 'ValueDisplayFormat', '%.3f');
+
+            uilabel(form, 'Text', 'Risk-free rate r', 'FontColor', labelColor);
+            app.QmcRateField = uispinner(form, 'Value', 0.05, 'Limits', [-0.05 0.50], 'Step', 0.005, 'ValueDisplayFormat', '%.3f');
+
+            uilabel(form, 'Text', 'Maturity T (yr)', 'FontColor', labelColor);
+            app.QmcTenorField = uispinner(form, 'Value', 0.0833, 'Limits', [0.0027 5.0], 'Step', 0.01, 'ValueDisplayFormat', '%.4f');
+
+            uilabel(form, 'Text', 'Option type', 'FontColor', labelColor);
+            app.QmcOptionTypeDropdown = uidropdown(form, ...
+                'Items', {'Call', 'Put'}, 'ItemsData', {'call', 'put'}, 'Value', 'call');
+
+            uilabel(form, 'Text', 'Notional', 'FontColor', labelColor);
+            app.QmcNotionalField = uispinner(form, 'Value', 100, 'Limits', [1 1e9], 'Step', 10, 'ValueDisplayFormat', '%.0f');
+
+            % KPI strip (5 cards)
+            kpi = uigridlayout(left, [1 5]);
+            kpi.Layout.Row = 2; kpi.Layout.Column = 1;
+            kpi.ColumnWidth = {'1x','1x','1x','1x','1x'};
+            kpi.Padding = [0 0 0 0]; kpi.ColumnSpacing = 4;
+            kpi.BackgroundColor = cardBg;
+
+            kpiTitles  = {'Amplitude', 'Expected', 'VaR 95%', 'VaR 99%', 'Speed ×'};
+            kpiDefault = {'—', '—', '—', '—', '—'};
+            app.QmcKpiLabels = cell(1, 5);
+            for i = 1:5
+                p = uipanel(kpi, 'Title', '', 'BorderType', 'line', ...
+                    'BorderColor', cardBorder);
+                p.Layout.Row = 1; p.Layout.Column = i;
+                p.BackgroundColor = cardBg;
+                pg = uigridlayout(p, [2 1]);
+                pg.RowHeight = {14, '1x'};
+                pg.Padding = [4 4 4 4];
+                pg.BackgroundColor = cardBg;
+                uilabel(pg, 'Text', kpiTitles{i}, 'FontSize', 10, 'FontColor', Theme.COLOR_MUTED);
+                l2 = uilabel(pg, 'Text', kpiDefault{i}, ...
+                    'FontSize', 14, 'FontWeight', 'bold', 'WordWrap', 'on');
+                app.QmcKpiLabels{i} = l2;
+            end
+
+            % Greeks strip (5 cards: Delta / Gamma / Vega / Theta / Rho)
+            greeks = uigridlayout(left, [1 5]);
+            greeks.Layout.Row = 3; greeks.Layout.Column = 1;
+            greeks.ColumnWidth = {'1x','1x','1x','1x','1x'};
+            greeks.Padding = [0 0 0 0]; greeks.ColumnSpacing = 4;
+            greeks.BackgroundColor = cardBg;
+            gTitles  = {'Δ Delta', 'Γ Gamma', 'Vega', 'Θ Theta', 'ρ Rho'};
+            app.QmcGreeksLabels = cell(1, 5);
+            for i = 1:5
+                p = uipanel(greeks, 'Title', '', 'BorderType', 'line', ...
+                    'BorderColor', cardBorder);
+                p.Layout.Row = 1; p.Layout.Column = i;
+                p.BackgroundColor = cardBg;
+                pg = uigridlayout(p, [2 1]);
+                pg.RowHeight = {14, '1x'};
+                pg.Padding = [4 4 4 4];
+                pg.BackgroundColor = cardBg;
+                uilabel(pg, 'Text', gTitles{i}, 'FontSize', 10, 'FontColor', Theme.COLOR_MUTED);
+                l2 = uilabel(pg, 'Text', '—', 'FontSize', 13, 'FontWeight', 'bold', 'WordWrap', 'on');
+                app.QmcGreeksLabels{i} = l2;
+            end
+
+            % Right: 3x2 grid of charts — full QMC / QAE story including
+            % Zero-Noise Extrapolation.
+            %   (1) Loss distribution with VaR95/VaR99 threshold lines
+            %   (2) Cumulative Distribution Function (CDF) overlay
+            %   (3) Convergence: QAE vs classical MC sample complexity
+            %   (4) Amplitude-estimation bar chart
+            %   (5) ZNE extrapolation curve (spans both bottom columns)
+            plots = uigridlayout(body, [3 2]);
+            plots.Layout.Row = 1; plots.Layout.Column = 2;
+            plots.RowHeight = {'1x', '1x', '0.7x'};
+            plots.ColumnWidth = {'1x', '1x'};
+            plots.Padding = [0 0 0 0];
+            plots.RowSpacing = 8; plots.ColumnSpacing = 8;
+            plots.BackgroundColor = cardBg;
+
+            app.QmcPathAxes = uiaxes(plots);
+            app.QmcPathAxes.Layout.Row = 1; app.QmcPathAxes.Layout.Column = 1;
+            app.styleAxes(app.QmcPathAxes);
+            title(app.QmcPathAxes, 'Loss distribution with VaR thresholds');
+            xlabel(app.QmcPathAxes, 'Loss (negative = P&L down)');
+            ylabel(app.QmcPathAxes, 'Probability');
+
+            app.QmcCdfAxes = uiaxes(plots);
+            app.QmcCdfAxes.Layout.Row = 1; app.QmcCdfAxes.Layout.Column = 2;
+            app.styleAxes(app.QmcCdfAxes);
+            title(app.QmcCdfAxes, 'Cumulative loss distribution (CDF)');
+            xlabel(app.QmcCdfAxes, 'Loss (negative = P&L down)');
+            ylabel(app.QmcCdfAxes, 'P(loss \leq x)');
+
+            app.QmcConvergenceAxes = uiaxes(plots);
+            app.QmcConvergenceAxes.Layout.Row = 2; app.QmcConvergenceAxes.Layout.Column = 1;
+            app.styleAxes(app.QmcConvergenceAxes);
+            title(app.QmcConvergenceAxes, 'Convergence: QAE 1/N vs classical MC 1/\surd{N}');
+            xlabel(app.QmcConvergenceAxes, 'Samples (log scale)');
+            ylabel(app.QmcConvergenceAxes, 'Estimation error (log scale)');
+
+            app.QmcAmpAxes = uiaxes(plots);
+            app.QmcAmpAxes.Layout.Row = 2; app.QmcAmpAxes.Layout.Column = 2;
+            app.styleAxes(app.QmcAmpAxes);
+            title(app.QmcAmpAxes, 'Objective-qubit amplitude estimate');
+            xlabel(app.QmcAmpAxes, 'Measured basis state');
+            ylabel(app.QmcAmpAxes, 'Probability');
+
+            app.QmcZneAxes = uiaxes(plots);
+            app.QmcZneAxes.Layout.Row = 3; app.QmcZneAxes.Layout.Column = [1 2];
+            app.styleAxes(app.QmcZneAxes);
+            title(app.QmcZneAxes, 'Zero-Noise Extrapolation — amplitude vs noise factor');
+            xlabel(app.QmcZneAxes, 'Noise factor (1.0 = native hardware)');
+            ylabel(app.QmcZneAxes, 'Amplitude estimate');
+
+            % ── Footer: Run / Generate Report / Close ─────────────────
+            footer = uigridlayout(cg, [1 4]);
+            footer.Layout.Row = 3; footer.Layout.Column = 1;
+            footer.ColumnWidth = {'1x', 200, 200, 120};
+            footer.Padding = [0 0 0 0]; footer.ColumnSpacing = 10;
+            footer.BackgroundColor = cardBg;
+
+            uilabel(footer, 'Text', ...
+                'Statevector runs locally. Switch to IBM Runtime for real-hardware shots.', ...
+                'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+
+            app.QmcRunButton = uibutton(footer, ...
+                'Text', [char(9883) ' Run QMC / QAE'], ...
+                'ButtonPushedFcn', @(~,~)app.AnalysisVm.onRunQaeAnalysis());
+            app.QmcRunButton.Layout.Row = 1; app.QmcRunButton.Layout.Column = 2;
+            app.styleBtn(app.QmcRunButton, 'primary');
+            app.QmcRunButton.FontSize = 14;
+            app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
+
+            app.QmcReportButton = uibutton(footer, ...
+                'Text', [char(9636) ' Generate Report'], ...
+                'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateQaeReport());
+            app.QmcReportButton.Layout.Row = 1; app.QmcReportButton.Layout.Column = 3;
+            app.styleBtn(app.QmcReportButton, 'secondary');
+            app.QmcReportButton.FontSize = 14;
+            app.QmcReportButton.Tooltip = 'Generate PDF (also available from Reports screen)';
+
+            closeBtn = uibutton(footer, ...
+                'Text', [char(10005) ' Close'], ...
+                'ButtonPushedFcn', @(~,~) delete(app.QmcDialog));
+            closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 4;
+            app.styleBtn(closeBtn, 'ghost');
+
+            % Rehydration (render of any cached result) is performed by
+            % the caller in AnalysisViewModel.onOpenQaeDialog so the
+            % private renderQmcResult method stays encapsulated.
+
+            Logger.info('DialogBuilder', 'Quantum Monte Carlo / QAE dialog shown');
+        end
+
         function html = textInputHtml(placeholder, initialValue)
             %textInputHtml  Inline HTML for a styled <input type="text">.
             %   Returns an HTML string for use with uihtml. JS sends
@@ -438,9 +736,11 @@ classdef DialogBuilder
             html = [ ...
                 '<html><head><style>' ...
                 '*{box-sizing:border-box;margin:0;padding:0;}' ...
-                'body{height:100%;display:flex;align-items:center;background:transparent;' ...
+                'html,body{height:100%;background:transparent;color-scheme:dark;}' ...
+                'body{display:flex;align-items:center;' ...
                 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' ...
                 'input{width:100%;height:34px;padding:6px 10px;font-size:14px;' ...
+                '-webkit-appearance:none;appearance:none;' ...
                 'color:' inputFg ';border:1px solid ' inputBorder ';border-radius:6px;outline:none;background:' inputBg ';}' ...
                 'input:focus{border-color:' inputFocus ';box-shadow:0 0 0 2px rgba(67,97,238,0.18);}' ...
                 'input::placeholder{color:' placeholderC ';}' ...

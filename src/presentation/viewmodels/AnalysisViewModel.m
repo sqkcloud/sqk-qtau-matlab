@@ -106,6 +106,128 @@ classdef AnalysisViewModel < handle
                 @(ME) obj.onAnalyzeError(app, cid, ME));
         end
 
+        % Open the Quantum Monte Carlo Simulation (Quantum Amplitude
+        % Estimation) popup. Fetches any previously cached result for the
+        % selected circuit so the dialog opens with data already shown.
+        function onOpenQaeDialog(obj)
+            app = obj.App;
+            if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
+                figure(app.QmcDialog);  % bring existing dialog to front
+                return;
+            end
+            DialogBuilder.buildQmcDialog(app);
+            % Best-effort: pre-populate with the last cached result for
+            % this circuit so returning users see data immediately.
+            try
+                if app.State.isAuthenticated() && app.State.hasCircuit()
+                    cid = app.State.selectedCircuitId;
+                    token = app.State.authToken;
+                    cached = app.QaeSvc.getLast(cid, token);
+                    app.QmcLastResult = cached;
+                    obj.renderQmcResult(app, cached);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', 'No cached QAE result: %s', ME.message);
+            end
+        end
+
+        % Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)
+        %   Runs a QAE analysis on the selected circuit via the FastAPI
+        %   backend and refreshes the Analysis screen's QMC section.
+        function onRunQaeAnalysis(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), ...
+                    'Quantum Monte Carlo', 'Icon', 'warning');
+                return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(app.UIFigure, ...
+                    'Select an uploaded circuit first (e.g. an AQS-QMC VaR circuit).', ...
+                    'Quantum Monte Carlo', 'Icon', 'warning');
+                return;
+            end
+            cid = app.State.selectedCircuitId;
+            mode = char(app.QmcModeDropdown.Value);
+            backend = char(app.QmcBackendField.Value);
+            if strcmp(mode, 'statevector'); backend = ''; end
+            shots = double(app.QmcShotsField.Value);
+            epsilon = double(app.QmcEpsilonField.Value);
+            confidence = double(app.QmcConfidenceField.Value);
+            risk = char(app.QmcRiskDropdown.Value);
+            % Map the shot/epsilon-derived path register width.
+            n = 7;
+            try; n = max(2, min(12, app.State.selectedCircuitQubits)); catch; end
+
+            % Advanced controls (mitigation + real-time market params).
+            opts = struct();
+            try
+                if ~isempty(app.QmcMitigationDropdown) && isvalid(app.QmcMitigationDropdown)
+                    opts.mitigation = char(app.QmcMitigationDropdown.Value);
+                end
+            catch; end
+            try
+                opts.market = struct( ...
+                    'spot',              double(app.QmcSpotField.Value), ...
+                    'strike',            double(app.QmcStrikeField.Value), ...
+                    'volatility',        double(app.QmcVolField.Value), ...
+                    'risk_free_rate',    double(app.QmcRateField.Value), ...
+                    'time_to_maturity',  double(app.QmcTenorField.Value), ...
+                    'option_type',       char(app.QmcOptionTypeDropdown.Value), ...
+                    'notional',          double(app.QmcNotionalField.Value));
+            catch
+                % Market controls not yet built — server uses defaults.
+            end
+            opts.compute_greeks = true;
+
+            if isfield(opts,'mitigation'); mitLog = opts.mitigation; else; mitLog = 'none'; end
+            app.logEvent('API', sprintf('POST /api/circuits/%s/qae/analyze — mode=%s shots=%d mitig=%s', ...
+                cid, mode, shots, mitLog));
+            app.showLoading('Running Quantum Amplitude Estimation...');
+
+            qaeSvc = app.QaeSvc;
+            token  = app.State.authToken;
+            AsyncRunner.run( ...
+                @() qaeSvc.analyze(cid, mode, shots, epsilon, confidence, n, risk, backend, opts, token), ...
+                @(data) obj.onQaeComplete(app, data), ...
+                @(ME)   obj.onQaeError(app, ME));
+        end
+
+        function onGenerateQaeReport(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(app.UIFigure, 'Select a circuit before generating the report.', ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            cid = app.State.selectedCircuitId;
+            if isempty(app.QmcLastResult)
+                choice = uiconfirm(app.UIFigure, ...
+                    'No QMC/QAE analysis has been run on this circuit yet. Run it now with current settings before generating the PDF?', ...
+                    'Generate Report', 'Options', {'Run and generate', 'Cancel'}, ...
+                    'DefaultOption', 1, 'CancelOption', 2);
+                if strcmp(choice, 'Cancel'); return; end
+                obj.onRunQaeAnalysis();
+                return;  % report will be requested after analyze completes (user clicks again)
+            end
+            app.showLoading('Generating PDF report...');
+            sections = { ...
+                'executive_summary', 'circuit_summary', 'feature_analysis', ...
+                'quantum_monte_carlo', 'key_insights'};
+            title = sprintf('Quantum Monte Carlo VaR Report — %s', char(app.State.selectedCircuitName));
+            reportSvc = app.ReportSvc;
+            token     = app.State.authToken;
+            AsyncRunner.run( ...
+                @() reportSvc.generateReport(title, 'technical', 'pdf', cid, '', '', sections, token), ...
+                @(data) obj.onQaeReportGenerated(app, data), ...
+                @(ME)   obj.onQaeReportError(app, ME));
+        end
+
         function onVisualizeSimilarity(obj)
             app = obj.App;
             try
@@ -478,6 +600,285 @@ classdef AnalysisViewModel < handle
     end
 
     methods (Access = private)
+        function onQaeComplete(obj, app, data)
+            app.hideLoading();
+            app.QmcLastResult = data;
+            obj.renderQmcResult(app, data);
+            app.logEvent('API', sprintf('QMC / QAE complete — amp=%.4f speedup=%.1fx', ...
+                JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
+                JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
+            app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
+        end
+
+        function onQaeError(~, app, ME)
+            app.hideLoading();
+            isRuntime503 = contains(string(ME.message), '503') || ...
+                           contains(lower(string(ME.message)), 'runtime is not configured');
+            if isRuntime503
+                uialert(app.UIFigure, ...
+                    sprintf(['IBM Qiskit Runtime is not configured on the server.\n' ...
+                             'Switch Execution Mode to "Statevector (local)" and try again.\n\n%s'], ...
+                             ME.message), ...
+                    'Quantum Monte Carlo', 'Icon', 'warning');
+            else
+                uialert(app.UIFigure, ME.message, 'Quantum Monte Carlo', 'Icon', 'error');
+            end
+            Logger.error('AnalysisViewModel', 'QAE failed: %s', ME.message);
+        end
+
+        function onQaeReportGenerated(~, app, data)
+            app.hideLoading();
+            reportId = char(JsonHelper.pick(data, {'report_id'}, ''));
+            status   = char(JsonHelper.pick(data, {'status'}, 'unknown'));
+            app.logEvent('API', sprintf('Report generated — id=%s status=%s', reportId, status));
+            uialert(app.UIFigure, ...
+                sprintf(['Quantum Monte Carlo report generated.\n\n' ...
+                         'Report ID: %s\nStatus: %s\n\n' ...
+                         'Open the Reports screen to download the PDF.'], reportId, status), ...
+                'Generate Report', 'Icon', 'success');
+        end
+
+        function onQaeReportError(~, app, ME)
+            app.hideLoading();
+            uialert(app.UIFigure, ME.message, 'Generate Report', 'Icon', 'error');
+            Logger.error('AnalysisViewModel', 'QAE report failed: %s', ME.message);
+        end
+
+        function renderQmcResult(~, app, data)
+            % KPI strip: amplitude | expected payoff | VaR95 | VaR99 | speedup
+            try
+                amp     = JsonHelper.pickNumeric(data, 'amplitude_estimate', NaN);
+                ampLo   = JsonHelper.pickNumeric(data, 'amplitude_ci_low',   NaN);
+                ampHi   = JsonHelper.pickNumeric(data, 'amplitude_ci_high',  NaN);
+                payoff  = JsonHelper.pickNumeric(data, 'expected_payoff',    NaN);
+                var95   = JsonHelper.pickNumeric(data, 'var_95',             NaN);
+                var99   = JsonHelper.pickNumeric(data, 'var_99',             NaN);
+                speedup = JsonHelper.pickNumeric(data, 'quadratic_speedup',  NaN);
+
+                labels = app.QmcKpiLabels;
+                labels{1}.Text = sprintf('%.4f\n[%.3f, %.3f]', amp, ampLo, ampHi);
+                labels{2}.Text = sprintf('%.2f', payoff);
+                labels{3}.Text = sprintf('%.2f', var95);
+                labels{4}.Text = sprintf('%.2f', var99);
+                labels{5}.Text = sprintf('%.1fx', speedup);
+            catch ME
+                Logger.warn('AnalysisViewModel', 'QMC KPI render: %s', ME.message);
+            end
+
+            % Extract path_distribution once; used by both the loss
+            % histogram and the CDF overlay.
+            xs = []; ps = []; losses = [];
+            try
+                pdf = JsonHelper.pick(data, {'path_distribution'}, []);
+                if iscell(pdf) && ~isempty(pdf)
+                    xs = zeros(numel(pdf), 1);
+                    ps = zeros(numel(pdf), 1);
+                    for i = 1:numel(pdf)
+                        item = pdf{i};
+                        xs(i) = JsonHelper.pickNumeric(item, 'value', i);
+                        ps(i) = JsonHelper.pickNumeric(item, 'probability', 0);
+                    end
+                    % Convert log-return buckets into mark-to-market loss
+                    % using a $100 notional so the axes read in dollars,
+                    % matching the expected_payoff / VaR units.
+                    losses = -xs * 100.0;
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Path PDF decode: %s', ME.message);
+            end
+
+            var95 = JsonHelper.pickNumeric(data, 'var_95', NaN);
+            var99 = JsonHelper.pickNumeric(data, 'var_99', NaN);
+
+            % (1) Loss distribution with VaR threshold lines
+            try
+                if ~isempty(losses)
+                    cla(app.QmcPathAxes);
+                    bar(app.QmcPathAxes, losses, ps, 'FaceColor', Theme.COLOR_PRIMARY, ...
+                        'EdgeColor', 'none', 'FaceAlpha', 0.85, 'DisplayName', 'Loss PDF');
+                    hold(app.QmcPathAxes, 'on');
+                    yLim = ylim(app.QmcPathAxes);
+                    if ~isnan(var95)
+                        plot(app.QmcPathAxes, [var95 var95], yLim, '--', ...
+                            'Color', Theme.COLOR_WARNING, 'LineWidth', 1.6, ...
+                            'DisplayName', sprintf('VaR 95%% (%.1f)', var95));
+                    end
+                    if ~isnan(var99)
+                        plot(app.QmcPathAxes, [var99 var99], yLim, '--', ...
+                            'Color', Theme.COLOR_DANGER, 'LineWidth', 1.6, ...
+                            'DisplayName', sprintf('VaR 99%% (%.1f)', var99));
+                    end
+                    hold(app.QmcPathAxes, 'off');
+                    app.QmcPathAxes.XGrid = 'on'; app.QmcPathAxes.YGrid = 'on';
+                    legend(app.QmcPathAxes, 'Location', 'northwest', 'Box', 'off');
+                    title(app.QmcPathAxes, 'Loss distribution with VaR thresholds');
+                    xlabel(app.QmcPathAxes, 'Loss (negative = P&L down)');
+                    ylabel(app.QmcPathAxes, 'Probability');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Loss-distribution render: %s', ME.message);
+            end
+
+            % (2) Cumulative loss distribution (CDF)
+            try
+                if ~isempty(losses)
+                    [sortedLoss, idx] = sort(losses, 'ascend');
+                    cdf = cumsum(ps(idx));
+                    cla(app.QmcCdfAxes);
+                    stairs(app.QmcCdfAxes, sortedLoss, cdf, ...
+                        'Color', Theme.COLOR_SUCCESS, 'LineWidth', 2.0, ...
+                        'DisplayName', 'Cumulative P(loss \leq x)');
+                    hold(app.QmcCdfAxes, 'on');
+                    if ~isnan(var95)
+                        plot(app.QmcCdfAxes, [var95 var95], [0 1], '--', ...
+                            'Color', Theme.COLOR_WARNING, 'LineWidth', 1.4, ...
+                            'DisplayName', 'VaR 95%');
+                    end
+                    if ~isnan(var99)
+                        plot(app.QmcCdfAxes, [var99 var99], [0 1], '--', ...
+                            'Color', Theme.COLOR_DANGER, 'LineWidth', 1.4, ...
+                            'DisplayName', 'VaR 99%');
+                    end
+                    hold(app.QmcCdfAxes, 'off');
+                    app.QmcCdfAxes.YLim = [0 1.05];
+                    app.QmcCdfAxes.XGrid = 'on'; app.QmcCdfAxes.YGrid = 'on';
+                    legend(app.QmcCdfAxes, 'Location', 'southeast', 'Box', 'off');
+                    title(app.QmcCdfAxes, 'Cumulative loss distribution (CDF)');
+                    xlabel(app.QmcCdfAxes, 'Loss (negative = P&L down)');
+                    ylabel(app.QmcCdfAxes, 'P(loss \leq x)');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'CDF render: %s', ME.message);
+            end
+
+            % (3) QAE vs classical MC convergence (log-log)
+            try
+                conv = JsonHelper.pick(data, {'convergence'}, []);
+                if iscell(conv) && ~isempty(conv)
+                    ns   = zeros(numel(conv), 1);
+                    qae  = zeros(numel(conv), 1);
+                    mc   = zeros(numel(conv), 1);
+                    for i = 1:numel(conv)
+                        item = conv{i};
+                        ns(i)  = JsonHelper.pickNumeric(item, 'samples',             1);
+                        qae(i) = JsonHelper.pickNumeric(item, 'qae_error',           NaN);
+                        mc(i)  = JsonHelper.pickNumeric(item, 'classical_mc_error',  NaN);
+                    end
+                    cla(app.QmcConvergenceAxes);
+                    hold(app.QmcConvergenceAxes, 'on');
+                    plot(app.QmcConvergenceAxes, ns, qae, '-o', ...
+                        'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.8, ...
+                        'MarkerSize', 4, 'DisplayName', 'QAE ~ 1/N');
+                    plot(app.QmcConvergenceAxes, ns, mc, '-s', ...
+                        'Color', Theme.COLOR_DANGER, 'LineWidth', 1.8, ...
+                        'MarkerSize', 4, 'DisplayName', 'Classical MC ~ 1/\surd{N}');
+                    hold(app.QmcConvergenceAxes, 'off');
+                    app.QmcConvergenceAxes.XScale = 'log';
+                    app.QmcConvergenceAxes.YScale = 'log';
+                    app.QmcConvergenceAxes.XGrid  = 'on';
+                    app.QmcConvergenceAxes.YGrid  = 'on';
+                    legend(app.QmcConvergenceAxes, 'Location', 'northeast', 'Box', 'off');
+                    title(app.QmcConvergenceAxes, 'Convergence: QAE 1/N vs classical MC 1/\surd{N}');
+                    xlabel(app.QmcConvergenceAxes, 'Samples (log scale)');
+                    ylabel(app.QmcConvergenceAxes, 'Estimation error (log scale)');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Convergence render: %s', ME.message);
+            end
+
+            % Greeks KPI row (Delta / Gamma / Vega / Theta / Rho)
+            try
+                g = JsonHelper.pick(data, {'greeks'}, []);
+                if isstruct(g) && ~isempty(app.QmcGreeksLabels)
+                    vals = [ ...
+                        JsonHelper.pickNumeric(g, 'delta', NaN), ...
+                        JsonHelper.pickNumeric(g, 'gamma', NaN), ...
+                        JsonHelper.pickNumeric(g, 'vega',  NaN), ...
+                        JsonHelper.pickNumeric(g, 'theta', NaN), ...
+                        JsonHelper.pickNumeric(g, 'rho',   NaN)];
+                    for i = 1:5
+                        if isnan(vals(i))
+                            app.QmcGreeksLabels{i}.Text = '—';
+                        else
+                            app.QmcGreeksLabels{i}.Text = sprintf('%.4f', vals(i));
+                        end
+                    end
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Greeks render: %s', ME.message);
+            end
+
+            % (5) Zero-Noise Extrapolation curve (amplitude vs noise factor)
+            try
+                if ~isempty(app.QmcZneAxes) && isvalid(app.QmcZneAxes)
+                    cla(app.QmcZneAxes);
+                    curve = JsonHelper.pick(data, {'mitigation_curve'}, []);
+                    mit   = JsonHelper.pick(data, {'mitigation'}, 'none');
+                    if iscell(curve) && ~isempty(curve)
+                        nf = zeros(numel(curve), 1);
+                        amps = zeros(numel(curve), 1);
+                        for i = 1:numel(curve)
+                            item = curve{i};
+                            nf(i)   = JsonHelper.pickNumeric(item, 'noise_factor', i - 1);
+                            amps(i) = JsonHelper.pickNumeric(item, 'amplitude',    NaN);
+                        end
+                        hold(app.QmcZneAxes, 'on');
+                        plot(app.QmcZneAxes, nf(nf > 0), amps(nf > 0), '-s', ...
+                            'Color', Theme.COLOR_DANGER, 'LineWidth', 1.6, ...
+                            'MarkerFaceColor', Theme.COLOR_DANGER, 'MarkerSize', 6, ...
+                            'DisplayName', 'Noisy samples');
+                        zeroIdx = find(nf == 0, 1);
+                        if ~isempty(zeroIdx)
+                            plot(app.QmcZneAxes, nf(zeroIdx), amps(zeroIdx), 'p', ...
+                                'MarkerSize', 14, 'LineWidth', 2.0, ...
+                                'Color', Theme.COLOR_SUCCESS, ...
+                                'MarkerFaceColor', Theme.COLOR_SUCCESS, ...
+                                'DisplayName', 'Extrapolated zero-noise');
+                        end
+                        hold(app.QmcZneAxes, 'off');
+                        app.QmcZneAxes.XGrid = 'on'; app.QmcZneAxes.YGrid = 'on';
+                        app.QmcZneAxes.XLim = [-0.3, max(nf) + 0.3];
+                        legend(app.QmcZneAxes, 'Location', 'northeast', 'Box', 'off');
+                    else
+                        text(app.QmcZneAxes, 0.5, 0.5, ...
+                            sprintf('Mitigation = %s.\nEnable ZNE or PEC for the extrapolation curve.', upper(string(mit))), ...
+                            'Units', 'normalized', 'HorizontalAlignment', 'center', ...
+                            'Color', Theme.COLOR_MUTED, 'FontSize', 12);
+                        app.QmcZneAxes.XTick = []; app.QmcZneAxes.YTick = [];
+                    end
+                    title(app.QmcZneAxes, 'Zero-Noise Extrapolation — amplitude vs noise factor');
+                    xlabel(app.QmcZneAxes, 'Noise factor (1.0 = native hardware)');
+                    ylabel(app.QmcZneAxes, 'Amplitude estimate');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'ZNE render: %s', ME.message);
+            end
+
+            % (4) Amplitude-estimation bar chart — the "objective qubit"
+            % measured in |0> / |1>, plus the classical-MC baseline of
+            % the same expectation for visual reference. This is what
+            % QAE is actually solving for (P(objective = 1) = a).
+            try
+                amp = JsonHelper.pickNumeric(data, 'amplitude_estimate', NaN);
+                if ~isnan(amp)
+                    cla(app.QmcAmpAxes);
+                    bar(app.QmcAmpAxes, [1 2], [1 - amp, amp], ...
+                        'FaceColor', Theme.COLOR_PRIMARY, 'EdgeColor', 'none', ...
+                        'FaceAlpha', 0.85);
+                    app.QmcAmpAxes.XTick = [1 2];
+                    app.QmcAmpAxes.XTickLabel = {'|0\rangle', '|1\rangle'};
+                    app.QmcAmpAxes.YLim = [0 1];
+                    app.QmcAmpAxes.XGrid = 'off'; app.QmcAmpAxes.YGrid = 'on';
+                    title(app.QmcAmpAxes, ...
+                        sprintf('Objective-qubit amplitude estimate (a = %.4f)', amp));
+                    xlabel(app.QmcAmpAxes, 'Measured basis state');
+                    ylabel(app.QmcAmpAxes, 'Probability');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Amplitude chart render: %s', ME.message);
+            end
+        end
+
         function onAnalyzeComplete(obj, app, cid, data)
             obj.applyAnalysisData(data);
             obj.applyBenchmarkMatches(data);

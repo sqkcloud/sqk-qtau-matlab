@@ -89,6 +89,32 @@ classdef JsonHelper
             value = JsonHelper.toStr(cursor);
         end
 
+        % pickNumeric  Resolve a dotted path and coerce to a scalar double.
+        %   Returns `default` when the path is missing, empty, or not numerically
+        %   convertible. Handles struct/char/string/numeric values uniformly so
+        %   ViewModels can read JSON fields that webread may decode as any of
+        %   these types.
+        function value = pickNumeric(data, path, default)
+            if nargin < 3; default = NaN; end
+            [found, raw] = JsonHelper.pickRawOne(JsonHelper.decodeIfJson(data), string(path));
+            if ~found
+                value = default; return;
+            end
+            try
+                if isnumeric(raw) || islogical(raw)
+                    if isempty(raw); value = default; return; end
+                    value = double(raw(1));
+                elseif ischar(raw) || isstring(raw)
+                    v = str2double(char(raw));
+                    if isnan(v); value = default; else; value = v; end
+                else
+                    value = default;
+                end
+            catch
+                value = default;
+            end
+        end
+
         % pickRawOne  Navigate a single dotted path, return (found, raw).
         %   found=false when the path does not resolve, or when it resolves
         %   to an empty value (JSON null decodes to []).
