@@ -1,10 +1,10 @@
 % seed_qasmbench_invalid.m ─────────────────────────────────────────────────────
-% Re-uploads the 25 QASMBench circuits that were previously marked INVALID
+% Re-uploads the 25 QTAUBench circuits that were previously marked INVALID
 % by the backend (before the qiskit LEGACY gate-set fix).
 %
 % After the backend fix (qasm2.loads with LEGACY_CUSTOM_INSTRUCTIONS),
 % 22 of these now parse correctly.  Only 3 remain truly invalid due to
-% upstream QASMBench bugs (vqe_uccsd_n4/n6/n8 reference undefined `q[]`).
+% upstream QTAUBench bugs (vqe_uccsd_n4/n6/n8 reference undefined `q[]`).
 %
 % This script deletes the old INVALID copies first, then re-uploads so
 % the backend can re-validate with the corrected parser.
@@ -15,7 +15,7 @@
 % Provides data for: Upload screen, Analysis screen
 % ──────────────────────────────────────────────────────────────────────────────
 
-fprintf('\n=== QTAU Seed: Re-uploading 25 previously-INVALID QASMBench circuits ===\n\n');
+fprintf('\n=== QTAU Seed: Re-uploading 25 previously-INVALID QTAUBench circuits ===\n\n');
 
 % ── Configuration ───────────────────────────────────────────────────────────
 cfg      = seed_helpers.loadConfig();
@@ -25,7 +25,7 @@ BASE_URL = cfg.base_url;
 rootDir = fullfile(fileparts(mfilename('fullpath')), '..', 'samples', 'qasmbench');
 if ~isfolder(rootDir)
     error('seed_qasmbench_invalid:notFound', ...
-        'samples/qasmbench/ not found. Clone QASMBench files first.');
+        'samples/qasmbench/ not found. Clone QTAUBench files first.');
 end
 
 % ── Step 1: Authenticate ────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ for i = 1:totalFiles
         'name',     entry.name, ...
         'format',   'qasm2', ...
         'category', entry.category, ...
-        'source',   'QASMBench', ...
+        'source',   'QTAUBench', ...
         'content',  content);
 
     try

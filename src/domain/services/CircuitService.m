@@ -98,7 +98,7 @@ classdef CircuitService < handle
             end
         end
 
-        % Run QASMBench similarity matching for a circuit.
+        % Run QTAUBench similarity matching for a circuit.
         function data = matchBenchmarks(obj, circuitId, token)
             ep = sprintf('/api/circuits/%s/match-benchmarks', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'matchBenchmarks → POST %s', ep);

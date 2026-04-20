@@ -133,7 +133,7 @@ function UploadScreen(app)
     lbl = uilabel(mg, 'Text', Labels.get('upload_label_metadata'));
     lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 3; lbl.Layout.Column = 1;
-    app.CircuitMetadataArea = uieditfield(mg, 'text', 'Value', 'QASMBench');
+    app.CircuitMetadataArea = uieditfield(mg, 'text', 'Value', 'QTAUBench');
     app.CircuitMetadataArea.FontSize = 12;
     app.CircuitMetadataArea.Layout.Row = 3; app.CircuitMetadataArea.Layout.Column = [2 4];
 

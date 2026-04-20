@@ -122,7 +122,7 @@ List circuits for the active project. Paginated with `skip` (default 0) and `lim
       "depth": 45,
       "is_valid": true,
       "category": "Arithmetic",
-      "source": "QASMBench",
+      "source": "QTAUBench",
       "created_at": "2026-04-10T00:07:42Z"
     }
   ],
@@ -142,7 +142,7 @@ Upload a circuit as JSON with inline content.
   "format": "qasm2",
   "content": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[2];\nh q[0];\ncx q[0],q[1];\nmeasure q -> c;\n",
   "category": "Entanglement",
-  "source": "QASMBench"
+  "source": "QTAUBench"
 }
 ```
 
@@ -206,12 +206,12 @@ Run feature extraction on a circuit via Qiskit. Returns structural metrics and b
   "benchmark_matches": [
     {
       "name": "adder_n10",
-      "source": "QASMBench",
+      "source": "QTAUBench",
       "similarity": 0.97,
       "num_qubits": 10,
       "depth": 45,
       "category": "Arithmetic",
-      "notes": "Exact match from QASMBench small suite"
+      "notes": "Exact match from QTAUBench small suite"
     }
   ]
 }

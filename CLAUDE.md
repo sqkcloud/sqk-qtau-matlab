@@ -27,7 +27,7 @@ AppConfig.reload(); Labels.reload();
 run('scripts/seed_all.m')
 % Or seed a single screen's data
 run('scripts/seed_projects.m')
-% Seed QASMBench circuits
+% Seed QTAUBench circuits
 run('scripts/seed_qasmbench.m')
 ```
 
@@ -94,7 +94,7 @@ src/
 | CircuitsScreen | CircuitsViewModel | Browse, search, manage project circuits |
 | NotesScreen | NotesViewModel | Working notes and operator memos |
 | UploadScreen | UploadViewModel | Circuit upload with format selection and preview |
-| AnalysisScreen | AnalysisViewModel | Circuit feature extraction and QASMBench similarity |
+| AnalysisScreen | AnalysisViewModel | Circuit feature extraction and QTAUBench similarity |
 | DetailedAnalysisScreen | DetailedAnalysisViewModel | Heatmaps, drift, qubit metrics, cross-run comparisons |
 | BackendsScreen | BackendsViewModel | Backend explorer with primary/backup selection |
 | BenchmarkScreen | BenchmarkViewModel | Execution parameters, mitigation strategy, cost |
@@ -143,8 +143,8 @@ All seed scripts are in `scripts/` and use `seed_helpers.m` for authentication a
 | `seed_all.m` | Master orchestrator — runs all seed scripts in order |
 | `seed_projects.m` | 20 demo projects |
 | `seed_circuits.m` | 10 sample OpenQASM circuits (inline content) |
-| `seed_qasmbench.m` | 113+ QASMBench circuits from `samples/qasmbench/` |
-| `seed_qasmbench_invalid.m` | Re-upload 25 previously invalid QASMBench circuits |
+| `seed_qasmbench.m` | 113+ QTAUBench circuits from `samples/qasmbench/` |
+| `seed_qasmbench_invalid.m` | Re-upload 25 previously invalid QTAUBench circuits |
 | `seed_backends.m` | Backend selections per project |
 | `seed_benchmarks.m` | Benchmark configs and strategy comparisons |
 | `seed_predictions.m` | Fidelity predictions |
@@ -156,7 +156,7 @@ All seed scripts are in `scripts/` and use `seed_helpers.m` for authentication a
 ## Sample Circuits
 
 - `samples/*.qasm` — 12 hand-crafted OpenQASM 2.0 circuits (Bell state, GHZ, Grover, etc.)
-- `samples/qasmbench/` — 252 circuits from [PNNL QASMBench](https://github.com/pnnl/QASMBench)
+- `samples/qasmbench/` — 252 circuits from [PNNL QTAUBench](https://github.com/pnnl/QTAUBench)
   - `small/` — 85 files (2-10 qubits)
   - `medium/` — 47 files (11-27 qubits)
   - `large/` — 120 files (28+ qubits)

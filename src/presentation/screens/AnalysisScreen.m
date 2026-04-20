@@ -4,7 +4,7 @@
 %     Row 1 (34 px):   Circuit selector + Analyze + Quantum Amplitude
 %                      Estimation launcher button.
 %     Row 2 ('1x'):    Extracted Features tree + annotation (left) |
-%                      QASMBench Similarity table + comparison notes (right).
+%                      QTAUBench Similarity table + comparison notes (right).
 %     Row 3 ('1x'):    Quantum Volume heatmap (full width).
 %     Row 4 (72 px):   Action bar — Next: Backends / Back: Upload.
 %
@@ -80,7 +80,7 @@ function AnalysisScreen(app)
         'Analyze a circuit to see', ...
         'feature extraction results.'};
 
-    % ── QASMBench Similarity (right) ─────────────────────────────────────────
+    % ── QTAUBench Similarity (right) ─────────────────────────────────────────
     p2 = uipanel(g, 'Title', Labels.get('analysis_panel_similarity'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     p2.Layout.Row = 2; p2.Layout.Column = 2; p2.BackgroundColor = Theme.COLOR_CARD;

@@ -185,8 +185,8 @@ sqk-qtau-matlab/
 │   ├── seed_helpers.m                ← Shared auth and HTTP utilities
 │   ├── seed_projects.m              ← Seed 20 demo projects
 │   ├── seed_circuits.m              ← Seed 10 sample OpenQASM circuits
-│   ├── seed_qasmbench.m             ← Seed 113+ QASMBench benchmark circuits
-│   ├── seed_qasmbench_invalid.m     ← Re-upload previously invalid QASMBench circuits
+│   ├── seed_qasmbench.m             ← Seed 113+ QTAUBench benchmark circuits
+│   ├── seed_qasmbench_invalid.m     ← Re-upload previously invalid QTAUBench circuits
 │   ├── seed_backends.m              ← Seed backend selections
 │   ├── seed_benchmarks.m            ← Seed benchmark configurations
 │   ├── seed_predictions.m           ← Seed fidelity predictions
@@ -197,7 +197,7 @@ sqk-qtau-matlab/
 │
 ├── samples/                          ← OpenQASM circuit files
 │   ├── *.qasm                        ← 12 hand-crafted sample circuits
-│   └── qasmbench/                    ← QASMBench benchmark suite (252 circuits)
+│   └── qasmbench/                    ← QTAUBench benchmark suite (252 circuits)
 │       ├── small/                    ← 2-10 qubits (85 files)
 │       ├── medium/                   ← 11-27 qubits (47 files)
 │       └── large/                    ← 28+ qubits (120 files)
@@ -237,7 +237,7 @@ sqk-qtau-matlab/
 - **Project context tracking** — Selected project persists across all screens via AppState
 - **Circuit management** — Browse, upload, analyze, preview SVG diagrams, match against benchmarks
 - **QEC simulation engine** — Surface code simulation with configurable noise models and 3D visualization
-- **QASMBench integration** — 252 benchmark circuits from PNNL QASMBench (small/medium/large)
+- **QTAUBench integration** — 252 benchmark circuits from PNNL QTAUBench (small/medium/large)
 - **Externalized text** — 600+ UI strings in `labels.properties` (change text without editing code)
 - **Structured logging** — `[HH:MM:SS.FFF] LEVEL [Category] Message` format via `Logger`
 - **Dependency injection** — Services wired via `ServiceContainer` with `FastAPIClient` injection

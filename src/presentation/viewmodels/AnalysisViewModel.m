@@ -423,7 +423,7 @@ classdef AnalysisViewModel < handle
                 dlgW = 1100; dlgH = 650;
                 dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
                 dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
-                dlg = uifigure('Name', 'QASMBench Similarity Visualization', ...
+                dlg = uifigure('Name', 'QTAUBench Similarity Visualization', ...
                     'Position', [dlgX dlgY dlgW dlgH], ...
                     'Resize', 'on', 'Color', Theme.COLOR_BG);
                 Theme.applyFigureMode(dlg, Theme.activeName());
@@ -438,14 +438,14 @@ classdef AnalysisViewModel < handle
                 tg.Layout.Row = 1; tg.Layout.Column = 1;
 
                 % ══════════════════════════════════════════════════════════════
-                % Tab 1: QASMBench Similarity Visualization
+                % Tab 1: QTAUBench Similarity Visualization
                 %   Single focused ranked-bar chart with auto-scaled X axis
                 %   (tight similarity bands of 97–98% become visually
                 %   differentiated) + a Match Profile side panel that
                 %   surfaces the current circuit, category breakdown, and
                 %   a calibrated interpretation of the top match.
                 % ══════════════════════════════════════════════════════════════
-                tab1 = uitab(tg, 'Title', 'QASMBench Similarity Visualization');
+                tab1 = uitab(tg, 'Title', 'QTAUBench Similarity Visualization');
                 tab1.BackgroundColor = Theme.COLOR_CARD;
 
                 dg = uigridlayout(tab1, [2 2]);
@@ -674,7 +674,7 @@ classdef AnalysisViewModel < handle
             elseif topSim > 0.85
                 interp = 'Good match — similar structure to a known benchmark.';
             elseif topSim > 0.70
-                interp = 'Moderate match — broadly comparable to QASMBench peers.';
+                interp = 'Moderate match — broadly comparable to QTAUBench peers.';
             else
                 interp = 'Weak match — novel structure with limited benchmark reference.';
             end
@@ -1529,7 +1529,7 @@ classdef AnalysisViewModel < handle
                             lines{end+1} = 'Novel structure — limited benchmark reference data.';
                         end
                     end
-                catch ME; Logger.debug('AnalysisViewModel', 'buildFeatureSummary QASMBench similarity: %s', ME.message); end
+                catch ME; Logger.debug('AnalysisViewModel', 'buildFeatureSummary QTAUBench similarity: %s', ME.message); end
 
                 app.AnalysisFeatureArea.Value = lines;
             catch ME
