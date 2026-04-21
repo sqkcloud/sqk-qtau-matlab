@@ -229,6 +229,7 @@ classdef PredictionViewModel < handle
         end
 
         function onCircuitsLoaded(~, app, data)
+            try; app.hideLoading(); catch; end
             if isempty(app.PredictionCircuitDropdown) ...
                     || ~isvalid(app.PredictionCircuitDropdown); return; end
             items = JsonHelper.extractList(data, 'circuits');
@@ -262,6 +263,7 @@ classdef PredictionViewModel < handle
         end
 
         function onBackendsLoaded(~, app, data)
+            try; app.hideLoading(); catch; end
             if isempty(app.PredictionBackendDropdown) ...
                     || ~isvalid(app.PredictionBackendDropdown); return; end
             items = JsonHelper.extractList(data, 'backends');
@@ -291,6 +293,7 @@ classdef PredictionViewModel < handle
         end
 
         function onDropdownLoadError(~, app, which, ME)
+            try; app.hideLoading(); catch; end
             Logger.warn('PredictionViewModel', ...
                 'Failed to load %s: %s', which, ME.message);
             if strcmp(which, 'circuits') ...

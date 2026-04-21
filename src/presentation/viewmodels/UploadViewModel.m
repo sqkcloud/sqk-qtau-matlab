@@ -184,10 +184,12 @@ classdef UploadViewModel < handle
         function onRefreshCircuits(obj)
             app = obj.App;
             if ~app.State.isAuthenticated()
+                try; app.hideLoading(); catch; end
                 return;
             end
             if ~app.State.hasProject()
                 app.UploadCircuitsTable.Data = {};
+                try; app.hideLoading(); catch; end
                 return;
             end
             app.logEvent('API', sprintf('GET /api/circuits — project: %s', char(app.State.currentProjectId)));
@@ -197,6 +199,7 @@ classdef UploadViewModel < handle
                 if isempty(circuits)
                     app.UploadCircuitsTable.Data = {};
                     app.logEvent('API', 'listCircuits → 0 circuits in project');
+                    try; app.hideLoading(); catch; end
                     return;
                 end
                 if isstruct(circuits)
@@ -229,6 +232,7 @@ classdef UploadViewModel < handle
             catch ME
                 app.logEvent('ERROR', sprintf('listCircuits FAILED: %s', ME.message));
             end
+            try; app.hideLoading(); catch; end
         end
 
         function onDeleteCircuit(obj)

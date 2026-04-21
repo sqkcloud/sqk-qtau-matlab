@@ -40,6 +40,7 @@ classdef SettingsViewModel < handle
         end
 
         function onIbmConfigComplete(obj, app, data)
+            try; app.hideLoading(); catch; end
             backends = JsonHelper.safeField(data, 'backends', {});
             if ischar(backends); backends = {backends}; end
             if ~iscell(backends); backends = num2cell(string(backends)); end
@@ -57,6 +58,7 @@ classdef SettingsViewModel < handle
         end
 
         function onIbmConfigError(~, app, ME)
+            try; app.hideLoading(); catch; end
             app.logEvent('WARN', sprintf('getIbmConfig failed: %s', ME.message));
         end
 

@@ -51,6 +51,7 @@ classdef QTAUWorkbenchApp < handle
 
         LoadingOverlay
         ActivityOverlay            % Reusable loading overlay for API calls
+        NavOverlayTimer            % Safety-timer that auto-dismisses the nav loading overlay
         AuthOverlay                % Login-required overlay covering content area
         HeaderUserLabel            % Logged-in username button in header
         HeaderUserMenuPanel        % The popup panel container

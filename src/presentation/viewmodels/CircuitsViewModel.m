@@ -398,6 +398,7 @@ classdef CircuitsViewModel < handle
         end
 
         function onLoadCircuitsComplete(obj, app, data)
+            app.hideLoading();
             circuits = JsonHelper.extractList(data, 'circuits');
             if isempty(circuits)
                 app.CircuitsTable.Data = {};
@@ -459,6 +460,7 @@ classdef CircuitsViewModel < handle
         end
 
         function onLoadCircuitsError(obj, app, ME)
+            app.hideLoading();
             app.logEvent('ERROR', sprintf('listCircuitsPaged FAILED: %s', ME.message));
             obj.updatePageLabel();
         end

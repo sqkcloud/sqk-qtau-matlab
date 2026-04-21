@@ -10,6 +10,10 @@ classdef OverlayManager
         function showLoading(app, msg, showTimer)
             if nargin < 2; msg = 'Loading...'; end
             if nargin < 3; showTimer = false; end
+            % Any prior nav auto-dismiss timer is stale the moment a
+            % fresh overlay is shown — clear it so it doesn't fire mid-
+            % flight on this new overlay.
+            try; NavigationManager.disarmNavOverlayTimer(app); catch; end
             try
                 if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
                     delete(app.ActivityOverlay);
@@ -80,6 +84,9 @@ classdef OverlayManager
         end
 
         function hideLoading(app)
+            % Dismiss the safety timer so a late fire can't pop an
+            % unrelated overlay on a subsequent nav.
+            try; NavigationManager.disarmNavOverlayTimer(app); catch; end
             try
                 if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
                     delete(app.ActivityOverlay);

@@ -46,9 +46,18 @@ classdef NavigationManager
             NavigationManager.ensureVm(app, key);
             ttl = AppConfig.getDouble('screen_cache_ttl', 30);
 
+            % Centralised "Loading {screen}..." overlay. We flip it on
+            % right before firing any VM auto-loader that is actually
+            % going to do async work (stale cache), and off again via
+            % the VM's own hideLoading in its done/error callback. A
+            % safety timer auto-dismisses after 20s so a forgetful VM
+            % cannot leave a stuck overlay.  Fresh-cache hits skip the
+            % overlay entirely so nav stays snappy when there's nothing
+            % to fetch.
             switch key
                 case 'Welcome'
                     if app.State.isAuthenticated() && ~NavigationManager.isScreenFresh(app.WelcomeVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Welcome');
                         app.WelcomeVm.onFetchProjects();
                     end
                 case 'Upload'
@@ -61,16 +70,19 @@ classdef NavigationManager
                             app.UploadActiveProjectLabel.Text = char(projName);
                         end
                         if ~NavigationManager.isScreenFresh(app.UploadVm, ttl)
+                            NavigationManager.showNavLoading(app, 'Upload');
                             app.UploadVm.onRefreshCircuits();
                         end
                     end
                 case 'Circuits'
                     if ~isempty(app.CircuitsVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.CircuitsVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Circuits');
                         app.CircuitsVm.onLoadCircuits();
                     end
                 case 'Dashboard'
                     if ~isempty(app.DashboardVm) && ~NavigationManager.isScreenFresh(app.DashboardVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Dashboard');
                         app.DashboardVm.onRefreshDashboard();
                     elseif ~isempty(app.DashboardVm)
                         % Screen is fresh but activities may have changed from other screens
@@ -79,35 +91,42 @@ classdef NavigationManager
                 case 'Notes'
                     if ~isempty(app.NotesVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.NotesVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Notes');
                         app.NotesVm.onLoadNotes();
                     end
                 case 'Analysis'
                     if ~isempty(app.AnalysisVm) && ~NavigationManager.isScreenFresh(app.AnalysisVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Analysis');
                         app.AnalysisVm.onEnter();
                     end
                 case 'Backends'
                     if ~isempty(app.BackendsVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.BackendsVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Backends');
                         app.BackendsVm.onRefreshBackends();
                     end
                 case 'Prediction'
                     if ~isempty(app.PredictionVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.PredictionVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Prediction');
                         app.PredictionVm.onEnter();
                     end
                 case 'Jobs'
                     if ~isempty(app.JobsVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.JobsVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Jobs');
                         app.JobsVm.onRefreshJobs();
                     end
                 case 'Results'
                     if ~isempty(app.ResultsVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.ResultsVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Results');
                         app.ResultsVm.onRefreshResults();
                     end
                 case 'Benchmark'
                     if ~isempty(app.BenchmarkVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.BenchmarkVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Benchmark');
                         app.BenchmarkVm.onLoadBenchmark();
                     end
                 case 'Detailed Analysis'
@@ -122,13 +141,73 @@ classdef NavigationManager
                 case 'Benchmark Dashboard'
                     if ~isempty(app.BenchmarkDashboardVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.BenchmarkDashboardVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Benchmark Dashboard');
                         app.BenchmarkDashboardVm.onEnter();
                     end
                 case 'Settings'
                     if ~isempty(app.SettingsVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.SettingsVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Settings');
                         app.SettingsVm.onEnter();
                     end
+            end
+        end
+
+        % ── Nav-triggered loading overlay ───────────────────────────────
+        %   A VM's own showLoading() call (if any) will overwrite the
+        %   message with something more specific. A VM's hideLoading()
+        %   in its done/error callback dismisses it; the safety timer
+        %   auto-dismisses after 20s for VMs that forget.
+
+        function showNavLoading(app, key)
+            try
+                label = sprintf('Loading %s...', char(key));
+                app.showLoading(label);
+            catch ME
+                Logger.debug('NavigationManager', 'showNavLoading: %s', ME.message);
+                return;
+            end
+            NavigationManager.armNavOverlayTimer(app, 20);
+        end
+
+        function armNavOverlayTimer(app, seconds)
+            % Start (or restart) the safety timer that dismisses the
+            % loading overlay if nothing else does. Always disarms any
+            % prior timer first so rapid nav doesn't stack timers.
+            NavigationManager.disarmNavOverlayTimer(app);
+            try
+                t = timer( ...
+                    'StartDelay', seconds, ...
+                    'BusyMode',   'drop', ...
+                    'Name',       'NavOverlayAutoDismiss', ...
+                    'TimerFcn',   @(src,~) NavigationManager.onNavOverlayTimeout(app, src));
+                app.NavOverlayTimer = t;
+                start(t);
+            catch ME
+                Logger.debug('NavigationManager', 'armNavOverlayTimer: %s', ME.message);
+            end
+        end
+
+        function disarmNavOverlayTimer(app)
+            try
+                if isprop(app, 'NavOverlayTimer') && ~isempty(app.NavOverlayTimer) ...
+                        && isvalid(app.NavOverlayTimer)
+                    stop(app.NavOverlayTimer);
+                    delete(app.NavOverlayTimer);
+                end
+            catch
+            end
+            try; app.NavOverlayTimer = []; catch; end
+        end
+
+        function onNavOverlayTimeout(app, src)
+            try; stop(src); delete(src); catch; end
+            try; app.NavOverlayTimer = []; catch; end
+            try
+                app.hideLoading();
+                Logger.debug('NavigationManager', ...
+                    'Nav loading overlay auto-dismissed by safety timer');
+            catch
             end
         end
 
@@ -269,7 +348,11 @@ classdef NavigationManager
         end
 
         function n = navNames()
-            n = {'Welcome','Dashboard','Circuits','Notes','Upload','Analysis','Backends', ...
+            % Notes intentionally omitted — hidden from the sidebar for
+            % now. The NotesScreen / NotesViewModel are still wired up
+            % in QTAUWorkbenchApp so the tab can be re-enabled later by
+            % adding 'Notes' back to navNames / navIcons / navLabels.
+            n = {'Welcome','Dashboard','Circuits','Upload','Analysis','Backends', ...
                  'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
                  'Benchmark Dashboard', ...
                  'QEC Simulation','QEC Visualization','Reports','Settings'};
@@ -282,7 +365,6 @@ classdef NavigationManager
                 char(8962),  ... ⌂ Welcome
                 char(9707),  ... ◫ Dashboard
                 char(9776),  ... ☰ Circuits
-                char(9998),  ... ✎ Notes
                 char(8593),  ... ↑ Upload
                 char(8981),  ... ⌕ Analysis
                 char(9004),  ... ⌬ Backends
@@ -300,7 +382,7 @@ classdef NavigationManager
 
         function lb = navLabels()
             % Text labels (no icon prefix — icon is rendered separately).
-            lb = {'Welcome','Dashboard','Circuits','Notes','Upload','Analysis','Backends', ...
+            lb = {'Welcome','Dashboard','Circuits','Upload','Analysis','Backends', ...
                   'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
                   'Benchmark Dashboard', ...
                   'QEC Simulation','QEC Visualization','Reports','Settings'};
