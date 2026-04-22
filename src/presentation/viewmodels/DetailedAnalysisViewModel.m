@@ -359,6 +359,52 @@ classdef DetailedAnalysisViewModel < handle
             obj.reportLiveError('Compare', ME);
             obj.plotComparisonDemo();
         end
+
+        function onDetailedCircuitsLoaded(~, app, data)
+            try; app.hideLoading(); catch; end
+            if isempty(app.DetailedAnalysisCircuitDropdown) ...
+                    || ~isvalid(app.DetailedAnalysisCircuitDropdown); return; end
+            items = JsonHelper.extractList(data, 'circuits');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.DetailedAnalysisCircuitDropdown.Items     = {'(no circuits)'};
+                app.DetailedAnalysisCircuitDropdown.ItemsData = {''};
+                app.DetailedAnalysisCircuitDropdown.Value     = '';
+                return;
+            end
+            names = cell(1, n); ids = cell(1, n);
+            for i = 1:n
+                ids{i}   = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
+                nm       = char(JsonHelper.pick(items(i), {'name','circuit_name'}));
+                if isempty(nm); nm = ids{i}; end
+                names{i} = nm;
+            end
+            app.DetailedAnalysisCircuitDropdown.Items     = names;
+            app.DetailedAnalysisCircuitDropdown.ItemsData = ids;
+            selId = char(app.State.selectedCircuitId);
+            match = find(strcmp(ids, selId), 1);
+            if ~isempty(match)
+                app.DetailedAnalysisCircuitDropdown.Value = ids{match};
+            else
+                app.DetailedAnalysisCircuitDropdown.Value = ids{1};
+                app.State.selectedCircuitId   = string(ids{1});
+                app.State.selectedCircuitName = string(names{1});
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d circuits into Detailed Analysis dropdown', n));
+        end
+
+        function onDetailedCircuitsError(~, app, ME)
+            try; app.hideLoading(); catch; end
+            Logger.warn('DetailedAnalysisViewModel', ...
+                'Failed to load circuits: %s', ME.message);
+            if ~isempty(app.DetailedAnalysisCircuitDropdown) ...
+                    && isvalid(app.DetailedAnalysisCircuitDropdown)
+                app.DetailedAnalysisCircuitDropdown.Items     = {'(load failed)'};
+                app.DetailedAnalysisCircuitDropdown.ItemsData = {''};
+                app.DetailedAnalysisCircuitDropdown.Value     = '';
+            end
+        end
     end
 
     methods
@@ -375,6 +421,118 @@ classdef DetailedAnalysisViewModel < handle
             obj.plotTemporalDemo();
             obj.plotQubitDemo();
             obj.plotRBDecayDemo();
+        end
+
+        % ── Circuit selector wiring ─────────────────────────────────────
+        %   The toolbar's Circuit dropdown is populated on screen entry
+        %   and on demand. Picking a row updates app.State so every
+        %   downstream call (Compare, Heatmap, Temporal, Qubits, RB
+        %   Decay) targets the right circuit.
+
+        function onEnter(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            obj.loadCircuits();
+            obj.LastRefresh = tic;
+        end
+
+        function loadCircuits(obj)
+            app = obj.App;
+            token   = app.State.authToken;
+            circSvc = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() circSvc.listCircuits(token), ...
+                @(data) obj.onDetailedCircuitsLoaded(app, data), ...
+                @(ME)   obj.onDetailedCircuitsError(app, ME));
+        end
+
+        function onCircuitSelected(obj, circuitId)
+            app = obj.App;
+            if isempty(circuitId); return; end
+            app.State.selectedCircuitId = string(circuitId);
+            try
+                items = app.DetailedAnalysisCircuitDropdown.Items;
+                ids   = app.DetailedAnalysisCircuitDropdown.ItemsData;
+                k = find(strcmp(ids, char(circuitId)), 1);
+                if ~isempty(k)
+                    app.State.selectedCircuitName = string(items{k});
+                end
+            catch
+            end
+            app.logEvent('UI', sprintf('Detailed Analysis circuit selected: %s', ...
+                char(app.State.selectedCircuitName)));
+        end
+
+        function onAnalyze(obj)
+            % Bridge to the Analysis screen: navigate there with the
+            % currently-selected Detailed Analysis circuit pre-selected
+            % and auto-trigger the analyze POST so the user lands on the
+            % result without having to click a second button.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), ...
+                    'Detailed Analysis', 'Icon', 'warning'); return;
+            end
+            % Read the current selection directly from the dropdown;
+            % onCircuitSelected keeps app.State in sync, but be defensive
+            % in case the user never touched the dropdown.
+            cid = '';
+            name = '';
+            try
+                cid = char(app.DetailedAnalysisCircuitDropdown.Value);
+                items = app.DetailedAnalysisCircuitDropdown.Items;
+                ids   = app.DetailedAnalysisCircuitDropdown.ItemsData;
+                k = find(strcmp(ids, cid), 1);
+                if ~isempty(k); name = items{k}; end
+            catch
+            end
+            if isempty(strtrim(cid))
+                uialert(app.UIFigure, ...
+                    'Pick a circuit from the dropdown before clicking Analyze.', ...
+                    'Detailed Analysis', 'Icon', 'warning');
+                return;
+            end
+            % Propagate the selection so the Analysis screen's own
+            % onEnter → onEnterCircuitsLoaded path auto-selects it when
+            % the dropdown populates, and so onAnalyzeCircuit picks it
+            % up even if the Analysis dropdown is still loading.
+            app.State.selectedCircuitId   = string(cid);
+            if ~isempty(name)
+                app.State.selectedCircuitName = string(name);
+            end
+            app.logEvent('UI', sprintf( ...
+                'Detailed Analysis → Analysis (circuit: %s)', ...
+                char(app.State.selectedCircuitName)));
+
+            % Navigate. autoLoadScreen on the target 'Analysis' case
+            % calls AnalysisVm.onEnter when the cache is stale; when
+            % the cache is fresh, the existing dropdown already has
+            % our circuit — we just need to nudge it visually and fire
+            % onCircuitSelected so dependent state (e.g. backend list)
+            % refreshes.
+            app.onSelectSection('Analysis');
+            try
+                if ~isempty(app.AnalysisCircuitDropdown) ...
+                        && isvalid(app.AnalysisCircuitDropdown) ...
+                        && iscell(app.AnalysisCircuitDropdown.ItemsData) ...
+                        && any(strcmp(app.AnalysisCircuitDropdown.ItemsData, cid))
+                    app.AnalysisCircuitDropdown.Value = cid;
+                    app.AnalysisVm.onCircuitSelected(cid);
+                end
+            catch ME
+                Logger.debug('DetailedAnalysisViewModel', ...
+                    'Analysis dropdown sync: %s', ME.message);
+            end
+
+            % Kick off the analyze request. onAnalyzeCircuit reads
+            % app.State.selectedCircuitId directly — it doesn't depend
+            % on whether the Analysis dropdown has repainted yet.
+            try
+                app.AnalysisVm.onAnalyzeCircuit();
+            catch ME
+                Logger.warn('DetailedAnalysisViewModel', ...
+                    'onAnalyzeCircuit: %s', ME.message);
+            end
         end
 
         function plotComparisonDemo(obj)

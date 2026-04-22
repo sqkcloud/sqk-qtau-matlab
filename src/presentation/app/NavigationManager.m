@@ -138,6 +138,14 @@ classdef NavigationManager
                             && isempty(app.CompareAxes.Children)
                         app.DetailedAnalysisVm.plotAllDemos();
                     end
+                    % Populate the Circuit dropdown whenever we enter the
+                    % screen — the user may have uploaded new circuits
+                    % elsewhere in the session.
+                    if ~isempty(app.DetailedAnalysisVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.DetailedAnalysisVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Detailed Analysis');
+                        app.DetailedAnalysisVm.onEnter();
+                    end
                 case 'Benchmark Dashboard'
                     if ~isempty(app.BenchmarkDashboardVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.BenchmarkDashboardVm, ttl)

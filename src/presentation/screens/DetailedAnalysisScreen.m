@@ -26,62 +26,87 @@ function DetailedAnalysisScreen(app)
     g.ColumnSpacing = 10;
     g.BackgroundColor = BG;
 
-    % ── Toolbar (row 1, full width) ───────────────────────────────────────────
-    toolbar = uigridlayout(g, [1 2]);
+    % ── Row 1: Single-row toolbar ───────────────────────────────────────────
+    %   Circuit label | dropdown | Analyze | Compare | Error Matrix |
+    %   Temporal | Qubits | RB Decay | Reports
+    %
+    %   Circuit comes first so the user immediately sees which circuit
+    %   the charts below relate to; the chart-refresh buttons sit beside
+    %   it and Reports anchors the far right.
+    toolbar = uigridlayout(g, [1 9]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
-    toolbar.ColumnWidth = {'1x', 148};
-    toolbar.Padding     = [0 0 0 0];
+    toolbar.ColumnWidth = {60, '1x', 150, 108, 126, 108, 96, 120, 120};
+    toolbar.Padding = [0 0 0 0]; toolbar.ColumnSpacing = 6;
     toolbar.BackgroundColor = BG;
 
-    leftBtns = uigridlayout(toolbar, [1 5]);
-    leftBtns.Layout.Row = 1; leftBtns.Layout.Column = 1;
-    leftBtns.ColumnWidth = {108, 126, 108, 96, 120};
-    leftBtns.Padding = [0 0 0 0]; leftBtns.ColumnSpacing = 6;
-    leftBtns.BackgroundColor = BG;
+    % Left-aligned so the 'C' of 'Circuit' sits flush against the
+    % toolbar's left edge — same X as the 'Measured vs Ideal
+    % Distribution' panel title on the row below (both panel and toolbar
+    % are children of the same parent grid and share GRID_PADDING).
+    circLbl = uilabel(toolbar, 'Text', 'Circuit', ...
+        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center');
+    circLbl.Layout.Row = 1; circLbl.Layout.Column = 1;
 
-    app.RefreshCompareButton = uibutton(leftBtns, ...
+    app.DetailedAnalysisCircuitDropdown = uidropdown(toolbar, ...
+        'Items', {'(loading...)'}, 'ItemsData', {''}, 'Value', '', ...
+        'ValueChangedFcn', @(src,~)app.DetailedAnalysisVm.onCircuitSelected(src.Value));
+    app.DetailedAnalysisCircuitDropdown.Layout.Row = 1;
+    app.DetailedAnalysisCircuitDropdown.Layout.Column = 2;
+
+    app.DetailedAnalysisAnalyzeButton = uibutton(toolbar, ...
+        'Text', [char(9881) ' Analyze'], ...
+        'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onAnalyze());
+    app.DetailedAnalysisAnalyzeButton.Layout.Row = 1;
+    app.DetailedAnalysisAnalyzeButton.Layout.Column = 3;
+    app.styleBtn(app.DetailedAnalysisAnalyzeButton, 'primary');
+    app.DetailedAnalysisAnalyzeButton.FontSize = 13;
+    app.DetailedAnalysisAnalyzeButton.Tooltip = ...
+        'Jump to the Analysis screen with the selected circuit and run a fresh analyze';
+
+    app.RefreshCompareButton = uibutton(toolbar, ...
         'Text', [char(8644) ' ' Labels.get('detailed_btn_refresh_compare')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotComparison());
-    app.RefreshCompareButton.Layout.Row = 1; app.RefreshCompareButton.Layout.Column = 1;
+    app.RefreshCompareButton.Layout.Row = 1; app.RefreshCompareButton.Layout.Column = 4;
     app.styleBtn(app.RefreshCompareButton, 'ghost');
     app.RefreshCompareButton.FontSize = 13;
     app.RefreshCompareButton.Tooltip = 'GET /jobs/{id}/results/detailed — distribution comparison';
 
-    app.RefreshHeatmapButton = uibutton(leftBtns, ...
+    app.RefreshHeatmapButton = uibutton(toolbar, ...
         'Text', [char(9641) ' ' Labels.get('detailed_btn_refresh_heatmap')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotHeatmap());
-    app.RefreshHeatmapButton.Layout.Row = 1; app.RefreshHeatmapButton.Layout.Column = 2;
+    app.RefreshHeatmapButton.Layout.Row = 1; app.RefreshHeatmapButton.Layout.Column = 5;
     app.styleBtn(app.RefreshHeatmapButton, 'ghost');
     app.RefreshHeatmapButton.FontSize = 13;
     app.RefreshHeatmapButton.Tooltip = 'GET /jobs/{id}/results/detailed — cross-qubit error matrix';
 
-    app.RefreshTemporalButton = uibutton(leftBtns, ...
+    app.RefreshTemporalButton = uibutton(toolbar, ...
         'Text', [char(8987) ' ' Labels.get('detailed_btn_refresh_temporal')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotTemporal());
-    app.RefreshTemporalButton.Layout.Row = 1; app.RefreshTemporalButton.Layout.Column = 3;
+    app.RefreshTemporalButton.Layout.Row = 1; app.RefreshTemporalButton.Layout.Column = 6;
     app.styleBtn(app.RefreshTemporalButton, 'ghost');
     app.RefreshTemporalButton.FontSize = 13;
     app.RefreshTemporalButton.Tooltip = 'GET /jobs/{id}/error-trends — temporal stability';
 
-    app.RefreshQubitButton = uibutton(leftBtns, ...
+    app.RefreshQubitButton = uibutton(toolbar, ...
         'Text', [char(9898) ' ' Labels.get('detailed_btn_refresh_qubit')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotQubit());
-    app.RefreshQubitButton.Layout.Row = 1; app.RefreshQubitButton.Layout.Column = 4;
+    app.RefreshQubitButton.Layout.Row = 1; app.RefreshQubitButton.Layout.Column = 7;
     app.styleBtn(app.RefreshQubitButton, 'ghost');
     app.RefreshQubitButton.FontSize = 13;
     app.RefreshQubitButton.Tooltip = 'GET /jobs/{id}/results/detailed — per-qubit T1/T2 coherence';
 
-    app.RefreshRBButton = uibutton(leftBtns, ...
+    app.RefreshRBButton = uibutton(toolbar, ...
         'Text', [char(8600) ' ' Labels.get('detailed_btn_refresh_rb')], ...
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onPlotRBDecay());
-    app.RefreshRBButton.Layout.Row = 1; app.RefreshRBButton.Layout.Column = 5;
+    app.RefreshRBButton.Layout.Row = 1; app.RefreshRBButton.Layout.Column = 8;
     app.styleBtn(app.RefreshRBButton, 'ghost');
     app.RefreshRBButton.FontSize = 13;
     app.RefreshRBButton.Tooltip = 'GET /jobs/{id}/rb-decay — randomized benchmarking';
 
     nextBtn = uibutton(toolbar, 'Text', [char(9636) ' Reports'], ...  % Reports nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Reports'));
-    nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 2;
+    nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 9;
     app.styleBtn(nextBtn, 'primary');
 
     % ═════════════════════════════════════════════════════════════════════════

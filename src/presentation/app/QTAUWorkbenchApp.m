@@ -309,6 +309,8 @@ classdef QTAUWorkbenchApp < handle
         RefreshTemporalButton
         RefreshQubitButton
         RefreshRBButton
+        DetailedAnalysisCircuitDropdown   % Circuit selector on the Detailed Analysis toolbar
+        DetailedAnalysisAnalyzeButton     % Analyze button: re-runs all 5 detailed charts for the selected circuit
     end
 
     % ── Benchmark Dashboard tab ──────────────────────────────────────────────
