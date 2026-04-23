@@ -1,7 +1,7 @@
-# QDash Workbench — QTAU Connector
+# QTAU Connector Workbench
 
-A professional **MATLAB R2025b** desktop application for managing quantum circuit experiments through a FastAPI backend.
-Built with clean three-layer architecture (presentation / domain / infrastructure), externalized configuration, and structured logging.
+A professional **MATLAB R2025b** desktop application for managing quantum circuit experiments through a FastAPI backend (QTAU Connector).
+Built with clean three-layer architecture (presentation / domain / infrastructure), externalized configuration, and structured logging. Includes a Quantum Monte Carlo simulation popup with async IBM Runtime job execution, zero-noise extrapolation, vector-chart PDF reports, and IBM execution-log download.
 
 ---
 
@@ -61,15 +61,16 @@ Three-layer clean architecture under `src/`:
 ```
 src/
 ├── presentation/          ← UI layer
-│   ├── app/               ← Main app class, layout, navigation, styling, overlays
-│   ├── screens/           ← 17 screen builder functions (pure UI layout)
-│   └── viewmodels/        ← 17 ViewModel classes (callbacks, event logic)
+│   ├── app/               ← Main app class, layout, navigation, overlays (centralized nav-click loading overlay)
+│   ├── screens/           ← 17 screen builder functions (Notes hidden from sidebar, easily re-enabled)
+│   ├── viewmodels/        ← 17 ViewModel classes (callbacks, poll timers, async flows)
+│   └── DialogBuilder.m    ← Modal dialog factory — hosts the Quantum Monte Carlo popup
 ├── domain/                ← Business logic layer
 │   ├── models/            ← Session-scoped state (AppState)
-│   ├── services/          ← 10 service classes
+│   ├── services/          ← 11 service classes (includes QaeService for async QAE/QMC jobs + IBM-log download)
 │   └── ServiceContainer.m ← Dependency injection container
 └── infrastructure/        ← Technical foundation
-    ├── http/              ← HTTP gateway (FastAPIClient)
+    ├── http/              ← HTTP gateway (FastAPIClient) — optional per-call timeout, authenticated download helper
     ├── config/            ← Static utilities (AppConfig, Labels, Logger, JsonHelper, Theme, CircuitDiagram)
     └── AsyncRunner.m      ← Async execution wrapper
 ```
@@ -144,7 +145,7 @@ sqk-qtau-matlab/
 │   │   ├── ServiceContainer.m        ← Dependency injection container
 │   │   ├── models/
 │   │   │   └── AppState.m            ← Session-scoped mutable state
-│   │   └── services/                 ← 10 service classes
+│   │   └── services/                 ← 11 service classes
 │   │       ├── AuthService.m
 │   │       ├── BackendService.m
 │   │       ├── BenchmarkService.m
@@ -152,6 +153,7 @@ sqk-qtau-matlab/
 │   │       ├── JobService.m
 │   │       ├── PredictionService.m
 │   │       ├── ProjectService.m
+│   │       ├── QaeService.m          ← Async QAE/QMC — submitAnalyze / getAnalyzeJob / cancel / downloadIbmLog
 │   │       ├── QecEngineService.m
 │   │       ├── ReportService.m
 │   │       └── SettingsService.m
@@ -231,13 +233,19 @@ sqk-qtau-matlab/
 
 ## Key Features
 
-- **17-screen workflow UI** — Welcome, Dashboard, Circuits, Notes, Upload, Analysis, Detailed Analysis, Backends, Benchmark, Benchmark Dashboard, Prediction, Jobs, Results, Reports, Settings, QEC Simulation, QEC Visualization
+- **17-screen workflow UI** — Welcome, Dashboard, Circuits, Notes (hidden), Upload, Analysis, Detailed Analysis, Backends, Benchmark, Benchmark Dashboard, Prediction, Jobs, Results, Reports, Settings, QEC Simulation, QEC Visualization
+- **Quantum Monte Carlo simulation** — Modal popup launched from Analysis with async IBM-Runtime execution (submit → poll → render), zero-noise extrapolation, greeks, loss distribution, and one-click PDF + IBM execution-log download
+- **Async job pattern (QAE)** — `POST /qae/analyze` returns `202 {job_id}` immediately; MATLAB timer polls `GET /qae/jobs/{id}` every 3 s with live status / progress in the overlay
+- **Download IBM Log** — Streams the Qiskit Runtime execution record as JSONL matching the hybrid-QMC reference schema (`{subcircuit_id, backend, shots, status, job_id, counts, error}`)
+- **Jobs Monitoring Dashboard** — 6-column table (Job ID / Circuit / Backend / Status / Progress / Created) sorted newest-first, with **5-second silent auto-refresh** that self-terminates on navigation away
+- **Detailed Analysis** — Circuit selector + Analyze bridge button that routes back to the Analysis screen with the picked circuit pre-selected and auto-analyzes
+- **Centralized nav-click loading overlay** — `Loading {Screen}…` on every screen that triggers async data loading, with a 20 s safety timer backstop
 - **Google-inspired login dialog** — Professional sign-in card with externalized labels
-- **Auto-loading screens** — Dashboard and other screens auto-fetch data when navigated to
 - **Project context tracking** — Selected project persists across all screens via AppState
 - **Circuit management** — Browse, upload, analyze, preview SVG diagrams, match against benchmarks
 - **QEC simulation engine** — Surface code simulation with configurable noise models and 3D visualization
-- **QTAUBench integration** — 252 benchmark circuits from PNNL QTAUBench (small/medium/large)
+- **QTAUBench integration** — 252 benchmark circuits (small/medium/large) — DB migration script `migrate_rename_bench_sources.py` on the backend rewrites legacy `QASMBench` / `MQTBench` source labels
+- **Chart-rich PDF reports** — Dedicated QMC PDF builder with native ReportLab vector charts (loss distribution with VaR lines, CDF, QAE vs classical MC convergence, amplitude, ZNE curve, Greeks table)
 - **Externalized text** — 600+ UI strings in `labels.properties` (change text without editing code)
 - **Structured logging** — `[HH:MM:SS.FFF] LEVEL [Category] Message` format via `Logger`
 - **Dependency injection** — Services wired via `ServiceContainer` with `FastAPIClient` injection
@@ -277,7 +285,7 @@ Requires `resources/seed.properties` with `seed_username` and `seed_password`. C
 
 ## FastAPI Backend Endpoints
 
-The client communicates with the FastAPI backend across **75 endpoints** organized into 9 categories:
+The client communicates with the FastAPI backend across **~80 endpoints** organized into 10 categories:
 
 | Category | Key Endpoints | Methods |
 |---|---|---|
@@ -287,8 +295,9 @@ The client communicates with the FastAPI backend across **75 endpoints** organiz
 | **Backends** | `/api/backends`, `.../{name}/calibration`, `.../{name}/topology`, `.../compare` | GET, POST |
 | **Benchmarks** | `/api/benchmark/volumetric`, `.../scorecard`, `.../regression`, `.../classify/{id}` | GET |
 | **Predictions** | `/api/predict`, `/api/optimize` | POST, GET |
-| **Jobs** | `/api/projects/{id}/jobs`, `/api/jobs/{id}/status`, `.../results`, `.../cancel` | GET, POST |
-| **Reports** | `/api/reports/generate`, `.../{id}/download`, `.../{id}/share` | GET, POST |
+| **Jobs** | `/api/projects/{id}/jobs` (sorted `submitted_at` desc), `/api/jobs/{id}/status`, `.../results`, `.../cancel` | GET, POST |
+| **QAE / QMC** | `POST /api/circuits/{id}/qae/analyze` (async, returns 202 + job_id), `GET /api/qae/jobs/{id}` (poll), `DELETE /api/qae/jobs/{id}` (cancel), `GET /api/circuits/{id}/qae/result` (cached), `GET /api/circuits/{id}/qae/ibm-log?fmt=jsonl` (exec-log download) | GET, POST, DELETE |
+| **Reports** | `/api/reports/generate` (dedicated QMC builder when `qae` data is present), `.../{id}/download`, `.../{id}/share` | GET, POST |
 | **Settings** | `/api/settings`, `/api/settings/preferences`, `/api/settings/verify-ibm` | GET, POST, DELETE |
 
 Full contract with request/response examples: [`docs/fastapi_contract.md`](docs/fastapi_contract.md)

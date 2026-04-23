@@ -3,6 +3,8 @@ classdef JobsViewModel < handle
     properties
         LastRefresh = []        % tic value — used by autoLoadScreen for freshness caching
         LastSelectFetch = []    % tic value — debounce per-row status fetch
+        AutoRefreshTimer = []   % MATLAB timer polling GET /api/jobs while the Jobs screen is visible
+        LastRefreshWasSilent = false  % true when the most recent onRefreshJobs was auto-poll triggered
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
@@ -12,13 +14,24 @@ classdef JobsViewModel < handle
             obj.App = app;
         end
 
-        function onRefreshJobs(obj)
+        function onRefreshJobs(obj, silent)
+            % silent=true omits the loading overlay and is used by the
+            % auto-refresh timer so the user doesn't see a flash every
+            % 5 seconds. Manual Refresh button clicks use silent=false
+            % (default) and show the overlay.
+            if nargin < 2 || isempty(silent); silent = false; end
             app = obj.App;
             if ~app.State.isAuthenticated()
-                uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Jobs', 'Icon', 'warning'); return;
+                if ~silent
+                    uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Jobs', 'Icon', 'warning');
+                end
+                return;
             end
-            app.logEvent('API', 'GET /api/jobs (+ /api/circuits for name lookup)');
-            app.showLoading(Labels.get('loading_jobs', 'Loading jobs...'));
+            if ~silent
+                app.logEvent('API', 'GET /api/jobs (+ /api/circuits for name lookup)');
+                app.showLoading(Labels.get('loading_jobs', 'Loading jobs...'));
+            end
+            obj.LastRefreshWasSilent = silent;
             svc     = app.JobSvc;
             circSvc = app.CircuitSvc;
             token   = app.State.authToken;
@@ -28,6 +41,57 @@ classdef JobsViewModel < handle
                 @() JobsViewModel.fetchJobsAndCircuits(svc, circSvc, token), ...
                 @(result) obj.onRefreshJobsComplete(app, result), ...
                 @(ME)     obj.onRefreshJobsError(app, ME));
+        end
+
+        function startAutoRefresh(obj, intervalSec)
+            % Begin background polling of GET /api/jobs every intervalSec
+            % seconds while the user is on the Jobs screen. The timer
+            % self-terminates once the user navigates elsewhere, so we
+            % don't burn HTTP calls in the background on other screens.
+            if nargin < 2 || isempty(intervalSec); intervalSec = 5; end
+            obj.stopAutoRefresh();
+            app = obj.App;
+            try
+                t = timer( ...
+                    'ExecutionMode', 'fixedSpacing', ...
+                    'Period',        double(intervalSec), ...
+                    'StartDelay',    double(intervalSec), ...
+                    'BusyMode',      'drop', ...
+                    'Name',          'JobsAutoRefresh', ...
+                    'TimerFcn',      @(src,~) obj.onAutoRefreshTick(app, src));
+                obj.AutoRefreshTimer = t;
+                start(t);
+                Logger.debug('JobsViewModel', 'Auto-refresh started (every %gs)', intervalSec);
+            catch ME
+                Logger.warn('JobsViewModel', 'startAutoRefresh: %s', ME.message);
+            end
+        end
+
+        function stopAutoRefresh(obj)
+            try
+                if ~isempty(obj.AutoRefreshTimer) && isvalid(obj.AutoRefreshTimer)
+                    stop(obj.AutoRefreshTimer);
+                    delete(obj.AutoRefreshTimer);
+                end
+            catch
+            end
+            obj.AutoRefreshTimer = [];
+        end
+
+        function onAutoRefreshTick(obj, app, timerObj)
+            % Self-terminating tick: if the user has navigated away from
+            % the Jobs screen, drop the timer instead of polling blindly.
+            try
+                active = strcmp(char(app.NavList.Value), 'Jobs');
+            catch
+                active = false;
+            end
+            if ~active
+                try; stop(timerObj); delete(timerObj); catch; end
+                obj.AutoRefreshTimer = [];
+                return;
+            end
+            obj.onRefreshJobs(true);  % silent refresh — no overlay
         end
 
         function onCancelJob(obj)
@@ -138,11 +202,18 @@ classdef JobsViewModel < handle
             app.hideLoading();
         end
 
-        function onRefreshJobsError(~, app, ME)
+        function onRefreshJobsError(obj, app, ME)
             app.hideLoading();
             app.logEvent('ERROR', sprintf('Jobs FAILED: %s', ME.message));
             app.setStatus(app.JobStatusArea, {'Jobs refresh failed.', ME.message});
-            app.showError('Refresh Jobs', ME);
+            % Silent auto-refresh swallows errors — we don't want a
+            % modal dialog popping up every 5 seconds on a transient
+            % network blip. Manual Refresh still shows the dialog.
+            if ~obj.LastRefreshWasSilent
+                app.showError('Refresh Jobs', ME);
+            else
+                Logger.debug('JobsViewModel', 'Silent auto-refresh error: %s', ME.message);
+            end
         end
 
         function onCancelJobComplete(obj, app, jobId)

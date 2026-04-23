@@ -196,6 +196,15 @@ classdef JsonHelper
             % containers.Map keyed by circuit_id → display name; when
             % supplied, the Circuit cell shows the name, otherwise it
             % falls back to the raw circuit_id.
+            %
+            % Rows are sorted by Created (column 6) descending so the
+            % most recent submission always lands at the top of the
+            % Job Monitoring Dashboard. The backend's
+            % MongoIBMJobRepository.list_by_project already does this
+            % server-side; we re-sort defensively here so the UI is
+            % correct even against a stale API container, a third-party
+            % caller that hits /api/jobs without the sort param, or a
+            % malformed doc with a missing submitted_at.
             if nargin < 2; circuitNameMap = containers.Map(); end
             rows  = cell(0, 6);
             items = JsonHelper.extractListSafe(data, 'jobs');
@@ -225,6 +234,24 @@ classdef JsonHelper
                     rows{i,5} = char(pctStr);
                 end
                 rows{i,6} = char(JsonHelper.pick(items(i), {'created_at','submitted_at'}));
+            end
+
+            % Sort newest-first by the Created column. ISO-8601 strings
+            % sort lexicographically in the same order as chronologically
+            % so a plain string sort is correct; missing/empty values
+            % sort to the bottom of the list.
+            try
+                created = string(rows(:, 6));
+                % Empty strings sort *before* any ISO date in ascending
+                % order; flip to descending then push empties to the end
+                % by replacing them with a sentinel that sorts lowest.
+                key = created;
+                key(strlength(key) == 0) = "";
+                [~, order] = sort(key, 'descend');
+                rows = rows(order, :);
+            catch
+                % If anything about the Created column is unexpected,
+                % fall back to insertion order rather than crash.
             end
         end
 

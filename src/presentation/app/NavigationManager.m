@@ -117,6 +117,15 @@ classdef NavigationManager
                         NavigationManager.showNavLoading(app, 'Jobs');
                         app.JobsVm.onRefreshJobs();
                     end
+                    % Keep the Job Monitoring Dashboard live: auto-poll
+                    % GET /api/jobs every 5s while the Jobs screen is
+                    % visible. Status/Progress columns update without
+                    % the user having to hit Refresh. The timer self-
+                    % terminates on the next tick after the user
+                    % navigates away.
+                    if ~isempty(app.JobsVm) && app.State.hasProject()
+                        app.JobsVm.startAutoRefresh(5);
+                    end
                 case 'Results'
                     if ~isempty(app.ResultsVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.ResultsVm, ttl)

@@ -15,8 +15,9 @@ All authenticated endpoints require a `Bearer` token in the `Authorization` head
 5. [Benchmark](#5-benchmark)
 6. [Predictions](#6-predictions)
 7. [Jobs](#7-jobs)
-8. [Reports](#8-reports)
-9. [Settings](#9-settings)
+8. [QAE / Quantum Monte Carlo](#8-qae--quantum-monte-carlo)
+9. [Reports](#9-reports)
+10. [Settings](#10-settings)
 
 ---
 
@@ -470,11 +471,13 @@ Submit a quantum job for execution.
 
 ### GET /api/projects/{project_id}/jobs
 
-List jobs for a project. Paginated with `skip` and `limit`.
+List jobs for a project. Paginated with `skip` and `limit`. **Sorted by `submitted_at` descending** (newest first) so a freshly-submitted job always appears at row 1 of the Job Monitoring Dashboard.
+
+Additionally, the server **lazy-refreshes up to 10 in-flight jobs per list call** from IBM Quantum (via `QiskitRuntimeService.job(id).status()`) so Status and Progress columns advance without running a Celery beat poller. See `_MAX_LAZY_REFRESH_PER_LIST` in `job_service.py`.
 
 ### GET /api/jobs
 
-List all jobs (admin view). Paginated.
+List all jobs (admin view). Paginated. Same sort and self-healing behaviour as the per-project list above.
 
 ### GET /api/jobs/{job_record_id}
 
@@ -539,7 +542,105 @@ Randomized benchmarking decay curve data.
 
 ---
 
-## 8. Reports
+## 8. QAE / Quantum Monte Carlo
+
+Asynchronous Quantum Amplitude Estimation pipeline consumed by the **Quantum Monte Carlo Simulation** popup on the Analysis screen.
+
+### POST /api/circuits/{circuit_id}/qae/analyze
+
+Queue a QAE / Quantum Monte-Carlo analysis as an async job. Returns immediately with a `job_id`; the client polls `GET /api/qae/jobs/{job_id}` until the job is terminal. The legacy synchronous call is gone — every caller must poll.
+
+**Request**:
+```json
+{
+  "execution_mode": "runtime",
+  "shots": 4096,
+  "confidence_level": 0.95,
+  "epsilon": 0.01,
+  "num_eval_qubits": 7,
+  "risk_metric": "var_95",
+  "backend": "ibm_marrakesh",
+  "mitigation": "zne",
+  "market": {
+    "spot": 100, "strike": 100, "volatility": 0.2,
+    "risk_free_rate": 0.05, "time_to_maturity": 0.0833,
+    "option_type": "call", "notional": 100
+  },
+  "compute_greeks": true
+}
+```
+
+**Response** (202):
+```json
+{
+  "job_id": "7f3a1b4d...",
+  "status": "queued",
+  "circuit_id": "2d2c780e-...",
+  "execution_mode": "runtime",
+  "backend": "ibm_marrakesh",
+  "created_at": "2026-04-23T00:05:11Z"
+}
+```
+
+### GET /api/qae/jobs/{job_id}
+
+Poll the state of a queued / running / terminal QAE job.
+
+**Response** (200):
+```json
+{
+  "job_id": "7f3a1b4d...",
+  "circuit_id": "2d2c780e-...",
+  "status": "running",
+  "progress_pct": 25,
+  "message": "Submitting to execution backend",
+  "execution_mode": "runtime",
+  "backend": "ibm_marrakesh",
+  "runtime_job_id": "d7i9pr493s0c738toiig",
+  "error": "",
+  "result": null,
+  "created_at": "2026-04-23T00:05:11Z",
+  "updated_at": "2026-04-23T00:05:14Z",
+  "started_at": "2026-04-23T00:05:12Z",
+  "finished_at": null
+}
+```
+
+When `status == "completed"`, the `result` field carries the full `QaeResult` (amplitude, path distribution, convergence curve, ZNE curve, Greeks, etc.) — same shape as the legacy synchronous endpoint.
+
+### DELETE /api/qae/jobs/{job_id}
+
+Cancel a queued or running QAE job. Returns the final state after the cancellation is recorded. Already-submitted IBM jobs are not forcibly cancelled — their result is simply discarded when it comes back.
+
+### GET /api/circuits/{circuit_id}/qae/result
+
+Return the cached QAE result for a circuit (the most recent terminal analyze). Useful for rehydrating the QMC popup on screen entry without re-running.
+
+### GET /api/circuits/{circuit_id}/qae/ibm-log
+
+Stream the IBM Runtime execution log bundle for the circuit's most recent runtime QAE job. Reads `runtime_job_id` from the cached QAE result, then calls `QiskitRuntimeService.job(id).result()` to recover the shot distribution.
+
+**Query params**:
+
+- `fmt=jsonl` (default) — newline-delimited JSON, one record per IBM submission.
+- `fmt=json` — same records wrapped in a JSON array (idiomatic for `jq` / JavaScript consumers).
+
+**Record schema** (matches `samples/aqs-qmc/outputs_hybrid_mc_qdist_stable/quantum_exec_log.jsonl`):
+
+```json
+{"subcircuit_id": 0, "backend": "ibm_marrakesh", "shots": 4096, "status": "completed", "job_id": "d7ia4fs93s0c738tosng", "counts": {"0": 1780, "1": 2316}, "error": null}
+```
+
+**Response headers**:
+
+- `Content-Type: application/x-ndjson` (jsonl) or `application/json` (json)
+- `Content-Disposition: attachment; filename=quantum_exec_log_{job_id}.jsonl`
+
+Returns 404 when the circuit has no cached QAE result or the result was produced in statevector mode (no IBM job associated).
+
+---
+
+## 9. Reports
 
 ### POST /api/reports/generate
 
@@ -594,7 +695,7 @@ Share a report via email or link.
 
 ---
 
-## 9. Settings
+## 10. Settings
 
 ### GET /api/settings
 
