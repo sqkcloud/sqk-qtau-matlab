@@ -197,7 +197,29 @@ classdef DialogBuilder
             verLbl.Layout.Row = 3; verLbl.Layout.Column = 2;
 
             app.LoginDialog.KeyPressFcn = @(~, evt) app.onLoginKeyPress(evt);
+            % User-initiated close (X button): detach uihtml callbacks and
+            % drain the event queue before deleting so trailing browser
+            % events don't fire against deleted handles (same race class
+            % as the login-success path in WelcomeViewModel.onLogin).
+            app.LoginDialog.CloseRequestFcn = @(src,~) DialogBuilder.closeLoginDialog(app, src);
             Logger.info('DialogBuilder', 'Login dialog shown');
+        end
+
+        function closeLoginDialog(app, src)
+            htmlFields = {'LoginDlgBaseUrlField', 'LoginDlgUsernameField', 'LoginDlgPasswordField'};
+            for i = 1:numel(htmlFields)
+                h = app.(htmlFields{i});
+                if ~isempty(h) && isvalid(h)
+                    h.DataChangedFcn = '';
+                end
+            end
+            drawnow;
+            if ~isempty(src) && isvalid(src)
+                delete(src);
+            end
+            if isprop(app, 'LoginDialog')
+                app.LoginDialog = [];
+            end
         end
 
         function buildNewProjectDialog(app)

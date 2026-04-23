@@ -296,13 +296,28 @@ classdef NavigationManager
         end
 
         function updateNavStyles(app, activeKey)
-            NavigationManager.renderNavHtml(app, activeKey, app.NavCollapsed);
+            % Push active-item change via Data instead of rebuilding
+            % HTMLSource. Rebuilding on every nav click tears down the
+            % browser DOM mid-event-dispatch, which races with MATLAB's
+            % internal controller lookup and surfaces as
+            %   "Invalid or deleted object" / "Value must be a handle"
+            % inside HTML/getComponentToApplyButtonEvent or
+            % HTML/sendFlushEventToClient. The JS listener installed by
+            % renderNavHtml reads {a:'setActive', name:...} and toggles
+            % the .active class in place, keeping the DOM intact.
+            if isempty(app.NavHtml) || ~isvalid(app.NavHtml); return; end
+            app.NavHtml.Data = struct('a', 'setActive', 'name', activeKey);
         end
 
         function onNavHtmlClick(app, src)
-            % Handles click events from the uihtml nav menu.
+            % Handles click events from the uihtml nav menu. DataChanged
+            % fires for both directions (client-set and MATLAB-set), so
+            % filter: clicks from the browser arrive as plain strings,
+            % while our own pushes from updateNavStyles are structs.
             try
-                clickedName = char(string(src.Data));
+                d = src.Data;
+                if isstruct(d); return; end
+                clickedName = char(string(d));
                 if ~isempty(clickedName)
                     app.onSelectSection(clickedName);
                 end
@@ -313,6 +328,8 @@ classdef NavigationManager
 
         function renderNavHtml(app, activeKey, collapsed)
             % Generates HTML for the nav menu with consistent icon sizing.
+            % Called on initial build, collapse toggle, and theme change —
+            % NOT on every nav click (see updateNavStyles).
             names = NavigationManager.navNames();
             icons = NavigationManager.navIcons();
             labels = NavigationManager.navLabels();
@@ -349,14 +366,26 @@ classdef NavigationManager
             for i = 1:numel(names)
                 cls = 'btn';
                 if strcmp(names{i}, activeKey); cls = 'btn active'; end
-                btn = ['<button class="' cls '" onclick="sendClick(' q names{i} q ')">' ...
+                btn = ['<button class="' cls '" data-name="' names{i} '" onclick="sendClick(' q names{i} q ')">' ...
                        '<span class="icon">' icons{i} '</span>' ...
                        '<span class="label">' labels{i} '</span></button>'];
                 items = [items btn]; %#ok<AGROW>
             end
 
             js = ['var _comp;' ...
-                  'function setup(htmlComponent){_comp=htmlComponent;}' ...
+                  'function applyActive(n){var bs=document.querySelectorAll(".btn");' ...
+                  'for(var i=0;i<bs.length;i++){' ...
+                  'if(bs[i].getAttribute("data-name")===n){bs[i].classList.add("active");}' ...
+                  'else{bs[i].classList.remove("active");}}}' ...
+                  'function setup(htmlComponent){' ...
+                  '_comp=htmlComponent;' ...
+                  'htmlComponent.addEventListener("DataChanged",function(){' ...
+                  'var d=_comp.Data;' ...
+                  'if(d&&typeof d==="object"&&d.a==="setActive"){applyActive(d.name);}' ...
+                  '});' ...
+                  'var d0=_comp.Data;' ...
+                  'if(d0&&typeof d0==="object"&&d0.a==="setActive"){applyActive(d0.name);}' ...
+                  '}' ...
                   'function sendClick(name){if(_comp){_comp.Data=name;}}'];
 
             app.NavHtml.HTMLSource = ['<html><head><style>' css '</style></head><body>' ...

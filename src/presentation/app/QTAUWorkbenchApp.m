@@ -735,11 +735,15 @@ classdef QTAUWorkbenchApp < handle
         function onTextFieldHtmlData(app, fieldName)
             switch fieldName
                 case 'baseUrl'
-                    d = app.LoginDlgBaseUrlField.Data;
+                    f = app.LoginDlgBaseUrlField;
+                    if isempty(f) || ~isvalid(f), return; end
+                    d = f.Data;
                     if isempty(d), return; end
                     app.LoginDlgBaseUrlValue = char(string(d.v));
                 case 'username'
-                    d = app.LoginDlgUsernameField.Data;
+                    f = app.LoginDlgUsernameField;
+                    if isempty(f) || ~isvalid(f), return; end
+                    d = f.Data;
                     if isempty(d), return; end
                     app.LoginDlgUsernameValue = char(string(d.v));
             end
@@ -749,7 +753,9 @@ classdef QTAUWorkbenchApp < handle
         end
 
         function onPasswordHtmlData(app, ~)
-            d = app.LoginDlgPasswordField.Data;
+            f = app.LoginDlgPasswordField;
+            if isempty(f) || ~isvalid(f), return; end
+            d = f.Data;
             if isempty(d), return; end
             action = string(d.a);
             if action == "i"

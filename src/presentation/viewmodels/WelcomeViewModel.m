@@ -258,6 +258,21 @@ classdef WelcomeViewModel < handle
                     app.LoginDlgPasswordField.Data = struct('a', 'clear');
                 end
 
+                % Detach DataChangedFcn on uihtml fields and flush the event
+                % queue before deleting the dialog. MATLAB can otherwise
+                % dispatch a trailing HTML event against a deleted handle,
+                % producing "Value must be a handle" in
+                % HTML/processButtonEventFromClient. Use full drawnow (not
+                % limitrate) so the queue is actually drained.
+                htmlFields = {'LoginDlgBaseUrlField', 'LoginDlgUsernameField', 'LoginDlgPasswordField'};
+                for i = 1:numel(htmlFields)
+                    h = app.(htmlFields{i});
+                    if ~isempty(h) && isvalid(h)
+                        h.DataChangedFcn = '';
+                    end
+                end
+                drawnow;
+
                 % Close the login dialog
                 if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
                     delete(app.LoginDialog);
