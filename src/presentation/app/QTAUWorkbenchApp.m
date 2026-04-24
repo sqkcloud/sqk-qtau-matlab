@@ -318,6 +318,9 @@ classdef QTAUWorkbenchApp < handle
         BenchmarkBackendDropdown
         BenchmarkRefreshButton
         BenchmarkKpiLabels
+        BenchmarkKpiUnits           % cell{5} — secondary small text under each KPI value
+        BenchmarkStatusLabel        % "N jobs · M preds · cal 18 h old · source: ibm_runtime"
+        BenchmarkSourceBadge        % small tinted badge in the toolbar showing metrics source
         VolumetricAxes
         ScorecardAxes
         CalibrationAxes
