@@ -161,7 +161,7 @@ classdef NavigationManager
                         NavigationManager.showNavLoading(app, 'Benchmark Dashboard');
                         app.BenchmarkDashboardVm.onEnter();
                     end
-                case 'CircuitCutting'
+                case 'Circuit Cutting'
                     if ~isempty(app.CircuitCuttingVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.CircuitCuttingVm, ttl)
                         NavigationManager.showNavLoading(app, 'Circuit Cutting');
@@ -262,7 +262,7 @@ classdef NavigationManager
                     if isempty(app.DetailedAnalysisVm); app.DetailedAnalysisVm = DetailedAnalysisViewModel(app); end
                 case 'Benchmark Dashboard'
                     if isempty(app.BenchmarkDashboardVm); app.BenchmarkDashboardVm = BenchmarkDashboardViewModel(app); end
-                case 'CircuitCutting'
+                case 'Circuit Cutting'
                     if isempty(app.CircuitCuttingVm); app.CircuitCuttingVm = CircuitCuttingViewModel(app); end
                 case 'Reports'
                     if isempty(app.ReportsVm); app.ReportsVm = ReportsViewModel(app); end
@@ -408,7 +408,7 @@ classdef NavigationManager
             % adding 'Notes' back to navNames / navIcons / navLabels.
             n = {'Welcome','Dashboard','Circuits','Upload','Analysis','Backends', ...
                  'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
-                 'Benchmark Dashboard', 'CircuitCutting', ...
+                 'Benchmark Dashboard', 'Circuit Cutting', ...
                  'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
 

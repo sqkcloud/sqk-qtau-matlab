@@ -331,6 +331,7 @@ classdef QTAUWorkbenchApp < handle
 
     % ── Circuit Cutting tab ──────────────────────────────────────────────────
     properties
+        CuttingCircuitDropdown      % Circuit picker (avoids having to set it elsewhere)
         CuttingModeDropdown         % Automatic / Assisted / Manual
         CuttingPresetDropdown       % Preset registry (Option C slot)
         CuttingStatusLabel          % e.g. "3 subcircuits · overhead 7.2x · preset: Generic"

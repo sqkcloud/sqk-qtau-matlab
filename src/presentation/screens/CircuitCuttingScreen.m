@@ -21,45 +21,56 @@ function CircuitCuttingScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Row 1: Toolbar ───────────────────────────────────────────────────
-    tb = uigridlayout(g, [1 6]);
+    %   [Circuit ▼] | [Mode ▼] | (flex) | [Preset ▼] | [Analyze] | [Run]
+    %   Circuit dropdown lives on this screen so the user doesn't need to
+    %   bounce to Circuits/Upload first. Items are loaded in
+    %   CircuitCuttingViewModel.loadCircuits() when the tab is entered.
+    tb = uigridlayout(g, [1 8]);
     tb.Layout.Row = 1; tb.Layout.Column = [1 2];
-    tb.ColumnWidth = {80, 180, '1x', 200, 130, 130};
+    tb.ColumnWidth = {60, 200, 50, 140, '1x', 180, 120, 120};
     tb.Padding = [0 0 0 0]; tb.ColumnSpacing = 8;
     tb.BackgroundColor = Theme.COLOR_BG;
+
+    circLbl = uilabel(tb, 'Text', 'Circuit', ...
+        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+    circLbl.Layout.Column = 1;
+
+    app.CuttingCircuitDropdown = uidropdown(tb, ...
+        'Items', {'(loading...)'}, 'ItemsData', {''}, 'Value', '', ...
+        'ValueChangedFcn', @(src,~) app.CircuitCuttingVm.onCircuitChanged(src.Value));
+    app.CuttingCircuitDropdown.Layout.Column = 2;
+    app.CuttingCircuitDropdown.Tooltip = ...
+        'Pick the circuit to cut. Populated from the current project on tab open.';
 
     modeLbl = uilabel(tb, 'Text', 'Mode', ...
         'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
         'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-    modeLbl.Layout.Column = 1;
+    modeLbl.Layout.Column = 3;
 
     app.CuttingModeDropdown = uidropdown(tb, ...
         'Items', {'Automatic','Assisted','Manual'}, ...
         'ItemsData', {'automatic','assisted','manual'}, ...
         'Value', 'assisted', ...
         'ValueChangedFcn', @(src,~) app.CircuitCuttingVm.onModeChanged(src.Value));
-    app.CuttingModeDropdown.Layout.Column = 2;
+    app.CuttingModeDropdown.Layout.Column = 4;
     app.CuttingModeDropdown.Tooltip = ...
         'Automatic: one-click run. Assisted: review suggestions. Manual: enter everything.';
-
-    presetLbl = uilabel(tb, 'Text', 'Preset', ...
-        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
-        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-    presetLbl.Layout.Column = 3;
 
     app.CuttingPresetDropdown = uidropdown(tb, ...
         'Items', {'Generic'}, 'ItemsData', {'generic'}, ...
         'ValueChangedFcn', @(src,~) app.CircuitCuttingVm.onPresetChanged(src.Value));
-    app.CuttingPresetDropdown.Layout.Column = 4;
+    app.CuttingPresetDropdown.Layout.Column = 6;
     app.CuttingPresetDropdown.Tooltip = 'Phase 2 will add domain presets (CT Imaging 160Q, etc.).';
 
     analyzeBtn = uibutton(tb, 'Text', 'Analyze Cuts', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onAnalyzeCuts());
-    analyzeBtn.Layout.Column = 5;
+    analyzeBtn.Layout.Column = 7;
     app.styleBtn(analyzeBtn, 'ghost');
 
     runBtn = uibutton(tb, 'Text', 'Run Cutting', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onRunCutting());
-    runBtn.Layout.Column = 6;
+    runBtn.Layout.Column = 8;
     app.styleBtn(runBtn, 'primary');
 
     % ── Row 2: Status line ──────────────────────────────────────────────

@@ -30,9 +30,21 @@ classdef CircuitCuttingViewModel < handle
         function onEnter(obj)
             app = obj.App;
             if ~app.State.isAuthenticated(); return; end
+            obj.loadCircuits();
             obj.loadPresets();
             obj.refreshStatus();
             obj.LastRefresh = tic;
+        end
+
+        % ── Circuit dropdown ─────────────────────────────────────────────
+        function onCircuitChanged(obj, circuitId)
+            app = obj.App;
+            cid = char(circuitId);
+            if isempty(cid); return; end
+            app.State.selectedCircuitId = string(cid);
+            app.logEvent('CUT', sprintf('Circuit selected: %s', cid));
+            obj.LastAnalyze = [];  % stale analysis — force re-run for the new circuit
+            obj.refreshStatus();
         end
 
         % ── Mode / preset dropdowns ──────────────────────────────────────
@@ -105,6 +117,60 @@ classdef CircuitCuttingViewModel < handle
             end
             obj.stopPolling();
             obj.refreshStatus();
+        end
+
+        % ── Circuits ─────────────────────────────────────────────────────
+        function loadCircuits(obj)
+            % Populate the Circuit dropdown with the current project's
+            % circuits. Matches the pattern used by BenchmarkViewModel /
+            % PredictionViewModel. Pulls selected circuit id from AppState
+            % if one is already set, so navigating over from another
+            % screen preserves the user's selection.
+            app = obj.App;
+            try
+                data = app.CircuitSvc.listCircuits(app.State.authToken);
+                items = JsonHelper.extractList(data, 'circuits');
+                n = numel(items);
+                if n == 0
+                    if ~isempty(app.CuttingCircuitDropdown)
+                        app.CuttingCircuitDropdown.Items     = {'(no circuits)'};
+                        app.CuttingCircuitDropdown.ItemsData = {''};
+                        app.CuttingCircuitDropdown.Value     = '';
+                    end
+                    return;
+                end
+                ids   = cell(1, n);
+                names = cell(1, n);
+                for i = 1:n
+                    it = items(i);
+                    if iscell(items); it = items{i}; end
+                    ids{i}   = char(JsonHelper.pick(it, {'circuit_id','id'}));
+                    nm = char(JsonHelper.pick(it, {'name','circuit_id','id'}));
+                    if isempty(nm); nm = ids{i}; end
+                    names{i} = nm;
+                end
+                if ~isempty(app.CuttingCircuitDropdown)
+                    app.CuttingCircuitDropdown.Items     = names;
+                    app.CuttingCircuitDropdown.ItemsData = ids;
+                    sel = char(app.State.selectedCircuitId);
+                    match = find(strcmp(ids, sel), 1);
+                    if ~isempty(match)
+                        app.CuttingCircuitDropdown.Value = ids{match};
+                    else
+                        app.CuttingCircuitDropdown.Value = ids{1};
+                        app.State.selectedCircuitId = string(ids{1});
+                    end
+                end
+                app.logEvent('LOAD', sprintf('Loaded %d circuits into Circuit Cutting dropdown', n));
+            catch ME
+                Logger.warn('CircuitCuttingViewModel', ...
+                    'loadCircuits failed: %s', ME.message);
+                if ~isempty(app.CuttingCircuitDropdown)
+                    app.CuttingCircuitDropdown.Items     = {'(load failed)'};
+                    app.CuttingCircuitDropdown.ItemsData = {''};
+                    app.CuttingCircuitDropdown.Value     = '';
+                end
+            end
         end
 
         % ── Presets ──────────────────────────────────────────────────────
