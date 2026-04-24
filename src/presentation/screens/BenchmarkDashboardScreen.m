@@ -60,10 +60,13 @@ function BenchmarkDashboardScreen(app)
     app.styleBtn(exportBtn, 'ghost');
 
     % ── Row 2: Status line ──────────────────────────────────────────────
+    % WordWrap lets the long "source: … — …" tail wrap to a second line on
+    % narrow windows instead of silently truncating the right side.
     app.BenchmarkStatusLabel = uilabel(g, ...
         'Text', 'Select a backend and press Refresh All to load data.', ...
         'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
-        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center');
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
+        'WordWrap', 'on', 'Interpreter', 'none');
     app.BenchmarkStatusLabel.Layout.Row = 2;
     app.BenchmarkStatusLabel.Layout.Column = [1 2];
 
@@ -79,7 +82,11 @@ function BenchmarkDashboardScreen(app)
     kg.BackgroundColor = Theme.COLOR_CARD;
 
     cardNames   = {'Quantum Volume', 'CLOPS', 'Layer Fidelity', 'EPLG', 'Overall Score'};
-    cardUnits   = {'log₂', 'kilo ops/s', '0 – 1', '0 – 1', '0 – 10'};
+    % Keep unit strings ASCII + short: Unicode en-dashes and multiplication
+    % signs render wider than most chars, and the Overall Score card is
+    % narrowest on the right edge of the row (last '1x' column). Replaced
+    % "0 - 10 (= LF x 10)" with "0 - 10 scale" to fit.
+    cardUnits   = {'log2', 'kilo ops/s', '0 - 1', '0 - 1', '0 - 10'};
     cardDefault = {'--','--','--','--','--'};
     cardAccents = {Theme.COLOR_PRIMARY, Theme.COLOR_SUCCESS, ...
                    [0.50 0.25 0.72], [0.80 0.50 0.10], [0.10 0.58 0.56]};

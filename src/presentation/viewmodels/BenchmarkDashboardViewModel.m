@@ -284,6 +284,10 @@ classdef BenchmarkDashboardViewModel < handle
 
             % Enrich the unit sub-labels with real context so the KPI cards
             % explain themselves — calibration age, qubit count, source hint.
+            % Stick to ASCII + short strings: the rightmost card ("Overall
+            % Score") is the narrowest, and Unicode en-dashes / multiplication
+            % signs render wider than plain chars — on narrow windows the
+            % original "0 – 10 (= LF × 10)" clipped.
             if ~isempty(app.BenchmarkKpiUnits)
                 app.BenchmarkKpiUnits{1}.Text = 'quantum volume';
                 if isnumeric(clops) && ~isempty(clops) && clops > 0
@@ -294,14 +298,14 @@ classdef BenchmarkDashboardViewModel < handle
                 if isnumeric(nq) && ~isempty(nq) && nq > 0
                     app.BenchmarkKpiUnits{3}.Text = sprintf('N = %d qubits', int32(nq));
                 else
-                    app.BenchmarkKpiUnits{3}.Text = '0 – 1';
+                    app.BenchmarkKpiUnits{3}.Text = '0 - 1';
                 end
                 if isnumeric(calH) && ~isempty(calH) && calH >= 0
                     app.BenchmarkKpiUnits{4}.Text = sprintf('cal %.1f h old', calH);
                 else
-                    app.BenchmarkKpiUnits{4}.Text = '0 – 1';
+                    app.BenchmarkKpiUnits{4}.Text = '0 - 1';
                 end
-                app.BenchmarkKpiUnits{5}.Text = '0 – 10 (= LF × 10)';
+                app.BenchmarkKpiUnits{5}.Text = '0 - 10 scale';
             end
 
             % Tint the source badge so the user can tell at a glance whether
@@ -505,13 +509,15 @@ classdef BenchmarkDashboardViewModel < handle
                     parts{end+1} = sprintf('cal %.1f h old', calH);
                 end
                 src = char(JsonHelper.pick(R.metrics, 'source', ''));
-                detail = char(JsonHelper.pick(R.metrics, 'source_detail', ''));
                 if ~isempty(src)
-                    if ~isempty(detail)
-                        parts{end+1} = sprintf('source: %s — %s', src, detail);
-                    else
-                        parts{end+1} = sprintf('source: %s', src);
-                    end
+                    parts{end+1} = sprintf('source: %s', src);
+                end
+                % The full source_detail goes on the badge tooltip rather than
+                % the status line — kept short so the whole line fits on
+                % typical window widths without needing to wrap.
+                detail = char(JsonHelper.pick(R.metrics, 'source_detail', ''));
+                if ~isempty(detail)
+                    try obj.App.BenchmarkSourceBadge.Tooltip = detail; catch; end
                 end
             end
             if isempty(parts)
