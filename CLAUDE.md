@@ -87,7 +87,7 @@ src/
 - **ServiceContainer** wires all services with `FastAPIClient` via dependency injection.
 - **Static utilities** (`AppConfig`, `Labels`, `Logger`, `JsonHelper`) use static methods with cached state; call `.reload()` to refresh.
 
-## Screens (17 total — 16 visible, 1 hidden)
+## Screens (18 total — 17 visible, 1 hidden)
 
 | Screen | ViewModel | Purpose | Sidebar |
 |--------|-----------|---------|:-------:|
@@ -101,6 +101,7 @@ src/
 | BackendsScreen | BackendsViewModel | Backend explorer with primary/backup selection | ✓ |
 | BenchmarkScreen | BenchmarkViewModel | Execution parameters, mitigation strategy, cost | ✓ |
 | BenchmarkDashboardScreen | BenchmarkDashboardViewModel | Benchmark configuration summary and recommendations | ✓ |
+| CircuitCuttingScreen | CircuitCuttingViewModel | Circuit cutting + distributed reconstruction (Automatic / Assisted / Manual modes, preset-driven for domain workflows in Phase 2) | ✓ |
 | PredictionScreen | PredictionViewModel | Predicted fidelity, distribution, error budget — Circuit + Backend dropdowns on toolbar | ✓ |
 | JobsScreen | JobsViewModel | Job Monitoring Dashboard with 6-col table (Job ID / Circuit / Backend / Status / Progress / Created), **auto-refresh every 5 s** while visible, detailed job logs | ✓ |
 | ResultsScreen | ResultsViewModel | Measured vs predicted vs ideal result analysis (auto-picks the first completed job) | ✓ |

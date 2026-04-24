@@ -739,6 +739,60 @@ Clear cached results and calibration data.
 
 ---
 
+## 11. Circuit Cutting
+
+Distributed execution of circuits too large for a single IBM backend.
+Cuts a wide circuit into *k* subcircuits via `qiskit-addon-cutting`, submits
+them as *k* parallel IBM Runtime child jobs (tagged with `batch_id` +
+`cut_role` back-refs on `IBMJobDocument`), and reconstructs Pauli expectation
+values once all children land. See
+`docs/superpowers/specs/2026-04-24-circuit-cutting-design.md` for the full
+design.
+
+### POST /api/cutting/analyze
+
+Preflight cut detection. Returns candidate `CutPlan` objects with predicted
+sampling overhead so Assisted mode can pre-fill the UI.
+
+Body: `{circuit_id: str, target_k: int?, backend_pool: list[str]}`
+
+### GET /api/cutting/presets
+
+List registered cutting presets. Phase 1 ships only `generic`; Phase 2 adds
+domain presets (e.g. `ct_imaging_160q`) as subclasses of the generic pipeline.
+
+### POST /api/circuits/{circuit_id}/cutting/batches → **202**
+
+Materialize a `CuttingBatchDocument`, submit *k* subcircuit jobs, return
+`{batch_id}`. The async lifecycle mirrors the QAE pattern: immediate 202
+response, client polls `GET /cutting/batches/{batch_id}` on a 3 s timer.
+
+Body: `CreateBatchRequest` — `{mode, preset, cut_plan, backend_assignments,
+observables, opt_in_distribution, timeout_hours, retry_strategy}`.
+
+### GET /api/cutting/batches/{batch_id}
+
+Poll status + progress + per-child state. `status` is one of `queued`,
+`partitioning`, `executing`, `reconstructing`, `completed`,
+`partial_failure`, `failed`, `cancelled`.
+
+### GET /api/cutting/batches/{batch_id}/result
+
+Reconstructed output — Pauli expectation values, optional bitstring
+distribution (when `opt_in_distribution=true` was set), and optional
+preset-specific `preset_output` for Option C domain workflows.
+
+### DELETE /api/cutting/batches/{batch_id}
+
+Cancel the batch — calls IBM Runtime `job.cancel()` on each running child,
+flips the batch status to `cancelled`.
+
+### GET /api/cutting/batches?project_id=...
+
+List recent batches for the project (for the Cutting screen's History tab).
+
+---
+
 ## Endpoint Summary
 
 | Category | Endpoints | Methods |
