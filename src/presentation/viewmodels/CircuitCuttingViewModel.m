@@ -57,9 +57,18 @@ classdef CircuitCuttingViewModel < handle
                     'Circuit Cutting');
                 return;
             end
+            % IMPORTANT: bind svc + token to LOCAL variables before the
+            % lambda. Referencing `app.CuttingSvc` inside the closure would
+            % capture the entire QTAUWorkbenchApp (which holds uifigure +
+            % uihtml components) — parfeval then serializes it to the
+            % worker, which fails with MATLAB:class:InvalidSuperClass on
+            % matlab.ui.control.WebComponent. Matches the pattern used by
+            % BenchmarkDashboardViewModel.onRefreshAll.
+            svc   = app.CuttingSvc;
+            token = app.State.authToken;
             app.showLoading();
             AsyncRunner.run( ...
-                @() app.CuttingSvc.analyzeCuts(cid, [], app.State.authToken), ...
+                @() svc.analyzeCuts(cid, [], token), ...
                 @(r) obj.applyAnalyze(r), ...
                 @(ME) obj.onError(ME));
         end
@@ -74,9 +83,13 @@ classdef CircuitCuttingViewModel < handle
             end
             cid = char(app.State.selectedCircuitId);
             body = obj.buildCreateBody();
+            % Same capture-rule as onAnalyzeCuts — never reference app.*
+            % inside the background-task closure.
+            svc   = app.CuttingSvc;
+            token = app.State.authToken;
             app.showLoading();
             AsyncRunner.run( ...
-                @() app.CuttingSvc.createBatch(cid, body, app.State.authToken), ...
+                @() svc.createBatch(cid, body, token), ...
                 @(r) obj.startPolling(r), ...
                 @(ME) obj.onError(ME));
         end
