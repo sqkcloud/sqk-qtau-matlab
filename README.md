@@ -302,6 +302,12 @@ The client communicates with the FastAPI backend across **~80 endpoints** organi
 
 Full contract with request/response examples: [`docs/fastapi_contract.md`](docs/fastapi_contract.md)
 
+### Further reading
+
+- [`docs/architecture.md`](docs/architecture.md) — layering, data flow (where Results come from), caching, navigation internals, uihtml pitfalls.
+- [`docs/development_guide.md`](docs/development_guide.md) — recipes for adding / changing screens, services, dialogs, timers; testing patterns; things to avoid.
+- [`docs/fastapi_contract.md`](docs/fastapi_contract.md) — REST endpoint contract.
+
 ---
 
 ## Naming Conventions
