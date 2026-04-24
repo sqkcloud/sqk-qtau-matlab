@@ -161,6 +161,12 @@ classdef NavigationManager
                         NavigationManager.showNavLoading(app, 'Benchmark Dashboard');
                         app.BenchmarkDashboardVm.onEnter();
                     end
+                case 'CircuitCutting'
+                    if ~isempty(app.CircuitCuttingVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.CircuitCuttingVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Circuit Cutting');
+                        app.CircuitCuttingVm.onEnter();
+                    end
                 case 'Settings'
                     if ~isempty(app.SettingsVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.SettingsVm, ttl)
@@ -256,6 +262,8 @@ classdef NavigationManager
                     if isempty(app.DetailedAnalysisVm); app.DetailedAnalysisVm = DetailedAnalysisViewModel(app); end
                 case 'Benchmark Dashboard'
                     if isempty(app.BenchmarkDashboardVm); app.BenchmarkDashboardVm = BenchmarkDashboardViewModel(app); end
+                case 'CircuitCutting'
+                    if isempty(app.CircuitCuttingVm); app.CircuitCuttingVm = CircuitCuttingViewModel(app); end
                 case 'Reports'
                     if isempty(app.ReportsVm); app.ReportsVm = ReportsViewModel(app); end
                 case 'Settings'
@@ -400,7 +408,7 @@ classdef NavigationManager
             % adding 'Notes' back to navNames / navIcons / navLabels.
             n = {'Welcome','Dashboard','Circuits','Upload','Analysis','Backends', ...
                  'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
-                 'Benchmark Dashboard', ...
+                 'Benchmark Dashboard', 'CircuitCutting', ...
                  'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
 
@@ -420,6 +428,7 @@ classdef NavigationManager
                 char(9633),  ... □ Results
                 char(9651),  ... △ Detailed Analysis
                 char(9670),  ... ◆ Benchmark Dashboard
+                char(9986),  ... ✂ Circuit Cutting
                 char(9673),  ... ◉ QEC Simulation
                 char(9672),  ... ◈ QEC Visualization
                 char(9636),  ... ▤ Reports
@@ -430,7 +439,7 @@ classdef NavigationManager
             % Text labels (no icon prefix — icon is rendered separately).
             lb = {'Welcome','Dashboard','Circuits','Upload','Analysis','Backends', ...
                   'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
-                  'Benchmark Dashboard', ...
+                  'Benchmark Dashboard', 'Circuit Cutting', ...
                   'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
 

@@ -74,6 +74,7 @@ classdef QTAUWorkbenchApp < handle
         QecEngine       % QecEngineService (local computation, no HTTP)
         BenchmarkSvc    % BenchmarkService
         QaeSvc          % QaeService (Quantum Amplitude Estimation / QMC)
+        CuttingSvc      % CuttingService (circuit cutting + reconstruction)
     end
 
     % ── Screen callback services ──────────────────────────────────────────────
@@ -91,6 +92,7 @@ classdef QTAUWorkbenchApp < handle
         ResultsVm           % ResultsViewModel
         DetailedAnalysisVm       % DetailedAnalysisViewModel
         BenchmarkDashboardVm     % BenchmarkDashboardViewModel
+        CircuitCuttingVm         % CircuitCuttingViewModel
         ReportsVm                % ReportsViewModel
         SettingsVm          % SettingsViewModel
         QecSimulationVm     % QecSimulationViewModel
@@ -327,6 +329,18 @@ classdef QTAUWorkbenchApp < handle
         RegressionAxes
     end
 
+    % ── Circuit Cutting tab ──────────────────────────────────────────────────
+    properties
+        CuttingModeDropdown         % Automatic / Assisted / Manual
+        CuttingPresetDropdown       % Preset registry (Option C slot)
+        CuttingStatusLabel          % e.g. "3 subcircuits · overhead 7.2x · preset: Generic"
+        CuttingPlanText             % Cut Plan panel contents
+        CuttingBackendText          % Backend Assignments panel contents
+        CuttingObservablesText      % Pauli-string editor
+        CuttingDistCheckbox         % opt-in: also reconstruct bitstring distribution
+        CuttingResultsLabel         % Reconstructed expectations display
+    end
+
     % ── QEC Simulation tab ────────────────────────────────────────────────────
     properties
         QecCodeDropdown
@@ -422,6 +436,7 @@ classdef QTAUWorkbenchApp < handle
             app.QecEngine     = app.Services.QecEngine;
             app.BenchmarkSvc  = app.Services.BenchmarkSvc;
             app.QaeSvc        = app.Services.QaeSvc;
+            app.CuttingSvc    = app.Services.CuttingSvc;
 
             Logger.info('QTAUWorkbenchApp', 'Services ready — creating WelcomeVm (lazy init for others)');
             app.WelcomeVm = WelcomeViewModel(app);
@@ -566,6 +581,7 @@ classdef QTAUWorkbenchApp < handle
             vms = {'WelcomeVm','DashboardVm','CircuitsVm','NotesVm','UploadVm', ...
                    'AnalysisVm','BackendsVm','BenchmarkVm','PredictionVm','JobsVm', ...
                    'ResultsVm','DetailedAnalysisVm','BenchmarkDashboardVm', ...
+                   'CircuitCuttingVm', ...
                    'QecSimulationVm','QecVisualizationVm','ReportsVm','SettingsVm'};
             for i = 1:numel(vms)
                 try
@@ -582,7 +598,8 @@ classdef QTAUWorkbenchApp < handle
                          @NotesScreen, @UploadScreen, @AnalysisScreen, ...
                          @BackendsScreen, @BenchmarkScreen, @PredictionScreen, ...
                          @JobsScreen, @ResultsScreen, @DetailedAnalysisScreen, ...
-                         @BenchmarkDashboardScreen, @QecSimulationScreen, ...
+                         @BenchmarkDashboardScreen, @CircuitCuttingScreen, ...
+                         @QecSimulationScreen, ...
                          @QecVisualizationScreen, @ReportsScreen, @SettingsScreen};
             for i = 1:numel(screenFns)
                 try
@@ -843,6 +860,7 @@ classdef QTAUWorkbenchApp < handle
             ResultsScreen(app);
             DetailedAnalysisScreen(app);
             BenchmarkDashboardScreen(app);
+            CircuitCuttingScreen(app);
             QecSimulationScreen(app);
             QecVisualizationScreen(app);
             ReportsScreen(app);
