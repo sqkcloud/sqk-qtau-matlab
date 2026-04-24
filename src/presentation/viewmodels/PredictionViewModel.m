@@ -290,6 +290,27 @@ classdef PredictionViewModel < handle
                 app.State.selectedBackend = string(names{1});
             end
             app.logEvent('LOAD', sprintf('Loaded %d backends into Prediction dropdown', n));
+
+            % Oversize-circuit nudge — data has landed, check whether the
+            % selected circuit is wider than any backend in the pool.
+            try
+                selCid = char(app.State.selectedCircuitId);
+                if ~isempty(selCid)
+                    circList = app.CircuitSvc.listCircuits(app.State.authToken);
+                    circs = JsonHelper.extractList(circList, 'circuits');
+                    for i = 1:numel(circs)
+                        c = circs(i);
+                        if iscell(circs); c = circs{i}; end
+                        if strcmp(char(JsonHelper.pick(c, {'circuit_id','id'})), selCid)
+                            OversizeDetector.check(app, c, data);
+                            break;
+                        end
+                    end
+                end
+            catch ME
+                Logger.debug('PredictionViewModel', ...
+                    'OversizeDetector: %s', ME.message);
+            end
         end
 
         function onDropdownLoadError(~, app, which, ME)

@@ -346,6 +346,28 @@ classdef BenchmarkViewModel < handle
                 obj.displayExecutionPlan(data, s, o, em, ts);
                 app.logEvent('LOAD', 'Loaded existing benchmark config from server');
             end
+
+            % Oversize-circuit detection — once both circuits and backends
+            % are loaded, warn the user if the selected circuit is too wide
+            % for any single backend (pointing them at Circuit Cutting).
+            try
+                selCid = char(app.State.selectedCircuitId);
+                if ~isempty(selCid)
+                    circuits = JsonHelper.extractList(R.circuits, 'circuits');
+                    for i = 1:numel(circuits)
+                        c = circuits(i);
+                        if iscell(circuits); c = circuits{i}; end
+                        if strcmp(char(JsonHelper.pick(c, {'circuit_id','id'})), selCid)
+                            OversizeDetector.check(app, c, R.backends);
+                            break;
+                        end
+                    end
+                end
+            catch ME
+                Logger.debug('BenchmarkViewModel', ...
+                    'OversizeDetector: %s', ME.message);
+            end
+
             obj.LastRefresh = tic;
             app.hideLoading();
         end
