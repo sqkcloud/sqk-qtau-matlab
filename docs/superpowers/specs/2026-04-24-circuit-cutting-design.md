@@ -2,6 +2,64 @@
 
 **Status:** Approved · **Date:** 2026-04-24 · **Repos touched:** `sqk-qtau` (backend), `sqk-qtau-matlab` (UI).
 
+## Background
+
+This feature exists because of a structural gap between the algorithms operators want to run and the physical hardware available in the NISQ era.
+
+A **Large-Scale Circuit** is a quantum algorithm whose resource requirements exceed what current hardware can execute end-to-end. It is measured in two dimensions:
+
+- **Width** — number of physical qubits the circuit needs simultaneously.
+- **Depth** — number of sequential gate layers before measurement.
+
+Today's IBM fleet caps individual chips at ~127–156 qubits, and even within that width a deep circuit's information decoheres into noise before measurement completes. Circuits for production-relevant problems (chemistry simulation, Shor's algorithm, large-scale ML) need *thousands* of qubits with massive depth — well past the NISQ ceiling.
+
+**Circuit Reconstruction** (a.k.a. *Circuit Cutting* / *Quantum Knitting*) is a hybrid quantum-classical workaround:
+
+1. **Partition (The Cut)** — analyze the large circuit, find optimal places to sever connections between qubits or split multi-qubit gates. The cuts are wire cuts (severing a qubit lifeline) or gate cuts (replacing a 2-qubit gate with a sum of local operations).
+2. **Execute** — cutting yields *k* smaller, independent sub-circuits. Each fits on real hardware width-wise and is shallow enough to execute before decoherence destroys the result. Sub-circuits run in parallel across multiple backends.
+3. **Measure** — each backend runs its sub-circuit for many shots, returning quasi-probability distributions and expectation values for the local Pauli observables.
+4. **Reconstruct (The Stitch)** — a classical post-processor combines the sub-circuit results using tensor-network / quasi-probability arithmetic to recover the expectation value the original large circuit would have produced.
+
+**The trade-off is non-trivial.** Each cut multiplies the number of sub-experiments needed by ~4× (wire cut) or ~16× (gate cut), and the classical reconstruction cost grows as the product over all cuts. This is the *sampling overhead* the dashboard surfaces; it sets the practical limit on how many cuts a workload can absorb.
+
+> Mental model: a Large-Scale Circuit is a massive blueprint for a building. Circuit Reconstruction is the modular construction technique — fabricate sections off-site, transport them in trucks (classical post-processing pipelines), and assemble the final structure on-site.
+
+### Technical deep-dive — what's happening under the hood
+
+The high-level "cut and stitch" picture rests on a specific mathematical trick: **Quasiprobability Decomposition (QPD)**, which simulates quantum entanglement using classical probability arithmetic.
+
+**Anatomy of a wire cut.** A quantum wire carries an entangled state. You cannot literally chop it — the two halves don't "remember" they were connected. QPD replaces the cut wire with a *measure-and-prepare channel*:
+
+- **End of sub-circuit A (cut point):** the qubit is measured in each of the three Pauli bases (X, Y, Z) — a finite ensemble of measurement scenarios.
+- **Start of sub-circuit B (restart point):** the qubit is re-initialised in one of the basis states |0⟩, |1⟩, |+⟩, |−⟩, |+i⟩, |−i⟩.
+
+Each unique (measurement basis × prepared state) pair is a separate *subexperiment*. A single wire cut therefore expands the original circuit into a fixed ensemble of independent sub-circuits — a 1-cut circuit becomes ~6 sub-circuits to run; a gate cut expands further. This is what `generate_cutting_experiments` produces inside the addon.
+
+**Tensor-network reconstruction.** Hardware runs every subexperiment for the requested shots and returns counts/expectation values. The classical post-processor never tries to reconstruct the full state vector (memory-impossible past ~30 qubits). Instead it computes the *expectation value of a chosen observable* directly:
+
+1. Compute `⟨O⟩` per sub-circuit, per subexperiment.
+2. Multiply the sub-circuit expectations together (tensor-network contraction).
+3. Weight each product by the QPD coefficient for that subexperiment — some coefficients are **negative**.
+4. Sum across all subexperiments → reconstructed `⟨O⟩` for the original full-width circuit.
+
+The math guarantees the final number equals what the uncut circuit would have produced *in expectation*, modulo finite-shot variance.
+
+**Why the overhead is exponential — the γ factor.** The negative QPD coefficients are the catch. When you sum signed quantities, the variance of the estimator scales with the *sum of the absolute values* of the coefficients (γ), not their (signed) total. To suppress that variance back to a useful precision you have to increase the shot budget by a factor proportional to γ². For a single wire cut γ ≈ 4, so you need ~16× more runs; for a gate cut γ ≈ 6, scaling worse. Cutting *n* wires scales as 16ⁿ — five wire cuts is already ~10⁶× more hardware time. This is the "exponential classical compute time" the user pays to "buy" quantum depth.
+
+This γ is exactly what the `sampling_overhead` field on the `CutPlan` reports — `find_cuts` returns the optimal-cut overhead for the chosen `qubits_per_subcircuit` constraint, and the dashboard surfaces it before *Run Cutting* so the operator can decide whether the workload is feasible.
+
+**Why this maps cleanly to a distributed-computing job.** From a systems perspective, once QPD severs the wire, sub-circuit A and sub-circuit B are *fully independent* quantum jobs. They can run in any order, on any backend, even across different vendors — there is no quantum information passing between them. The only "shared state" is the classical QPD coefficients held by the orchestrator. That's why the sub-circuits surface as ordinary `IBMJobDocument` rows tagged with `batch_id` + `cut_role`: the cut transforms a monolithic quantum circuit into an embarrassingly-parallel batch of small ones, and the existing job infrastructure is reused unchanged.
+
+### How the four phases map to this implementation
+
+| Phase | Implemented in |
+|-------|----------------|
+| Partition (The Cut) | `find_cuts(circuit, OptimizationParameters, DeviceConstraints)` chooses cut locations subject to a `qubits_per_subcircuit` constraint derived from the user's target *k*. `_labels_from_cut_circuit` walks the cut-circuit's connectivity graph (cuts + barriers as non-edges) to derive partition labels per qubit. |
+| Execute | `partition_problem(cut_circuit, partition_labels)` materialises *k* sub-circuits. `CuttingBatchService.dispatch` round-robins them across the user's backend pool as IBM Runtime jobs (each tagged with `batch_id` + `cut_role` so they show up linked on the Jobs screen). |
+| Measure | Each child IBM Runtime job runs its sub-circuit for the requested shots; sampler results land back on the child `IBMJobDocument`, which the batch watcher polls. |
+| Reconstruct (The Stitch) | `reconstruct_expectations(subcircuit_results, observables, cut_plan)` calls `qiskit_addon_cutting.reconstruct_expectation_values`, which combines the per-sub-circuit primitive results using the QPD coefficients and returns one Pauli expectation value per requested observable. |
+| Trade-off visibility | The cut plan's `sampling_overhead` (e.g. 4¹ = 4× for one wire cut, 16¹ = 16× for one gate cut, multiplicative across cuts) is rendered on the *Cut Plan* panel and on the status line so the operator sees the cost before pressing *Run Cutting*. |
+
 ## Problem
 
 Current IBM Quantum fleet caps at ~127–156 qubits per backend, but real workloads (medical imaging, QMC, materials simulation) need circuits wider than any single chip. The app must let users
