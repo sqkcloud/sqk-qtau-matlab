@@ -5,7 +5,7 @@ classdef BackendService < handle
     %   structs; DTO transformation is handled by JsonHelper or the caller.
 
     properties (Access = private)
-        Client FastAPIClient
+        Client  % FastAPIClient instance (relaxed from typed property so tests can inject a StubFastAPIClient)
     end
 
     methods

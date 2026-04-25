@@ -18,7 +18,7 @@ classdef QaeService < handle
     %   to hours) would otherwise blow past any HTTP timeout.
 
     properties (Access = private)
-        Client FastAPIClient
+        Client  % FastAPIClient instance (relaxed from typed property so tests can inject a StubFastAPIClient)
     end
 
     methods

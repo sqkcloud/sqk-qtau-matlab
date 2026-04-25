@@ -5,7 +5,7 @@ classdef CircuitService < handle
     %   into MATLAB-friendly structs.  No UI logic lives here.
 
     properties (Access = private)
-        Client FastAPIClient
+        Client  % FastAPIClient instance (relaxed from typed property so tests can inject a StubFastAPIClient)
     end
 
     methods

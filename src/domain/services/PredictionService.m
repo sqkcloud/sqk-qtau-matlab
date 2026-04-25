@@ -5,7 +5,7 @@ classdef PredictionService < handle
     %   fidelity, queue times, and distribution outcomes before job submission.
 
     properties (Access = private)
-        Client FastAPIClient
+        Client  % FastAPIClient instance (relaxed from typed property so tests can inject a StubFastAPIClient)
     end
 
     methods
