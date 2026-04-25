@@ -36,5 +36,35 @@ classdef test_CircuitCuttingViewModel < matlab.unittest.TestCase
             tc.verifyEqual(vm.probeDefaultMode(), 'assisted');
         end
 
+        function testParseObservableLinesReturnsEmptyForPlaceholderOnly(tc)
+            ph = '(default: all-Z over full circuit width)';
+            obs = CircuitCuttingViewModel.parseObservableLines({ph}, ph);
+            tc.verifyEqual(obs, {});
+        end
+
+        function testParseObservableLinesDropsBlanksAndPlaceholder(tc)
+            ph = '(default: all-Z over full circuit width)';
+            obs = CircuitCuttingViewModel.parseObservableLines( ...
+                {'ZZZZ', '', '  XYXY  ', ph, ' '}, ph);
+            tc.verifyEqual(obs, {'ZZZZ', 'XYXY'});
+        end
+
+        function testParseObservableLinesHandlesStringAndChar(tc)
+            obs = CircuitCuttingViewModel.parseObservableLines('ZZZ', '');
+            tc.verifyEqual(obs, {'ZZZ'});
+            obs = CircuitCuttingViewModel.parseObservableLines( ...
+                string({'XX', '', 'YY'}), '');
+            tc.verifyEqual(obs, {'XX', 'YY'});
+        end
+
+        function testParseObservableLinesHandlesEmptyInput(tc)
+            tc.verifyEqual( ...
+                CircuitCuttingViewModel.parseObservableLines({}, ''), {});
+            tc.verifyEqual( ...
+                CircuitCuttingViewModel.parseObservableLines([], ''), {});
+            tc.verifyEqual( ...
+                CircuitCuttingViewModel.parseObservableLines('', ''), {});
+        end
+
     end
 end

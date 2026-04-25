@@ -21,9 +21,22 @@ classdef CircuitCuttingViewModel < handle
         LastRefresh    = []
     end
 
+    properties (Constant)
+        % Single source of truth for the Observables textarea placeholder.
+        % Screen uses it to seed the widget; parseObservables uses it to
+        % recognize and drop the line so it never gets sent as a Pauli string.
+        OBSERVABLES_PLACEHOLDER = '(default: all-Z over full circuit width)'
+    end
+
     methods
         function obj = CircuitCuttingViewModel(app)
             obj.App = app;
+        end
+
+        function delete(obj)
+            % Stop the poll timer when the VM is destroyed (e.g. app close)
+            % so MATLAB does not keep firing pollTick against a dead handle.
+            obj.stopPolling();
         end
 
         % ── Entry hook ───────────────────────────────────────────────────
@@ -94,7 +107,31 @@ classdef CircuitCuttingViewModel < handle
                 return;
             end
             cid = char(app.State.selectedCircuitId);
-            body = obj.buildCreateBody();
+
+            % Server rejects infeasible cut plans (sampling overhead above
+            % its 1e+06 ceiling) with HTTP 422 unless the body carries
+            % feasibility_override=true. Surface the reason to the operator
+            % and require an explicit confirmation before forcing the run.
+            override = false;
+            c = obj.firstCandidate();
+            feasible = JsonHelper.pick(c, 'feasible', true);
+            if isequal(feasible, false)
+                reason = char(JsonHelper.pick(c, 'feasibility_reason', ...
+                    'Cut plan flagged as infeasible by the server.'));
+                sel = uiconfirm(app.UIFigure, ...
+                    sprintf(['This cut plan is flagged as infeasible.\n\n%s\n\n' ...
+                             'Run anyway?'], reason), ...
+                    'Circuit Cutting', ...
+                    'Options', {'Run Anyway', 'Cancel'}, ...
+                    'DefaultOption', 2, 'CancelOption', 2, 'Icon', 'warning');
+                if ~strcmp(sel, 'Run Anyway')
+                    obj.setStatus('Run cancelled: cut plan is infeasible.');
+                    return;
+                end
+                override = true;
+            end
+
+            body = obj.buildCreateBody(override);
             % Same capture-rule as onAnalyzeCuts — never reference app.*
             % inside the background-task closure.
             svc   = app.CuttingSvc;
@@ -225,15 +262,17 @@ classdef CircuitCuttingViewModel < handle
             obj.renderCutPlan(c);
         end
 
-        function body = buildCreateBody(obj)
-            candidates = JsonHelper.pick(obj.LastAnalyze, 'candidates', {});
-            c = candidates(1); if iscell(candidates); c = candidates{1}; end
+        function body = buildCreateBody(obj, overrideFeasibility)
+            if nargin < 2 || isempty(overrideFeasibility)
+                overrideFeasibility = false;
+            end
+            c = obj.firstCandidate();
             body = struct();
             body.mode = char(obj.CurrentMode);
             body.preset = char(obj.CurrentPreset);
             body.cut_plan = c;
             body.backend_assignments = obj.collectBackends(c);
-            body.observables = {};
+            body.observables = obj.parseObservables();
             body.opt_in_distribution = false;
             try
                 body.opt_in_distribution = logical( ...
@@ -241,6 +280,41 @@ classdef CircuitCuttingViewModel < handle
             catch; end
             body.timeout_hours = 6.0;
             body.retry_strategy = 'none';
+            if overrideFeasibility
+                body.feasibility_override = true;
+            end
+        end
+
+        function c = firstCandidate(obj)
+            % Extract the first candidate from the cached Analyze response.
+            % Throws a typed MException when no candidates are available so
+            % the caller can surface a real error instead of sending an
+            % empty cut_plan and letting the server 422.
+            candidates = JsonHelper.pick(obj.LastAnalyze, 'candidates', {});
+            if isempty(candidates)
+                error('QTAU:NoCutCandidate', ...
+                    'No cut candidates available — rerun Analyze Cuts.');
+            end
+            if iscell(candidates)
+                c = candidates{1};
+            else
+                c = candidates(1);
+            end
+        end
+
+        function obs = parseObservables(obj)
+            % Pull Pauli strings from the Observables textarea, drop the
+            % placeholder and blank lines. Empty result → {} so the server
+            % falls back to its default all-Z over full circuit width.
+            lines = {};
+            try
+                raw = obj.App.CuttingObservablesText.Value;
+                if ischar(raw); raw = {raw}; end
+                if isstring(raw); raw = cellstr(raw); end
+                if iscell(raw); lines = raw; end
+            catch; end
+            obs = CircuitCuttingViewModel.parseObservableLines(lines, ...
+                CircuitCuttingViewModel.OBSERVABLES_PLACEHOLDER);
         end
 
         function assns = collectBackends(~, cutPlan)
@@ -269,6 +343,10 @@ classdef CircuitCuttingViewModel < handle
         end
 
         function pollTick(obj)
+            % Timer callback — runs on the MATLAB main thread, not via
+            % parfeval, so touching obj.App.* here is safe. The "never
+            % reference app.*" rule in onRunCutting/onAnalyzeCuts applies
+            % only to AsyncRunner closures that get serialized to workers.
             try
                 r = obj.App.CuttingSvc.pollBatch( ...
                     obj.ActiveBatchId, obj.App.State.authToken);
@@ -322,6 +400,15 @@ classdef CircuitCuttingViewModel < handle
                     obj.formatPerSub(per));
                 cuts = JsonHelper.pick(plan, 'cuts', {});
                 lines{end+1} = sprintf('cuts detected: %d', numel(cuts));
+                feasible = JsonHelper.pick(plan, 'feasible', true);
+                if isequal(feasible, false)
+                    reason = char(JsonHelper.pick(plan, 'feasibility_reason', ...
+                        'flagged infeasible by server'));
+                    lines{end+1} = sprintf('feasibility: NO — %s', reason);
+                    lines{end+1} = '(Run will prompt for override confirmation.)';
+                else
+                    lines{end+1} = 'feasibility: OK';
+                end
                 obj.App.CuttingPlanText.Value = lines;
 
                 assns = obj.collectBackends(plan);
@@ -407,6 +494,28 @@ classdef CircuitCuttingViewModel < handle
             obj.App.hideLoading();
             obj.App.showError('Circuit Cutting', ME);
             obj.setStatus(sprintf('Error: %s', ME.message));
+        end
+    end
+
+    methods (Static)
+        function obs = parseObservableLines(lines, placeholder)
+            % Normalize a cell/string array of textarea lines into a cell
+            % of trimmed Pauli strings, dropping blanks and the placeholder
+            % sentinel. Returns {} when the user typed nothing meaningful
+            % so the server defaults to all-Z over full circuit width.
+            obs = {};
+            if nargin < 2; placeholder = ''; end
+            if isempty(lines); return; end
+            if ischar(lines); lines = {lines}; end
+            if isstring(lines); lines = cellstr(lines); end
+            if ~iscell(lines); return; end
+            ph = strtrim(char(placeholder));
+            for i = 1:numel(lines)
+                s = strtrim(char(lines{i}));
+                if isempty(s); continue; end
+                if ~isempty(ph) && strcmp(s, ph); continue; end
+                obs{end+1} = s; %#ok<AGROW>
+            end
         end
     end
 end
