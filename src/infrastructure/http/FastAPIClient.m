@@ -135,21 +135,52 @@ classdef FastAPIClient < handle
         % POST JSON with Bearer token. Optional timeoutSec overrides
         % the default obj.Timeout for long-running endpoints (e.g. IBM
         % Runtime QAE where the server waits on QPU execution).
+        %
+        % Routes through matlab.net.http (instead of webwrite) so the
+        % FastAPI {"detail": "..."} body is captured on non-2xx responses
+        % — webwrite drops the body before throwing, so callers only ever
+        % saw "Unprocessable Entity" with no actionable reason. The thrown
+        % MException keeps the canonical identifier shape
+        % MATLAB:webservices:HTTP<code>StatusCodeError so existing
+        % showError/identifier handling stays compatible.
         function data = postAuthJson(obj, endpoint, payload, token, timeoutSec)
             if nargin < 5 || isempty(timeoutSec); timeoutSec = obj.Timeout; end
             url = char(obj.BaseUrl + string(endpoint));
             Logger.http('POST', url);
-            opts = weboptions('Timeout', double(timeoutSec), ...
-                'MediaType', 'application/json', 'ContentType', 'json', ...
-                'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
+
+            import matlab.net.http.*
+            import matlab.net.http.field.*
+            import matlab.net.*
+
+            headers = [ContentTypeField(MediaType('application/json')), ...
+                       GenericField('Accept', 'application/json'), ...
+                       GenericField('Authorization', ['Bearer ' char(token)])];
+            if strlength(string(obj.ProjectId)) > 0
+                headers = [headers, GenericField('X-Project-Id', char(obj.ProjectId))];
+            end
+            msgBody = MessageBody();
+            msgBody.Payload = uint8(jsonencode(payload));
+            req  = RequestMessage(RequestMethod.POST, headers, msgBody);
+            opts = HTTPOptions('ConnectTimeout', double(timeoutSec));
+
             try
-                raw  = webwrite(url, payload, opts);
-                data = FastAPIClient.normalizeJsonResponse(raw);
-                Logger.debug('FastAPIClient', 'POST %s → OK', endpoint);
+                resp = req.send(URI(url), opts);
             catch ME
                 Logger.error('FastAPIClient', 'POST %s FAILED: %s', endpoint, ME.message);
                 rethrow(ME);
             end
+
+            httpStatus = double(resp.StatusCode);
+            bodyData = resp.Body.Data;
+            if isa(bodyData, 'uint8'); bodyData = char(bodyData'); end
+
+            if httpStatus >= 400
+                Logger.error('FastAPIClient', 'POST %s FAILED: HTTP %d', endpoint, httpStatus);
+                FastAPIClient.throwHttpError(httpStatus, resp.StatusCode, url, bodyData);
+            end
+
+            data = FastAPIClient.normalizeJsonResponse(bodyData);
+            Logger.debug('FastAPIClient', 'POST %s → OK', endpoint);
         end
 
         % PUT JSON with Bearer token
@@ -331,6 +362,52 @@ classdef FastAPIClient < handle
             tf = ~isempty(regexp(ME.message, '\b204\b', 'once')) || ...
                  contains(ME.message, 'No Content', 'IgnoreCase', true) || ...
                  contains(ME.identifier, 'URLREAD');
+        end
+
+        function throwHttpError(httpStatus, statusCode, url, bodyData)
+            % Throw an MException whose identifier matches the shape MATLAB's
+            % webread/webwrite uses on non-2xx responses, but whose message
+            % includes the FastAPI `detail` body when present so the UI's
+            % showError dialog gets actionable text instead of just the bare
+            % status phrase ("Unprocessable Entity", "Internal Server Error").
+            phrase = FastAPIClient.humanStatusPhrase(statusCode);
+            base = sprintf(['The server returned the status %d with message ' ...
+                            '"%s" in response to the request to URL %s.'], ...
+                            httpStatus, phrase, url);
+            detail = FastAPIClient.extractErrorMessage(bodyData, httpStatus);
+            fallback = sprintf('Request failed with status %d', httpStatus);
+            if isempty(detail) || strcmp(detail, fallback)
+                msg = base;
+            else
+                msg = sprintf('%s\n\nDetails:\n%s', base, detail);
+            end
+            id = sprintf('MATLAB:webservices:HTTP%dStatusCodeError', httpStatus);
+            err = MException(id, '%s', msg);
+            throw(err);
+        end
+
+        function phrase = humanStatusPhrase(statusCode)
+            % Convert a matlab.net.http.StatusCode enum (or numeric/string
+            % fallback) into the human reason phrase MATLAB's webread shows
+            % — e.g. StatusCode.UnprocessableEntity → "Unprocessable Entity".
+            % NOTE: char(enum) returns the enum NAME ("Unauthorized"), while
+            % string(enum) coerces to its underlying numeric value ("401")
+            % on R2025b. We want the name so the regex below produces
+            % "Unauthorized" → "Unauthorized" / "InternalServerError" →
+            % "Internal Server Error" matching webread's display style.
+            try
+                name = char(statusCode);
+            catch
+                name = '';
+            end
+            if isempty(name)
+                phrase = 'Error';
+                return;
+            end
+            % Insert a space between lowercase→uppercase boundaries so
+            % "InternalServerError" → "Internal Server Error". Two-letter
+            % acronyms like "OK" are unaffected by the regex.
+            phrase = regexprep(name, '([a-z])([A-Z])', '$1 $2');
         end
 
         function msg = extractErrorMessage(bodyData, httpStatus)
