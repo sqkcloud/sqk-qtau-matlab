@@ -630,6 +630,36 @@ classdef CircuitCuttingViewModel < handle
             obj.LastCuttabilityCircuitId = circuitId;
             obj.LastCuttabilityResult = res;
             obj.applyCuttability(res);
+            % Pop a modal alert *only* on a fresh fetch — the cached path
+            % in checkCuttability skips this so re-selecting the same
+            % circuit doesn't re-pop the dialog. Covers both QASM-scanner
+            % verdicts (classical-controlled gates + mid-circuit measure)
+            % since both produce severity='error'. The persistent banner
+            % and disabled Analyze/Run buttons remain as ongoing context.
+            obj.maybeAlertCuttability(res);
+        end
+
+        function maybeAlertCuttability(obj, res)
+            sev = '';
+            try; sev = char(res.severity); catch; end
+            if ~strcmp(sev, 'error') && ~strcmp(sev, 'warning')
+                return;
+            end
+            reason = '';
+            try; reason = char(res.reason); catch; end
+            if isempty(reason); return; end
+            if strcmp(sev, 'error')
+                icon = 'error';
+            else
+                icon = 'warning';
+            end
+            try
+                uialert(obj.App.UIFigure, reason, 'Circuit Cutting', ...
+                    'Icon', icon);
+            catch ME
+                Logger.warn('CircuitCuttingViewModel', ...
+                    'maybeAlertCuttability uialert failed: %s', ME.message);
+            end
         end
 
         function onCuttabilityFetchFailed(obj, circuitId, ME)
