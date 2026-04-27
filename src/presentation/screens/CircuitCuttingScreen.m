@@ -6,14 +6,31 @@
 %   polished empty state for the results panel.
 %
 %   Layout (rows top-down):
-%     Row 1 (24 px):   Subtitle line
-%     Row 2 (40 px):   Toolbar — Circuit / Mode / Target k / Preset /
+%     Row 1 (40 px):   Toolbar — Circuit / Mode / Target k / Preset /
 %                       Analyze / Run / Cancel
+%     Row 2 (22 px):   Status line (full-width muted, written by VM.setStatus —
+%                       sits directly under the toolbar so the "Mode / Preset /
+%                       Press Analyze Cuts to begin" hint reads as a toolbar tail)
 %     Row 3 (108 px):  KPI strip (4 tiles: k, overhead, qubits, feasibility)
-%     Row 4 (22 px):   Status line (full-width muted, written by VM.setStatus)
-%     Row 5 ('1.4x'):  Cut Plan card (left) | Backend Assignments card (right)
-%     Row 6 ('0.95x'): Observables card (left) | Options card (right)
-%     Row 7 ('1x'):    Reconstructed Results card
+%     Row 4 (260 px):  Cut Plan card (left) | Backend Assignments card (right)
+%                       — fixed pixel height so the wrapped feasibility-reason
+%                         warning (5+ lines) plus the override-confirmation
+%                         line are always fully visible at the default window
+%                         size, never clipped by flex squeezing.
+%     Row 5 (170 px):  Observables card (left) | Options card (right)
+%                       — fixed pixel height so the Pauli-strings textarea
+%                         keeps ~4-5 visible rows and the Options hint never
+%                         gets clipped at the bottom edge.
+%     Row 6 ('1x'):    Reconstructed Results card — absorbs leftover space
+%                       when the window is enlarged; on smaller windows the
+%                       section panel itself scrolls.
+%
+%   The long descriptive sentence ("Cut wide circuits into k subcircuits,
+%   dispatch them across multiple QPUs in parallel, then reconstruct Pauli
+%   expectation values via qiskit-addon-cutting.") lives in the screen
+%   header subtitle slot via Labels.get('subtitle_circuit_cutting'), wired
+%   up in NavigationManager.sectionSubtitleFor — not as a row inside the
+%   screen body.
 %
 %   Compatibility verdicts (mid-circuit measurements, classical-controlled
 %   gates, resets) are surfaced as a modal uialert popup fired by
@@ -26,34 +43,45 @@ function CircuitCuttingScreen(app)
     Logger.info('CircuitCuttingScreen', 'Building Circuit Cutting tab UI');
     t = app.createSectionPage('Circuit Cutting');
 
-    g = uigridlayout(t, [7 2]);
-    %  Flex weights tuned so Cut Plan, Options, and Reconstructed Results
-    %  all fit their content at the default window size (~1400×900). On
-    %  smaller windows each card's Scrollable='on' paints its own
-    %  scrollbar so content remains reachable.
-    g.RowHeight     = {24, 40, 108, 22, '1.5x', '0.95x', '1.4x'};
+    g = uigridlayout(t, [6 2]);
+    %  Row sizing strategy: pin the two content-heavy card rows
+    %  (Cut Plan / Backend Assignments and Observables / Options) to fixed
+    %  pixel heights large enough for the worst-case content at the
+    %  default 1600×940 window. The Reconstructed Results row uses '1x'
+    %  so it absorbs any leftover vertical space when the operator
+    %  enlarges the window. On smaller windows the section panel itself
+    %  is Scrollable='on' (NavigationManager.createSectionPage), so the
+    %  whole screen scrolls instead of clipping cards.
+    %
+    %  Why fixed (not flex) for rows 4-5: with flex weights, MATLAB
+    %  squeezes the Cut Plan card below the height needed for the wrapped
+    %  feasibility-reason warning (5+ lines) plus the override-confirmation
+    %  line. uilabel WordWrap='on' under-reports its natural height to the
+    %  layout engine, so 'fit' rows do not always paint a scrollbar — they
+    %  just clip. Fixed pixels avoid that whole class of bug.
+    %
+    %  Cut Plan budget (260 px): title 30 + padding 24 + metric row 78 +
+    %  spacing 6 = 138 → 122 px for the wrapped reason label, comfortable
+    %  for 7-8 lines of 11 pt font.
+    %
+    %  Observables / Options budget (170 px): title 30 + padding 24 +
+    %  caption 18 + spacing 6 = 78 → 92 px for the textarea, ~4-5 lines.
+    g.RowHeight     = {40, 22, 108, 260, 170, '1x'};
     g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
-    % ── Row 1: Subtitle ──────────────────────────────────────────────────
-    app.CuttingSubtitleLabel = uilabel(g, ...
-        'Text', ['Cut wide circuits into k subcircuits, dispatch them across ' ...
-                 'multiple QPUs in parallel, then reconstruct Pauli ' ...
-                 'expectation values via qiskit-addon-cutting.'], ...
-        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
-        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
-        'WordWrap', 'on', 'Interpreter', 'none');
-    app.CuttingSubtitleLabel.Layout.Row = 1;
-    app.CuttingSubtitleLabel.Layout.Column = [1 2];
+    % Subtitle paragraph is rendered by NavigationManager in the screen
+    % header next to the "Circuit Cutting" title via
+    % Labels.get('subtitle_circuit_cutting') — no in-screen row.
 
-    % ── Row 2: Toolbar ───────────────────────────────────────────────────
+    % ── Row 1: Toolbar ───────────────────────────────────────────────────
     %   [Circuit ▼] | [Mode ▼] | [Target k spinner] | (flex) | [Preset ▼] |
     %   [Analyze] | [Run] | [Cancel]
     tb = uigridlayout(g, [1 11]);
-    tb.Layout.Row = 2; tb.Layout.Column = [1 2];
+    tb.Layout.Row = 1; tb.Layout.Column = [1 2];
     tb.ColumnWidth = {60, 180, 50, 110, 56, 80, '1x', 140, 120, 100, 110};
     tb.Padding = [0 0 0 0]; tb.ColumnSpacing = 8;
     tb.BackgroundColor = Theme.COLOR_BG;
@@ -133,6 +161,21 @@ function CircuitCuttingScreen(app)
     cancelBtn.Layout.Column = 11;
     app.styleBtn(cancelBtn, 'ghost');
 
+    % ── Row 2: Status line ───────────────────────────────────────────────
+    %   Single-line, full-width muted label. Written by VM.setStatus()
+    %   during analyze/poll flows ("Batch xxx status=running 50%"), and at
+    %   build time with "Mode: assisted   Preset: generic   Press Analyze
+    %   Cuts to begin." Sits directly under the toolbar (Row 1) so the hint
+    %   reads as a tail of the toolbar instead of floating above the
+    %   Cut Plan card.
+    app.CuttingStatusLabel = uilabel(g, ...
+        'Text', '', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
+        'WordWrap', 'off', 'Interpreter', 'none');
+    app.CuttingStatusLabel.Layout.Row = 2;
+    app.CuttingStatusLabel.Layout.Column = [1 2];
+
     % ── Row 3: KPI strip ─────────────────────────────────────────────────
     kpiRow = uigridlayout(g, [1 4]);
     kpiRow.Layout.Row = 3; kpiRow.Layout.Column = [1 2];
@@ -146,18 +189,7 @@ function CircuitCuttingScreen(app)
     [app.CuttingKpiFeasibilityChip, app.CuttingKpiFeasibilityPanel] = ...
         localBuildFeasibilityTile(kpiRow, 4);
 
-    % ── Row 4: Status line ───────────────────────────────────────────────
-    %   Single-line, full-width muted label. Written by VM.setStatus()
-    %   during analyze/poll flows ("Batch xxx status=running 50%").
-    app.CuttingStatusLabel = uilabel(g, ...
-        'Text', '', ...
-        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
-        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
-        'WordWrap', 'off', 'Interpreter', 'none');
-    app.CuttingStatusLabel.Layout.Row = 4;
-    app.CuttingStatusLabel.Layout.Column = [1 2];
-
-    % ── Row 5 Left: Cut Plan card ────────────────────────────────────────
+    % ── Row 4 Left: Cut Plan card ────────────────────────────────────────
     %   Scrollable='on' so a long feasibility-reason text (or a small
     %   window) yields a vertical scrollbar instead of clipping rows.
     planPanel = uipanel(g, 'Title', 'Cut Plan', ...
@@ -165,7 +197,7 @@ function CircuitCuttingScreen(app)
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING, ...
         'Scrollable', 'on');
-    planPanel.Layout.Row = 5; planPanel.Layout.Column = 1;
+    planPanel.Layout.Row = 4; planPanel.Layout.Column = 1;
     planPanel.BackgroundColor = Theme.COLOR_CARD;
 
     %  Two-column metric layout: 2-row × 2-col outer grid where row 1
@@ -231,7 +263,7 @@ function CircuitCuttingScreen(app)
     % and the VM no longer writes to it.
     app.CuttingPlanText = [];
 
-    % ── Row 5 Right: Backend Assignments card ────────────────────────────
+    % ── Row 4 Right: Backend Assignments card ────────────────────────────
     %   Scrollable='on' so large k (e.g. k=68 for an unpacked BV-140)
     %   yields a vertical scrollbar instead of capping the visible rows.
     bePanel = uipanel(g, 'Title', 'Backend Assignments', ...
@@ -239,7 +271,7 @@ function CircuitCuttingScreen(app)
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING, ...
         'Scrollable', 'on');
-    bePanel.Layout.Row = 5; bePanel.Layout.Column = 2;
+    bePanel.Layout.Row = 4; bePanel.Layout.Column = 2;
     bePanel.BackgroundColor = Theme.COLOR_CARD;
 
     app.CuttingBackendGrid = uigridlayout(bePanel, [1 1]);
@@ -261,12 +293,12 @@ function CircuitCuttingScreen(app)
     % capping the number of backend rows that could fit.
     app.CuttingBackendText = [];
 
-    % ── Row 6 Left: Observables card ─────────────────────────────────────
+    % ── Row 5 Left: Observables card ─────────────────────────────────────
     obsPanel = uipanel(g, 'Title', 'Observables', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING);
-    obsPanel.Layout.Row = 6; obsPanel.Layout.Column = 1;
+    obsPanel.Layout.Row = 5; obsPanel.Layout.Column = 1;
     obsPanel.BackgroundColor = Theme.COLOR_CARD;
     og = uigridlayout(obsPanel, [2 1]);
     og.RowHeight = {18, '1x'};
@@ -284,13 +316,13 @@ function CircuitCuttingScreen(app)
         'Editable', 'on', 'FontSize', 12);
     app.CuttingObservablesText.Layout.Row = 2;
 
-    % ── Row 6 Right: Options card ────────────────────────────────────────
+    % ── Row 5 Right: Options card ────────────────────────────────────────
     %   No more status line inside this card — moved to dedicated Row 4.
     optPanel = uipanel(g, 'Title', 'Options', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING);
-    optPanel.Layout.Row = 6; optPanel.Layout.Column = 2;
+    optPanel.Layout.Row = 5; optPanel.Layout.Column = 2;
     optPanel.BackgroundColor = Theme.COLOR_CARD;
     oog = uigridlayout(optPanel, [2 1]);
     oog.RowHeight = {28, '1x'};
@@ -310,7 +342,7 @@ function CircuitCuttingScreen(app)
         'VerticalAlignment', 'top');
     hintLbl.Layout.Row = 2;
 
-    % ── Row 7: Reconstructed Results card ────────────────────────────────
+    % ── Row 6: Reconstructed Results card ────────────────────────────────
     %   Scrollable='on' so long expectation-value lists fall back to a
     %   vertical scrollbar instead of clipping the bottom of the card.
     resPanel = uipanel(g, 'Title', 'Reconstructed Results', ...
@@ -318,7 +350,7 @@ function CircuitCuttingScreen(app)
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING, ...
         'Scrollable', 'on');
-    resPanel.Layout.Row = 7; resPanel.Layout.Column = [1 2];
+    resPanel.Layout.Row = 6; resPanel.Layout.Column = [1 2];
     resPanel.BackgroundColor = Theme.COLOR_CARD;
     rg = uigridlayout(resPanel, [1 1]);
     %  Inner row uses 'fit' so when the empty-state copy (or future
