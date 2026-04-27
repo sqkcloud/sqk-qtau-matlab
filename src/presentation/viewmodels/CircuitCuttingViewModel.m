@@ -513,10 +513,24 @@ classdef CircuitCuttingViewModel < handle
             obj.setLabelSafe(app.CuttingKpiQubitsValue, perStr);
 
             % Feasibility chip — recolor the pill based on state.
-            feasible = JsonHelper.pick(plan, 'feasible', true);
+            %   _addon_overflowed=True → amber "Fallback" (the addon
+            %                            couldn't propose cuts; structural
+            %                            partition shown — visualization
+            %                            only, run will fail clearly)
+            %   feasible=false         → red "Override required" (real cut
+            %                            plan, sampling overhead above the
+            %                            ceiling, run needs explicit override)
+            %   feasible=true          → green "OK"
+            feasible   = JsonHelper.pick(plan, 'feasible', true);
+            isFallback = isequal( ...
+                JsonHelper.pick(plan, '_addon_overflowed', false), true);
             chip = app.CuttingKpiFeasibilityChip;
             if isempty(chip) || ~isvalid(chip); return; end
-            if isequal(feasible, false)
+            if isFallback
+                chip.Text = '  ●  Fallback  ';
+                chip.BackgroundColor = Theme.COLOR_AMBER;
+                chip.FontColor = [1 1 1];
+            elseif isequal(feasible, false)
                 chip.Text = '  ●  Override required  ';
                 chip.BackgroundColor = Theme.COLOR_DANGER;
                 chip.FontColor = [1 1 1];
@@ -546,15 +560,27 @@ classdef CircuitCuttingViewModel < handle
             end
             obj.setLabelSafe(app.CuttingPlanPerSubValue, obj.formatPerSub(per));
 
-            % Reason text — only when the server flagged the plan infeasible.
+            % Reason text — only when the server flagged the plan infeasible
+            % or supplied a fallback structural partition. The reason colour
+            % matches the feasibility chip: amber for the fallback path
+            % (informational — the addon couldn't propose cuts), red for a
+            % genuine infeasibility (real cut plan with overhead above the
+            % ceiling, needs explicit override to run).
             reasonLbl = app.CuttingPlanReasonLabel;
             if isempty(reasonLbl) || ~isvalid(reasonLbl); return; end
-            feasible = JsonHelper.pick(plan, 'feasible', true);
+            feasible   = JsonHelper.pick(plan, 'feasible', true);
+            isFallback = isequal( ...
+                JsonHelper.pick(plan, '_addon_overflowed', false), true);
             if isequal(feasible, false)
                 reason = char(JsonHelper.pick(plan, 'feasibility_reason', ...
                     'Cut plan flagged as infeasible by the server.'));
                 reasonLbl.Text = sprintf( ...
                     '⚠  %s\n\nRun Cutting will ask for override confirmation.', reason);
+                if isFallback
+                    reasonLbl.FontColor = Theme.COLOR_AMBER;
+                else
+                    reasonLbl.FontColor = Theme.COLOR_DANGER;
+                end
                 reasonLbl.Visible = 'on';
             else
                 reasonLbl.Text = '';
