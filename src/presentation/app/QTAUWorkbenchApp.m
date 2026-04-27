@@ -334,6 +334,7 @@ classdef QTAUWorkbenchApp < handle
         CuttingCircuitDropdown      % Circuit picker (avoids having to set it elsewhere)
         CuttingModeDropdown         % Automatic / Assisted / Manual
         CuttingPresetDropdown       % Preset registry (Option C slot)
+        CuttingTargetKSpin          % Spinner: force target_k (0 = auto)
         CuttingStatusLabel          % Status banner (kept for back-compat / VM hooks)
         CuttingSubtitleLabel        % "Distributed execution across multiple QPUs..."
         % KPI strip — one big number per metric, IBM-Quantum-style at-a-glance

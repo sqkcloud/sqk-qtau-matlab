@@ -82,6 +82,17 @@ classdef CircuitCuttingViewModel < handle
                     'Circuit Cutting');
                 return;
             end
+            % Read the toolbar spinner; 0 = auto (server picks k), >=2
+            % = force that many subcircuits. The latter is the recovery
+            % path the server suggests when find_cuts overflows float64.
+            targetK = [];
+            try
+                v = double(app.CuttingTargetKSpin.Value);
+                if v >= 2 && v <= 32
+                    targetK = v;
+                end
+            catch; end
+
             % IMPORTANT: bind svc + token to LOCAL variables before the
             % lambda. Referencing `app.CuttingSvc` inside the closure would
             % capture the entire QTAUWorkbenchApp (which holds uifigure +
@@ -93,7 +104,7 @@ classdef CircuitCuttingViewModel < handle
             token = app.State.authToken;
             app.showLoading();
             AsyncRunner.run( ...
-                @() svc.analyzeCuts(cid, [], token), ...
+                @() svc.analyzeCuts(cid, targetK, token), ...
                 @(r) obj.applyAnalyze(r), ...
                 @(ME) obj.onError(ME));
         end

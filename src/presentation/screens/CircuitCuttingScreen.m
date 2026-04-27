@@ -41,10 +41,11 @@ function CircuitCuttingScreen(app)
     app.CuttingSubtitleLabel.Layout.Column = [1 2];
 
     % ── Row 2: Toolbar ───────────────────────────────────────────────────
-    %   [Circuit ▼] | [Mode ▼] | (flex) | [Preset ▼] | [Analyze] | [Run] | [Cancel]
-    tb = uigridlayout(g, [1 9]);
+    %   [Circuit ▼] | [Mode ▼] | [Target k spinner] | (flex) | [Preset ▼] |
+    %   [Analyze] | [Run] | [Cancel]
+    tb = uigridlayout(g, [1 11]);
     tb.Layout.Row = 2; tb.Layout.Column = [1 2];
-    tb.ColumnWidth = {60, 220, 50, 140, '1x', 180, 140, 140, 140};
+    tb.ColumnWidth = {60, 220, 50, 140, 60, 90, '1x', 180, 140, 140, 140};
     tb.Padding = [0 0 0 0]; tb.ColumnSpacing = 8;
     tb.BackgroundColor = Theme.COLOR_BG;
 
@@ -74,10 +75,28 @@ function CircuitCuttingScreen(app)
     app.CuttingModeDropdown.Tooltip = ...
         'Automatic: one-click run. Assisted: review suggestions. Manual: enter everything.';
 
+    %  Target k spinner. 0 = auto (let the addon decide). 2..32 forces a
+    %  specific number of subcircuits — the recovery path the server
+    %  itself suggests when find_cuts overflows float64 on a very wide
+    %  or densely-entangling circuit (e.g. qugan_n395.qasm).
+    targetKLbl = uilabel(tb, 'Text', 'Target k', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_LABEL, ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+    targetKLbl.Layout.Column = 5;
+
+    app.CuttingTargetKSpin = uispinner(tb, ...
+        'Value', 0, 'Limits', [0 32], 'Step', 1, ...
+        'ValueDisplayFormat', '%d', ...
+        'Tooltip', sprintf(['Force target_k subcircuits. Leave at 0 to ' ...
+                            'let the addon pick automatically. Useful when ' ...
+                            'a 100+ qubit circuit overflows the addon''s ' ...
+                            'gamma upper bound.']));
+    app.CuttingTargetKSpin.Layout.Column = 6;
+
     app.CuttingPresetDropdown = uidropdown(tb, ...
         'Items', {'Generic'}, 'ItemsData', {'generic'}, ...
         'ValueChangedFcn', @(src,~) app.CircuitCuttingVm.onPresetChanged(src.Value));
-    app.CuttingPresetDropdown.Layout.Column = 6;
+    app.CuttingPresetDropdown.Layout.Column = 8;
     app.CuttingPresetDropdown.Tooltip = 'Phase 2 will add domain presets (CT Imaging 160Q, etc.).';
 
     %  Unicode glyphs as inline icons — keeps the design portable (no
@@ -85,17 +104,17 @@ function CircuitCuttingScreen(app)
     %  for analysis, ▶ = run/dispatch, ✕ = cancel/abort.
     analyzeBtn = uibutton(tb, 'Text', '⌕  Analyze Cuts', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onAnalyzeCuts());
-    analyzeBtn.Layout.Column = 7;
+    analyzeBtn.Layout.Column = 9;
     app.styleBtn(analyzeBtn, 'ghost');
 
     runBtn = uibutton(tb, 'Text', '▶  Run Cutting', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onRunCutting());
-    runBtn.Layout.Column = 8;
+    runBtn.Layout.Column = 10;
     app.styleBtn(runBtn, 'primary');
 
     cancelBtn = uibutton(tb, 'Text', '✕  Cancel Batch', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onCancelBatch());
-    cancelBtn.Layout.Column = 9;
+    cancelBtn.Layout.Column = 11;
     app.styleBtn(cancelBtn, 'ghost');
 
     % ── Row 3: KPI strip ─────────────────────────────────────────────────
