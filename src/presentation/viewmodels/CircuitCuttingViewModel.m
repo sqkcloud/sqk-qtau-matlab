@@ -362,7 +362,7 @@ classdef CircuitCuttingViewModel < handle
             body = struct();
             body.mode = char(obj.CurrentMode);
             body.preset = char(obj.CurrentPreset);
-            body.cut_plan = c;
+            body.cut_plan = obj.sanitizeCutPlan(c);
             body.backend_assignments = obj.collectBackends(c);
             body.observables = obj.parseObservables();
             body.opt_in_distribution = false;
@@ -391,6 +391,83 @@ classdef CircuitCuttingViewModel < handle
                 c = candidates{1};
             else
                 c = candidates(1);
+            end
+        end
+
+        function plan = sanitizeCutPlan(~, c)
+            % Normalise the analyze-response candidate so the
+            % create-batch endpoint accepts it. MATLAB's jsondecode has
+            % two well-known round-trip bugs that 422 the server's
+            % Pydantic CutPlan validator:
+            %
+            %   * JSON ``null`` decodes to ``[]`` and re-encodes as ``[]``
+            %     instead of ``null`` — server's ``int | None`` field
+            %     rejects an array.
+            %   * JSON ``[17]`` (single-element array) decodes to scalar
+            %     ``17`` and re-encodes as ``17`` instead of ``[17]`` —
+            %     server's ``list[int]`` field rejects a scalar.
+            %
+            % Hit on qec9xz_n17.qasm where the analyze response had
+            % ``"target_k": null`` and ``"per_subcircuit_qubits": [17]``;
+            % MATLAB sent them back as ``"target_k": []`` and
+            % ``"per_subcircuit_qubits": 17``, triggering 422.
+            plan = c;
+
+            % target_k: int | None — drop the field entirely when empty
+            % or zero so the server's None default kicks in. (Sending
+            % ``null`` from MATLAB requires NaN, but absent-field has the
+            % same effect on Pydantic and is more robust.)
+            if isfield(plan, 'target_k')
+                v = plan.target_k;
+                drop = isempty(v) || ...
+                    (isnumeric(v) && isscalar(v) && (isnan(v) || v == 0));
+                if drop
+                    plan = rmfield(plan, 'target_k');
+                else
+                    plan.target_k = double(v);
+                end
+            end
+
+            % qubits_per_qpu: int | None — same treatment.
+            if isfield(plan, 'qubits_per_qpu')
+                v = plan.qubits_per_qpu;
+                drop = isempty(v) || ...
+                    (isnumeric(v) && isscalar(v) && isnan(v));
+                if drop
+                    plan = rmfield(plan, 'qubits_per_qpu');
+                else
+                    plan.qubits_per_qpu = double(v);
+                end
+            end
+
+            % per_subcircuit_qubits: list[int] — wrap scalars / empties
+            % in a cell array so jsonencode always emits a JSON array,
+            % never a bare number or [].
+            if isfield(plan, 'per_subcircuit_qubits')
+                v = plan.per_subcircuit_qubits;
+                if isempty(v)
+                    plan.per_subcircuit_qubits = {};
+                elseif isnumeric(v)
+                    plan.per_subcircuit_qubits = num2cell(double(v(:).'));
+                elseif iscell(v)
+                    plan.per_subcircuit_qubits = v(:).';
+                end
+            end
+
+            % cuts: list[CutPoint] — same array-shape guard. A single
+            % cut decodes to a struct rather than a 1-element struct
+            % array; wrap in a cell so the JSON shape stays an array.
+            if isfield(plan, 'cuts')
+                v = plan.cuts;
+                if isempty(v)
+                    plan.cuts = {};
+                elseif isstruct(v) && isscalar(v)
+                    plan.cuts = {v};
+                elseif isstruct(v)
+                    plan.cuts = arrayfun(@(s) s, v(:).', ...
+                        'UniformOutput', false);
+                end
+                % iscell(v) — already a list, leave alone.
             end
         end
 
