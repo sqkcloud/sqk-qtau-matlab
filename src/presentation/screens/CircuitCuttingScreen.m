@@ -164,30 +164,63 @@ function CircuitCuttingScreen(app)
     planPanel.Layout.Row = 5; planPanel.Layout.Column = 1;
     planPanel.BackgroundColor = Theme.COLOR_CARD;
 
-    pg = uigridlayout(planPanel, [6 2]);
-    %  Last row uses 'fit' instead of '1x' so when the feasibility-reason
-    %  text wraps to many lines, the inner grid grows past the panel
-    %  height and triggers planPanel.Scrollable. With '1x' the grid
-    %  always shrinks to fit the panel and no scrollbar ever appears.
-    pg.RowHeight   = {22, 22, 22, 22, 22, 'fit'};
-    pg.ColumnWidth = {180, '1x'};
+    %  Two-column metric layout: 2-row × 2-col outer grid where row 1
+    %  hosts a left and a right metric sub-grid, and row 2 hosts the
+    %  feasibility-reason label spanning both columns.
+    %
+    %  Left column     Right column
+    %  ────────────────────────────────────
+    %  k                log₁₀(overhead)
+    %  Cuts detected    Per-subcircuit qubits
+    %  Sampling overhead   (empty)
+    %  ────────────────────────────────────
+    %  ⚠  feasibility reason text (spans both columns when shown)
+    %
+    %  Outer row 2 uses 'fit' so a long wrapped reason makes the grid
+    %  taller than the panel and triggers planPanel.Scrollable.
+    pg = uigridlayout(planPanel, [2 2]);
+    pg.RowHeight   = {78, 'fit'};
+    pg.ColumnWidth = {'1x', '1x'};
     pg.Padding     = [16 12 16 12];
-    pg.RowSpacing  = 4; pg.ColumnSpacing = 14;
+    pg.RowSpacing  = 6;
+    pg.ColumnSpacing = 24;
     pg.BackgroundColor = Theme.COLOR_CARD;
 
-    app.CuttingPlanKValue        = localBuildPlanRow(pg, 1, 'k', '—');
-    app.CuttingPlanCutsValue     = localBuildPlanRow(pg, 2, 'Cuts detected', '—');
-    app.CuttingPlanOverheadValue = localBuildPlanRow(pg, 3, 'Sampling overhead', '—');
-    app.CuttingPlanLog10Value    = localBuildPlanRow(pg, 4, 'log₁₀(overhead)', '—');
-    app.CuttingPlanPerSubValue   = localBuildPlanRow(pg, 5, 'Per-subcircuit qubits', '—');
+    leftCol = uigridlayout(pg, [3 2]);
+    leftCol.RowHeight     = {22, 22, 22};
+    leftCol.ColumnWidth   = {130, '1x'};
+    leftCol.Padding       = [0 0 0 0];
+    leftCol.RowSpacing    = 4;
+    leftCol.ColumnSpacing = 12;
+    leftCol.BackgroundColor = Theme.COLOR_CARD;
+    leftCol.Layout.Row = 1; leftCol.Layout.Column = 1;
 
-    % Wrapped feasibility-reason text (hidden until an infeasible plan arrives).
+    app.CuttingPlanKValue        = localBuildPlanRow(leftCol, 1, 'k', '—');
+    app.CuttingPlanCutsValue     = localBuildPlanRow(leftCol, 2, 'Cuts detected', '—');
+    app.CuttingPlanOverheadValue = localBuildPlanRow(leftCol, 3, 'Sampling overhead', '—');
+
+    rightCol = uigridlayout(pg, [3 2]);
+    rightCol.RowHeight     = {22, 22, 22};
+    rightCol.ColumnWidth   = {150, '1x'};
+    rightCol.Padding       = [0 0 0 0];
+    rightCol.RowSpacing    = 4;
+    rightCol.ColumnSpacing = 12;
+    rightCol.BackgroundColor = Theme.COLOR_CARD;
+    rightCol.Layout.Row = 1; rightCol.Layout.Column = 2;
+
+    app.CuttingPlanLog10Value  = localBuildPlanRow(rightCol, 1, 'log₁₀(overhead)', '—');
+    app.CuttingPlanPerSubValue = localBuildPlanRow(rightCol, 2, 'Per-subcircuit qubits', '—');
+    % Row 3 of the right column is intentionally empty — keeps both columns
+    % the same height so the reason text below sits on a clean baseline.
+
+    %  Wrapped feasibility-reason text (hidden until an infeasible plan
+    %  arrives). Spans both metric columns.
     app.CuttingPlanReasonLabel = uilabel(pg, ...
         'Text', '', ...
         'FontSize', 11, 'FontColor', Theme.COLOR_DANGER, ...
         'WordWrap', 'on', 'Interpreter', 'none', ...
         'VerticalAlignment', 'top', 'Visible', 'off');
-    app.CuttingPlanReasonLabel.Layout.Row = 6;
+    app.CuttingPlanReasonLabel.Layout.Row = 2;
     app.CuttingPlanReasonLabel.Layout.Column = [1 2];
 
     % Drop the hidden legacy textarea entirely — was eating a grid slot
