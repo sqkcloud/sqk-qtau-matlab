@@ -336,6 +336,7 @@ classdef QTAUWorkbenchApp < handle
         CuttingPresetDropdown       % Preset registry (Option C slot)
         CuttingTargetKSpin          % Spinner: force target_k (0 = auto)
         CuttingCompatBanner         % Red/amber banner shown for un-cuttable circuits
+        CuttingMainGrid             % Outer grid handle so VM can collapse the banner row
         CuttingAnalyzeBtn           % Analyze Cuts button (toggled enable on incompat)
         CuttingRunBtn               % Run Cutting button (toggled enable on incompat)
         CuttingStatusLabel          % Status banner (kept for back-compat / VM hooks)

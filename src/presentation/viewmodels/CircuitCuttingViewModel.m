@@ -647,6 +647,7 @@ classdef CircuitCuttingViewModel < handle
             banner = app.CuttingCompatBanner;
             analyzeBtn = app.CuttingAnalyzeBtn;
             runBtn = app.CuttingRunBtn;
+            mainGrid = app.CuttingMainGrid;
 
             sev = '';
             try; sev = char(res.severity); catch; end
@@ -655,6 +656,7 @@ classdef CircuitCuttingViewModel < handle
 
             switch sev
                 case 'error'
+                    obj.expandBannerRow(mainGrid);
                     if ~isempty(banner) && isvalid(banner)
                         banner.Text = ['⚠  ' reason];
                         banner.BackgroundColor = Theme.COLOR_DANGER;
@@ -668,6 +670,7 @@ classdef CircuitCuttingViewModel < handle
                         runBtn.Enable = 'off';
                     end
                 case 'warning'
+                    obj.expandBannerRow(mainGrid);
                     if ~isempty(banner) && isvalid(banner)
                         banner.Text = ['ℹ  ' reason];
                         banner.BackgroundColor = Theme.COLOR_WARNING;
@@ -681,6 +684,7 @@ classdef CircuitCuttingViewModel < handle
                         runBtn.Enable = 'on';
                     end
                 case 'pending'
+                    obj.expandBannerRow(mainGrid);
                     if ~isempty(banner) && isvalid(banner)
                         banner.Text = reason;
                         banner.BackgroundColor = Theme.COLOR_ACCENT_BG;
@@ -688,6 +692,7 @@ classdef CircuitCuttingViewModel < handle
                         banner.Visible = 'on';
                     end
                 otherwise   % 'ok' or empty
+                    obj.collapseBannerRow(mainGrid);
                     if ~isempty(banner) && isvalid(banner)
                         banner.Text = '';
                         banner.Visible = 'off';
@@ -699,6 +704,32 @@ classdef CircuitCuttingViewModel < handle
                         runBtn.Enable = 'on';
                     end
             end
+        end
+
+        function expandBannerRow(~, mainGrid)
+            % Banner row is row 3 of the outer grid. Expand to 32 px so
+            % the warning is visible.
+            if isempty(mainGrid) || ~isvalid(mainGrid); return; end
+            try
+                rh = mainGrid.RowHeight;
+                if numel(rh) >= 3
+                    rh{3} = 32;
+                    mainGrid.RowHeight = rh;
+                end
+            catch; end
+        end
+
+        function collapseBannerRow(~, mainGrid)
+            % Collapse the banner row so it doesn't eat vertical space
+            % when the selected circuit is cuttable.
+            if isempty(mainGrid) || ~isvalid(mainGrid); return; end
+            try
+                rh = mainGrid.RowHeight;
+                if numel(rh) >= 3
+                    rh{3} = 1;
+                    mainGrid.RowHeight = rh;
+                end
+            catch; end
         end
 
         function renderResult(obj, r)

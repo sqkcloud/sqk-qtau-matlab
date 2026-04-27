@@ -26,12 +26,17 @@ function CircuitCuttingScreen(app)
     t = app.createSectionPage('Circuit Cutting');
 
     g = uigridlayout(t, [8 2]);
-    g.RowHeight     = {24, 40, 32, 108, 22, '1.4x', '0.95x', '0.85x'};
+    %  Row 3 (compatibility banner) starts collapsed at 1 px so it does
+    %  not eat vertical space on the common case where the selected
+    %  circuit is cuttable. CircuitCuttingViewModel.applyCuttability
+    %  expands it back to 32 px when the QASM scanner flags an issue.
+    g.RowHeight     = {24, 40, 1, 108, 22, '1.4x', '0.95x', '1x'};
     g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
+    app.CuttingMainGrid = g;
 
     % ── Row 1: Subtitle ──────────────────────────────────────────────────
     app.CuttingSubtitleLabel = uilabel(g, ...
@@ -49,7 +54,7 @@ function CircuitCuttingScreen(app)
     %   [Analyze] | [Run] | [Cancel]
     tb = uigridlayout(g, [1 11]);
     tb.Layout.Row = 2; tb.Layout.Column = [1 2];
-    tb.ColumnWidth = {60, 220, 50, 140, 60, 90, '1x', 180, 140, 140, 140};
+    tb.ColumnWidth = {60, 180, 50, 110, 56, 80, '1x', 140, 120, 100, 110};
     tb.Padding = [0 0 0 0]; tb.ColumnSpacing = 8;
     tb.BackgroundColor = Theme.COLOR_BG;
 
@@ -108,17 +113,22 @@ function CircuitCuttingScreen(app)
     %  for analysis, ▶ = run/dispatch, ✕ = cancel/abort. Analyze/Run
     %  handles are stored on the app so the VM can disable them when
     %  the QASM scanner finds an un-cuttable circuit.
-    app.CuttingAnalyzeBtn = uibutton(tb, 'Text', '⌕  Analyze Cuts', ...
+    %  Short labels — context is clear from the screen title above. Tooltip
+    %  spells out the full action.
+    app.CuttingAnalyzeBtn = uibutton(tb, 'Text', '⌕  Analyze', ...
+        'Tooltip', 'Analyze cuts for the selected circuit', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onAnalyzeCuts());
     app.CuttingAnalyzeBtn.Layout.Column = 9;
     app.styleBtn(app.CuttingAnalyzeBtn, 'ghost');
 
-    app.CuttingRunBtn = uibutton(tb, 'Text', '▶  Run Cutting', ...
+    app.CuttingRunBtn = uibutton(tb, 'Text', '▶  Run', ...
+        'Tooltip', 'Dispatch the cut subcircuits to the assigned backends', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onRunCutting());
     app.CuttingRunBtn.Layout.Column = 10;
     app.styleBtn(app.CuttingRunBtn, 'primary');
 
-    cancelBtn = uibutton(tb, 'Text', '✕  Cancel Batch', ...
+    cancelBtn = uibutton(tb, 'Text', '✕  Cancel', ...
+        'Tooltip', 'Cancel the active cutting batch', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onCancelBatch());
     cancelBtn.Layout.Column = 11;
     app.styleBtn(cancelBtn, 'ghost');
