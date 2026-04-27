@@ -22,7 +22,7 @@ function CircuitCuttingScreen(app)
     t = app.createSectionPage('Circuit Cutting');
 
     g = uigridlayout(t, [7 2]);
-    g.RowHeight     = {24, 40, 108, 22, '1.3x', '0.7x', '1x'};
+    g.RowHeight     = {24, 40, 108, 22, '1.4x', '0.95x', '0.85x'};
     g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -123,10 +123,13 @@ function CircuitCuttingScreen(app)
     app.CuttingStatusLabel.Layout.Column = [1 2];
 
     % ── Row 5 Left: Cut Plan card ────────────────────────────────────────
+    %   Scrollable='on' so a long feasibility-reason text (or a small
+    %   window) yields a vertical scrollbar instead of clipping rows.
     planPanel = uipanel(g, 'Title', 'Cut Plan', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
-        'ForegroundColor', Theme.COLOR_HEADING);
+        'ForegroundColor', Theme.COLOR_HEADING, ...
+        'Scrollable', 'on');
     planPanel.Layout.Row = 5; planPanel.Layout.Column = 1;
     planPanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -157,10 +160,13 @@ function CircuitCuttingScreen(app)
     app.CuttingPlanText = [];
 
     % ── Row 5 Right: Backend Assignments card ────────────────────────────
+    %   Scrollable='on' so large k (e.g. k=68 for an unpacked BV-140)
+    %   yields a vertical scrollbar instead of capping the visible rows.
     bePanel = uipanel(g, 'Title', 'Backend Assignments', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
-        'ForegroundColor', Theme.COLOR_HEADING);
+        'ForegroundColor', Theme.COLOR_HEADING, ...
+        'Scrollable', 'on');
     bePanel.Layout.Row = 5; bePanel.Layout.Column = 2;
     bePanel.BackgroundColor = Theme.COLOR_CARD;
 
@@ -234,10 +240,13 @@ function CircuitCuttingScreen(app)
     hintLbl.Layout.Row = 2;
 
     % ── Row 7: Reconstructed Results card ────────────────────────────────
+    %   Scrollable='on' so long expectation-value lists fall back to a
+    %   vertical scrollbar instead of clipping the bottom of the card.
     resPanel = uipanel(g, 'Title', 'Reconstructed Results', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
-        'ForegroundColor', Theme.COLOR_HEADING);
+        'ForegroundColor', Theme.COLOR_HEADING, ...
+        'Scrollable', 'on');
     resPanel.Layout.Row = 7; resPanel.Layout.Column = [1 2];
     resPanel.BackgroundColor = Theme.COLOR_CARD;
     rg = uigridlayout(resPanel, [1 1]);
