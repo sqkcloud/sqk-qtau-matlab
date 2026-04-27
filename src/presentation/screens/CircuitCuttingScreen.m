@@ -5,25 +5,30 @@
 %   Cut Plan card, a row-per-subcircuit Backend Assignments card, and a
 %   polished empty state for the results panel.
 %
-%   Layout (rows top-down):
+%   Layout (rows top-down) — sized for the default 1600×870 figure where
+%   the screen body is ~669 px tall (figure 870 minus app header 52, the
+%   shellGrid header card 82, separator 1, padding 32, spacing 24):
 %     Row 1 (40 px):   Toolbar — Circuit / Mode / Target k / Preset /
 %                       Analyze / Run / Cancel
 %     Row 2 (22 px):   Status line (full-width muted, written by VM.setStatus —
 %                       sits directly under the toolbar so the "Mode / Preset /
 %                       Press Analyze Cuts to begin" hint reads as a toolbar tail)
 %     Row 3 (108 px):  KPI strip (4 tiles: k, overhead, qubits, feasibility)
-%     Row 4 (260 px):  Cut Plan card (left) | Backend Assignments card (right)
-%                       — fixed pixel height so the wrapped feasibility-reason
-%                         warning (5+ lines) plus the override-confirmation
-%                         line are always fully visible at the default window
-%                         size, never clipped by flex squeezing.
-%     Row 5 (170 px):  Observables card (left) | Options card (right)
-%                       — fixed pixel height so the Pauli-strings textarea
-%                         keeps ~4-5 visible rows and the Options hint never
-%                         gets clipped at the bottom edge.
+%     Row 4 (210 px):  Cut Plan card (left) | Backend Assignments card (right)
+%                       — fits the wrapped feasibility-reason warning (3 lines
+%                         at 1600 px) plus the override-confirmation line.
+%     Row 5 (130 px):  Observables card (left) | Options card (right)
+%                       — keeps the textarea at ~3 visible rows and the
+%                         Options hint fully readable.
 %     Row 6 ('1x'):    Reconstructed Results card — absorbs leftover space
-%                       when the window is enlarged; on smaller windows the
-%                       section panel itself scrolls.
+%                       (~95 px at default size, room for the 2-paragraph
+%                         empty-state copy; grows freely when enlarged).
+%
+%   Outer grid Padding 12 / RowSpacing 8 (instead of Theme.GRID_PADDING 16
+%   / Theme.GRID_ROW_SPACING 12) reclaims ~28 px to make the row budget
+%   fit the 669 px body. Card-internal vertical padding is also trimmed
+%   from 12 → 8 so the reason text, textarea, hint, and empty-state copy
+%   all retain enough room within the tighter row heights.
 %
 %   The long descriptive sentence ("Cut wide circuits into k subcircuits,
 %   dispatch them across multiple QPUs in parallel, then reconstruct Pauli
@@ -60,16 +65,30 @@ function CircuitCuttingScreen(app)
     %  layout engine, so 'fit' rows do not always paint a scrollbar — they
     %  just clip. Fixed pixels avoid that whole class of bug.
     %
-    %  Cut Plan budget (260 px): title 30 + padding 24 + metric row 78 +
-    %  spacing 6 = 138 → 122 px for the wrapped reason label, comfortable
-    %  for 7-8 lines of 11 pt font.
+    %  Sized to fit at the default 1800×870 figure where the screen body is
+    %  only ~669 px (after the 52 px app header, the 82 px section-title
+    %  card, the 1 px separator, and shellGrid padding 32 + spacing 24).
     %
-    %  Observables / Options budget (170 px): title 30 + padding 24 +
-    %  caption 18 + spacing 6 = 78 → 92 px for the textarea, ~4-5 lines.
-    g.RowHeight     = {40, 22, 108, 260, 170, '1x'};
+    %  Outer overhead is trimmed (Padding 12 instead of 16, RowSpacing 8
+    %  instead of 12) to recover ~28 px for the row budget.
+    %
+    %  Cut Plan budget (210 px): title 30 + inner padding 16 (top+bottom 8
+    %  via pg.Padding override below) + metric row 78 + spacing 6 = 130 →
+    %  80 px for the wrapped reason label, comfortable for 5-6 lines of
+    %  11 pt font including the override-confirmation line.
+    %
+    %  Observables / Options budget (130 px): title 30 + inner padding 16
+    %  (top+bottom 8 via og.Padding override below) + caption 18 + spacing
+    %  6 = 70 → 60 px for the textarea, ~3-4 visible lines, plus enough
+    %  room for the Options checkbox + 2-line wrapped hint.
+    %
+    %  Reconstructed Results uses '1x' so it absorbs all leftover space —
+    %  ~95 px at 870 figure (room for the 2-paragraph empty-state copy)
+    %  and grows freely when the operator enlarges the window.
+    g.RowHeight     = {40, 22, 108, 210, 130, '1x'};
     g.ColumnWidth   = {'1x', '1x'};
-    g.Padding       = Theme.GRID_PADDING;
-    g.RowSpacing    = Theme.GRID_ROW_SPACING;
+    g.Padding       = [12 12 12 12];
+    g.RowSpacing    = 8;
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
@@ -217,7 +236,11 @@ function CircuitCuttingScreen(app)
     pg = uigridlayout(planPanel, [2 2]);
     pg.RowHeight   = {78, 'fit'};
     pg.ColumnWidth = {'1x', '1x'};
-    pg.Padding     = [16 12 16 12];
+    %  Top/bottom padding trimmed from 12 → 8 to reclaim ~8 px for the
+    %  reason label so the 5-line worst-case wrap (warning + override
+    %  confirmation) is fully visible inside the 210 px outer row budget
+    %  at the default 1800×870 figure.
+    pg.Padding     = [16 8 16 8];
     pg.RowSpacing  = 6;
     pg.ColumnSpacing = 24;
     pg.BackgroundColor = Theme.COLOR_CARD;
@@ -302,7 +325,9 @@ function CircuitCuttingScreen(app)
     obsPanel.BackgroundColor = Theme.COLOR_CARD;
     og = uigridlayout(obsPanel, [2 1]);
     og.RowHeight = {18, '1x'};
-    og.Padding = [16 12 16 12]; og.RowSpacing = 6;
+    %  Top/bottom padding trimmed (12 → 8) so the textarea keeps ~3-4
+    %  visible lines inside the 130 px outer row budget at default size.
+    og.Padding = [16 8 16 8]; og.RowSpacing = 6;
     og.BackgroundColor = Theme.COLOR_CARD;
 
     obsCaption = uilabel(og, ...
@@ -326,7 +351,9 @@ function CircuitCuttingScreen(app)
     optPanel.BackgroundColor = Theme.COLOR_CARD;
     oog = uigridlayout(optPanel, [2 1]);
     oog.RowHeight = {28, '1x'};
-    oog.Padding = [16 12 16 12]; oog.RowSpacing = 8;
+    %  Top/bottom padding trimmed (12 → 8) so the wrapped hint fits the
+    %  130 px outer row budget without clipping at default size.
+    oog.Padding = [16 8 16 8]; oog.RowSpacing = 8;
     oog.BackgroundColor = Theme.COLOR_CARD;
 
     app.CuttingDistCheckbox = uicheckbox(oog, ...
@@ -358,14 +385,15 @@ function CircuitCuttingScreen(app)
     %  is allocated, the grid grows past the panel and resPanel.Scrollable
     %  paints a real scrollbar instead of clipping the content.
     rg.RowHeight = {'fit'};
-    rg.Padding = [18 14 18 14]; rg.BackgroundColor = Theme.COLOR_CARD;
+    %  Top/bottom padding trimmed (14 → 10) so the 2-paragraph empty-state
+    %  copy fits the ~95 px Row 6 budget at default 1600×870 figure.
+    rg.Padding = [18 10 18 10]; rg.BackgroundColor = Theme.COLOR_CARD;
 
     % Empty state (visible until renderResult writes real values).
     app.CuttingResultsEmptyLabel = uilabel(rg, ...
-        'Text', sprintf(['⚛  Reconstructed expectation values appear here ' ...
-                         'once the batch completes.\n\n' ...
-                         'Press Run Cutting to dispatch all k subcircuits ' ...
-                         'in parallel.']), ...
+        'Text', ['⚛  Reconstructed expectation values appear here once ' ...
+                 'the batch completes. Press Run Cutting to dispatch all ' ...
+                 'k subcircuits in parallel.'], ...
         'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
         'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
         'WordWrap', 'on', 'Interpreter', 'none');

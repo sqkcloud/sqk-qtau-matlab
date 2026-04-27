@@ -86,8 +86,12 @@ classdef CircuitCuttingViewModel < handle
                 return;
             end
             % Read the toolbar spinner; 0 = auto (server picks k), >=2
-            % = force that many subcircuits. The latter is the recovery
-            % path the server suggests when find_cuts overflows float64.
+            % = force that many subcircuits. When the addon's automated
+            % cut finder overflows float64 on a wide / densely-entangling
+            % circuit (qugan_n395, BV-140 packed, etc.), dispatchAnalyze
+            % auto-escalates target_k 4 → 8 → 16 → 32 until one succeeds —
+            % the recovery path the server's own error message suggests,
+            % made automatic so the operator does not have to babysit it.
             targetK = [];
             try
                 v = double(app.CuttingTargetKSpin.Value);
@@ -96,20 +100,8 @@ classdef CircuitCuttingViewModel < handle
                 end
             catch; end
 
-            % IMPORTANT: bind svc + token to LOCAL variables before the
-            % lambda. Referencing `app.CuttingSvc` inside the closure would
-            % capture the entire QTAUWorkbenchApp (which holds uifigure +
-            % uihtml components) — parfeval then serializes it to the
-            % worker, which fails with MATLAB:class:InvalidSuperClass on
-            % matlab.ui.control.WebComponent. Matches the pattern used by
-            % BenchmarkDashboardViewModel.onRefreshAll.
-            svc   = app.CuttingSvc;
-            token = app.State.authToken;
             app.showLoading();
-            AsyncRunner.run( ...
-                @() svc.analyzeCuts(cid, targetK, token), ...
-                @(r) obj.applyAnalyze(r), ...
-                @(ME) obj.onError(ME));
+            obj.dispatchAnalyze(targetK, false);
         end
 
         % ── Run ──────────────────────────────────────────────────────────
@@ -255,6 +247,91 @@ classdef CircuitCuttingViewModel < handle
     end
 
     methods (Access = private)
+
+        % ── Analyze dispatch + auto-fallback ─────────────────────────────
+        function dispatchAnalyze(obj, targetK, isAutoRetry)
+            % Single-source analyze submitter. onAnalyzeCuts calls this
+            % with whatever target_k the user picked; the auto-fallback
+            % path also calls it with the next-larger forced target_k
+            % when the addon overflows float64.
+            %
+            % IMPORTANT: bind svc + token to LOCAL variables before the
+            % closure. Referencing `app.CuttingSvc` inside the lambda
+            % would capture the entire QTAUWorkbenchApp (which holds
+            % uifigure + uihtml components) — parfeval then serializes
+            % it to the worker, which fails with
+            % MATLAB:class:InvalidSuperClass on
+            % matlab.ui.control.WebComponent. Matches the pattern used
+            % by BenchmarkDashboardViewModel.onRefreshAll.
+            app   = obj.App;
+            cid   = char(app.State.selectedCircuitId);
+            svc   = app.CuttingSvc;
+            token = app.State.authToken;
+            if isAutoRetry
+                Logger.info('CircuitCuttingViewModel', ...
+                    'Auto-retrying analyze with forced target_k=%d (addon overflowed)', ...
+                    targetK);
+                obj.setStatus(sprintf(['Auto-retry analyze with forced ' ...
+                    'target_k=%d (qiskit-addon-cutting overflowed in ' ...
+                    'auto mode — escalating)…'], targetK));
+                % Mirror the value into the toolbar spinner so the
+                % operator sees what we are trying. If a later retry
+                % succeeds, the spinner is left at that value as the
+                % suggested setting for future runs of this circuit.
+                try
+                    if ~isempty(app.CuttingTargetKSpin) && ...
+                            isvalid(app.CuttingTargetKSpin)
+                        app.CuttingTargetKSpin.Value = targetK;
+                    end
+                catch; end
+            end
+            AsyncRunner.run( ...
+                @() svc.analyzeCuts(cid, targetK, token), ...
+                @(r) obj.applyAnalyze(r), ...
+                @(ME) obj.onAnalyzeError(ME, targetK));
+        end
+
+        function onAnalyzeError(obj, ME, prevTargetK)
+            % Analyze-flow error handler with auto-fallback. The
+            % qiskit-addon-cutting find_cuts() routine overflows float64
+            % on circuits that are too wide or too densely entangling
+            % (e.g. qugan_n395, BV-140 packed) when target_k is auto.
+            % The server returns 422 with a body that includes phrases
+            % like "Automated cut finding could not handle" and
+            % "overflowed float64". On that signature we step the forced
+            % target_k up the [4, 8, 16, 32] ladder until one succeeds —
+            % otherwise we surface the original error.
+            msg = '';
+            try; msg = char(ME.message); catch; end
+            isOverflow = contains(msg, 'overflowed float64', ...
+                                  'IgnoreCase', true) || ...
+                         contains(msg, 'Automated cut finding could not handle', ...
+                                  'IgnoreCase', true) || ...
+                         contains(msg, 'gamma upper bound', ...
+                                  'IgnoreCase', true);
+            nextK = obj.nextAutoFallbackK(prevTargetK);
+            if isOverflow && ~isempty(nextK)
+                obj.dispatchAnalyze(nextK, true);
+                return;
+            end
+            obj.onError(ME);
+        end
+
+        function k = nextAutoFallbackK(~, prevTargetK)
+            % Pick the next forced target_k after the addon overflowed.
+            % Ladder: <empty/0/2/3> → 4 → 8 → 16 → 32 → (give up).
+            ladder = [4, 8, 16, 32];
+            if isempty(prevTargetK) || prevTargetK <= 0
+                k = ladder(1);
+                return;
+            end
+            idx = find(ladder > prevTargetK, 1, 'first');
+            if isempty(idx)
+                k = [];
+            else
+                k = ladder(idx);
+            end
+        end
 
         % ── Response handlers ────────────────────────────────────────────
         function applyAnalyze(obj, r)
