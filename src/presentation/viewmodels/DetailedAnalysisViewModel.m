@@ -7,6 +7,17 @@ classdef DetailedAnalysisViewModel < handle
     %     onPlotTemporal    — line + band: confidence per shot batch
     %     onPlotQubit       — scatter: T1 vs T2 coloured by readout fidelity
     %     onPlotRBDecay     — errorbar + fit: randomized benchmarking decay
+    properties
+        % Set on every onEnter() via tic; read externally by
+        % NavigationManager.isScreenFresh (cache-TTL gate that skips
+        % redundant data fetches when the operator re-enters the screen
+        % within the configured ``screen_cache_ttl`` window). Must be
+        % publicly readable since the freshness check lives outside the
+        % VM. Other VMs (Circuits, Dashboard, Backends, etc.) declare
+        % the same field — this one was missing it, so onEnter crashed
+        % with "Unrecognized property 'LastRefresh'".
+        LastRefresh = []
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
