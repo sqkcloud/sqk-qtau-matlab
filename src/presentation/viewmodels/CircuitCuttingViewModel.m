@@ -389,46 +389,200 @@ classdef CircuitCuttingViewModel < handle
 
         % ── Renderers ────────────────────────────────────────────────────
         function renderCutPlan(obj, plan)
+            % Populate the modern structured layout: KPI strip, Cut Plan
+            % card rows, Backend Assignments rows. Legacy text-areas are
+            % left in place (hidden) for back-compat handle stability.
             try
-                lines = {};
-                lines{end+1} = sprintf('k = %d subcircuits', ...
-                    double(JsonHelper.pick(plan, 'k', 0)));
-                lines{end+1} = sprintf('sampling overhead = %s', ...
-                    obj.formatOverhead(JsonHelper.pick(plan, 'sampling_overhead', 1)));
-                per = JsonHelper.pick(plan, 'per_subcircuit_qubits', {});
-                lines{end+1} = sprintf('per-subcircuit qubits: %s', ...
-                    obj.formatPerSub(per));
-                cuts = JsonHelper.pick(plan, 'cuts', {});
-                lines{end+1} = sprintf('cuts detected: %d', numel(cuts));
-                feasible = JsonHelper.pick(plan, 'feasible', true);
-                if isequal(feasible, false)
-                    reason = char(JsonHelper.pick(plan, 'feasibility_reason', ...
-                        'flagged infeasible by server'));
-                    lines{end+1} = sprintf('feasibility: NO — %s', reason);
-                    lines{end+1} = '(Run will prompt for override confirmation.)';
-                else
-                    lines{end+1} = 'feasibility: OK';
-                end
-                obj.App.CuttingPlanText.Value = lines;
-
-                assns = obj.collectBackends(plan);
-                bLines = cell(1, numel(assns));
-                for i = 1:numel(assns)
-                    a = assns{i};
-                    bLines{i} = sprintf('subcircuit %d  ->  %s  (%d shots)', ...
-                        a.subcircuit_idx, a.backend_name, a.shots);
-                end
-                obj.App.CuttingBackendText.Value = bLines;
+                obj.renderKpiStrip(plan);
+                obj.renderPlanCard(plan);
+                obj.renderBackendCards(plan);
             catch ME
                 Logger.warn('CircuitCuttingViewModel', ...
                     'renderCutPlan: %s', ME.message);
             end
         end
 
+        function renderKpiStrip(obj, plan)
+            app = obj.App;
+            k = double(JsonHelper.pick(plan, 'k', 0));
+            obj.setLabelSafe(app.CuttingKpiKValue, sprintf('%d', k));
+
+            overhead = JsonHelper.pick(plan, 'sampling_overhead', 1);
+            obj.setLabelSafe(app.CuttingKpiOverheadValue, ...
+                CircuitCuttingViewModel.formatOverheadShort(overhead));
+
+            per = JsonHelper.pick(plan, 'per_subcircuit_qubits', {});
+            perStr = obj.formatPerSub(per);
+            % Strip outer parens for a cleaner KPI tile (caption is above it).
+            if numel(perStr) >= 2 && perStr(1) == '(' && perStr(end) == ')'
+                perStr = perStr(2:end-1);
+            end
+            obj.setLabelSafe(app.CuttingKpiQubitsValue, perStr);
+
+            % Feasibility chip — recolor the pill based on state.
+            feasible = JsonHelper.pick(plan, 'feasible', true);
+            chip = app.CuttingKpiFeasibilityChip;
+            if isempty(chip) || ~isvalid(chip); return; end
+            if isequal(feasible, false)
+                chip.Text = '  ●  Override required  ';
+                chip.BackgroundColor = Theme.COLOR_DANGER;
+                chip.FontColor = [1 1 1];
+            else
+                chip.Text = '  ●  OK  ';
+                chip.BackgroundColor = Theme.COLOR_SUCCESS;
+                chip.FontColor = [1 1 1];
+            end
+        end
+
+        function renderPlanCard(obj, plan)
+            app = obj.App;
+            k = double(JsonHelper.pick(plan, 'k', 0));
+            cuts = JsonHelper.pick(plan, 'cuts', {});
+            overhead = JsonHelper.pick(plan, 'sampling_overhead', 1);
+            log10v = JsonHelper.pick(plan, 'sampling_overhead_log10', NaN);
+            per = JsonHelper.pick(plan, 'per_subcircuit_qubits', {});
+
+            obj.setLabelSafe(app.CuttingPlanKValue, sprintf('%d', k));
+            obj.setLabelSafe(app.CuttingPlanCutsValue, sprintf('%d', numel(cuts)));
+            obj.setLabelSafe(app.CuttingPlanOverheadValue, ...
+                CircuitCuttingViewModel.formatOverheadShort(overhead));
+            if isnumeric(log10v) && ~any(isnan(log10v))
+                obj.setLabelSafe(app.CuttingPlanLog10Value, sprintf('%.2f', double(log10v)));
+            else
+                obj.setLabelSafe(app.CuttingPlanLog10Value, '—');
+            end
+            obj.setLabelSafe(app.CuttingPlanPerSubValue, obj.formatPerSub(per));
+
+            % Reason text — only when the server flagged the plan infeasible.
+            reasonLbl = app.CuttingPlanReasonLabel;
+            if isempty(reasonLbl) || ~isvalid(reasonLbl); return; end
+            feasible = JsonHelper.pick(plan, 'feasible', true);
+            if isequal(feasible, false)
+                reason = char(JsonHelper.pick(plan, 'feasibility_reason', ...
+                    'Cut plan flagged as infeasible by the server.'));
+                reasonLbl.Text = sprintf( ...
+                    '⚠  %s\n\nRun Cutting will ask for override confirmation.', reason);
+                reasonLbl.Visible = 'on';
+            else
+                reasonLbl.Text = '';
+                reasonLbl.Visible = 'off';
+            end
+        end
+
+        function renderBackendCards(obj, plan)
+            % Rebuild the Backend Assignments rows from scratch on each
+            % render — one styled row per subcircuit:
+            %   [#N chip]  backend_name           4096 shots   19q
+            app = obj.App;
+            grid = app.CuttingBackendGrid;
+            if isempty(grid) || ~isvalid(grid); return; end
+
+            % Tear down existing children — but keep the hidden legacy
+            % textarea alive so the back-compat handle stays valid.
+            kids = grid.Children;
+            for i = 1:numel(kids)
+                c = kids(i);
+                if isvalid(c) && c ~= app.CuttingBackendText
+                    delete(c);
+                end
+            end
+
+            assns = obj.collectBackends(plan);
+            n = numel(assns);
+            if n == 0
+                grid.RowHeight = {'1x'};
+                app.CuttingBackendEmptyLabel = uilabel(grid, ...
+                    'Text', 'Run Analyze Cuts to assign each subcircuit to a backend.', ...
+                    'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+                    'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
+                    'WordWrap', 'on', 'Interpreter', 'none');
+                app.CuttingBackendEmptyLabel.Layout.Row = 1;
+                app.CuttingBackendEmptyLabel.Layout.Column = 1;
+                return;
+            end
+
+            % n × 38 px rows + a flex spacer so cards don't stretch when k
+            % is small.
+            heights = num2cell(repmat(38, 1, n));
+            grid.RowHeight = [heights, {'1x'}];
+
+            for i = 1:n
+                a = assns{i};
+                row = uigridlayout(grid, [1 4]);
+                row.RowHeight = {'1x'};
+                row.ColumnWidth = {44, '1x', 100, 70};
+                row.Padding = [10 4 12 4];
+                row.ColumnSpacing = 10;
+                row.BackgroundColor = Theme.COLOR_ACCENT_BG;
+                row.Layout.Row = i;
+                row.Layout.Column = 1;
+
+                chip = uilabel(row, ...
+                    'Text', sprintf('  #%d  ', a.subcircuit_idx), ...
+                    'FontSize', 11, 'FontWeight', 'bold', ...
+                    'FontColor', [1 1 1], ...
+                    'BackgroundColor', Theme.COLOR_PRIMARY, ...
+                    'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+                    'Interpreter', 'none');
+                chip.Layout.Column = 1;
+
+                nameLbl = uilabel(row, ...
+                    'Text', char(a.backend_name), ...
+                    'FontSize', 13, 'FontWeight', 'bold', ...
+                    'FontColor', Theme.COLOR_HEADING, ...
+                    'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
+                    'Interpreter', 'none');
+                nameLbl.Layout.Column = 2;
+
+                shotsLbl = uilabel(row, ...
+                    'Text', sprintf('%d shots', double(a.shots)), ...
+                    'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+                    'HorizontalAlignment', 'right', 'VerticalAlignment', 'center', ...
+                    'Interpreter', 'none');
+                shotsLbl.Layout.Column = 3;
+
+                qubitLbl = uilabel(row, ...
+                    'Text', obj.qubitsForSubcircuit(plan, a.subcircuit_idx), ...
+                    'FontSize', 11, 'FontWeight', 'bold', ...
+                    'FontColor', Theme.COLOR_LABEL, ...
+                    'HorizontalAlignment', 'right', 'VerticalAlignment', 'center', ...
+                    'Interpreter', 'none');
+                qubitLbl.Layout.Column = 4;
+            end
+        end
+
+        function s = qubitsForSubcircuit(~, plan, idx)
+            per = JsonHelper.pick(plan, 'per_subcircuit_qubits', {});
+            if iscell(per); arr = per; elseif isnumeric(per); arr = num2cell(per); else; arr = {}; end
+            i = double(idx) + 1;   % subcircuit_idx is 0-based
+            if i >= 1 && i <= numel(arr)
+                v = arr{i}; if ~isnumeric(v); v = str2double(v); end
+                s = sprintf('%dq', int32(v));
+            else
+                s = '—';
+            end
+        end
+
+        function setLabelSafe(~, lbl, txt)
+            if isempty(lbl) || ~isvalid(lbl); return; end
+            lbl.Text = char(txt);
+        end
+
         function renderResult(obj, r)
             try
                 st  = char(JsonHelper.pick(r, 'status', ''));
                 exps = JsonHelper.pick(r, 'expectations', {});
+
+                % Hide the empty state and show the real-results textarea.
+                if ~isempty(obj.App.CuttingResultsEmptyLabel) && ...
+                        isvalid(obj.App.CuttingResultsEmptyLabel)
+                    obj.App.CuttingResultsEmptyLabel.Visible = 'off';
+                end
+                if ~isempty(obj.App.CuttingResultsLabel) && ...
+                        isvalid(obj.App.CuttingResultsLabel)
+                    obj.App.CuttingResultsLabel.Visible = 'on';
+                end
+
                 if isempty(exps) || (iscell(exps) && isempty(exps))
                     obj.App.CuttingResultsLabel.Value = sprintf( ...
                         'Batch %s finished with status=%s (no reconstructed values).', ...
@@ -472,10 +626,11 @@ classdef CircuitCuttingViewModel < handle
 
         % ── Formatters ───────────────────────────────────────────────────
         function s = formatOverhead(~, v)
-            if isempty(v) || ~isnumeric(v) || any(isnan(v))
-                s = '--'; return;
-            end
-            s = sprintf('%.1fx', double(v));
+            % Compact human-readable overhead. Defers to the static
+            % formatOverheadShort which falls back to scientific notation
+            % with Unicode superscripts so values like γ=3.23e+114 don't
+            % spill 110 digits across the status line.
+            s = CircuitCuttingViewModel.formatOverheadShort(v);
         end
 
         function s = formatPerSub(~, per)
@@ -498,6 +653,51 @@ classdef CircuitCuttingViewModel < handle
     end
 
     methods (Static)
+        function s = formatOverheadShort(v)
+            % Compact human-readable sampling overhead.
+            %   v < 1e4           → "3.2x"
+            %   1e4 ≤ v < 1e16    → "3.23×10⁹"   (Unicode superscript exponent)
+            %   v ≥ 1e16          → same scientific form, exponent up to ~10³⁰⁸
+            %   Inf / NaN / empty → "—"
+            % Avoids dumping 110-digit decimal text for values like
+            % γ=3.23e+114 produced by qiskit-addon-cutting on huge circuits.
+            if isempty(v) || ~isnumeric(v) || any(isnan(v(:)))
+                s = '—'; return;
+            end
+            v = double(v);
+            if any(isinf(v)); s = '∞'; return; end
+            if v <= 0
+                s = sprintf('%.2fx', v); return;
+            end
+            if v < 1e4
+                s = sprintf('%.2fx', v); return;
+            end
+            e = floor(log10(v));
+            m = v / (10 ^ e);
+            s = sprintf('%.2f×10%s', m, CircuitCuttingViewModel.unicodeSuperscript(e));
+        end
+
+        function s = unicodeSuperscript(n)
+            % Convert an integer to a Unicode superscript string,
+            % e.g. 114 → '¹¹⁴', -3 → '⁻³'. Used for compact scientific
+            % notation in the KPI tile and Cut Plan card.
+            n = round(double(n));
+            digits = '0123456789';
+            sup    = {'⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹'};
+            if n < 0
+                neg = '⁻'; n = -n;
+            else
+                neg = '';
+            end
+            d = sprintf('%d', n);
+            parts = cell(1, numel(d));
+            for i = 1:numel(d)
+                idx = strfind(digits, d(i));
+                parts{i} = sup{idx};
+            end
+            s = [neg strjoin(parts, '')];
+        end
+
         function obs = parseObservableLines(lines, placeholder)
             % Normalize a cell/string array of textarea lines into a cell
             % of trimmed Pauli strings, dropping blanks and the placeholder

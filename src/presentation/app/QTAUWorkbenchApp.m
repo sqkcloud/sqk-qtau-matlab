@@ -334,12 +334,30 @@ classdef QTAUWorkbenchApp < handle
         CuttingCircuitDropdown      % Circuit picker (avoids having to set it elsewhere)
         CuttingModeDropdown         % Automatic / Assisted / Manual
         CuttingPresetDropdown       % Preset registry (Option C slot)
-        CuttingStatusLabel          % e.g. "3 subcircuits · overhead 7.2x · preset: Generic"
-        CuttingPlanText             % Cut Plan panel contents
-        CuttingBackendText          % Backend Assignments panel contents
+        CuttingStatusLabel          % Status banner (kept for back-compat / VM hooks)
+        CuttingSubtitleLabel        % "Distributed execution across multiple QPUs..."
+        % KPI strip — one big number per metric, IBM-Quantum-style at-a-glance
+        CuttingKpiKValue            % Subcircuits count
+        CuttingKpiOverheadValue     % Sampling overhead (formatted scientific)
+        CuttingKpiQubitsValue       % Per-subcircuit qubit split, e.g. "19+19+1"
+        CuttingKpiFeasibilityChip   % Pill label "● OK" / "● Refused"
+        CuttingKpiFeasibilityPanel  % Backing panel (so we can recolor the pill bg)
+        % Cut Plan card — structured metric rows, replaces the old text dump
+        CuttingPlanKValue           % "k = N" detail row
+        CuttingPlanCutsValue        % "Cuts detected"
+        CuttingPlanOverheadValue    % "Sampling overhead" (scientific)
+        CuttingPlanLog10Value       % "log10 overhead"
+        CuttingPlanPerSubValue      % "Per-subcircuit qubits"
+        CuttingPlanReasonLabel      % Wrapped feasibility reason text (only when infeasible)
+        CuttingPlanText             % Hidden legacy textarea — kept so VM back-compat path works
+        % Backend Assignments card — rebuilt per render with one row per subcircuit
+        CuttingBackendGrid          % Parent uigridlayout we repopulate
+        CuttingBackendEmptyLabel    % Shown until Analyze Cuts produces a plan
+        CuttingBackendText          % Hidden legacy textarea — kept for back-compat
         CuttingObservablesText      % Pauli-string editor
         CuttingDistCheckbox         % opt-in: also reconstruct bitstring distribution
         CuttingResultsLabel         % Reconstructed expectations display
+        CuttingResultsEmptyLabel    % Pretty empty-state when no batch has run yet
     end
 
     % ── QEC Simulation tab ────────────────────────────────────────────────────
