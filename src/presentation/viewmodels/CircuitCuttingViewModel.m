@@ -344,12 +344,13 @@ classdef CircuitCuttingViewModel < handle
                 return;
             end
             c = candidates(1); if iscell(candidates); c = candidates{1}; end
-            k  = JsonHelper.pick(c, 'k', 0);
-            oh = JsonHelper.pick(c, 'sampling_overhead', 1.0);
+            k   = JsonHelper.pick(c, 'k', 0);
+            oh  = JsonHelper.pick(c, 'sampling_overhead', 1.0);
+            ohL = JsonHelper.pick(c, 'sampling_overhead_log10', NaN);
             per = JsonHelper.pick(c, 'per_subcircuit_qubits', {});
             obj.setStatus(sprintf( ...
                 '%d subcircuits   %s   overhead %s', ...
-                k, obj.formatPerSub(per), obj.formatOverhead(oh)));
+                k, obj.formatPerSub(per), obj.formatOverhead(oh, ohL)));
             obj.renderCutPlan(c);
         end
 
@@ -498,9 +499,10 @@ classdef CircuitCuttingViewModel < handle
             k = double(JsonHelper.pick(plan, 'k', 0));
             obj.setLabelSafe(app.CuttingKpiKValue, sprintf('%d', k));
 
-            overhead = JsonHelper.pick(plan, 'sampling_overhead', 1);
+            overhead   = JsonHelper.pick(plan, 'sampling_overhead', 1);
+            log10Hint  = JsonHelper.pick(plan, 'sampling_overhead_log10', NaN);
             obj.setLabelSafe(app.CuttingKpiOverheadValue, ...
-                CircuitCuttingViewModel.formatOverheadShort(overhead));
+                CircuitCuttingViewModel.formatOverheadShort(overhead, log10Hint));
 
             per = JsonHelper.pick(plan, 'per_subcircuit_qubits', {});
             perStr = obj.formatPerSub(per);
@@ -536,7 +538,7 @@ classdef CircuitCuttingViewModel < handle
             obj.setLabelSafe(app.CuttingPlanKValue, sprintf('%d', k));
             obj.setLabelSafe(app.CuttingPlanCutsValue, sprintf('%d', numel(cuts)));
             obj.setLabelSafe(app.CuttingPlanOverheadValue, ...
-                CircuitCuttingViewModel.formatOverheadShort(overhead));
+                CircuitCuttingViewModel.formatOverheadShort(overhead, log10v));
             if isnumeric(log10v) && ~any(isnan(log10v))
                 obj.setLabelSafe(app.CuttingPlanLog10Value, sprintf('%.2f', double(log10v)));
             else
@@ -829,12 +831,16 @@ classdef CircuitCuttingViewModel < handle
         end
 
         % ── Formatters ───────────────────────────────────────────────────
-        function s = formatOverhead(~, v)
+        function s = formatOverhead(~, v, log10Hint)
             % Compact human-readable overhead. Defers to the static
             % formatOverheadShort which falls back to scientific notation
             % with Unicode superscripts so values like γ=3.23e+114 don't
-            % spill 110 digits across the status line.
-            s = CircuitCuttingViewModel.formatOverheadShort(v);
+            % spill 110 digits across the status line. The optional
+            % log10Hint kicks in when v has been clamped to the float64-
+            % safe sentinel (1e308) by the server's overflow-fallback
+            % path — see formatOverheadShort for details.
+            if nargin < 3; log10Hint = []; end
+            s = CircuitCuttingViewModel.formatOverheadShort(v, log10Hint);
         end
 
         function s = formatPerSub(~, per)
@@ -946,7 +952,7 @@ classdef CircuitCuttingViewModel < handle
             end
         end
 
-        function s = formatOverheadShort(v)
+        function s = formatOverheadShort(v, log10Hint)
             % Compact human-readable sampling overhead.
             %   v < 1e4           → "3.2x"
             %   1e4 ≤ v < 1e16    → "3.23×10⁹"   (Unicode superscript exponent)
@@ -954,6 +960,23 @@ classdef CircuitCuttingViewModel < handle
             %   Inf / NaN / empty → "—"
             % Avoids dumping 110-digit decimal text for values like
             % γ=3.23e+114 produced by qiskit-addon-cutting on huge circuits.
+            %
+            % Optional ``log10Hint`` — when provided AND > 308, the float
+            % ``v`` was clamped to the JSON-safe 1e308 sentinel by the
+            % server (the real magnitude is too big for float64). Format
+            % from the hint instead so "1×10³⁰⁸" doesn't get displayed
+            % alongside a contradicting "log₁₀(overhead) 717.66". Output
+            % uses a leading "~" tilde to flag the value as estimated.
+            if nargin < 2; log10Hint = []; end
+            if ~isempty(log10Hint) && isnumeric(log10Hint) && isscalar(log10Hint) ...
+                    && ~isnan(double(log10Hint)) && double(log10Hint) > 308
+                L = double(log10Hint);
+                e = floor(L);
+                m = 10 ^ (L - e);
+                s = sprintf('~%.2f×10%s', m, ...
+                    CircuitCuttingViewModel.unicodeSuperscript(e));
+                return;
+            end
             if isempty(v) || ~isnumeric(v) || any(isnan(v(:)))
                 s = '—'; return;
             end
