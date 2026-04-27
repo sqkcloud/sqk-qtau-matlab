@@ -597,18 +597,15 @@ classdef CircuitCuttingViewModel < handle
         function checkCuttability(obj, circuitId)
             % Fetch the circuit's QASM source and scan it for patterns
             % qiskit-addon-cutting cannot handle (mid-circuit measurements,
-            % classical-controlled gates, resets). Updates the banner +
-            % toggles the Analyze/Run buttons. Cached by circuitId so
-            % rapid dropdown toggling doesn't refetch.
+            % classical-controlled gates, resets). Cached by circuitId so
+            % rapid dropdown toggling doesn't refetch. The fetch runs
+            % silently — no on-screen "Checking compatibility..." status;
+            % a modal uialert pops only when the verdict is incompatible.
             if strcmp(circuitId, obj.LastCuttabilityCircuitId) && ...
                     ~isempty(obj.LastCuttabilityResult)
                 obj.applyCuttability(obj.LastCuttabilityResult);
                 return;
             end
-
-            obj.applyCuttability(struct('ok', true, ...
-                'severity', 'pending', ...
-                'reason', 'Checking compatibility...'));
 
             app = obj.App;
             svc   = app.CircuitSvc;
@@ -673,93 +670,29 @@ classdef CircuitCuttingViewModel < handle
         end
 
         function applyCuttability(obj, res)
+            % Toggle the Analyze / Run button enable state based on the
+            % QASM-scanner verdict. The verdict itself is communicated
+            % to the user via a modal uialert popup fired by
+            % maybeAlertCuttability — there is no inline banner anymore.
             app = obj.App;
-            banner = app.CuttingCompatBanner;
             analyzeBtn = app.CuttingAnalyzeBtn;
             runBtn = app.CuttingRunBtn;
-            mainGrid = app.CuttingMainGrid;
 
             sev = '';
             try; sev = char(res.severity); catch; end
-            reason = '';
-            try; reason = char(res.reason); catch; end
 
-            switch sev
-                case 'error'
-                    obj.expandBannerRow(mainGrid);
-                    if ~isempty(banner) && isvalid(banner)
-                        banner.Text = ['⚠  ' reason];
-                        banner.BackgroundColor = Theme.COLOR_DANGER;
-                        banner.FontColor = [1 1 1];
-                        banner.Visible = 'on';
-                    end
-                    if ~isempty(analyzeBtn) && isvalid(analyzeBtn)
-                        analyzeBtn.Enable = 'off';
-                    end
-                    if ~isempty(runBtn) && isvalid(runBtn)
-                        runBtn.Enable = 'off';
-                    end
-                case 'warning'
-                    obj.expandBannerRow(mainGrid);
-                    if ~isempty(banner) && isvalid(banner)
-                        banner.Text = ['ℹ  ' reason];
-                        banner.BackgroundColor = Theme.COLOR_WARNING;
-                        banner.FontColor = [1 1 1];
-                        banner.Visible = 'on';
-                    end
-                    if ~isempty(analyzeBtn) && isvalid(analyzeBtn)
-                        analyzeBtn.Enable = 'on';
-                    end
-                    if ~isempty(runBtn) && isvalid(runBtn)
-                        runBtn.Enable = 'on';
-                    end
-                case 'pending'
-                    obj.expandBannerRow(mainGrid);
-                    if ~isempty(banner) && isvalid(banner)
-                        banner.Text = reason;
-                        banner.BackgroundColor = Theme.COLOR_ACCENT_BG;
-                        banner.FontColor = Theme.COLOR_MUTED;
-                        banner.Visible = 'on';
-                    end
-                otherwise   % 'ok' or empty
-                    obj.collapseBannerRow(mainGrid);
-                    if ~isempty(banner) && isvalid(banner)
-                        banner.Text = '';
-                        banner.Visible = 'off';
-                    end
-                    if ~isempty(analyzeBtn) && isvalid(analyzeBtn)
-                        analyzeBtn.Enable = 'on';
-                    end
-                    if ~isempty(runBtn) && isvalid(runBtn)
-                        runBtn.Enable = 'on';
-                    end
+            if strcmp(sev, 'error')
+                enableState = 'off';
+            else
+                enableState = 'on';
             end
-        end
 
-        function expandBannerRow(~, mainGrid)
-            % Banner row is row 3 of the outer grid. Expand to 32 px so
-            % the warning is visible.
-            if isempty(mainGrid) || ~isvalid(mainGrid); return; end
-            try
-                rh = mainGrid.RowHeight;
-                if numel(rh) >= 3
-                    rh{3} = 32;
-                    mainGrid.RowHeight = rh;
-                end
-            catch; end
-        end
-
-        function collapseBannerRow(~, mainGrid)
-            % Collapse the banner row so it doesn't eat vertical space
-            % when the selected circuit is cuttable.
-            if isempty(mainGrid) || ~isvalid(mainGrid); return; end
-            try
-                rh = mainGrid.RowHeight;
-                if numel(rh) >= 3
-                    rh{3} = 1;
-                    mainGrid.RowHeight = rh;
-                end
-            catch; end
+            if ~isempty(analyzeBtn) && isvalid(analyzeBtn)
+                analyzeBtn.Enable = enableState;
+            end
+            if ~isempty(runBtn) && isvalid(runBtn)
+                runBtn.Enable = enableState;
+            end
         end
 
         function renderResult(obj, r)

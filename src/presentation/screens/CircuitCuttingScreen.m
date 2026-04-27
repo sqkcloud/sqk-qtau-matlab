@@ -9,14 +9,15 @@
 %     Row 1 (24 px):   Subtitle line
 %     Row 2 (40 px):   Toolbar — Circuit / Mode / Target k / Preset /
 %                       Analyze / Run / Cancel
-%     Row 3 (32 px):   Compatibility banner (hidden until VM detects an
-%                       un-cuttable circuit — mid-circuit measurements,
-%                       classical-controlled gates, resets)
-%     Row 4 (108 px):  KPI strip (4 tiles: k, overhead, qubits, feasibility)
-%     Row 5 (22 px):   Status line (full-width muted, written by VM.setStatus)
-%     Row 6 ('1.4x'):  Cut Plan card (left) | Backend Assignments card (right)
-%     Row 7 ('0.95x'): Observables card (left) | Options card (right)
-%     Row 8 ('0.85x'): Reconstructed Results card
+%     Row 3 (108 px):  KPI strip (4 tiles: k, overhead, qubits, feasibility)
+%     Row 4 (22 px):   Status line (full-width muted, written by VM.setStatus)
+%     Row 5 ('1.4x'):  Cut Plan card (left) | Backend Assignments card (right)
+%     Row 6 ('0.95x'): Observables card (left) | Options card (right)
+%     Row 7 ('1x'):    Reconstructed Results card
+%
+%   Compatibility verdicts (mid-circuit measurements, classical-controlled
+%   gates, resets) are surfaced as a modal uialert popup fired by
+%   CircuitCuttingViewModel.maybeAlertCuttability — no inline banner.
 %
 %   No new uihtml widgets — only standard MATLAB controls — to avoid the
 %   stale-handle peerEvent class of bug we hit in the LoadingOverlay/Login
@@ -25,18 +26,13 @@ function CircuitCuttingScreen(app)
     Logger.info('CircuitCuttingScreen', 'Building Circuit Cutting tab UI');
     t = app.createSectionPage('Circuit Cutting');
 
-    g = uigridlayout(t, [8 2]);
-    %  Row 3 (compatibility banner) starts collapsed at 1 px so it does
-    %  not eat vertical space on the common case where the selected
-    %  circuit is cuttable. CircuitCuttingViewModel.applyCuttability
-    %  expands it back to 32 px when the QASM scanner flags an issue.
-    g.RowHeight     = {24, 40, 1, 108, 22, '1.4x', '0.95x', '1x'};
+    g = uigridlayout(t, [7 2]);
+    g.RowHeight     = {24, 40, 108, 22, '1.4x', '0.95x', '1x'};
     g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
-    app.CuttingMainGrid = g;
 
     % ── Row 1: Subtitle ──────────────────────────────────────────────────
     app.CuttingSubtitleLabel = uilabel(g, ...
@@ -133,24 +129,9 @@ function CircuitCuttingScreen(app)
     cancelBtn.Layout.Column = 11;
     app.styleBtn(cancelBtn, 'ghost');
 
-    % ── Row 3: Compatibility banner ──────────────────────────────────────
-    %   Hidden by default. CircuitCuttingViewModel.checkCuttability
-    %   makes it visible (red bg + warning text) when the QASM has
-    %   mid-circuit measurements, classical-controlled gates, or resets.
-    app.CuttingCompatBanner = uilabel(g, ...
-        'Text', '', ...
-        'FontSize', 12, 'FontWeight', 'bold', ...
-        'FontColor', [1 1 1], ...
-        'BackgroundColor', Theme.COLOR_DANGER, ...
-        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
-        'WordWrap', 'on', 'Interpreter', 'none', ...
-        'Visible', 'off');
-    app.CuttingCompatBanner.Layout.Row = 3;
-    app.CuttingCompatBanner.Layout.Column = [1 2];
-
-    % ── Row 4: KPI strip ─────────────────────────────────────────────────
+    % ── Row 3: KPI strip ─────────────────────────────────────────────────
     kpiRow = uigridlayout(g, [1 4]);
-    kpiRow.Layout.Row = 4; kpiRow.Layout.Column = [1 2];
+    kpiRow.Layout.Row = 3; kpiRow.Layout.Column = [1 2];
     kpiRow.ColumnWidth = {'1x', '1x', '1x', '1x'};
     kpiRow.Padding = [0 0 0 0]; kpiRow.ColumnSpacing = 12;
     kpiRow.BackgroundColor = Theme.COLOR_BG;
@@ -169,10 +150,10 @@ function CircuitCuttingScreen(app)
         'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
         'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
         'WordWrap', 'off', 'Interpreter', 'none');
-    app.CuttingStatusLabel.Layout.Row = 5;
+    app.CuttingStatusLabel.Layout.Row = 4;
     app.CuttingStatusLabel.Layout.Column = [1 2];
 
-    % ── Row 6 Left: Cut Plan card ────────────────────────────────────────
+    % ── Row 5 Left: Cut Plan card ────────────────────────────────────────
     %   Scrollable='on' so a long feasibility-reason text (or a small
     %   window) yields a vertical scrollbar instead of clipping rows.
     planPanel = uipanel(g, 'Title', 'Cut Plan', ...
@@ -180,11 +161,15 @@ function CircuitCuttingScreen(app)
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING, ...
         'Scrollable', 'on');
-    planPanel.Layout.Row = 6; planPanel.Layout.Column = 1;
+    planPanel.Layout.Row = 5; planPanel.Layout.Column = 1;
     planPanel.BackgroundColor = Theme.COLOR_CARD;
 
     pg = uigridlayout(planPanel, [6 2]);
-    pg.RowHeight   = {22, 22, 22, 22, 22, '1x'};
+    %  Last row uses 'fit' instead of '1x' so when the feasibility-reason
+    %  text wraps to many lines, the inner grid grows past the panel
+    %  height and triggers planPanel.Scrollable. With '1x' the grid
+    %  always shrinks to fit the panel and no scrollbar ever appears.
+    pg.RowHeight   = {22, 22, 22, 22, 22, 'fit'};
     pg.ColumnWidth = {180, '1x'};
     pg.Padding     = [16 12 16 12];
     pg.RowSpacing  = 4; pg.ColumnSpacing = 14;
@@ -209,7 +194,7 @@ function CircuitCuttingScreen(app)
     % and the VM no longer writes to it.
     app.CuttingPlanText = [];
 
-    % ── Row 6 Right: Backend Assignments card ────────────────────────────
+    % ── Row 5 Right: Backend Assignments card ────────────────────────────
     %   Scrollable='on' so large k (e.g. k=68 for an unpacked BV-140)
     %   yields a vertical scrollbar instead of capping the visible rows.
     bePanel = uipanel(g, 'Title', 'Backend Assignments', ...
@@ -217,7 +202,7 @@ function CircuitCuttingScreen(app)
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING, ...
         'Scrollable', 'on');
-    bePanel.Layout.Row = 6; bePanel.Layout.Column = 2;
+    bePanel.Layout.Row = 5; bePanel.Layout.Column = 2;
     bePanel.BackgroundColor = Theme.COLOR_CARD;
 
     app.CuttingBackendGrid = uigridlayout(bePanel, [1 1]);
@@ -239,12 +224,12 @@ function CircuitCuttingScreen(app)
     % capping the number of backend rows that could fit.
     app.CuttingBackendText = [];
 
-    % ── Row 7 Left: Observables card ─────────────────────────────────────
+    % ── Row 6 Left: Observables card ─────────────────────────────────────
     obsPanel = uipanel(g, 'Title', 'Observables', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING);
-    obsPanel.Layout.Row = 7; obsPanel.Layout.Column = 1;
+    obsPanel.Layout.Row = 6; obsPanel.Layout.Column = 1;
     obsPanel.BackgroundColor = Theme.COLOR_CARD;
     og = uigridlayout(obsPanel, [2 1]);
     og.RowHeight = {18, '1x'};
@@ -262,13 +247,13 @@ function CircuitCuttingScreen(app)
         'Editable', 'on', 'FontSize', 12);
     app.CuttingObservablesText.Layout.Row = 2;
 
-    % ── Row 7 Right: Options card ────────────────────────────────────────
+    % ── Row 6 Right: Options card ────────────────────────────────────────
     %   No more status line inside this card — moved to dedicated Row 4.
     optPanel = uipanel(g, 'Title', 'Options', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING);
-    optPanel.Layout.Row = 7; optPanel.Layout.Column = 2;
+    optPanel.Layout.Row = 6; optPanel.Layout.Column = 2;
     optPanel.BackgroundColor = Theme.COLOR_CARD;
     oog = uigridlayout(optPanel, [2 1]);
     oog.RowHeight = {28, '1x'};
@@ -289,7 +274,7 @@ function CircuitCuttingScreen(app)
         'VerticalAlignment', 'top');
     hintLbl.Layout.Row = 2;
 
-    % ── Row 8: Reconstructed Results card ────────────────────────────────
+    % ── Row 7: Reconstructed Results card ────────────────────────────────
     %   Scrollable='on' so long expectation-value lists fall back to a
     %   vertical scrollbar instead of clipping the bottom of the card.
     resPanel = uipanel(g, 'Title', 'Reconstructed Results', ...
@@ -297,7 +282,7 @@ function CircuitCuttingScreen(app)
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING, ...
         'Scrollable', 'on');
-    resPanel.Layout.Row = 8; resPanel.Layout.Column = [1 2];
+    resPanel.Layout.Row = 7; resPanel.Layout.Column = [1 2];
     resPanel.BackgroundColor = Theme.COLOR_CARD;
     rg = uigridlayout(resPanel, [1 1]);
     rg.Padding = [18 14 18 14]; rg.BackgroundColor = Theme.COLOR_CARD;
