@@ -1,17 +1,18 @@
 % CircuitCuttingScreen  Builds the Circuit Cutting tab UI.
 %
 %   Modern IBM-Quantum / Google-Quantum-AI inspired layout — at-a-glance KPI
-%   tiles on top, structured metric rows below them, a row-per-subcircuit
-%   backend list, and a polished empty state for the results panel.
+%   tiles on top, a dedicated status line, structured metric rows in the
+%   Cut Plan card, a row-per-subcircuit Backend Assignments card, and a
+%   polished empty state for the results panel.
 %
 %   Layout (rows top-down):
-%     Row 1 (24 px):    Subtitle line
-%     Row 2 (40 px):    Toolbar — Circuit / Mode / Preset / Analyze / Run
-%     Row 3 (108 px):   KPI strip (4 tiles: k, overhead, qubits, feasibility)
-%     Row 4 ('1.05x'):  Cut Plan card (left) | Backend Assignments card (right)
-%     Row 5 ('0.85x'):  Observables card (left) | Options card (right)
-%     Row 6 (40 px):    Cancel Batch button (right-aligned, ghost)
-%     Row 7 ('1x'):     Reconstructed Results card
+%     Row 1 (24 px):   Subtitle line
+%     Row 2 (40 px):   Toolbar — Circuit / Mode / Preset / Analyze / Run / Cancel
+%     Row 3 (108 px):  KPI strip (4 tiles: k, overhead, qubits, feasibility)
+%     Row 4 (22 px):   Status line (full-width muted, written by VM.setStatus)
+%     Row 5 ('1.3x'):  Cut Plan card (left) | Backend Assignments card (right)
+%     Row 6 ('0.7x'):  Observables card (left) | Options card (right)
+%     Row 7 ('1x'):    Reconstructed Results card
 %
 %   No new uihtml widgets — only standard MATLAB controls — to avoid the
 %   stale-handle peerEvent class of bug we hit in the LoadingOverlay/Login
@@ -21,7 +22,7 @@ function CircuitCuttingScreen(app)
     t = app.createSectionPage('Circuit Cutting');
 
     g = uigridlayout(t, [7 2]);
-    g.RowHeight     = {24, 40, 108, '1.05x', '0.85x', 40, '1x'};
+    g.RowHeight     = {24, 40, 108, 22, '1.3x', '0.7x', '1x'};
     g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -40,10 +41,10 @@ function CircuitCuttingScreen(app)
     app.CuttingSubtitleLabel.Layout.Column = [1 2];
 
     % ── Row 2: Toolbar ───────────────────────────────────────────────────
-    %   [Circuit ▼] | [Mode ▼] | (flex) | [Preset ▼] | [Analyze] | [Run]
-    tb = uigridlayout(g, [1 8]);
+    %   [Circuit ▼] | [Mode ▼] | (flex) | [Preset ▼] | [Analyze] | [Run] | [Cancel]
+    tb = uigridlayout(g, [1 9]);
     tb.Layout.Row = 2; tb.Layout.Column = [1 2];
-    tb.ColumnWidth = {60, 220, 50, 140, '1x', 180, 130, 130};
+    tb.ColumnWidth = {60, 220, 50, 140, '1x', 180, 140, 140, 140};
     tb.Padding = [0 0 0 0]; tb.ColumnSpacing = 8;
     tb.BackgroundColor = Theme.COLOR_BG;
 
@@ -79,15 +80,23 @@ function CircuitCuttingScreen(app)
     app.CuttingPresetDropdown.Layout.Column = 6;
     app.CuttingPresetDropdown.Tooltip = 'Phase 2 will add domain presets (CT Imaging 160Q, etc.).';
 
-    analyzeBtn = uibutton(tb, 'Text', 'Analyze Cuts', ...
+    %  Unicode glyphs as inline icons — keeps the design portable (no
+    %  external image assets) and works in every theme. ⌕ = magnifier
+    %  for analysis, ▶ = run/dispatch, ✕ = cancel/abort.
+    analyzeBtn = uibutton(tb, 'Text', '⌕  Analyze Cuts', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onAnalyzeCuts());
     analyzeBtn.Layout.Column = 7;
     app.styleBtn(analyzeBtn, 'ghost');
 
-    runBtn = uibutton(tb, 'Text', 'Run Cutting', ...
+    runBtn = uibutton(tb, 'Text', '▶  Run Cutting', ...
         'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onRunCutting());
     runBtn.Layout.Column = 8;
     app.styleBtn(runBtn, 'primary');
+
+    cancelBtn = uibutton(tb, 'Text', '✕  Cancel Batch', ...
+        'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onCancelBatch());
+    cancelBtn.Layout.Column = 9;
+    app.styleBtn(cancelBtn, 'ghost');
 
     % ── Row 3: KPI strip ─────────────────────────────────────────────────
     kpiRow = uigridlayout(g, [1 4]);
@@ -102,19 +111,30 @@ function CircuitCuttingScreen(app)
     [app.CuttingKpiFeasibilityChip, app.CuttingKpiFeasibilityPanel] = ...
         localBuildFeasibilityTile(kpiRow, 4);
 
-    % ── Row 4 Left: Cut Plan card ────────────────────────────────────────
+    % ── Row 4: Status line ───────────────────────────────────────────────
+    %   Single-line, full-width muted label. Written by VM.setStatus()
+    %   during analyze/poll flows ("Batch xxx status=running 50%").
+    app.CuttingStatusLabel = uilabel(g, ...
+        'Text', '', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
+        'WordWrap', 'off', 'Interpreter', 'none');
+    app.CuttingStatusLabel.Layout.Row = 4;
+    app.CuttingStatusLabel.Layout.Column = [1 2];
+
+    % ── Row 5 Left: Cut Plan card ────────────────────────────────────────
     planPanel = uipanel(g, 'Title', 'Cut Plan', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING);
-    planPanel.Layout.Row = 4; planPanel.Layout.Column = 1;
+    planPanel.Layout.Row = 5; planPanel.Layout.Column = 1;
     planPanel.BackgroundColor = Theme.COLOR_CARD;
 
     pg = uigridlayout(planPanel, [6 2]);
-    pg.RowHeight   = {26, 26, 26, 26, 26, '1x'};
+    pg.RowHeight   = {22, 22, 22, 22, 22, '1x'};
     pg.ColumnWidth = {180, '1x'};
-    pg.Padding     = [18 14 18 14];
-    pg.RowSpacing  = 6; pg.ColumnSpacing = 14;
+    pg.Padding     = [16 12 16 12];
+    pg.RowSpacing  = 4; pg.ColumnSpacing = 14;
     pg.BackgroundColor = Theme.COLOR_CARD;
 
     app.CuttingPlanKValue        = localBuildPlanRow(pg, 1, 'k', '—');
@@ -132,27 +152,23 @@ function CircuitCuttingScreen(app)
     app.CuttingPlanReasonLabel.Layout.Row = 6;
     app.CuttingPlanReasonLabel.Layout.Column = [1 2];
 
-    % Hidden legacy textarea — kept off-screen so the old renderCutPlan
-    % back-compat path in CircuitCuttingViewModel doesn't crash if it
-    % runs before the new render path takes over.
-    app.CuttingPlanText = uitextarea(pg, 'Value', '', ...
-        'Editable', 'off', 'Visible', 'off');
-    app.CuttingPlanText.Layout.Row = 6;
-    app.CuttingPlanText.Layout.Column = [1 2];
+    % Drop the hidden legacy textarea entirely — was eating a grid slot
+    % and the VM no longer writes to it.
+    app.CuttingPlanText = [];
 
-    % ── Row 4 Right: Backend Assignments card ────────────────────────────
+    % ── Row 5 Right: Backend Assignments card ────────────────────────────
     bePanel = uipanel(g, 'Title', 'Backend Assignments', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING);
-    bePanel.Layout.Row = 4; bePanel.Layout.Column = 2;
+    bePanel.Layout.Row = 5; bePanel.Layout.Column = 2;
     bePanel.BackgroundColor = Theme.COLOR_CARD;
 
     app.CuttingBackendGrid = uigridlayout(bePanel, [1 1]);
     app.CuttingBackendGrid.RowHeight = {'1x'};
     app.CuttingBackendGrid.ColumnWidth = {'1x'};
-    app.CuttingBackendGrid.Padding = [18 14 18 14];
-    app.CuttingBackendGrid.RowSpacing = 8;
+    app.CuttingBackendGrid.Padding = [16 12 16 12];
+    app.CuttingBackendGrid.RowSpacing = 6;
     app.CuttingBackendGrid.BackgroundColor = Theme.COLOR_CARD;
 
     app.CuttingBackendEmptyLabel = uilabel(app.CuttingBackendGrid, ...
@@ -163,21 +179,20 @@ function CircuitCuttingScreen(app)
     app.CuttingBackendEmptyLabel.Layout.Row = 1;
     app.CuttingBackendEmptyLabel.Layout.Column = 1;
 
-    % Hidden legacy textarea — kept off-screen for the same back-compat
-    % reason as CuttingPlanText above.
-    app.CuttingBackendText = uitextarea(app.CuttingBackendGrid, ...
-        'Value', '', 'Editable', 'off', 'Visible', 'off');
+    % Drop the hidden legacy textarea — was occupying a grid cell and
+    % capping the number of backend rows that could fit.
+    app.CuttingBackendText = [];
 
-    % ── Row 5 Left: Observables card ─────────────────────────────────────
+    % ── Row 6 Left: Observables card ─────────────────────────────────────
     obsPanel = uipanel(g, 'Title', 'Observables', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING);
-    obsPanel.Layout.Row = 5; obsPanel.Layout.Column = 1;
+    obsPanel.Layout.Row = 6; obsPanel.Layout.Column = 1;
     obsPanel.BackgroundColor = Theme.COLOR_CARD;
     og = uigridlayout(obsPanel, [2 1]);
     og.RowHeight = {18, '1x'};
-    og.Padding = [18 14 18 14]; og.RowSpacing = 6;
+    og.Padding = [16 12 16 12]; og.RowSpacing = 6;
     og.BackgroundColor = Theme.COLOR_CARD;
 
     obsCaption = uilabel(og, ...
@@ -191,32 +206,23 @@ function CircuitCuttingScreen(app)
         'Editable', 'on', 'FontSize', 12);
     app.CuttingObservablesText.Layout.Row = 2;
 
-    % ── Row 5 Right: Options card ────────────────────────────────────────
+    % ── Row 6 Right: Options card ────────────────────────────────────────
+    %   No more status line inside this card — moved to dedicated Row 4.
     optPanel = uipanel(g, 'Title', 'Options', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
         'ForegroundColor', Theme.COLOR_HEADING);
-    optPanel.Layout.Row = 5; optPanel.Layout.Column = 2;
+    optPanel.Layout.Row = 6; optPanel.Layout.Column = 2;
     optPanel.BackgroundColor = Theme.COLOR_CARD;
-    oog = uigridlayout(optPanel, [3 1]);
-    oog.RowHeight = {28, 18, '1x'};
-    oog.Padding = [18 14 18 14]; oog.RowSpacing = 8;
+    oog = uigridlayout(optPanel, [2 1]);
+    oog.RowHeight = {28, '1x'};
+    oog.Padding = [16 12 16 12]; oog.RowSpacing = 8;
     oog.BackgroundColor = Theme.COLOR_CARD;
 
     app.CuttingDistCheckbox = uicheckbox(oog, ...
         'Text', 'Also reconstruct bitstring distribution (extra shots)', ...
         'Value', false, 'FontSize', 12, 'FontColor', Theme.COLOR_LABEL);
     app.CuttingDistCheckbox.Layout.Row = 1;
-
-    statusInner = uilabel(oog, ...
-        'Text', '', ...
-        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, ...
-        'WordWrap', 'on', 'Interpreter', 'none', ...
-        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center');
-    statusInner.Layout.Row = 2;
-    % The status label is what VM.setStatus() writes to. Keep its handle
-    % on app.* so existing call sites stay unchanged.
-    app.CuttingStatusLabel = statusInner;
 
     hintLbl = uilabel(oog, ...
         'Text', sprintf(['Automatic / Assisted / Manual modes share the same pipeline; ' ...
@@ -225,18 +231,7 @@ function CircuitCuttingScreen(app)
         'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, ...
         'WordWrap', 'on', 'Interpreter', 'none', ...
         'VerticalAlignment', 'top');
-    hintLbl.Layout.Row = 3;
-
-    % ── Row 6: Cancel Batch button ───────────────────────────────────────
-    actions = uigridlayout(g, [1 2]);
-    actions.Layout.Row = 6; actions.Layout.Column = [1 2];
-    actions.ColumnWidth = {'1x', 150};
-    actions.Padding = [0 0 0 0];
-    actions.BackgroundColor = Theme.COLOR_BG;
-    cancelBtn = uibutton(actions, 'Text', 'Cancel Batch', ...
-        'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onCancelBatch());
-    cancelBtn.Layout.Column = 2;
-    app.styleBtn(cancelBtn, 'ghost');
+    hintLbl.Layout.Row = 2;
 
     % ── Row 7: Reconstructed Results card ────────────────────────────────
     resPanel = uipanel(g, 'Title', 'Reconstructed Results', ...
@@ -302,9 +297,9 @@ end
 
 
 function [chip, panel] = localBuildFeasibilityTile(parent, col)
-    %  Special KPI tile whose value is a colored pill ("● OK" / "● Refused").
-    %  Returns both the chip uilabel and its backing panel so the VM can
-    %  recolor the pill background based on feasibility state.
+    %  Special KPI tile whose value is a colored pill ("● OK" / "● Override
+    %  required"). Returns both the chip uilabel and its backing panel so
+    %  the VM can recolor the pill background based on feasibility state.
     panel = uipanel(parent, ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'BackgroundColor', Theme.COLOR_CARD, 'Title', '');
@@ -323,26 +318,29 @@ function [chip, panel] = localBuildFeasibilityTile(parent, col)
         'Interpreter', 'none');
     caption.Layout.Row = 1;
 
-    % Wrap the chip in a 2-column grid so it can hug the left edge instead
-    % of stretching across the whole tile width.
-    chipRow = uigridlayout(grid, [1 2]);
-    chipRow.RowHeight = {30}; chipRow.ColumnWidth = {'fit', '1x'};
-    chipRow.Padding = [0 0 0 0]; chipRow.ColumnSpacing = 0;
-    chipRow.BackgroundColor = Theme.COLOR_CARD;
-    chipRow.Layout.Row = 2;
+    % Wrap the chip in a 2-col x 3-row inner grid so it stays a fixed-size
+    % pill (180×26) anchored to the left edge instead of stretching to the
+    % full tile area.
+    chipOuter = uigridlayout(grid, [3 2]);
+    chipOuter.RowHeight   = {'1x', 26, '1x'};
+    chipOuter.ColumnWidth = {180, '1x'};
+    chipOuter.Padding = [0 0 0 0];
+    chipOuter.RowSpacing = 0; chipOuter.ColumnSpacing = 0;
+    chipOuter.BackgroundColor = Theme.COLOR_CARD;
+    chipOuter.Layout.Row = 2;
 
-    chip = uilabel(chipRow, ...
+    chip = uilabel(chipOuter, ...
         'Text', '  —  Pending  ', ...
-        'FontSize', 13, 'FontWeight', 'bold', ...
+        'FontSize', 12, 'FontWeight', 'bold', ...
         'FontColor', Theme.COLOR_HEADING, ...
         'BackgroundColor', Theme.COLOR_ACCENT_BG, ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
         'Interpreter', 'none');
-    chip.Layout.Column = 1;
+    chip.Layout.Row = 2; chip.Layout.Column = 1;
 
-    % Spacer so the chip stays left-aligned.
-    spacer = uilabel(chipRow, 'Text', '', 'BackgroundColor', Theme.COLOR_CARD);
-    spacer.Layout.Column = 2;
+    % Right-side spacer so the chip stays left-aligned.
+    spacer = uilabel(chipOuter, 'Text', '', 'BackgroundColor', Theme.COLOR_CARD);
+    spacer.Layout.Row = 2; spacer.Layout.Column = 2;
 end
 
 

@@ -477,12 +477,13 @@ classdef CircuitCuttingViewModel < handle
             grid = app.CuttingBackendGrid;
             if isempty(grid) || ~isvalid(grid); return; end
 
-            % Tear down existing children — but keep the hidden legacy
-            % textarea alive so the back-compat handle stays valid.
+            % Tear down existing children before rebuilding from the
+            % candidate plan. The legacy CuttingBackendText was dropped in
+            % the screen refactor, so we delete every valid child.
             kids = grid.Children;
             for i = 1:numel(kids)
                 c = kids(i);
-                if isvalid(c) && c ~= app.CuttingBackendText
+                if isvalid(c)
                     delete(c);
                 end
             end
@@ -510,21 +511,32 @@ classdef CircuitCuttingViewModel < handle
                 a = assns{i};
                 row = uigridlayout(grid, [1 4]);
                 row.RowHeight = {'1x'};
-                row.ColumnWidth = {44, '1x', 100, 70};
+                row.ColumnWidth = {54, '1x', 100, 70};
                 row.Padding = [10 4 12 4];
                 row.ColumnSpacing = 10;
                 row.BackgroundColor = Theme.COLOR_ACCENT_BG;
                 row.Layout.Row = i;
                 row.Layout.Column = 1;
 
-                chip = uilabel(row, ...
-                    'Text', sprintf('  #%d  ', a.subcircuit_idx), ...
+                % Chip lives inside a 3-row centering grid so it renders
+                % as a fixed 22-px pill (instead of stretching to the full
+                % row height, which makes it look like a tall rectangle).
+                chipCell = uigridlayout(row, [3 1]);
+                chipCell.RowHeight = {'1x', 22, '1x'};
+                chipCell.ColumnWidth = {'1x'};
+                chipCell.Padding = [0 0 0 0];
+                chipCell.RowSpacing = 0;
+                chipCell.BackgroundColor = Theme.COLOR_ACCENT_BG;
+                chipCell.Layout.Column = 1;
+
+                chip = uilabel(chipCell, ...
+                    'Text', sprintf('#%d', a.subcircuit_idx), ...
                     'FontSize', 11, 'FontWeight', 'bold', ...
                     'FontColor', [1 1 1], ...
                     'BackgroundColor', Theme.COLOR_PRIMARY, ...
                     'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
                     'Interpreter', 'none');
-                chip.Layout.Column = 1;
+                chip.Layout.Row = 2;
 
                 nameLbl = uilabel(row, ...
                     'Text', char(a.backend_name), ...
