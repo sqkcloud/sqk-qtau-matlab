@@ -13,12 +13,14 @@ classdef CircuitCuttingViewModel < handle
 
     properties
         App
-        CurrentMode    = "assisted"
-        CurrentPreset  = "generic"
-        LastAnalyze    = []
-        ActiveBatchId  = ''
-        PollTimer      = []
-        LastRefresh    = []
+        CurrentMode               = "assisted"
+        CurrentPreset             = "generic"
+        LastAnalyze               = []
+        ActiveBatchId             = ''
+        PollTimer                 = []
+        LastRefresh               = []
+        LastCuttabilityCircuitId  = ''   % Cache key for the QASM scan
+        LastCuttabilityResult     = []   % Cached struct from checkQasmCuttable
     end
 
     properties (Constant)
@@ -58,6 +60,7 @@ classdef CircuitCuttingViewModel < handle
             app.logEvent('CUT', sprintf('Circuit selected: %s', cid));
             obj.LastAnalyze = [];  % stale analysis — force re-run for the new circuit
             obj.refreshStatus();
+            obj.checkCuttability(cid);
         end
 
         % ── Mode / preset dropdowns ──────────────────────────────────────
@@ -591,6 +594,113 @@ classdef CircuitCuttingViewModel < handle
             lbl.Text = char(txt);
         end
 
+        function checkCuttability(obj, circuitId)
+            % Fetch the circuit's QASM source and scan it for patterns
+            % qiskit-addon-cutting cannot handle (mid-circuit measurements,
+            % classical-controlled gates, resets). Updates the banner +
+            % toggles the Analyze/Run buttons. Cached by circuitId so
+            % rapid dropdown toggling doesn't refetch.
+            if strcmp(circuitId, obj.LastCuttabilityCircuitId) && ...
+                    ~isempty(obj.LastCuttabilityResult)
+                obj.applyCuttability(obj.LastCuttabilityResult);
+                return;
+            end
+
+            obj.applyCuttability(struct('ok', true, ...
+                'severity', 'pending', ...
+                'reason', 'Checking compatibility...'));
+
+            app = obj.App;
+            svc   = app.CircuitSvc;
+            token = app.State.authToken;
+            cid   = char(circuitId);
+
+            AsyncRunner.run( ...
+                @() svc.getCircuit(cid, token), ...
+                @(r) obj.onCuttabilityFetched(cid, r), ...
+                @(ME) obj.onCuttabilityFetchFailed(cid, ME));
+        end
+
+        function onCuttabilityFetched(obj, circuitId, response)
+            qasm = char(JsonHelper.pick(response, 'raw_content', ''));
+            if isempty(qasm)
+                qasm = char(JsonHelper.pick(response, 'content', ''));
+            end
+            res = CircuitCuttingViewModel.checkQasmCuttable(qasm);
+            obj.LastCuttabilityCircuitId = circuitId;
+            obj.LastCuttabilityResult = res;
+            obj.applyCuttability(res);
+        end
+
+        function onCuttabilityFetchFailed(obj, circuitId, ME)
+            % If we can't fetch the QASM (offline, 404, etc.) don't block
+            % the user — just hide the banner and let them try analyze.
+            % The server-side scanner will still catch incompatible
+            % circuits via the 422 path we already handle.
+            Logger.warn('CircuitCuttingViewModel', ...
+                'Cuttability fetch failed for %s: %s', circuitId, ME.message);
+            obj.applyCuttability(struct('ok', true, 'severity', 'ok', 'reason', ''));
+        end
+
+        function applyCuttability(obj, res)
+            app = obj.App;
+            banner = app.CuttingCompatBanner;
+            analyzeBtn = app.CuttingAnalyzeBtn;
+            runBtn = app.CuttingRunBtn;
+
+            sev = '';
+            try; sev = char(res.severity); catch; end
+            reason = '';
+            try; reason = char(res.reason); catch; end
+
+            switch sev
+                case 'error'
+                    if ~isempty(banner) && isvalid(banner)
+                        banner.Text = ['⚠  ' reason];
+                        banner.BackgroundColor = Theme.COLOR_DANGER;
+                        banner.FontColor = [1 1 1];
+                        banner.Visible = 'on';
+                    end
+                    if ~isempty(analyzeBtn) && isvalid(analyzeBtn)
+                        analyzeBtn.Enable = 'off';
+                    end
+                    if ~isempty(runBtn) && isvalid(runBtn)
+                        runBtn.Enable = 'off';
+                    end
+                case 'warning'
+                    if ~isempty(banner) && isvalid(banner)
+                        banner.Text = ['ℹ  ' reason];
+                        banner.BackgroundColor = Theme.COLOR_WARNING;
+                        banner.FontColor = [1 1 1];
+                        banner.Visible = 'on';
+                    end
+                    if ~isempty(analyzeBtn) && isvalid(analyzeBtn)
+                        analyzeBtn.Enable = 'on';
+                    end
+                    if ~isempty(runBtn) && isvalid(runBtn)
+                        runBtn.Enable = 'on';
+                    end
+                case 'pending'
+                    if ~isempty(banner) && isvalid(banner)
+                        banner.Text = reason;
+                        banner.BackgroundColor = Theme.COLOR_ACCENT_BG;
+                        banner.FontColor = Theme.COLOR_MUTED;
+                        banner.Visible = 'on';
+                    end
+                otherwise   % 'ok' or empty
+                    if ~isempty(banner) && isvalid(banner)
+                        banner.Text = '';
+                        banner.Visible = 'off';
+                    end
+                    if ~isempty(analyzeBtn) && isvalid(analyzeBtn)
+                        analyzeBtn.Enable = 'on';
+                    end
+                    if ~isempty(runBtn) && isvalid(runBtn)
+                        runBtn.Enable = 'on';
+                    end
+            end
+        end
+
         function renderResult(obj, r)
             try
                 st  = char(JsonHelper.pick(r, 'status', ''));
@@ -676,6 +786,95 @@ classdef CircuitCuttingViewModel < handle
     end
 
     methods (Static)
+        function res = checkQasmCuttable(qasm)
+            % Scan QASM source for patterns qiskit-addon-cutting refuses
+            % (it requires a purely-unitary input). Returns a struct:
+            %   .ok        — boolean, true = safe to attempt cutting
+            %   .severity  — 'ok' | 'warning' | 'error'
+            %   .reason    — short human-readable explanation for the banner
+            % Catches the common BB84-class cases without a full QASM
+            % parser; the server's strip-and-validate pass is still the
+            % authoritative check, this is just a fast pre-filter so the
+            % operator gets immediate feedback when they pick a circuit
+            % that obviously can't be cut.
+            res = struct('ok', true, 'severity', 'ok', 'reason', '');
+            if isempty(qasm); return; end
+            txt = char(qasm);
+
+            % Strip line comments (// ...) so they don't trigger false
+            % positives in the regex checks below.
+            txt = regexprep(txt, '//[^\n\r]*', '');
+
+            % Classical-controlled operations — the addon cannot cut a
+            % circuit that branches on a classical bit value.
+            if ~isempty(regexp(txt, '\<if\s*\(', 'once'))
+                res.ok = false;
+                res.severity = 'error';
+                res.reason = ['Circuit has classical-controlled gates (if statements). ' ...
+                              'qiskit-addon-cutting cannot cut measurement-based protocols ' ...
+                              'like BB84 — run on a single backend instead.'];
+                return;
+            end
+
+            % Reset operations imply mid-circuit re-initialisation, which
+            % the addon also rejects.
+            if ~isempty(regexp(txt, '\<reset\s', 'once'))
+                res.ok = false;
+                res.severity = 'error';
+                res.reason = ['Circuit has reset operations — cuts cannot preserve ' ...
+                              'mid-circuit re-initialisation semantics.'];
+                return;
+            end
+
+            % Mid-circuit measurement detector: for each qubit, if a
+            % measure instruction appears before any non-measure / non-
+            % barrier op on the same qubit, that qubit has a real mid-
+            % circuit measurement.
+            lines = strsplit(txt, char(10));
+            firstMeasureLine = containers.Map('KeyType', 'int32', ...
+                                              'ValueType', 'int32');
+            for i = 1:numel(lines)
+                ln = strtrim(lines{i});
+                if isempty(ln); continue; end
+                tok = regexp(ln, '^measure\s+\w+\[(\d+)\]\s*->', ...
+                             'tokens', 'once');
+                if ~isempty(tok)
+                    qIdx = int32(str2double(tok{1}));
+                    if ~isKey(firstMeasureLine, qIdx)
+                        firstMeasureLine(qIdx) = int32(i);
+                    end
+                end
+            end
+
+            if firstMeasureLine.Count == 0; return; end
+
+            keys = cell2mat(firstMeasureLine.keys);
+            for k = 1:numel(keys)
+                qIdx = keys(k);
+                firstLine = firstMeasureLine(qIdx);
+                qPattern = sprintf('\\<q\\[%d\\]', qIdx);
+                for j = firstLine + 1 : numel(lines)
+                    ln = strtrim(lines{j});
+                    if isempty(ln); continue; end
+                    if startsWith(ln, 'barrier'); continue; end
+                    if startsWith(ln, 'measure'); continue; end
+                    if startsWith(ln, 'OPENQASM') || startsWith(ln, 'include'); continue; end
+                    if startsWith(ln, 'qreg')   || startsWith(ln, 'creg');     continue; end
+                    if ~isempty(regexp(ln, qPattern, 'once'))
+                        res.ok = false;
+                        res.severity = 'error';
+                        res.reason = sprintf( ...
+                            ['Mid-circuit measurement detected — qubit q[%d] ' ...
+                             'is measured at line %d and then operated on at ' ...
+                             'line %d. Cuts cannot preserve mid-circuit ' ...
+                             'measurement semantics.'], ...
+                             qIdx, firstLine, j);
+                        return;
+                    end
+                end
+            end
+        end
+
         function s = formatOverheadShort(v)
             % Compact human-readable sampling overhead.
             %   v < 1e4           → "3.2x"

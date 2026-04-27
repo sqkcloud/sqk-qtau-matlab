@@ -335,6 +335,9 @@ classdef QTAUWorkbenchApp < handle
         CuttingModeDropdown         % Automatic / Assisted / Manual
         CuttingPresetDropdown       % Preset registry (Option C slot)
         CuttingTargetKSpin          % Spinner: force target_k (0 = auto)
+        CuttingCompatBanner         % Red/amber banner shown for un-cuttable circuits
+        CuttingAnalyzeBtn           % Analyze Cuts button (toggled enable on incompat)
+        CuttingRunBtn               % Run Cutting button (toggled enable on incompat)
         CuttingStatusLabel          % Status banner (kept for back-compat / VM hooks)
         CuttingSubtitleLabel        % "Distributed execution across multiple QPUs..."
         % KPI strip — one big number per metric, IBM-Quantum-style at-a-glance
