@@ -4,15 +4,17 @@
 %     Row 1 (120 px): Results Analysis KPI cards (4 live metric cards).
 %     Row 2 ('1x'):   Measured vs Predicted table + execution notes (left) |
 %                     Distribution Review table + action notes (right).
-%     Row 3 (72 px):  Action bar — Next: Detailed Analysis / Back: Jobs.
+%     Row 3 (210 px): Circuit Cutting Batches list — completed cutting batches
+%                     for the current project; click-to-load reconstruction.
+%     Row 4 (72 px):  Action bar — Next: Detailed Analysis / Back: Jobs.
 %
 %   All visible strings come from resources/labels.properties via Labels.
 function ResultsScreen(app)
     Logger.info('ResultsScreen', 'Building Results tab UI');
     t = app.createSectionPage('Results');
 
-    g = uigridlayout(t, [3 2]);
-    g.RowHeight     = {120, '1x', 72};
+    g = uigridlayout(t, [4 2]);
+    g.RowHeight     = {120, '1x', 210, 72};
     g.ColumnWidth   = {'1.15x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -114,24 +116,51 @@ function ResultsScreen(app)
         '- Compare measured vs ideal distributions', ...
         '- Validate against prior predictions'};
 
+    % ── Circuit Cutting Batches (Row 3, full width) ──────────────────────────
+    %  Completed cutting batches surface here so reconstructed expectation
+    %  values are visible alongside regular IBM job results. Populated by
+    %  ResultsViewModel.onRefreshResults via /api/cutting/batches; clicking
+    %  a row loads the reconstruction summary into the ResultJsonArea
+    %  textarea above.
+    cutPanel = uipanel(g, 'Title', Labels.get('results_panel_cutting_batches', 'Circuit Cutting Batches'), ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
+    cutPanel.Layout.Row = 3; cutPanel.Layout.Column = [1 2];
+    cutPanel.BackgroundColor = Theme.COLOR_CARD;
+
+    cpg = uigridlayout(cutPanel, [1 1]);
+    cpg.RowHeight = {'1x'}; cpg.Padding = [12 10 12 10];
+    cpg.BackgroundColor = Theme.COLOR_CARD;
+
+    app.CuttingBatchesTable = uitable(cpg);
+    app.CuttingBatchesTable.ColumnName = Labels.cols('results_table_cols_cutting_batches', ...
+        {'Batch ID', 'Mode', 'k', 'Status', 'Observables', 'Created'});
+    app.CuttingBatchesTable.Data = {};
+    app.CuttingBatchesTable.SelectionType = 'row';
+    app.CuttingBatchesTable.CellSelectionCallback = ...
+        @(src, evt) app.ResultsVm.onCuttingBatchSelected(src, evt);
+    app.styleTable(app.CuttingBatchesTable);
+
     % ── Action bar ────────────────────────────────────────────────────────────
     bottom = uipanel(g, 'Title', Labels.get('results_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    bottom.Layout.Row = 3; bottom.Layout.Column = [1 2];
+    bottom.Layout.Row = 4; bottom.Layout.Column = [1 2];
     bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
-    bg = uigridlayout(bottom, [1 3]);
-    bg.ColumnWidth = {'1x', 195, 150};
+    bg = uigridlayout(bottom, [1 4]);
+    bg.ColumnWidth = {'1x', 180, 195, 150};
     bg.Padding = [14 8 14 8]; bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(bg, 'Text', Labels.get('results_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
+    tmp = uibutton(bg, 'Text', [char(9986) ' ' Labels.get('results_btn_view_reconstruction', 'View Reconstruction')], ...
+        'ButtonPushedFcn', @(~,~)app.ResultsVm.onViewReconstruction());
+    tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'secondary');
     tmp = uibutton(bg, 'Text', [char(9651) ' Detailed Analysis'], ...  % Detailed Analysis nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Detailed Analysis'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'primary');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'primary');
     tmp = uibutton(bg, 'Text', [char(9635) ' Jobs'], ...  % Jobs nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Jobs'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'ghost');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'ghost');
 
     Logger.info('ResultsScreen', 'Results tab UI built successfully');
 end

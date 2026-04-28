@@ -296,6 +296,8 @@ classdef QTAUWorkbenchApp < handle
         ResultsTable
         ResultJsonArea
         ResultsDistTable
+        CuttingBatchesTable    % Cutting Batches list on the Results screen
+        SelectedBatchId = ""   % Most recently picked cutting batch row
     end
 
     % ── Detailed Analysis tab ─────────────────────────────────────────────────
