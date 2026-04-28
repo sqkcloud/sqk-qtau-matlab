@@ -213,6 +213,14 @@ classdef DialogBuilder
                     h.DataChangedFcn = '';
                 end
             end
+            % drawnow + pause + drawnow drains in-transit client→server
+            % peerEvents from the uihtml bridge. A single drawnow leaves
+            % a window where MATLAB's HTMLController dispatches a queued
+            % event AFTER the model is deleted, producing the noisy
+            % "Invalid or deleted object" stack at
+            % getComponentToApplyButtonEvent line 110.
+            drawnow;
+            pause(0.05);
             drawnow;
             if ~isempty(src) && isvalid(src)
                 delete(src);

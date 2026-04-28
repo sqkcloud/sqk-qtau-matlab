@@ -271,6 +271,16 @@ classdef WelcomeViewModel < handle
                         h.DataChangedFcn = '';
                     end
                 end
+                % drawnow + pause + drawnow drains the MATLAB ↔ uihtml
+                % bridge queue. A single drawnow flushes the local
+                % event loop but does NOT wait for in-transit
+                % client→server peerEvents — those can still arrive a
+                % few ms later and hit the dispatcher AFTER the
+                % component model has been deleted, producing
+                % "Invalid or deleted object" inside
+                % HTMLController/getComponentToApplyButtonEvent.
+                drawnow;
+                pause(0.05);
                 drawnow;
 
                 % Close the login dialog
