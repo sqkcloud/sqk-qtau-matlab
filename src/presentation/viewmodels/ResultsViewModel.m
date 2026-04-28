@@ -187,23 +187,50 @@ classdef ResultsViewModel < handle
         end
 
         function onBatchesLoaded(obj, app, data)
-            items = JsonHelper.extractList(data, 'batches');
-            if isempty(items); items = JsonHelper.asList(data); end
-            % Normalise to a cell array so iteration is uniform regardless
-            % of whether jsondecode produced a struct array or a cell.
-            if isstruct(items); items = num2cell(items); end
-            if ~iscell(items); items = {}; end
+            % Normalise the /api/cutting/batches response into a cell
+            % array of batch dicts. The response shape is {batches: [...]}.
+            % MATLAB jsondecode quirks force three branches:
+            %   * batches absent / data not a struct → empty
+            %   * batches is a JSON array of N>=1 → struct array of size N
+            %   * batches is a 1-element JSON array → single struct (NOT
+            %     a 1-element struct array) — MATLAB collapses singletons
+            %   * batches is an empty JSON array → empty double []
+            items = {};
+            try
+                if isstruct(data) && isfield(data, 'batches')
+                    raw = data.batches;
+                    if isempty(raw)
+                        items = {};
+                    elseif iscell(raw)
+                        items = raw(:).';
+                    elseif isstruct(raw)
+                        items = num2cell(raw(:).');
+                    end
+                end
+            catch ME
+                Logger.warn('ResultsViewModel', ...
+                    'onBatchesLoaded: parse failed: %s', ME.message);
+                items = {};
+            end
             obj.CuttingBatches = items;
+
             tbl = app.CuttingBatchesTable;
             if isempty(tbl) || ~isvalid(tbl); return; end
             n = numel(items);
             if n == 0
                 tbl.Data = {};
+                app.logEvent('API', 'Cutting batches loaded: 0 row(s)');
                 return;
             end
             rows = cell(n, 6);
             for i = 1:n
-                rows(i, :) = obj.formatBatchRow(items{i});
+                try
+                    rows(i, :) = obj.formatBatchRow(items{i});
+                catch ME
+                    Logger.warn('ResultsViewModel', ...
+                        'formatBatchRow row %d failed: %s', i, ME.message);
+                    rows(i, :) = {'(parse error)', '', '', '', '', ''};
+                end
             end
             tbl.Data = rows;
             app.logEvent('API', sprintf( ...
@@ -211,14 +238,23 @@ classdef ResultsViewModel < handle
         end
 
         function onBatchesError(~, app, ME)
-            % Cutting batch list is best-effort — failure shouldn't pop
-            % a modal, just log it. The jobs flow still completes.
+            % Cutting batch list is best-effort — failure shouldn't pop a
+            % modal (would be noisy if cutting isn't deployed). Surface
+            % the failure on the event log AND in the empty-state cell so
+            % an empty table never looks like 'success with no data' when
+            % it's actually a server failure.
             Logger.warn('ResultsViewModel', ...
                 'listBatches FAILED: %s', ME.message);
             try
+                app.logEvent('ERROR', sprintf( ...
+                    'Cutting batches load failed: %s', ME.message));
+            catch
+            end
+            try
                 tbl = app.CuttingBatchesTable;
                 if ~isempty(tbl) && isvalid(tbl)
-                    tbl.Data = {};
+                    tbl.Data = {{'(load failed — see event log)', ...
+                        '', '', '', '', ''}};
                 end
             catch
             end
