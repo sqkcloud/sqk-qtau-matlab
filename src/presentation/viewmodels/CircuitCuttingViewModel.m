@@ -21,6 +21,8 @@ classdef CircuitCuttingViewModel < handle
         LastRefresh               = []
         LastCuttabilityCircuitId  = ''   % Cache key for the QASM scan
         LastCuttabilityResult     = []   % Cached struct from checkQasmCuttable
+        BackendPool               = {}   % cached cell of struct {name, num_qubits} from /api/backends
+        RowControls               = {}   % per-row {nameDropdown, shotsField} for editable assignments
     end
 
     properties (Constant)
@@ -47,8 +49,50 @@ classdef CircuitCuttingViewModel < handle
             if ~app.State.isAuthenticated(); return; end
             obj.loadCircuits();
             obj.loadPresets();
+            obj.loadBackendPool();
             obj.refreshStatus();
             obj.LastRefresh = tic;
+        end
+
+        % ── Backend pool ─────────────────────────────────────────────────
+        function loadBackendPool(obj)
+            % Pull the live IBM fleet (with widths) from /api/backends so
+            % the Backend Assignments rows can render real per-row pickers
+            % and the pre-flight check can validate width vs subcircuit.
+            % Cached on the VM until the next onEnter — switching projects
+            % triggers a re-enter so the cache stays current.
+            app = obj.App;
+            try
+                data = app.BackendSvc.listBackends(app.State.authToken, '');
+                items = JsonHelper.pick(data, 'backends', {});
+                pool = {};
+                if iscell(items)
+                    arr = items;
+                elseif isstruct(items)
+                    arr = num2cell(items);
+                else
+                    arr = {};
+                end
+                for i = 1:numel(arr)
+                    e = arr{i};
+                    name = char(string(JsonHelper.pick(e, 'name', '')));
+                    if isempty(strtrim(name)); continue; end
+                    nq = JsonHelper.pick(e, 'num_qubits', NaN);
+                    if ~isnumeric(nq) || isnan(nq); nq = []; end
+                    sim = JsonHelper.pick(e, 'simulator', false);
+                    pool{end+1} = struct( ...
+                        'name', name, ...
+                        'num_qubits', nq, ...
+                        'simulator', logical(sim)); %#ok<AGROW>
+                end
+                obj.BackendPool = pool;
+                Logger.info('CircuitCuttingViewModel', ...
+                    'Backend pool loaded: %d entries', numel(pool));
+            catch ME
+                Logger.warn('CircuitCuttingViewModel', ...
+                    'loadBackendPool failed: %s', ME.message);
+                obj.BackendPool = {};
+            end
         end
 
         % ── Circuit dropdown ─────────────────────────────────────────────
@@ -68,6 +112,16 @@ classdef CircuitCuttingViewModel < handle
             obj.CurrentMode = string(mode);
             obj.App.logEvent('CUT', sprintf('Mode changed to %s', mode));
             obj.refreshStatus();
+            % Re-render Backend Assignments so the locked/editable rows
+            % follow the new mode (Automatic locks, Assisted/Manual edit).
+            try
+                if ~isempty(obj.LastAnalyze)
+                    obj.renderBackendCards(obj.firstCandidate());
+                end
+            catch ME
+                Logger.debug('CircuitCuttingViewModel', ...
+                    'mode-change re-render: %s', ME.message);
+            end
         end
 
         function onPresetChanged(obj, preset)
@@ -112,6 +166,25 @@ classdef CircuitCuttingViewModel < handle
                     'Circuit Cutting');
                 return;
             end
+
+            % Pre-flight: when the user assigned backends manually
+            % (assisted/manual), refuse the run if any subcircuit's width
+            % exceeds the chosen backend's qubit count. Catches the same
+            % class of error IBM would otherwise raise as
+            % CircuitTooWideForTarget after the round-trip — but here we
+            % point at the offending row so the operator can fix it.
+            try
+                msg = obj.validateAssignmentWidths();
+                if ~isempty(msg)
+                    uialert(app.UIFigure, msg, 'Circuit Cutting', ...
+                        'Icon', 'error');
+                    return;
+                end
+            catch ME
+                Logger.debug('CircuitCuttingViewModel', ...
+                    'pre-flight width check: %s', ME.message);
+            end
+
             cid = char(app.State.selectedCircuitId);
 
             % Server rejects infeasible cut plans (sampling overhead above
@@ -486,15 +559,136 @@ classdef CircuitCuttingViewModel < handle
                 CircuitCuttingViewModel.OBSERVABLES_PLACEHOLDER);
         end
 
-        function assns = collectBackends(~, cutPlan)
+        function assns = collectBackends(obj, cutPlan)
+            % Build the backend_assignments payload for POST /cutting/batches.
+            %
+            %   * Automatic mode → return {} so the server's size-aware
+            %     select_backends fills the assignments based on the live
+            %     IBM pool.
+            %   * Assisted/Manual → read each row's dropdown + shots field
+            %     from RowControls (populated by renderBackendCards).
+            %
+            % Falls back to a defensive smallest-fit auto-pick when the
+            % rows are missing or partially populated (e.g. caller forgot
+            % to render the cards before pressing Run).
+            mode = char(obj.CurrentMode);
+            if strcmp(mode, 'automatic')
+                assns = {};
+                return;
+            end
+
             k = JsonHelper.pick(cutPlan, 'k', 1);
             if ~isnumeric(k); k = str2double(k); end
+            k = max(1, double(k));
+
+            per = obj.perSubcircuitQubits(cutPlan);
             assns = cell(1, k);
             for i = 1:k
+                name  = '';
+                shots = 4096;
+                if i <= numel(obj.RowControls)
+                    rc = obj.RowControls{i};
+                    try
+                        if ~isempty(rc) && isfield(rc, 'nameDropdown') ...
+                                && isvalid(rc.nameDropdown)
+                            name = char(string(rc.nameDropdown.Value));
+                        end
+                    catch; end
+                    try
+                        if ~isempty(rc) && isfield(rc, 'shotsField') ...
+                                && isvalid(rc.shotsField)
+                            shots = double(rc.shotsField.Value);
+                            if ~isfinite(shots) || shots < 1
+                                shots = 4096;
+                            end
+                        end
+                    catch; end
+                end
+                if isempty(strtrim(name))
+                    width = 0;
+                    if i <= numel(per); width = double(per(i)); end
+                    name = obj.bestFitBackendName(width);
+                end
+                if isempty(strtrim(name))
+                    name = 'ibm_miami';   % last-resort default
+                end
                 assns{i} = struct( ...
                     'subcircuit_idx', int32(i - 1), ...
-                    'backend_name', 'ibm_miami', ...
-                    'shots', int32(4096));
+                    'backend_name', name, ...
+                    'shots', int32(round(shots)));
+            end
+        end
+
+        function msg = validateAssignmentWidths(obj)
+            % Returns '' when every (subcircuit, backend) pair fits, or a
+            % human-readable error listing the bad rows otherwise. Skipped
+            % entirely in automatic mode (server picks size-aware), and
+            % when the backend pool didn't load (we can't validate).
+            msg = '';
+            if strcmp(char(obj.CurrentMode), 'automatic'); return; end
+            if isempty(obj.BackendPool); return; end
+            try
+                c = obj.firstCandidate();
+            catch
+                return;
+            end
+            per = obj.perSubcircuitQubits(c);
+            assns = obj.collectBackends(c);
+            bad = {};
+            for i = 1:numel(assns)
+                a = assns{i};
+                width = 0;
+                if i <= numel(per); width = double(per(i)); end
+                nq = obj.lookupQubits(a.backend_name);
+                if isempty(nq) || width <= nq; continue; end
+                bad{end+1} = sprintf('  • #%d (%dq) → %s (%dq)', ...
+                    double(a.subcircuit_idx), int32(width), ...
+                    char(a.backend_name), int32(nq)); %#ok<AGROW>
+            end
+            if ~isempty(bad)
+                msg = sprintf([ ...
+                    'Some subcircuits are wider than the backend you ' ...
+                    'picked. IBM will reject these with ' ...
+                    'CircuitTooWideForTarget.\n\n%s\n\nFix the row(s) ' ...
+                    'or switch Mode to Automatic to let the server ' ...
+                    'pick a fitting backend.'], strjoin(bad, sprintf('\n')));
+            end
+        end
+
+        function name = bestFitBackendName(obj, width)
+            % Return the smallest backend in BackendPool whose num_qubits
+            % >= width. Falls back to '' when nothing fits or the pool is
+            % empty — caller decides how to handle that case.
+            name = '';
+            pool = obj.BackendPool;
+            if isempty(pool); return; end
+            best = [];
+            bestQubits = Inf;
+            for i = 1:numel(pool)
+                e = pool{i};
+                nq = e.num_qubits;
+                if isempty(nq); continue; end
+                if e.simulator; continue; end   % prefer real hardware
+                if nq >= width && nq < bestQubits
+                    best = e;
+                    bestQubits = nq;
+                end
+            end
+            if ~isempty(best); name = char(best.name); end
+        end
+
+        function arr = perSubcircuitQubits(~, cutPlan)
+            v = JsonHelper.pick(cutPlan, 'per_subcircuit_qubits', []);
+            if iscell(v)
+                arr = zeros(1, numel(v));
+                for i = 1:numel(v)
+                    x = v{i}; if ~isnumeric(x); x = str2double(x); end
+                    arr(i) = double(x);
+                end
+            elseif isnumeric(v)
+                arr = double(v(:)).';
+            else
+                arr = [];
             end
         end
 
@@ -667,15 +861,15 @@ classdef CircuitCuttingViewModel < handle
 
         function renderBackendCards(obj, plan)
             % Rebuild the Backend Assignments rows from scratch on each
-            % render — one styled row per subcircuit:
-            %   [#N chip]  backend_name           4096 shots   19q
+            % render. Mode shapes the row:
+            %   * automatic            → locked label rows (server picks)
+            %   * assisted / manual    → editable backend dropdown + shots
+            %                            edit field per row, pre-filled
+            %                            via a smallest-fit best guess
             app = obj.App;
             grid = app.CuttingBackendGrid;
             if isempty(grid) || ~isvalid(grid); return; end
 
-            % Tear down existing children before rebuilding from the
-            % candidate plan. The legacy CuttingBackendText was dropped in
-            % the screen refactor, so we delete every valid child.
             kids = grid.Children;
             for i = 1:numel(kids)
                 c = kids(i);
@@ -683,9 +877,10 @@ classdef CircuitCuttingViewModel < handle
                     delete(c);
                 end
             end
+            obj.RowControls = {};
 
-            assns = obj.collectBackends(plan);
-            n = numel(assns);
+            display = obj.displayAssignments(plan);
+            n = numel(display);
             if n == 0
                 grid.RowHeight = {'1x'};
                 app.CuttingBackendEmptyLabel = uilabel(grid, ...
@@ -698,13 +893,15 @@ classdef CircuitCuttingViewModel < handle
                 return;
             end
 
-            % n × 38 px rows + a flex spacer so cards don't stretch when k
-            % is small.
+            mode = char(obj.CurrentMode);
+            isLocked = strcmp(mode, 'automatic');
+            poolNames = obj.poolNamesForDropdown();
             heights = num2cell(repmat(38, 1, n));
             grid.RowHeight = [heights, {'1x'}];
+            obj.RowControls = cell(1, n);
 
             for i = 1:n
-                a = assns{i};
+                a = display{i};
                 row = uigridlayout(grid, [1 4]);
                 row.RowHeight = {'1x'};
                 row.ColumnWidth = {54, '1x', 100, 70};
@@ -714,9 +911,6 @@ classdef CircuitCuttingViewModel < handle
                 row.Layout.Row = i;
                 row.Layout.Column = 1;
 
-                % Chip lives inside a 3-row centering grid so it renders
-                % as a fixed 22-px pill (instead of stretching to the full
-                % row height, which makes it look like a tall rectangle).
                 chipCell = uigridlayout(row, [3 1]);
                 chipCell.RowHeight = {'1x', 22, '1x'};
                 chipCell.ColumnWidth = {'1x'};
@@ -734,20 +928,64 @@ classdef CircuitCuttingViewModel < handle
                     'Interpreter', 'none');
                 chip.Layout.Row = 2;
 
-                nameLbl = uilabel(row, ...
-                    'Text', char(a.backend_name), ...
-                    'FontSize', 13, 'FontWeight', 'bold', ...
-                    'FontColor', Theme.COLOR_HEADING, ...
-                    'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
-                    'Interpreter', 'none');
-                nameLbl.Layout.Column = 2;
+                rc = struct('nameDropdown', [], 'shotsField', []);
 
-                shotsLbl = uilabel(row, ...
-                    'Text', sprintf('%d shots', double(a.shots)), ...
-                    'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
-                    'HorizontalAlignment', 'right', 'VerticalAlignment', 'center', ...
-                    'Interpreter', 'none');
-                shotsLbl.Layout.Column = 3;
+                if isLocked || isempty(poolNames)
+                    % Locked label row — automatic mode (server fills),
+                    % or fallback when /api/backends did not return a pool
+                    % we could populate dropdowns from.
+                    nameTxt = char(a.backend_name);
+                    if isLocked
+                        nameTxt = sprintf('%s   (auto)', nameTxt);
+                    end
+                    nameLbl = uilabel(row, ...
+                        'Text', nameTxt, ...
+                        'FontSize', 13, 'FontWeight', 'bold', ...
+                        'FontColor', Theme.COLOR_HEADING, ...
+                        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
+                        'Interpreter', 'none');
+                    nameLbl.Layout.Column = 2;
+
+                    shotsLbl = uilabel(row, ...
+                        'Text', sprintf('%d shots', double(a.shots)), ...
+                        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+                        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center', ...
+                        'Interpreter', 'none');
+                    shotsLbl.Layout.Column = 3;
+                else
+                    % Editable row — assisted / manual mode.
+                    initialName = char(a.backend_name);
+                    if ~any(strcmp(poolNames, initialName))
+                        % Pre-filled name isn't in the live pool (stale
+                        % default) — fall back to the first pool entry so
+                        % uidropdown.Value is always one of its Items.
+                        initialName = poolNames{1};
+                    end
+                    nameDd = uidropdown(row, ...
+                        'Items', poolNames, ...
+                        'ItemsData', poolNames, ...
+                        'Value', initialName, ...
+                        'FontSize', 12);
+                    nameDd.Layout.Column = 2;
+                    nameDd.Tooltip = ['Pick the backend that will run this ' ...
+                        'subcircuit. Smallest-fit pre-selected; widths shown ' ...
+                        'in the dropdown items.'];
+                    rc.nameDropdown = nameDd;
+
+                    shotsField = uieditfield(row, 'numeric', ...
+                        'Value', double(a.shots), ...
+                        'Limits', [1, 1e9], ...
+                        'RoundFractionalValues', 'on', ...
+                        'FontSize', 12, ...
+                        'HorizontalAlignment', 'right');
+                    shotsField.Layout.Column = 3;
+                    shotsField.Tooltip = 'Shots per sub-experiment for this subcircuit.';
+                    rc.shotsField = shotsField;
+
+                    % Decorate dropdown items with backend qubit count so
+                    % the user can pick fittingly without leaving the row.
+                    nameDd.Items = obj.poolDisplayItems();
+                end
 
                 qubitLbl = uilabel(row, ...
                     'Text', obj.qubitsForSubcircuit(plan, a.subcircuit_idx), ...
@@ -756,6 +994,75 @@ classdef CircuitCuttingViewModel < handle
                     'HorizontalAlignment', 'right', 'VerticalAlignment', 'center', ...
                     'Interpreter', 'none');
                 qubitLbl.Layout.Column = 4;
+
+                obj.RowControls{i} = rc;
+            end
+        end
+
+        function names = poolNamesForDropdown(obj)
+            % Plain backend-name list for the dropdown ItemsData. Filters
+            % simulators out so dispatch always targets real hardware.
+            names = {};
+            pool = obj.BackendPool;
+            for i = 1:numel(pool)
+                e = pool{i};
+                if isfield(e, 'simulator') && e.simulator; continue; end
+                if isempty(strtrim(char(e.name))); continue; end
+                names{end+1} = char(e.name); %#ok<AGROW>
+            end
+        end
+
+        function items = poolDisplayItems(obj)
+            % Items for the dropdown labels — "ibm_kingston (156q)". Same
+            % order as poolNamesForDropdown so positional match holds.
+            names = obj.poolNamesForDropdown();
+            items = cell(1, numel(names));
+            for i = 1:numel(names)
+                nq = obj.lookupQubits(names{i});
+                if isempty(nq)
+                    items{i} = names{i};
+                else
+                    items{i} = sprintf('%s (%dq)', names{i}, nq);
+                end
+            end
+        end
+
+        function nq = lookupQubits(obj, name)
+            nq = [];
+            pool = obj.BackendPool;
+            for i = 1:numel(pool)
+                if strcmp(char(pool{i}.name), char(name))
+                    nq = pool{i}.num_qubits;
+                    return;
+                end
+            end
+        end
+
+        function display = displayAssignments(obj, plan)
+            % What to render in the Backend Assignments panel — always k
+            % entries, even when collectBackends returns {} (automatic).
+            % Picks smallest-fit per row when the pool has widths;
+            % otherwise round-robins over the pool ordering.
+            k = JsonHelper.pick(plan, 'k', 1);
+            if ~isnumeric(k); k = str2double(k); end
+            k = max(1, double(k));
+            per = obj.perSubcircuitQubits(plan);
+            display = cell(1, k);
+            for i = 1:k
+                width = 0;
+                if i <= numel(per); width = double(per(i)); end
+                name = obj.bestFitBackendName(width);
+                if isempty(strtrim(name))
+                    if ~isempty(obj.BackendPool)
+                        name = char(obj.BackendPool{mod(i-1, numel(obj.BackendPool))+1}.name);
+                    else
+                        name = 'ibm_miami';
+                    end
+                end
+                display{i} = struct( ...
+                    'subcircuit_idx', int32(i - 1), ...
+                    'backend_name', name, ...
+                    'shots', int32(4096));
             end
         end
 
