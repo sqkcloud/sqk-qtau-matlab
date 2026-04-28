@@ -23,8 +23,16 @@ classdef OverlayManager
                     % dispatcher then hits a deleted Model, surfacing
                     % the noisy "Invalid or deleted object" trace
                     % through HTMLController/getComponentToApply…
+                    %
+                    % Three-step drain: flip Visible='off' first so
+                    % the JS side stops emitting new events, then
+                    % drawnow + pause + drawnow flushes whatever was
+                    % already in flight. 100 ms covers slower hosts
+                    % (M1 base, low-spec laptops) where 50 ms isn't
+                    % always enough.
+                    try; app.ActivityOverlay.Visible = 'off'; catch; end
                     drawnow;
-                    pause(0.05);
+                    pause(0.1);
                     drawnow;
                     delete(app.ActivityOverlay);
                 end
@@ -99,11 +107,13 @@ classdef OverlayManager
             try; NavigationManager.disarmNavOverlayTimer(app); catch; end
             try
                 if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
-                    % Drain in-flight peerEvents so the dispatcher
-                    % doesn't race with delete() — same fix as the
-                    % showLoading() pre-delete above.
+                    % Same three-step drain as showLoading: Visible='off'
+                    % stops the JS side from emitting new events,
+                    % drawnow+pause+drawnow flushes the in-flight queue
+                    % BEFORE delete. 100 ms tolerates slower machines.
+                    try; app.ActivityOverlay.Visible = 'off'; catch; end
                     drawnow;
-                    pause(0.05);
+                    pause(0.1);
                     drawnow;
                     delete(app.ActivityOverlay);
                     app.ActivityOverlay = [];
