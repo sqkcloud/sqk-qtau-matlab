@@ -121,10 +121,34 @@ classdef OverlayManager
 
         function showError(app, context, ME)
             % Display a standardized error popup with title "Error".
+            % Strips internal server hosts from MATLAB's webread error
+            % messages so deployment internals don't leak into the
+            % user-visible popup. The full URL still hits the event
+            % log for operator debugging.
+            detail = OverlayManager.sanitizeErrorMessage(ME.message);
             msg = sprintf('%s\n\nDetails:\n%s\n\nIdentifier: %s', ...
-                char(context), ME.message, ME.identifier);
+                char(context), detail, ME.identifier);
             OverlayManager.logEvent(app, 'ERROR', sprintf('[%s] %s', char(context), ME.message));
             uialert(app.UIFigure, msg, Labels.get('error_title', 'Error'), 'Icon', 'error');
+        end
+
+        function out = sanitizeErrorMessage(text)
+            % Replace the host:port portion of any embedded URL with
+            % nothing (keeping the path) so the server's internal
+            % address never reaches the popup. MATLAB's webservices
+            % errors look like:
+            %   "... in response to the request to URL
+            %    http://34.42.87.190:5715/api/circuits/.../cutting/batches"
+            % After sanitization:
+            %   "... in response to the request to URL
+            %    /api/circuits/.../cutting/batches"
+            % The path is still informative for triage; the host stays
+            % private.
+            try
+                out = regexprep(char(text), 'https?://[^/\s]+', '');
+            catch
+                out = char(text);
+            end
         end
 
         function logEvent(app, category, msg)

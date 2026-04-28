@@ -607,6 +607,19 @@ classdef CircuitCuttingViewModel < handle
                 end
                 % iscell(v) — already a list, leave alone.
             end
+
+            % Drop server-generated descriptive fields the dispatch path
+            % does NOT need. Echoing them back round-trips through MATLAB
+            % jsonencode, which on some platforms emits non-UTF-8 bytes
+            % for em-dashes / smart quotes — Pydantic's body parser then
+            % rejects the request with HTTP 400 "There was an error
+            % parsing the body". The user already saw these on the
+            % analyze response; the server doesn't need them re-asserted.
+            for fld = {'feasibility_reason', 'feasible'}
+                if isfield(plan, fld{1})
+                    plan = rmfield(plan, fld{1});
+                end
+            end
         end
 
         function obs = parseObservables(obj)
@@ -1331,9 +1344,14 @@ classdef CircuitCuttingViewModel < handle
         end
 
         function onError(obj, ME)
+            % Errors surface as a popup only — never as inline status
+            % text. The status label is for live progress ("Batch xxx
+            % running 50%"), not for failure messages, which would
+            % otherwise leak HTTP details + the internal server URL
+            % into the screen body.
             obj.App.hideLoading();
             obj.App.showError('Circuit Cutting', ME);
-            obj.setStatus(sprintf('Error: %s', ME.message));
+            obj.setStatus('');
         end
     end
 
