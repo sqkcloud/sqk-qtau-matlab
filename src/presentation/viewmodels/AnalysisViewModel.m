@@ -371,6 +371,69 @@ classdef AnalysisViewModel < handle
                 @(ME)   obj.onQaeReportError(app, ME));
         end
 
+        function onCircuitCuttingBridge(obj)
+            % Bridge: Analysis → Circuit Cutting with the currently-selected
+            % circuit pre-applied. Mirrors the Detailed Analysis → Analysis
+            % bridge so the user does not have to re-pick the circuit on
+            % the Cutting screen.
+            app = obj.App;
+            cid = '';
+            try
+                if ~isempty(app.AnalysisCircuitDropdown) ...
+                        && isvalid(app.AnalysisCircuitDropdown)
+                    cid = char(string(app.AnalysisCircuitDropdown.Value));
+                end
+            catch
+            end
+            if isempty(strtrim(cid))
+                cid = char(app.State.selectedCircuitId);
+            end
+            if isempty(strtrim(cid))
+                uialert(app.UIFigure, ...
+                    'Pick a circuit from the dropdown before opening Circuit Cutting.', ...
+                    'Circuit Cutting', 'Icon', 'warning');
+                return;
+            end
+
+            % Resolve display name from the dropdown so the activity log
+            % and the target screen's status line stay consistent with
+            % what the user just saw on Analysis.
+            name = '';
+            try
+                items = app.AnalysisCircuitDropdown.Items;
+                ids   = app.AnalysisCircuitDropdown.ItemsData;
+                k = find(strcmp(ids, cid), 1);
+                if ~isempty(k); name = items{k}; end
+            catch
+            end
+
+            app.State.selectedCircuitId = string(cid);
+            if ~isempty(name)
+                app.State.selectedCircuitName = string(name);
+            end
+            app.logEvent('UI', sprintf( ...
+                'Analysis → Circuit Cutting (circuit: %s)', ...
+                char(app.State.selectedCircuitName)));
+
+            app.onSelectSection('Circuit Cutting');
+
+            % Nudge the Cutting screen's dropdown if it is already loaded;
+            % otherwise loadCircuits / onEnter will pick the cached
+            % selectedCircuitId on first refresh.
+            try
+                if ~isempty(app.CuttingCircuitDropdown) ...
+                        && isvalid(app.CuttingCircuitDropdown) ...
+                        && iscell(app.CuttingCircuitDropdown.ItemsData) ...
+                        && any(strcmp(app.CuttingCircuitDropdown.ItemsData, cid))
+                    app.CuttingCircuitDropdown.Value = cid;
+                    app.CircuitCuttingVm.onCircuitChanged(cid);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'Cutting bridge nudge: %s', ME.message);
+            end
+        end
+
         function onVisualizeSimilarity(obj)
             app = obj.App;
             try

@@ -128,8 +128,8 @@ function AnalysisScreen(app)
     exportPanel.Layout.Row = 4; exportPanel.Layout.Column = [1 2];
     exportPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
-    eg = uigridlayout(exportPanel, [1 4]);
-    eg.ColumnWidth = {'1x', 150, 170, 120};
+    eg = uigridlayout(exportPanel, [1 5]);
+    eg.ColumnWidth = {'1x', 150, 170, 170, 120};
     eg.Padding = [14 8 14 8]; eg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(eg, 'Text', Labels.get('analysis_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
@@ -137,12 +137,19 @@ function AnalysisScreen(app)
     tmp = uibutton(eg, 'Text', [char(9638) ' Visualize'], ...
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onVisualizeSimilarity());
     tmp.Layout.Row = 1; tmp.Layout.Column = 2; app.styleBtn(tmp, 'secondary');
+    % Bridge to the Circuit Cutting screen — propagates the Analysis
+    % screen's currently-selected circuit so the user lands on Circuit
+    % Cutting with the right input already picked.
+    tmp = uibutton(eg, 'Text', ...
+        [char(9986) ' ' Labels.get('analysis_btn_circuit_cutting', 'Circuit Cutting')], ...
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onCircuitCuttingBridge());
+    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'secondary');
     tmp = uibutton(eg, 'Text', [char(9004) ' ' Labels.get('analysis_btn_next')], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Backends'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'primary');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'primary');
     tmp = uibutton(eg, 'Text', [char(8593) ' Upload'], ...  % Upload nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Upload'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'ghost');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 5; app.styleBtn(tmp, 'ghost');
 
     Logger.info('AnalysisScreen', 'Analysis tab UI built successfully');
 end
