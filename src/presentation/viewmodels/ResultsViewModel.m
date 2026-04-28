@@ -179,9 +179,19 @@ classdef ResultsViewModel < handle
             catch
                 return;
             end
+            % Capture LOCAL variables for the parfeval closure. Capturing
+            % `app` would drag the entire QTAUWorkbenchApp class graph
+            % (including uihtml properties) into the worker process,
+            % which can't load matlab.ui.control.WebComponent — the
+            % worker errors with "specified superclass ... contains a
+            % parse error" and the table stays empty. Local handles to
+            % CuttingSvc + the auth token sidestep that entirely; the
+            % worker only needs CuttingService + FastAPIClient on its
+            % path, which it does.
+            svc   = app.CuttingSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...
-                @() app.CuttingSvc.listBatches(token), ...
+                @() svc.listBatches(token), ...
                 @(data) obj.onBatchesLoaded(app, data), ...
                 @(ME)   obj.onBatchesError(app, ME));
         end

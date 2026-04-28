@@ -175,6 +175,23 @@ classdef JobsViewModel < handle
 
             nameMap = JobsViewModel.buildCircuitNameMap(circList);
             rows = JsonHelper.jobsToRows(data, nameMap);
+            % Auto-stop the 5s polling once every job is terminal so we
+            % don't keep hammering the server with /api/jobs requests
+            % long after there's nothing left to refresh. The next user
+            % nav back into Jobs (or a manual Refresh click) will
+            % re-arm the timer if they need fresh data.
+            if ~isempty(rows)
+                terminal = {'completed','failed','cancelled','done','success'};
+                statuses = lower(string(rows(:, 4)));   % col 4 = Status
+                allTerminal = all(ismember(statuses, terminal));
+                if allTerminal && ~isempty(obj.AutoRefreshTimer) ...
+                        && isvalid(obj.AutoRefreshTimer)
+                    Logger.info('JobsViewModel', ...
+                        ['All %d jobs terminal — stopping the 5s ' ...
+                         'auto-refresh timer.'], numel(statuses));
+                    obj.stopAutoRefresh();
+                end
+            end
             if ~isempty(rows)
                 app.JobsTable.Data = rows;
                 firstId = string(rows{1,1});
