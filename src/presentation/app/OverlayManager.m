@@ -16,6 +16,16 @@ classdef OverlayManager
             try; NavigationManager.disarmNavOverlayTimer(app); catch; end
             try
                 if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
+                    % Drain any in-flight peerEvents (size-change /
+                    % position-update messages from MATLAB's HTML
+                    % bridge) BEFORE deleting the overlay. A bare
+                    % delete() races with those queued events and the
+                    % dispatcher then hits a deleted Model, surfacing
+                    % the noisy "Invalid or deleted object" trace
+                    % through HTMLController/getComponentToApply…
+                    drawnow;
+                    pause(0.05);
+                    drawnow;
                     delete(app.ActivityOverlay);
                 end
                 % When a modal secondary dialog (e.g. the Quantum Monte Carlo
@@ -89,6 +99,12 @@ classdef OverlayManager
             try; NavigationManager.disarmNavOverlayTimer(app); catch; end
             try
                 if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
+                    % Drain in-flight peerEvents so the dispatcher
+                    % doesn't race with delete() — same fix as the
+                    % showLoading() pre-delete above.
+                    drawnow;
+                    pause(0.05);
+                    drawnow;
                     delete(app.ActivityOverlay);
                     app.ActivityOverlay = [];
                 end
