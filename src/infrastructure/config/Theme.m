@@ -128,8 +128,8 @@ classdef Theme
         end
 
         function name = loadPersisted()
-            % Returns the saved theme name, or 'dark' if unset / invalid.
-            name = 'dark';
+            % Returns the saved theme name, or 'dracula' if unset / invalid.
+            name = 'dracula';
             try
                 if ispref('QTAUWorkbench', 'theme')
                     candidate = getpref('QTAUWorkbench', 'theme');
