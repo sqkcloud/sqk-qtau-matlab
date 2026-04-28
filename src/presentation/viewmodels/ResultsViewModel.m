@@ -185,37 +185,48 @@ classdef ResultsViewModel < handle
             % which can't load matlab.ui.control.WebComponent — the
             % worker errors with "specified superclass ... contains a
             % parse error" and the table stays empty. Local handles to
-            % CuttingSvc + the auth token sidestep that entirely; the
-            % worker only needs CuttingService + FastAPIClient on its
-            % path, which it does.
-            svc   = app.CuttingSvc;
-            token = app.State.authToken;
+            % CuttingSvc / CircuitSvc + the auth token sidestep that
+            % entirely.
+            cutSvc  = app.CuttingSvc;
+            circSvc = app.CircuitSvc;
+            token   = app.State.authToken;
             AsyncRunner.run( ...
-                @() svc.listBatches(token), ...
+                @() ResultsViewModel.fetchBatchesAndCircuits(cutSvc, circSvc, token), ...
                 @(data) obj.onBatchesLoaded(app, data), ...
                 @(ME)   obj.onBatchesError(app, ME));
         end
 
         function onBatchesLoaded(obj, app, data)
-            % Normalise the /api/cutting/batches response into a cell
-            % array of batch dicts. The response shape is {batches: [...]}.
-            % MATLAB jsondecode quirks force three branches:
-            %   * batches absent / data not a struct → empty
-            %   * batches is a JSON array of N>=1 → struct array of size N
-            %   * batches is a 1-element JSON array → single struct (NOT
-            %     a 1-element struct array) — MATLAB collapses singletons
-            %   * batches is an empty JSON array → empty double []
-            items = {};
+            % `data` is the struct produced by fetchBatchesAndCircuits:
+            %   data.batches  — /api/cutting/batches response
+            %   data.circuits — /api/circuits response (may be empty)
+            % Normalise both legs and build a circuit_id → name lookup
+            % so the Circuit column can render names instead of UUIDs.
+            batchesRaw = [];
+            circList   = [];
             try
                 if isstruct(data) && isfield(data, 'batches')
-                    raw = data.batches;
-                    if isempty(raw)
-                        items = {};
-                    elseif iscell(raw)
-                        items = raw(:).';
-                    elseif isstruct(raw)
-                        items = num2cell(raw(:).');
-                    end
+                    batchesRaw = data.batches;
+                end
+                if isstruct(data) && isfield(data, 'circuits')
+                    circList = data.circuits;
+                end
+            catch
+            end
+
+            items = {};
+            try
+                if isstruct(batchesRaw) && isfield(batchesRaw, 'batches')
+                    raw = batchesRaw.batches;
+                else
+                    raw = batchesRaw;
+                end
+                if isempty(raw)
+                    items = {};
+                elseif iscell(raw)
+                    items = raw(:).';
+                elseif isstruct(raw)
+                    items = num2cell(raw(:).');
                 end
             catch ME
                 Logger.warn('ResultsViewModel', ...
@@ -223,6 +234,7 @@ classdef ResultsViewModel < handle
                 items = {};
             end
             obj.CuttingBatches = items;
+            nameMap = ResultsViewModel.buildCircuitNameMap(circList);
 
             tbl = app.CuttingBatchesTable;
             if isempty(tbl) || ~isvalid(tbl); return; end
@@ -232,14 +244,14 @@ classdef ResultsViewModel < handle
                 app.logEvent('API', 'Cutting batches loaded: 0 row(s)');
                 return;
             end
-            rows = cell(n, 6);
+            rows = cell(n, 8);
             for i = 1:n
                 try
-                    rows(i, :) = obj.formatBatchRow(items{i});
+                    rows(i, :) = obj.formatBatchRow(items{i}, nameMap);
                 catch ME
                     Logger.warn('ResultsViewModel', ...
                         'formatBatchRow row %d failed: %s', i, ME.message);
-                    rows(i, :) = {'(parse error)', '', '', '', '', ''};
+                    rows(i, :) = {'(parse error)', '', '', '', '', '', '', ''};
                 end
             end
             tbl.Data = rows;
@@ -264,25 +276,44 @@ classdef ResultsViewModel < handle
                 tbl = app.CuttingBatchesTable;
                 if ~isempty(tbl) && isvalid(tbl)
                     tbl.Data = {{'(load failed — see event log)', ...
-                        '', '', '', '', ''}};
+                        '', '', '', '', '', '', ''}};
                 end
             catch
             end
         end
 
-        function row = formatBatchRow(~, batch)
-            % Build a single 6-cell row matching results_table_cols_cutting_batches:
-            %   Batch ID | Mode | k | Status | Observables | Created
+        function row = formatBatchRow(~, batch, nameMap)
+            % Build a single 8-cell row matching results_table_cols_cutting_batches:
+            %   Batch ID | Circuit | Backend | Mode | k | Status | Observables | Created
+            % * Batch ID is shown in full (no truncation) so operators can
+            %   correlate with Mongo / API logs without copy-paste guesswork.
+            % * Status is uppercased to match the convention on the Jobs
+            %   screen (COMPLETED / EXECUTING / FAILED / …).
+            % * Circuit resolves circuit_id → name via the supplied
+            %   nameMap; falls back to the id when the lookup misses.
+            % * Backend is the comma-joined set of distinct backend_name
+            %   values from backend_assignments (e.g. "ibm_fez, ibm_boston").
+            if nargin < 3; nameMap = containers.Map('KeyType','char','ValueType','char'); end
             bid = char(string(JsonHelper.pick(batch, ...
                 {'batch_id','id'}, '')));
-            short = bid;
-            if numel(short) > 8; short = [short(1:8) '…']; end
+
+            cid = char(string(JsonHelper.pick(batch, {'circuit_id'}, '')));
+            circuitName = cid;
+            if ~isempty(cid) && isKey(nameMap, cid)
+                circuitName = nameMap(cid);
+            end
+
+            backendStr = ResultsViewModel.formatBackendList( ...
+                JsonHelper.pick(batch, 'backend_assignments', {}));
+
             mode = char(string(JsonHelper.pick(batch, {'mode'}, '')));
             cp = JsonHelper.pick(batch, 'cut_plan', struct());
             k = JsonHelper.pick(cp, 'k', 0);
             if ~isnumeric(k); k = str2double(k); end
             kStr = sprintf('%d', int32(k));
-            status = char(string(JsonHelper.pick(batch, {'status'}, '')));
+
+            status = upper(char(string(JsonHelper.pick(batch, {'status'}, ''))));
+
             obs = JsonHelper.pick(batch, 'observables', {});
             if iscell(obs)
                 nObs = numel(obs);
@@ -294,13 +325,14 @@ classdef ResultsViewModel < handle
                 nObs = numel(obs);
             end
             obsStr = sprintf('%d', int32(nObs));
+
             created = char(string(JsonHelper.pick(batch, ...
                 {'created_at','submitted_at'}, '')));
-            % Trim ISO-8601 microseconds + timezone for compact display.
             if numel(created) > 19
                 created = created(1:19);
             end
-            row = {short, mode, kStr, status, obsStr, created};
+
+            row = {bid, circuitName, backendStr, mode, kStr, status, obsStr, created};
         end
 
         function onReconstructionLoaded(obj, app, bid, data)
@@ -361,6 +393,63 @@ classdef ResultsViewModel < handle
                 lines{end+1} = sprintf('  %s = %.6f ± %.6f  (%s)', ...
                     obsv, double(val), double(err), st);
             end
+        end
+    end
+
+    methods (Static, Access = private)
+        function out = fetchBatchesAndCircuits(cutSvc, circSvc, token)
+            % Pull cutting batches (required) and circuits (best-effort)
+            % so the row formatter can resolve circuit_id → name. A
+            % failure on the circuits leg downgrades the Circuit column
+            % to the raw id; the batches still render.
+            out = struct('batches', [], 'circuits', []);
+            out.batches = cutSvc.listBatches(token);
+            try
+                out.circuits = circSvc.listCircuits(token);
+            catch ME
+                Logger.warn('ResultsViewModel', ...
+                    'Circuit list fetch failed (batches still shown): %s', ME.message);
+            end
+        end
+
+        function map = buildCircuitNameMap(circList)
+            % circuit_id → display name lookup. Returns an empty map
+            % when the circuit list is unavailable or empty.
+            map = containers.Map('KeyType', 'char', 'ValueType', 'char');
+            if isempty(circList); return; end
+            items = JsonHelper.extractList(circList, 'circuits');
+            if isempty(items); items = JsonHelper.asList(circList); end
+            for i = 1:numel(items)
+                cid = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
+                nm  = char(JsonHelper.pick(items(i), {'name','circuit_name'}));
+                if isempty(nm); nm = cid; end
+                if ~isempty(cid); map(cid) = nm; end
+            end
+        end
+
+        function s = formatBackendList(assignments)
+            % Render backend_assignments as a compact, distinct,
+            % comma-joined string ("ibm_fez, ibm_boston"). Preserves the
+            % first-occurrence order so column reads stay deterministic.
+            s = '';
+            if isempty(assignments); return; end
+            if iscell(assignments)
+                items = assignments;
+            elseif isstruct(assignments)
+                items = num2cell(assignments(:).');
+            else
+                return;
+            end
+            seen = {};
+            for i = 1:numel(items)
+                nm = char(string(JsonHelper.pick(items{i}, ...
+                    {'backend_name','backend','name'}, '')));
+                if isempty(nm); continue; end
+                if any(strcmp(seen, nm)); continue; end
+                seen{end+1} = nm; %#ok<AGROW>
+            end
+            if isempty(seen); return; end
+            s = strjoin(seen, ', ');
         end
     end
 end
