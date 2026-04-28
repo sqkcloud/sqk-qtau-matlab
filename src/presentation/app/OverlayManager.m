@@ -15,27 +15,6 @@ classdef OverlayManager
             % flight on this new overlay.
             try; NavigationManager.disarmNavOverlayTimer(app); catch; end
             try
-                if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
-                    % Drain any in-flight peerEvents (size-change /
-                    % position-update messages from MATLAB's HTML
-                    % bridge) BEFORE deleting the overlay. A bare
-                    % delete() races with those queued events and the
-                    % dispatcher then hits a deleted Model, surfacing
-                    % the noisy "Invalid or deleted object" trace
-                    % through HTMLController/getComponentToApply…
-                    %
-                    % Three-step drain: flip Visible='off' first so
-                    % the JS side stops emitting new events, then
-                    % drawnow + pause + drawnow flushes whatever was
-                    % already in flight. 100 ms covers slower hosts
-                    % (M1 base, low-spec laptops) where 50 ms isn't
-                    % always enough.
-                    try; app.ActivityOverlay.Visible = 'off'; catch; end
-                    drawnow;
-                    pause(0.1);
-                    drawnow;
-                    delete(app.ActivityOverlay);
-                end
                 % When a modal secondary dialog (e.g. the Quantum Monte Carlo
                 % popup) is open, MATLAB renders it in its own window so an
                 % overlay parented to the main UIFigure would sit behind it.
@@ -49,8 +28,44 @@ classdef OverlayManager
                 catch; end
                 figW = host.Position(3);
                 figH = host.Position(4);
-                % Use uihtml as a full-figure overlay with semi-transparent backdrop
-                app.ActivityOverlay = uihtml(host);
+
+                % Singleton overlay strategy: lazy-create one ActivityOverlay
+                % per host figure and REUSE it across every show/hide cycle.
+                % We never delete it during normal flow — only on a host
+                % change (e.g. UIFigure → QmcDialog when a modal opens) do
+                % we tear down the previous instance.
+                %
+                % Why: any delete() of a uihtml component races with
+                % MATLAB's asynchronous JS↔server peerEvent bridge. Even a
+                % drawnow + pause + drawnow drain isn't a hard guarantee —
+                % the JS side can emit a new event in the window between
+                % drawnow returning and delete() running, and the
+                % dispatcher then throws "Invalid or deleted object" inside
+                % HTMLController/getComponentToApplyButtonEvent. The only
+                % bullet-proof fix is to keep the component alive for the
+                % lifetime of its host. MATLAB tears children down when
+                % the host figure dies, so leak-free.
+                needCreate = isempty(app.ActivityOverlay) ...
+                    || ~isvalid(app.ActivityOverlay);
+                if ~needCreate
+                    try
+                        needCreate = ~isequal(app.ActivityOverlay.Parent, host);
+                    catch
+                        needCreate = true;
+                    end
+                end
+                if needCreate
+                    % Host change is the only path that still requires a
+                    % delete. Drain first so this rare path is also safe.
+                    if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
+                        try; app.ActivityOverlay.Visible = 'off'; catch; end
+                        drawnow;
+                        pause(0.1);
+                        drawnow;
+                        delete(app.ActivityOverlay);
+                    end
+                    app.ActivityOverlay = uihtml(host);
+                end
                 app.ActivityOverlay.Position = [0 0 figW figH];
                 % Elapsed timer JS (only rendered when showTimer is true)
                 if showTimer
@@ -94,6 +109,7 @@ classdef OverlayManager
                     '<p class="msg">' char(msg) '</p>' ...
                     timerHtml ...
                     '</div></div></body></html>'];
+                app.ActivityOverlay.Visible = 'on';
                 uistack(app.ActivityOverlay, 'top');
                 drawnow();
             catch ME
@@ -107,16 +123,14 @@ classdef OverlayManager
             try; NavigationManager.disarmNavOverlayTimer(app); catch; end
             try
                 if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
-                    % Same three-step drain as showLoading: Visible='off'
-                    % stops the JS side from emitting new events,
-                    % drawnow+pause+drawnow flushes the in-flight queue
-                    % BEFORE delete. 100 ms tolerates slower machines.
-                    try; app.ActivityOverlay.Visible = 'off'; catch; end
-                    drawnow;
-                    pause(0.1);
-                    drawnow;
-                    delete(app.ActivityOverlay);
-                    app.ActivityOverlay = [];
+                    % Hide instead of delete — keeps the uihtml component
+                    % alive so any subsequent peerEvents from MATLAB's HTML
+                    % bridge land on a still-valid Model instead of throwing
+                    % 'Invalid or deleted object' inside
+                    % HTMLController/getComponentToApply… The component is
+                    % torn down only when the host figure itself is closed,
+                    % which is automatic.
+                    app.ActivityOverlay.Visible = 'off';
                 end
                 drawnow();
             catch ME
