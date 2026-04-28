@@ -788,7 +788,26 @@ classdef CircuitCuttingViewModel < handle
             % parfeval, so touching obj.App.* here is safe. The "never
             % reference app.*" rule in onRunCutting/onAnalyzeCuts applies
             % only to AsyncRunner closures that get serialized to workers.
+            %
+            % Skip polls when the user has navigated away from Circuit
+            % Cutting. Otherwise the 3-second timer keeps hitting
+            % /api/cutting/batches/{id} every tick from the Welcome /
+            % Jobs / Results screens — burning bandwidth, racing with
+            % the UI event loop, and giving the operator no visible
+            % benefit (they're not looking at the cutting screen). The
+            % timer is preserved across navigation so re-entering the
+            % screen via onEnter resumes polling without losing
+            % ActiveBatchId.
             try
+                active = false;
+                try
+                    active = strcmp(char(obj.App.NavList.Value), 'Circuit Cutting');
+                catch
+                end
+                if ~active
+                    return;
+                end
+
                 r = obj.App.CuttingSvc.pollBatch( ...
                     obj.ActiveBatchId, obj.App.State.authToken);
                 st  = char(JsonHelper.pick(r, 'status', ''));
