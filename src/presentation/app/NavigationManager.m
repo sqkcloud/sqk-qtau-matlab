@@ -406,9 +406,10 @@ classdef NavigationManager
             % now. The NotesScreen / NotesViewModel are still wired up
             % in QTAUWorkbenchApp so the tab can be re-enabled later by
             % adding 'Notes' back to navNames / navIcons / navLabels.
-            n = {'Welcome','Dashboard','Circuits','Upload','Analysis','Backends', ...
+            n = {'Welcome','Dashboard','Circuits','Upload','Analysis', ...
+                 'Circuit Cutting','Backends', ...
                  'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
-                 'Benchmark Dashboard', 'Circuit Cutting', ...
+                 'Benchmark Dashboard', ...
                  'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
 
@@ -421,6 +422,7 @@ classdef NavigationManager
                 char(9776),  ... ☰ Circuits
                 char(8593),  ... ↑ Upload
                 char(8981),  ... ⌕ Analysis
+                char(9986),  ... ✂ Circuit Cutting
                 char(9004),  ... ⌬ Backends
                 char(9678),  ... ◎ Benchmark
                 char(9671),  ... ◇ Prediction
@@ -428,7 +430,6 @@ classdef NavigationManager
                 char(9633),  ... □ Results
                 char(9651),  ... △ Detailed Analysis
                 char(9670),  ... ◆ Benchmark Dashboard
-                char(9986),  ... ✂ Circuit Cutting
                 char(9673),  ... ◉ QEC Simulation
                 char(9672),  ... ◈ QEC Visualization
                 char(9636),  ... ▤ Reports
@@ -437,9 +438,10 @@ classdef NavigationManager
 
         function lb = navLabels()
             % Text labels (no icon prefix — icon is rendered separately).
-            lb = {'Welcome','Dashboard','Circuits','Upload','Analysis','Backends', ...
+            lb = {'Welcome','Dashboard','Circuits','Upload','Analysis', ...
+                  'Circuit Cutting','Backends', ...
                   'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
-                  'Benchmark Dashboard', 'Circuit Cutting', ...
+                  'Benchmark Dashboard', ...
                   'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
 
