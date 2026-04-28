@@ -134,7 +134,7 @@ classdef FastAPIClient < handle
 
         % POST JSON with Bearer token. Optional timeoutSec overrides
         % the default obj.Timeout for long-running endpoints (e.g. IBM
-        % Runtime QAE where the server waits on QPU execution).
+        % Runtime QMC where the server waits on QPU execution).
         %
         % Routes through matlab.net.http (instead of webwrite) so the
         % FastAPI {"detail": "..."} body is captured on non-2xx responses
@@ -159,7 +159,18 @@ classdef FastAPIClient < handle
                 headers = [headers, GenericField('X-Project-Id', char(obj.ProjectId))];
             end
             msgBody = MessageBody();
-            msgBody.Payload = uint8(jsonencode(payload));
+            % unicode2native(..., 'UTF-8') NOT uint8(...). uint8 on a MATLAB
+            % string casts each char to char & 0xFF, so multibyte
+            % characters (em-dash U+2014, smart quotes, anything outside
+            % ASCII) get truncated to a single garbage byte. The server's
+            % UTF-8 JSON parser then rejects the body with HTTP 400
+            % "There was an error parsing the body" — visible in the API
+            % logs as a � replacement char where the original
+            % character should be. unicode2native emits the correct
+            % multi-byte UTF-8 sequence so any valid Unicode string in a
+            % POST payload (cut_plan.feasibility_reason, report titles,
+            % etc.) round-trips cleanly.
+            msgBody.Payload = unicode2native(jsonencode(payload), 'UTF-8');
             req  = RequestMessage(RequestMethod.POST, headers, msgBody);
             opts = HTTPOptions('ConnectTimeout', double(timeoutSec));
 
