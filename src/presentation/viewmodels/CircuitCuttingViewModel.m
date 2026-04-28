@@ -425,6 +425,71 @@ classdef CircuitCuttingViewModel < handle
                 '%d subcircuits   %s   overhead %s', ...
                 k, obj.formatPerSub(per), obj.formatOverhead(oh, ohL)));
             obj.renderCutPlan(c);
+
+            % Smart-analyze recommendation. The server compares circuit
+            % width against the configured IBM fleet; if at least one
+            % backend fits, cutting is strictly worse than a direct
+            % submission. Surface that as a modal so the operator makes
+            % an informed choice instead of stumbling into a 4^k cut
+            % plan that nobody asked for.
+            recommended = JsonHelper.pick(r, 'cutting_recommended', true);
+            if isequal(recommended, false)
+                obj.promptDirectRunRecommendation(r);
+            end
+        end
+
+        function promptDirectRunRecommendation(obj, r)
+            % Shown after analyze when the server says cutting is not
+            % useful for this circuit (it fits on a single backend).
+            % Three options:
+            %   * Submit Directly → bridge to Backends screen with the
+            %     suggested backend pre-selected.
+            %   * Proceed with Cutting → keep the cut plan visible so the
+            %     operator can still run it (research / curiosity).
+            %   * Cancel → drop the cut plan; user picks again.
+            app = obj.App;
+            reason = char(JsonHelper.pick(r, ...
+                'cutting_recommendation_reason', ''));
+            if isempty(reason)
+                reason = Labels.get('cutting_recommendation_skip', ...
+                    'This circuit fits on a single backend — cutting is unnecessary.');
+            end
+            directBackend = char(JsonHelper.pick(r, ...
+                'direct_run_backend', ''));
+            opts = { ...
+                Labels.get('cutting_recommendation_skip_btn', 'Submit Directly'), ...
+                'Proceed with Cutting', ...
+                'Cancel'};
+            sel = uiconfirm(app.UIFigure, reason, ...
+                'Circuit Cutting recommendation', ...
+                'Options', opts, ...
+                'DefaultOption', 1, 'CancelOption', 3, 'Icon', 'info');
+            switch sel
+                case opts{1}   % Submit Directly
+                    if ~isempty(directBackend)
+                        try
+                            app.State.selectedBackend = string(directBackend);
+                        catch; end
+                    end
+                    app.logEvent('CUT', sprintf( ...
+                        'Direct-run bridge → Backends (suggested: %s)', ...
+                        directBackend));
+                    app.onSelectSection('Backends');
+                case opts{2}   % Proceed with Cutting
+                    obj.setStatus(sprintf( ...
+                        'Proceeding with cutting despite recommendation. (%s)', ...
+                        reason));
+                otherwise      % Cancel
+                    obj.LastAnalyze = [];
+                    obj.setStatus('Analysis dismissed.');
+                    try
+                        obj.renderCutPlan(struct( ...
+                            'k', 0, 'cuts', {{}}, ...
+                            'sampling_overhead', 1.0, ...
+                            'sampling_overhead_log10', 0.0, ...
+                            'per_subcircuit_qubits', {{}}));
+                    catch; end
+            end
         end
 
         function body = buildCreateBody(obj, overrideFeasibility)
