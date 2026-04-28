@@ -109,7 +109,7 @@ classdef AnalysisViewModel < handle
         % Open the Quantum Monte Carlo Simulation (Quantum Amplitude
         % Estimation) popup. Fetches any previously cached result for the
         % selected circuit so the dialog opens with data already shown.
-        function onOpenQaeDialog(obj)
+        function onOpenQmcDialog(obj)
             app = obj.App;
             if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
                 figure(app.QmcDialog);  % bring existing dialog to front
@@ -125,13 +125,13 @@ classdef AnalysisViewModel < handle
                 if app.State.isAuthenticated() && app.State.hasCircuit()
                     cid = app.State.selectedCircuitId;
                     token = app.State.authToken;
-                    cached = app.QaeSvc.getLast(cid, token);
+                    cached = app.QmcSvc.getLast(cid, token);
                     app.QmcLastResult = cached;
                     obj.renderQmcResult(app, cached);
                     AnalysisViewModel.toggleIbmLogButton(app, cached);
                 end
             catch ME
-                Logger.debug('AnalysisViewModel', 'No cached QAE result: %s', ME.message);
+                Logger.debug('AnalysisViewModel', 'No cached QMC result: %s', ME.message);
                 AnalysisViewModel.toggleIbmLogButton(app, []);
             end
         end
@@ -193,9 +193,9 @@ classdef AnalysisViewModel < handle
         end
 
         % Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)
-        %   Runs a QAE analysis on the selected circuit via the FastAPI
+        %   Runs a QMC analysis on the selected circuit via the FastAPI
         %   backend and refreshes the Analysis screen's QMC section.
-        function onRunQaeAnalysis(obj)
+        function onRunQmcAnalysis(obj)
             app = obj.App;
             alertParent = AnalysisViewModel.qmcAlertParent(app);
             if ~app.State.isAuthenticated()
@@ -251,7 +251,7 @@ classdef AnalysisViewModel < handle
             obj.resetQmcUi(app);
             app.showLoading('Running Quantum Monte Carlo simulation...');
 
-            qaeSvc = app.QaeSvc;
+            qaeSvc = app.QmcSvc;
             token  = app.State.authToken;
             % Submit the async job. The server enqueues the work and
             % returns {job_id, status:"queued"} in a few hundred ms;
@@ -261,27 +261,27 @@ classdef AnalysisViewModel < handle
                 envelope = qaeSvc.submitAnalyze(cid, mode, shots, epsilon, ...
                     confidence, n, risk, backend, opts, token);
             catch ME
-                obj.onQaeError(app, ME);
+                obj.onQmcError(app, ME);
                 return;
             end
             jobId = char(JsonHelper.pick(envelope, {'job_id'}, ''));
             if isempty(jobId)
-                obj.onQaeError(app, MException('QTAU:QaeSubmit', ...
+                obj.onQmcError(app, MException('QTAU:QmcSubmit', ...
                     'Server did not return a job_id.'));
                 return;
             end
             app.QmcActiveJobId = jobId;
-            app.logEvent('API', sprintf('QAE job %s queued (mode=%s) — polling every 3s', jobId, mode));
-            obj.startQaePoll(app, jobId);
+            app.logEvent('API', sprintf('QMC job %s queued (mode=%s) — polling every 3s', jobId, mode));
+            obj.startQmcPoll(app, jobId);
         end
 
-        function onCloseQaeDialog(obj)
+        function onCloseQmcDialog(obj)
             % Teardown: stop polling timer, hide overlay, destroy dialog.
-            % The async QAE job (if any) is left running on the server;
+            % The async QMC job (if any) is left running on the server;
             % the user can reopen the popup and getLast will show the
             % result when it completes.
             app = obj.App;
-            try; obj.stopQaePoll(app); catch; end
+            try; obj.stopQmcPoll(app); catch; end
             try; app.hideLoading(); catch; end
             app.QmcActiveJobId = '';
             try
@@ -320,7 +320,7 @@ classdef AnalysisViewModel < handle
             cid      = char(app.State.selectedCircuitId);
             circName = char(app.State.selectedCircuitName);
             token    = app.State.authToken;
-            qaeSvc   = app.QaeSvc;
+            qaeSvc   = app.QmcSvc;
             % JSONL matches the reference schema in
             % samples/aqs-qmc/outputs_hybrid_mc_qdist_stable/quantum_exec_log.jsonl —
             % one record per IBM job submission with the keys
@@ -335,7 +335,7 @@ classdef AnalysisViewModel < handle
                 @(ME)        obj.onIbmLogError(app, ME));
         end
 
-        function onGenerateQaeReport(obj)
+        function onGenerateQmcReport(obj)
             app = obj.App;
             alertParent = AnalysisViewModel.qmcAlertParent(app);
             if ~app.State.isAuthenticated()
@@ -351,11 +351,11 @@ classdef AnalysisViewModel < handle
             cid = app.State.selectedCircuitId;
             if isempty(app.QmcLastResult)
                 choice = uiconfirm(alertParent, ...
-                    'No QMC/QAE analysis has been run on this circuit yet. Run it now with current settings before generating the PDF?', ...
+                    'No QMC analysis has been run on this circuit yet. Run it now with current settings before generating the PDF?', ...
                     'Generate Report', 'Options', {'Run and generate', 'Cancel'}, ...
                     'DefaultOption', 1, 'CancelOption', 2);
                 if strcmp(choice, 'Cancel'); return; end
-                obj.onRunQaeAnalysis();
+                obj.onRunQmcAnalysis();
                 return;  % report will be requested after analyze completes (user clicks again)
             end
             app.showLoading('Generating PDF report...');
@@ -367,8 +367,8 @@ classdef AnalysisViewModel < handle
             token     = app.State.authToken;
             AsyncRunner.run( ...
                 @() reportSvc.generateReport(title, 'technical', 'pdf', cid, '', '', sections, token), ...
-                @(data) obj.onQaeReportGenerated(app, data), ...
-                @(ME)   obj.onQaeReportError(app, ME));
+                @(data) obj.onQmcReportGenerated(app, data), ...
+                @(ME)   obj.onQmcReportError(app, ME));
         end
 
         function onCircuitCuttingBridge(obj)
@@ -853,7 +853,7 @@ classdef AnalysisViewModel < handle
 
         function toggleIbmLogButton(app, data)
             % Enable the Download IBM Log button only when the cached
-            % QAE result carries a non-empty runtime_job_id (set by the
+            % QMC result carries a non-empty runtime_job_id (set by the
             % server when execution_mode='runtime'). Statevector runs
             % leave the field empty → keep the button disabled.
             try
@@ -926,36 +926,36 @@ classdef AnalysisViewModel < handle
     end
 
     methods (Access = private)
-        function onQaeComplete(obj, app, data)
+        function onQmcComplete(obj, app, data)
             app.hideLoading();
             app.QmcLastResult = data;
             obj.renderQmcResult(app, data);
             AnalysisViewModel.toggleIbmLogButton(app, data);
-            app.logEvent('API', sprintf('QMC / QAE complete — amp=%.4f speedup=%.1fx', ...
+            app.logEvent('API', sprintf('QMC complete — amp=%.4f speedup=%.1fx', ...
                 JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
                 JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
             app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
         end
 
-        function startQaePoll(obj, app, jobId)
+        function startQmcPoll(obj, app, jobId)
             % Kick off a 3s MATLAB timer that polls GET /api/qae/jobs/{id}
             % until the job reaches a terminal state. UI work happens on
             % the main thread so we don't need AsyncRunner here — each
             % tick does one fast HTTP GET.
-            obj.stopQaePoll(app);
+            obj.stopQmcPoll(app);
             app.showLoading('Queued — waiting for backend...');
             t = timer( ...
                 'ExecutionMode', 'fixedSpacing', ...
                 'Period',        3.0, ...
                 'StartDelay',    0.0, ...
                 'BusyMode',      'drop', ...
-                'Name',          ['QaePoll-' char(jobId)], ...
-                'TimerFcn',      @(src,~) obj.onQaePollTick(app, jobId, src));
+                'Name',          ['QmcPoll-' char(jobId)], ...
+                'TimerFcn',      @(src,~) obj.onQmcPollTick(app, jobId, src));
             app.QmcPollTimer = t;
             start(t);
         end
 
-        function stopQaePoll(~, app)
+        function stopQmcPoll(~, app)
             try
                 if ~isempty(app.QmcPollTimer) && isvalid(app.QmcPollTimer)
                     stop(app.QmcPollTimer);
@@ -966,7 +966,7 @@ classdef AnalysisViewModel < handle
             app.QmcPollTimer = [];
         end
 
-        function onQaePollTick(obj, app, jobId, timerObj)
+        function onQmcPollTick(obj, app, jobId, timerObj)
             % One poll iteration. Swallows transient HTTP errors and
             % lets the timer try again on the next tick.
             if isempty(app.QmcActiveJobId) || ~strcmp(app.QmcActiveJobId, jobId)
@@ -975,9 +975,9 @@ classdef AnalysisViewModel < handle
                 return;
             end
             try
-                state = app.QaeSvc.getAnalyzeJob(jobId, app.State.authToken);
+                state = app.QmcSvc.getAnalyzeJob(jobId, app.State.authToken);
             catch ME
-                Logger.debug('AnalysisViewModel', 'QAE poll transient: %s', ME.message);
+                Logger.debug('AnalysisViewModel', 'QMC poll transient: %s', ME.message);
                 return;
             end
             status = lower(char(JsonHelper.pick(state, {'status'}, 'queued')));
@@ -989,24 +989,24 @@ classdef AnalysisViewModel < handle
 
             switch status
                 case {'completed'}
-                    obj.stopQaePoll(app);
+                    obj.stopQmcPoll(app);
                     app.QmcActiveJobId = '';
                     result = JsonHelper.pick(state, {'result'}, []);
                     if isempty(result)
-                        obj.onQaeError(app, MException('QTAU:QaeEmpty', ...
+                        obj.onQmcError(app, MException('QTAU:QmcEmpty', ...
                             'Job completed but server returned no result payload.'));
                         return;
                     end
-                    obj.onQaeComplete(app, result);
+                    obj.onQmcComplete(app, result);
                 case {'failed'}
-                    obj.stopQaePoll(app);
+                    obj.stopQmcPoll(app);
                     app.QmcActiveJobId = '';
                     errMsg = char(JsonHelper.pick(state, {'error'}, ''));
                     if isempty(errMsg); errMsg = msg; end
-                    if isempty(errMsg); errMsg = 'QAE job failed on the server.'; end
-                    obj.onQaeError(app, MException('QTAU:QaeFailed', '%s', errMsg));
+                    if isempty(errMsg); errMsg = 'QMC job failed on the server.'; end
+                    obj.onQmcError(app, MException('QTAU:QmcFailed', '%s', errMsg));
                 case {'cancelled'}
-                    obj.stopQaePoll(app);
+                    obj.stopQmcPoll(app);
                     app.QmcActiveJobId = '';
                     app.hideLoading();
                     uialert(AnalysisViewModel.qmcAlertParent(app), ...
@@ -1074,7 +1074,7 @@ classdef AnalysisViewModel < handle
             Logger.error('AnalysisViewModel', 'IBM log download failed: %s', ME.message);
         end
 
-        function onQaeError(~, app, ME)
+        function onQmcError(~, app, ME)
             app.hideLoading();
             alertParent = AnalysisViewModel.qmcAlertParent(app);
             isRuntime503 = contains(string(ME.message), '503') || ...
@@ -1088,10 +1088,10 @@ classdef AnalysisViewModel < handle
             else
                 uialert(alertParent, ME.message, 'Quantum Monte Carlo', 'Icon', 'error');
             end
-            Logger.error('AnalysisViewModel', 'QAE failed: %s', ME.message);
+            Logger.error('AnalysisViewModel', 'QMC failed: %s', ME.message);
         end
 
-        function onQaeReportGenerated(obj, app, data)
+        function onQmcReportGenerated(obj, app, data)
             reportId = char(JsonHelper.pick(data, {'report_id'}, ''));
             status   = char(JsonHelper.pick(data, {'status'}, 'unknown'));
             app.logEvent('API', sprintf('Report generated — id=%s status=%s', reportId, status));
@@ -1112,11 +1112,11 @@ classdef AnalysisViewModel < handle
             circName  = char(app.State.selectedCircuitName);
             AsyncRunner.run( ...
                 @() AnalysisViewModel.pollAndDownloadReport(reportSvc, reportId, token), ...
-                @(savedPath) obj.onQaeReportDownloaded(app, reportId, savedPath, circName), ...
-                @(ME)        obj.onQaeReportError(app, ME));
+                @(savedPath) obj.onQmcReportDownloaded(app, reportId, savedPath, circName), ...
+                @(ME)        obj.onQmcReportError(app, ME));
         end
 
-        function onQaeReportDownloaded(~, app, reportId, tmpPath, circName)
+        function onQmcReportDownloaded(~, app, reportId, tmpPath, circName)
             app.hideLoading();
             alertParent = AnalysisViewModel.qmcAlertParent(app);
             % Ask the user where to save the final copy; default to a
@@ -1159,11 +1159,11 @@ classdef AnalysisViewModel < handle
             end
         end
 
-        function onQaeReportError(~, app, ME)
+        function onQmcReportError(~, app, ME)
             app.hideLoading();
             uialert(AnalysisViewModel.qmcAlertParent(app), ME.message, ...
                 'Generate Report', 'Icon', 'error');
-            Logger.error('AnalysisViewModel', 'QAE report failed: %s', ME.message);
+            Logger.error('AnalysisViewModel', 'QMC report failed: %s', ME.message);
         end
 
         function resetQmcUi(~, app)
@@ -1316,7 +1316,7 @@ classdef AnalysisViewModel < handle
                 Logger.warn('AnalysisViewModel', 'CDF render: %s', ME.message);
             end
 
-            % (3) QAE vs classical MC convergence (log-log). Same
+            % (3) QMC vs classical MC convergence (log-log). Same
             % cell-vs-struct-array caveat as path_distribution above.
             try
                 conv = JsonHelper.pick(data, {'convergence'}, []);
@@ -1335,7 +1335,7 @@ classdef AnalysisViewModel < handle
                     hold(app.QmcConvergenceAxes, 'on');
                     plot(app.QmcConvergenceAxes, ns, qae, '-o', ...
                         'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.8, ...
-                        'MarkerSize', 4, 'DisplayName', 'QAE ~ 1/N');
+                        'MarkerSize', 4, 'DisplayName', 'QMC ~ 1/N');
                     plot(app.QmcConvergenceAxes, ns, mc, '-s', ...
                         'Color', Theme.COLOR_DANGER, 'LineWidth', 1.8, ...
                         'MarkerSize', 4, 'DisplayName', 'Classical MC ~ 1/\surd{N}');
@@ -1345,7 +1345,7 @@ classdef AnalysisViewModel < handle
                     app.QmcConvergenceAxes.XGrid  = 'on';
                     app.QmcConvergenceAxes.YGrid  = 'on';
                     legend(app.QmcConvergenceAxes, 'Location', 'northeast', 'Box', 'off');
-                    title(app.QmcConvergenceAxes, 'Convergence: QAE 1/N vs classical MC 1/\surd{N}');
+                    title(app.QmcConvergenceAxes, 'Convergence: QMC 1/N vs classical MC 1/\surd{N}');
                     xlabel(app.QmcConvergenceAxes, 'Samples (log scale)');
                     ylabel(app.QmcConvergenceAxes, 'Estimation error (log scale)');
                 end
@@ -1425,7 +1425,7 @@ classdef AnalysisViewModel < handle
             % (4) Amplitude-estimation bar chart — the "objective qubit"
             % measured in |0> / |1>, plus the classical-MC baseline of
             % the same expectation for visual reference. This is what
-            % QAE is actually solving for (P(objective = 1) = a).
+            % QMC is actually solving for (P(objective = 1) = a).
             try
                 amp = JsonHelper.pickNumeric(data, 'amplitude_estimate', NaN);
                 if ~isnan(amp)

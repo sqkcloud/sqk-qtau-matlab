@@ -653,11 +653,11 @@ classdef DialogBuilder
                 app.QmcGreeksLabels{i} = l2;
             end
 
-            % Right: 3x2 grid of charts — full QMC / QAE story including
+            % Right: 3x2 grid of charts — full QMC / QMC story including
             % Zero-Noise Extrapolation.
             %   (1) Loss distribution with VaR95/VaR99 threshold lines
             %   (2) Cumulative Distribution Function (CDF) overlay
-            %   (3) Convergence: QAE vs classical MC sample complexity
+            %   (3) Convergence: QMC vs classical MC sample complexity
             %   (4) Amplitude-estimation bar chart
             %   (5) ZNE extrapolation curve (spans both bottom columns)
             plots = uigridlayout(body, [3 2]);
@@ -685,7 +685,7 @@ classdef DialogBuilder
             app.QmcConvergenceAxes = uiaxes(plots);
             app.QmcConvergenceAxes.Layout.Row = 2; app.QmcConvergenceAxes.Layout.Column = 1;
             app.styleAxes(app.QmcConvergenceAxes);
-            title(app.QmcConvergenceAxes, 'Convergence: QAE 1/N vs classical MC 1/\surd{N}');
+            title(app.QmcConvergenceAxes, 'Convergence: QMC 1/N vs classical MC 1/\surd{N}');
             xlabel(app.QmcConvergenceAxes, 'Samples (log scale)');
             ylabel(app.QmcConvergenceAxes, 'Estimation error (log scale)');
 
@@ -727,7 +727,7 @@ classdef DialogBuilder
 
             app.QmcRunButton = uibutton(footer, ...
                 'Text', [char(9883) ' Run QMC'], ...
-                'ButtonPushedFcn', @(~,~)app.AnalysisVm.onRunQaeAnalysis());
+                'ButtonPushedFcn', @(~,~)app.AnalysisVm.onRunQmcAnalysis());
             app.QmcRunButton.Layout.Row = 1; app.QmcRunButton.Layout.Column = 2;
             app.styleBtn(app.QmcRunButton, 'primary');
             app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
@@ -743,26 +743,26 @@ classdef DialogBuilder
 
             app.QmcReportButton = uibutton(footer, ...
                 'Text', [char(9636) ' Generate Report'], ...
-                'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateQaeReport());
+                'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateQmcReport());
             app.QmcReportButton.Layout.Row = 1; app.QmcReportButton.Layout.Column = 4;
             app.styleBtn(app.QmcReportButton, 'secondary');
             app.QmcReportButton.Tooltip = 'Generate PDF (also available from Reports screen)';
 
             closeBtn = uibutton(footer, ...
                 'Text', [char(10005) ' Close'], ...
-                'ButtonPushedFcn', @(~,~) app.AnalysisVm.onCloseQaeDialog());
+                'ButtonPushedFcn', @(~,~) app.AnalysisVm.onCloseQmcDialog());
             closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 5;
             app.styleBtn(closeBtn, 'ghost');
 
             % Clicking the window "X" also routes through the same
-            % teardown path so any in-flight QAE poll timer is stopped.
-            app.QmcDialog.CloseRequestFcn = @(~,~) app.AnalysisVm.onCloseQaeDialog();
+            % teardown path so any in-flight QMC poll timer is stopped.
+            app.QmcDialog.CloseRequestFcn = @(~,~) app.AnalysisVm.onCloseQmcDialog();
 
             % Rehydration (render of any cached result) is performed by
-            % the caller in AnalysisViewModel.onOpenQaeDialog so the
+            % the caller in AnalysisViewModel.onOpenQmcDialog so the
             % private renderQmcResult method stays encapsulated.
 
-            Logger.info('DialogBuilder', 'Quantum Monte Carlo / QAE dialog shown');
+            Logger.info('DialogBuilder', 'Quantum Monte Carlo / QMC dialog shown');
         end
 
         function html = textInputHtml(placeholder, initialValue)

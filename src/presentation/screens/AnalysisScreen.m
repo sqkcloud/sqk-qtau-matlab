@@ -26,7 +26,7 @@ function AnalysisScreen(app)
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
-    % ── Circuit selector + Analyze + QAE launcher ────────────────────────────
+    % ── Circuit selector + Analyze + QMC launcher ────────────────────────────
     topBar = uigridlayout(g, [1 4]);
     topBar.Layout.Row = 1; topBar.Layout.Column = [1 2];
     topBar.ColumnWidth = {90, '1x', 110, 260};
@@ -55,7 +55,7 @@ function AnalysisScreen(app)
     % dialog built by DialogBuilder.buildQmcDialog.
     app.QmcOpenButton = uibutton(topBar, ...
         'Text', [char(9883) ' Quantum Monte Carlo'], ...
-        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onOpenQaeDialog());
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onOpenQmcDialog());
     app.QmcOpenButton.Layout.Row = 1; app.QmcOpenButton.Layout.Column = 4;
     app.styleBtn(app.QmcOpenButton, 'secondary');
     app.QmcOpenButton.FontSize = 14;

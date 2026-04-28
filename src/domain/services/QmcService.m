@@ -1,5 +1,5 @@
-classdef QaeService < handle
-    % QaeService  Domain service for Quantum Amplitude Estimation /
+classdef QmcService < handle
+    % QmcService  Domain service for Quantum Amplitude Estimation /
     %             Quantum Monte-Carlo analysis.
     %
     %   Wraps the FastAPI endpoints for the "Quantum Monte Carlo
@@ -22,12 +22,12 @@ classdef QaeService < handle
     end
 
     methods
-        function obj = QaeService(client)
+        function obj = QmcService(client)
             obj.Client = client;
-            Logger.info('QaeService', 'Initialized');
+            Logger.info('QmcService', 'Initialized');
         end
 
-        % Queue a QAE / QMC analysis as an async job. Returns an envelope
+        % Queue a QMC / QMC analysis as an async job. Returns an envelope
         % {job_id, status:"queued", circuit_id, execution_mode, backend, created_at}
         % that the caller polls via getAnalyzeJob.
         %   mode          : 'statevector' | 'runtime'
@@ -72,7 +72,7 @@ classdef QaeService < handle
                 if isfield(opts, 'compute_greeks'); payload.compute_greeks = logical(opts.compute_greeks); end
             end
             if isfield(payload, 'mitigation'); mitLog = payload.mitigation; else; mitLog = 'none'; end
-            Logger.info('QaeService', ...
+            Logger.info('QmcService', ...
                 'submitAnalyze → POST %s (mode=%s shots=%d eps=%.4f mitigation=%s)', ...
                 endpoint, char(mode), shots, epsilon, mitLog);
             try
@@ -80,55 +80,55 @@ classdef QaeService < handle
                 % the doc + hand off to the worker, so a short timeout is
                 % plenty here (long waits live inside the poll loop).
                 envelope = obj.Client.postAuthJson(endpoint, payload, token, 30);
-                Logger.info('QaeService', 'submitAnalyze → job %s queued', ...
+                Logger.info('QmcService', 'submitAnalyze → job %s queued', ...
                     char(JsonHelper.pick(envelope, {'job_id'}, '?')));
             catch ME
-                Logger.error('QaeService', 'submitAnalyze FAILED: %s', ME.message);
+                Logger.error('QmcService', 'submitAnalyze FAILED: %s', ME.message);
                 rethrow(ME);
             end
         end
 
-        % Poll the state of a queued/running/terminal QAE job.
+        % Poll the state of a queued/running/terminal QMC job.
         % Returns the full state envelope; when status='completed' the
-        % envelope's .result field contains the full QaeResult payload
+        % envelope's .result field contains the full QmcResult payload
         % (same shape as the legacy synchronous response).
         function state = getAnalyzeJob(obj, jobId, token)
             endpoint = sprintf('/api/qae/jobs/%s', char(jobId));
             try
                 state = obj.Client.getAuth(endpoint, token);
             catch ME
-                Logger.debug('QaeService', 'getAnalyzeJob(%s): %s', char(jobId), ME.message);
+                Logger.debug('QmcService', 'getAnalyzeJob(%s): %s', char(jobId), ME.message);
                 rethrow(ME);
             end
         end
 
-        % Mark a queued/running QAE job as cancelled. Already-completed
+        % Mark a queued/running QMC job as cancelled. Already-completed
         % jobs are returned unchanged.
         function state = cancelAnalyzeJob(obj, jobId, token)
             endpoint = sprintf('/api/qae/jobs/%s', char(jobId));
-            Logger.info('QaeService', 'cancelAnalyzeJob → DELETE %s', endpoint);
+            Logger.info('QmcService', 'cancelAnalyzeJob → DELETE %s', endpoint);
             try
                 state = obj.Client.deleteAuth(endpoint, token);
             catch ME
-                Logger.warn('QaeService', 'cancelAnalyzeJob(%s): %s', char(jobId), ME.message);
+                Logger.warn('QmcService', 'cancelAnalyzeJob(%s): %s', char(jobId), ME.message);
                 rethrow(ME);
             end
         end
 
-        % Fetch the most recent cached QAE result for a circuit.
+        % Fetch the most recent cached QMC result for a circuit.
         function data = getLast(obj, circuitId, token)
             endpoint = sprintf('/api/circuits/%s/qae/result', char(circuitId));
-            Logger.info('QaeService', 'getLast → GET %s', endpoint);
+            Logger.info('QmcService', 'getLast → GET %s', endpoint);
             try
                 data = obj.Client.getAuth(endpoint, token);
             catch ME
-                Logger.debug('QaeService', 'getLast: %s', ME.message);
+                Logger.debug('QmcService', 'getLast: %s', ME.message);
                 rethrow(ME);
             end
         end
 
         % Download the IBM Runtime execution log for the circuit's cached
-        % QAE result (requires the most recent analyze to have run in
+        % QMC result (requires the most recent analyze to have run in
         % 'runtime' mode — the server reads runtime_job_id from the
         % persisted qae document).
         %   fmt       : 'json' | 'jsonl'
@@ -138,11 +138,11 @@ classdef QaeService < handle
             if nargin < 4 || isempty(fmt); fmt = 'json'; end
             endpoint = sprintf('/api/circuits/%s/qae/ibm-log?fmt=%s', ...
                 char(circuitId), char(fmt));
-            Logger.info('QaeService', 'downloadIbmLog → GET %s', endpoint);
+            Logger.info('QmcService', 'downloadIbmLog → GET %s', endpoint);
             try
                 localPath = obj.Client.downloadFileAuth(endpoint, token, localPath);
             catch ME
-                Logger.error('QaeService', 'downloadIbmLog FAILED: %s', ME.message);
+                Logger.error('QmcService', 'downloadIbmLog FAILED: %s', ME.message);
                 rethrow(ME);
             end
         end

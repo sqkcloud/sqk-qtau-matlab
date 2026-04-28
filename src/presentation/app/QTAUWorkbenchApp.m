@@ -73,7 +73,7 @@ classdef QTAUWorkbenchApp < handle
         SettingsSvc     % SettingsService
         QecEngine       % QecEngineService (local computation, no HTTP)
         BenchmarkSvc    % BenchmarkService
-        QaeSvc          % QaeService (Quantum Amplitude Estimation / QMC)
+        QmcSvc          % QmcService (Quantum Amplitude Estimation / QMC)
         CuttingSvc      % CuttingService (circuit cutting + reconstruction)
     end
 
@@ -222,7 +222,7 @@ classdef QTAUWorkbenchApp < handle
         QmcKpiLabels
         QmcGreeksLabels      % Delta / Gamma / Vega / Theta / Rho labels
         QmcPathAxes          % Loss / path distribution with VaR threshold
-        QmcConvergenceAxes   % QAE 1/N vs classical MC 1/√N
+        QmcConvergenceAxes   % QMC 1/N vs classical MC 1/√N
         QmcCdfAxes           % Cumulative loss distribution
         QmcAmpAxes           % Amplitude-estimation bar chart
         QmcZneAxes           % Zero-noise extrapolation curve
@@ -235,9 +235,9 @@ classdef QTAUWorkbenchApp < handle
         QmcTenorField
         QmcOptionTypeDropdown
         QmcNotionalField
-        QmcLastResult = []   % struct cache of most recent QAE response
-        QmcActiveJobId = ''  % job_id of the currently-polling async QAE job ('' when idle)
-        QmcPollTimer = []    % MATLAB timer driving QAE job polling (empty when idle)
+        QmcLastResult = []   % struct cache of most recent QMC response
+        QmcActiveJobId = ''  % job_id of the currently-polling async QMC job ('' when idle)
+        QmcPollTimer = []    % MATLAB timer driving QMC job polling (empty when idle)
     end
 
     % ── Backends tab ──────────────────────────────────────────────────────────
@@ -460,7 +460,7 @@ classdef QTAUWorkbenchApp < handle
             app.SettingsSvc   = app.Services.SettingsSvc;
             app.QecEngine     = app.Services.QecEngine;
             app.BenchmarkSvc  = app.Services.BenchmarkSvc;
-            app.QaeSvc        = app.Services.QaeSvc;
+            app.QmcSvc        = app.Services.QmcSvc;
             app.CuttingSvc    = app.Services.CuttingSvc;
 
             Logger.info('QTAUWorkbenchApp', 'Services ready — creating WelcomeVm (lazy init for others)');
