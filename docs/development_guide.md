@@ -310,8 +310,9 @@ Two long-running timers exist; both are owned by their VM and must be stopped wh
 
 | Timer | VM | Period | Stop condition |
 |---|---|---|---|
-| Jobs auto-refresh | `JobsViewModel.startAutoRefresh` | 5 s | next tick after user navigates off Jobs |
-| QAE poll | `AnalysisViewModel.startQaePoll` | 3 s | server returns terminal status OR user closes QMC dialog |
+| Jobs auto-refresh | `JobsViewModel.startAutoRefresh` | 5 s | all jobs terminal OR user navigates away |
+| QMC poll | `AnalysisViewModel.startQmcPoll` | 3 s | server returns terminal status OR user closes QMC dialog |
+| Cutting batch poll | `CircuitCuttingViewModel.pollTick` | 3 s | batch reaches terminal status |
 
 When adding a new timer, follow the pattern:
 

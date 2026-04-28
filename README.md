@@ -67,7 +67,7 @@ src/
 │   └── DialogBuilder.m    ← Modal dialog factory — hosts the Quantum Monte Carlo popup
 ├── domain/                ← Business logic layer
 │   ├── models/            ← Session-scoped state (AppState)
-│   ├── services/          ← 11 service classes (includes QaeService for async QAE/QMC jobs + IBM-log download)
+│   ├── services/          ← 12 service classes (includes QmcService for async QMC jobs + IBM-log download, CuttingService for batch lifecycle)
 │   └── ServiceContainer.m ← Dependency injection container
 └── infrastructure/        ← Technical foundation
     ├── http/              ← HTTP gateway (FastAPIClient) — optional per-call timeout, authenticated download helper

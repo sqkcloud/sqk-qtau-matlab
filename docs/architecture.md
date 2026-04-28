@@ -47,7 +47,11 @@ FastAPIClient (1)
           ├── BenchmarkSvc   → /api/benchmark/*
           ├── PredictionSvc  → /api/predictions/*
           ├── JobSvc         → /api/jobs/*
-          ├── QaeSvc         → /api/circuits/*/qae/*  +  /api/qae/jobs/*
+          ├── QmcSvc         → /api/circuits/*/qae/*  +  /api/qae/jobs/*
+          │                    (formerly QaeSvc — class & property renamed
+          │                     to QMC; HTTP routes still use the legacy
+          │                     /qae/ path on the server)
+          ├── CuttingSvc     → /api/cutting/*  +  /api/circuits/*/cutting/batches
           ├── QecEngineSvc   → local-only (no backend)
           ├── ReportSvc      → /api/reports/*
           └── SettingsSvc    → /api/settings/*
@@ -66,14 +70,15 @@ FastAPIClient (1)
 | Circuits | CircuitsViewModel | Circuit |
 | Notes *(hidden)* | NotesViewModel | Project |
 | Upload | UploadViewModel | Circuit |
-| Analysis | AnalysisViewModel | Circuit, Backend, **Qae**, Report |
+| Analysis | AnalysisViewModel | Circuit, Backend, **Qmc**, Report |
 | Detailed Analysis | DetailedAnalysisViewModel | Circuit, Job |
 | Backends | BackendsViewModel | Backend, Circuit, Job, Settings |
 | Benchmark | BenchmarkViewModel | Backend, Circuit, Job, Project, Settings |
 | Benchmark Dashboard | BenchmarkDashboardViewModel | Backend, Benchmark, Circuit |
+| **Circuit Cutting** | **CircuitCuttingViewModel** | **Cutting, Backend, Circuit** |
 | Prediction | PredictionViewModel | Backend, Circuit, Job, Prediction, Settings |
 | Jobs | JobsViewModel | Job, Circuit |
-| Results | ResultsViewModel | Job |
+| Results | ResultsViewModel | Job, **Cutting** |
 | Reports | ReportsViewModel | Project, Report |
 | Settings | SettingsViewModel | Settings |
 | QEC Simulation | QecSimulationViewModel | *(local simulator only)* |
