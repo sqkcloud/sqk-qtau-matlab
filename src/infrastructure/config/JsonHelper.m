@@ -226,9 +226,30 @@ classdef JsonHelper
 
                 cid = char(JsonHelper.pick(items(i), {'circuit_id'}));
                 if isKey(circuitNameMap, cid)
-                    rows{i,2} = circuitNameMap(cid);
+                    circName = circuitNameMap(cid);
                 else
-                    rows{i,2} = cid;
+                    circName = cid;
+                end
+                % Tag cutting children so the user can see which jobs
+                % belong to a Circuit Cutting batch instead of seeing
+                % anonymous standalone-looking rows. The batch_id and
+                % cut_role fields land on the JobStatusResponse only
+                % when the job was submitted via
+                % JobService.submit_cutting_subcircuit.
+                bid = char(JsonHelper.pick(items(i), {'batch_id'}, ''));
+                if ~isempty(bid)
+                    role = char(JsonHelper.pick(items(i), {'cut_role'}, ''));
+                    label = role;
+                    if startsWith(role, 'label=')
+                        label = char(extractAfter(role, 'label='));
+                    end
+                    if isempty(label)
+                        rows{i,2} = sprintf('%c %s', char(9986), circName);
+                    else
+                        rows{i,2} = sprintf('%c %s (%s)', char(9986), circName, label);
+                    end
+                else
+                    rows{i,2} = circName;
                 end
 
                 rows{i,3} = char(JsonHelper.pick(items(i), {'backend_name','backend'}));
