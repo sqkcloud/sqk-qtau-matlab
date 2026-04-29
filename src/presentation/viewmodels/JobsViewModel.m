@@ -5,6 +5,10 @@ classdef JobsViewModel < handle
         LastSelectFetch = []    % tic value — debounce per-row status fetch
         AutoRefreshTimer = []   % MATLAB timer polling GET /api/jobs while the Jobs screen is visible
         LastRefreshWasSilent = false  % true when the most recent onRefreshJobs was auto-poll triggered
+        CachedCircuits = []     % cached /api/circuits response — re-used by auto-refresh ticks
+        CachedCircuitsAt = []   % datetime when CachedCircuits was last fetched
+        LastDetailFetchId = ''  % id of the job whose detail was last auto-fetched
+        LastDetailFetchStatus = ''  % its status at the time — skip re-fetch if unchanged
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
@@ -33,10 +37,20 @@ classdef JobsViewModel < handle
             end
             obj.LastRefreshWasSilent = silent;
             svc     = app.JobSvc;
-            circSvc = app.CircuitSvc;
             token   = app.State.authToken;
-            % Fetch jobs and circuits together so we can join circuit_id
-            % → circuit name for the new Circuit column on the dashboard.
+            % Reuse cached circuits when fresh (60s TTL). The auto-refresh
+            % timer fires every 5s and circuits very rarely change inside
+            % a session — fetching /api/circuits 12 times per minute just
+            % to map circuit_id → name is wasteful. Pass circSvc=[] to
+            % the worker to skip that fetch.
+            circuitsFresh = ~isempty(obj.CachedCircuits) ...
+                && ~isempty(obj.CachedCircuitsAt) ...
+                && seconds(datetime('now') - obj.CachedCircuitsAt) < 60;
+            if circuitsFresh
+                circSvc = [];
+            else
+                circSvc = app.CircuitSvc;
+            end
             AsyncRunner.run( ...
                 @() JobsViewModel.fetchJobsAndCircuits(svc, circSvc, token), ...
                 @(result) obj.onRefreshJobsComplete(app, result), ...
@@ -173,6 +187,15 @@ classdef JobsViewModel < handle
                 circList = [];
             end
 
+            % Hydrate from cache when the worker skipped the circuits
+            % fetch (circSvc=[] path). Refresh the cache when a fresh
+            % circuit list DID come back from the worker.
+            if isempty(circList)
+                circList = obj.CachedCircuits;
+            else
+                obj.CachedCircuits = circList;
+                obj.CachedCircuitsAt = datetime('now');
+            end
             nameMap = JobsViewModel.buildCircuitNameMap(circList);
             rows = JsonHelper.jobsToRows(data, nameMap);
             % Auto-stop the 5s polling once every job is terminal so we
@@ -195,12 +218,25 @@ classdef JobsViewModel < handle
             if ~isempty(rows)
                 app.JobsTable.Data = rows;
                 firstId = string(rows{1,1});
+                firstStatus = char(rows{1,4});   % col 4 = Status
                 app.State.selectedJobId = firstId;
                 app.logEvent('UI', sprintf('Auto-selected first job: %s', firstId));
 
                 % Auto-fetch the first job's detail so the Detailed Job
                 % Logs panel is populated without the user having to
-                % click a row.
+                % click a row. Skip the fetch when the first row's
+                % id+status is unchanged from the previous tick — server
+                % returns the same payload and the panel already shows
+                % it. Saves one API call per tick during a stable queue.
+                sameAsLast = strcmp(char(firstId), obj.LastDetailFetchId) ...
+                    && strcmp(firstStatus, obj.LastDetailFetchStatus);
+                if sameAsLast
+                    obj.LastRefresh = tic;
+                    return;
+                end
+                obj.LastDetailFetchId     = char(firstId);
+                obj.LastDetailFetchStatus = firstStatus;
+
                 try
                     svc   = app.JobSvc;
                     token = app.State.authToken;
@@ -365,8 +401,13 @@ classdef JobsViewModel < handle
             % ViewModel can join circuit_id → name. If the circuits call
             % fails we still return the jobs so the dashboard renders
             % with raw IDs in the Circuit column.
+            %
+            % circSvc=[] means "skip the circuits fetch — caller has a
+            % fresh cached copy". Saves one API call per auto-refresh
+            % tick (12/min while on the Jobs screen).
             result = struct('jobs', [], 'circuits', []);
             result.jobs = jobSvc.listJobs(token);
+            if isempty(circSvc); return; end
             try
                 result.circuits = circSvc.listCircuits(token);
             catch ME
