@@ -190,7 +190,9 @@ classdef JsonHelper
                 f = JsonHelper.pick(items(i), {'predicted_fidelity','fidelity','avg_fidelity'});
                 rows{i,4} = JsonHelper.toDouble(f);
                 rows{i,5} = char(JsonHelper.pick(items(i), {'queue_length','queue','queue_status'}));
-                rows{i,6} = char(JsonHelper.pick(items(i), {'role','notes','description'}));
+                % Uppercase the Role column to match the convention used
+                % on Status (Jobs screen) and Status (Cutting Batches).
+                rows{i,6} = upper(char(JsonHelper.pick(items(i), {'role','notes','description'})));
             end
         end
 
