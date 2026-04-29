@@ -1026,13 +1026,18 @@ classdef DialogBuilder
 
             uilabel(footer, 'Text', '');
 
-            copyBtn = uibutton(footer, 'Text', 'Copy JSON', ...
+            % Glyphs picked from the same Unicode dingbats block as the
+            % rest of the action-bar buttons so they render reliably
+            % across platforms (no emoji fallback boxes on macOS).
+            copyBtn = uibutton(footer, ...
+                'Text', [char(8689) ' Copy JSON'], ...
                 'ButtonPushedFcn', @(~,~) DialogBuilder.copyReconstructionJson(data));
             copyBtn.Layout.Column = 2;
             copyBtn.Tooltip = 'Copy the raw BatchResultResponse to the clipboard.';
             try; StyleHelper.styleBtn(copyBtn, 'secondary'); catch; end
 
-            closeBtn = uibutton(footer, 'Text', 'Close', ...
+            closeBtn = uibutton(footer, ...
+                'Text', [char(10005) ' Close'], ...
                 'ButtonPushedFcn', @(~,~) delete(dlg));
             closeBtn.Layout.Column = 3;
             try; StyleHelper.styleBtn(closeBtn, 'primary'); catch; end
