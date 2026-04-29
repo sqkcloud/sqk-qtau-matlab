@@ -211,6 +211,21 @@ classdef OverlayManager
             if ischar(lines) || isstring(lines)
                 lines = cellstr(string(lines));
             end
+            % Skip the write when content is unchanged. uitextarea
+            % triggers a repaint on every Value assignment regardless of
+            % whether the content actually changed, so a 5 s auto-
+            % refresh that re-passes the same Live Monitor Notes lines
+            % makes the panel flicker visibly. Compare against the
+            % current Value first; only write when something differs.
+            try
+                cur = area.Value;
+                if iscell(cur) && iscell(lines) && isequal(cur, lines)
+                    return;
+                end
+            catch
+                % If Value can't be read (deleted handle, racy nav, etc.)
+                % fall through to the assignment — safe default.
+            end
             area.Value = lines;
         end
 
