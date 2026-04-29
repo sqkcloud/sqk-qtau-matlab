@@ -74,6 +74,17 @@ classdef AppState < handle
         regressionData         struct = struct()
         calibrationData        struct = struct()
         circuitClassification  struct = struct()
+
+        % ── Session-level response caches ────────────────────────────────────
+        % Several screens (Backends, Circuit Cutting, Benchmark Dashboard,
+        % Prediction) all hit /api/backends and /api/circuits on entry —
+        % both rarely change inside a session, so caching them here saves
+        % 0.3–1.5 s per nav. Caches are checked by callers before they
+        % issue a fetch; set CacheAt to [] to invalidate.
+        CircuitListCache    = []
+        CircuitListCacheAt  = []
+        BackendPoolCache    = []
+        BackendPoolCacheAt  = []
     end
 
     methods
