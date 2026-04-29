@@ -11,7 +11,7 @@ function JobsScreen(app)
     t = app.createSectionPage('Jobs');
 
     g = uigridlayout(t, [3 2]);
-    g.RowHeight     = {34, '1x', 190};
+    g.RowHeight     = {34, '1x', 215};
     g.ColumnWidth   = {'1.2x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -50,13 +50,43 @@ function JobsScreen(app)
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     jobPanel.Layout.Row = 2; jobPanel.Layout.Column = 1; jobPanel.BackgroundColor = Theme.COLOR_CARD;
 
-    jg = uigridlayout(jobPanel, [1 1]);
+    jg = uigridlayout(jobPanel, [2 1]);
+    jg.RowHeight = {'1x', 32};
+    jg.RowSpacing = 6;
     jg.Padding = [12 10 12 10]; jg.BackgroundColor = Theme.COLOR_CARD;
     app.JobsTable = uitable(jg);
+    app.JobsTable.Layout.Row = 1; app.JobsTable.Layout.Column = 1;
     app.JobsTable.ColumnName = Labels.cols('jobs_table_cols', {'Job ID','Circuit','Backend','Status','Progress','Created'});
     app.JobsTable.Data = {};
     app.JobsTable.SelectionChangedFcn = @(src,~)app.JobsVm.onJobTableSelect(src);
     app.styleTable(app.JobsTable);
+
+    % Pagination footer ──────────────────────────────────────────────────────
+    pg = uigridlayout(jg, [1 3]);
+    pg.Layout.Row = 2; pg.Layout.Column = 1;
+    pg.ColumnWidth = {90, '1x', 90};
+    pg.Padding = [0 0 0 0]; pg.ColumnSpacing = 8;
+    pg.BackgroundColor = Theme.COLOR_CARD;
+
+    app.JobsPrevButton = uibutton(pg, 'Text', [char(8592) ' ' Labels.get('jobs_btn_prev', 'Prev')], ...
+        'ButtonPushedFcn', @(~,~)app.JobsVm.onPrevPage());
+    app.JobsPrevButton.Layout.Row = 1; app.JobsPrevButton.Layout.Column = 1;
+    app.styleBtn(app.JobsPrevButton, 'ghost');
+    app.JobsPrevButton.FontSize = 13;
+    app.JobsPrevButton.Enable = 'off';
+
+    app.JobsPageLabel = uilabel(pg, 'Text', sprintf(Labels.get('jobs_page_info_empty', 'Page %d  •  No jobs'), 1));
+    app.JobsPageLabel.Layout.Row = 1; app.JobsPageLabel.Layout.Column = 2;
+    app.JobsPageLabel.HorizontalAlignment = 'center';
+    app.JobsPageLabel.FontSize = 12;
+    app.JobsPageLabel.FontColor = Theme.COLOR_MUTED;
+
+    app.JobsNextButton = uibutton(pg, 'Text', [Labels.get('jobs_btn_next', 'Next') ' ' char(8594)], ...
+        'ButtonPushedFcn', @(~,~)app.JobsVm.onNextPage());
+    app.JobsNextButton.Layout.Row = 1; app.JobsNextButton.Layout.Column = 3;
+    app.styleBtn(app.JobsNextButton, 'ghost');
+    app.JobsNextButton.FontSize = 13;
+    app.JobsNextButton.Enable = 'off';
 
     % ── Live Monitor Notes (right) ────────────────────────────────────────────
     trendPanel = uipanel(g, 'Title', Labels.get('jobs_panel_live_notes'), ...

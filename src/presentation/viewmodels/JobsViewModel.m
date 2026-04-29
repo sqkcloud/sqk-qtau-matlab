@@ -9,6 +9,9 @@ classdef JobsViewModel < handle
         CachedCircuitsAt = []   % datetime when CachedCircuits was last fetched
         LastDetailFetchId = ''  % id of the job whose detail was last auto-fetched
         LastDetailFetchStatus = ''  % its status at the time — skip re-fetch if unchanged
+        CurrentPage = 1         % 1-indexed page index for the paginated job list
+        PageSize = 10           % rows fetched per page — keeps initial load fast
+        LastPageRowCount = 0    % rows returned on the most recent fetch — drives Next button enable
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
@@ -51,10 +54,29 @@ classdef JobsViewModel < handle
             else
                 circSvc = app.CircuitSvc;
             end
+            skip  = max(0, (obj.CurrentPage - 1) * obj.PageSize);
+            limit = obj.PageSize;
             AsyncRunner.run( ...
-                @() JobsViewModel.fetchJobsAndCircuits(svc, circSvc, token), ...
+                @() JobsViewModel.fetchJobsAndCircuits(svc, circSvc, token, skip, limit), ...
                 @(result) obj.onRefreshJobsComplete(app, result), ...
                 @(ME)     obj.onRefreshJobsError(app, ME));
+        end
+
+        function onNextPage(obj)
+            % Advance one page when the most recent fetch returned a full
+            % page of rows (== PageSize). If the server returned fewer, we
+            % know there is nothing past this page so the button stays off.
+            if obj.LastPageRowCount < obj.PageSize; return; end
+            obj.CurrentPage = obj.CurrentPage + 1;
+            obj.LastDetailFetchId = '';   % force detail re-fetch on the new top row
+            obj.onRefreshJobs(false);
+        end
+
+        function onPrevPage(obj)
+            if obj.CurrentPage <= 1; return; end
+            obj.CurrentPage = obj.CurrentPage - 1;
+            obj.LastDetailFetchId = '';
+            obj.onRefreshJobs(false);
         end
 
         function startAutoRefresh(obj, intervalSec)
@@ -172,6 +194,43 @@ classdef JobsViewModel < handle
     end
 
     methods (Access = private)
+        function updatePaginationUi(obj, app, rowCount)
+            % Refresh footer label + Prev/Next enable state. Called
+            % from onRefreshJobsComplete after each successful fetch.
+            try
+                page = obj.CurrentPage;
+                if rowCount > 0
+                    firstIdx = (page - 1) * obj.PageSize + 1;
+                    lastIdx  = firstIdx + rowCount - 1;
+                    msg = sprintf(Labels.get('jobs_page_info', ...
+                        'Page %d  •  Showing %d-%d'), page, firstIdx, lastIdx);
+                else
+                    msg = sprintf(Labels.get('jobs_page_info_empty', ...
+                        'Page %d  •  No jobs'), page);
+                end
+                if ~isempty(app.JobsPageLabel) && isvalid(app.JobsPageLabel)
+                    app.JobsPageLabel.Text = msg;
+                end
+                if ~isempty(app.JobsPrevButton) && isvalid(app.JobsPrevButton)
+                    if page > 1
+                        app.JobsPrevButton.Enable = 'on';
+                    else
+                        app.JobsPrevButton.Enable = 'off';
+                    end
+                end
+                if ~isempty(app.JobsNextButton) && isvalid(app.JobsNextButton)
+                    if rowCount >= obj.PageSize
+                        app.JobsNextButton.Enable = 'on';
+                    else
+                        app.JobsNextButton.Enable = 'off';
+                    end
+                end
+            catch ME
+                Logger.warn('JobsViewModel', ...
+                    'updatePaginationUi failed: %s', ME.message);
+            end
+        end
+
         function onRefreshJobsComplete(obj, app, result)
             % `result` is the struct produced by fetchJobsAndCircuits:
             %   result.jobs     — /api/jobs response
@@ -198,6 +257,20 @@ classdef JobsViewModel < handle
             end
             nameMap = JobsViewModel.buildCircuitNameMap(circList);
             rows = JsonHelper.jobsToRows(data, nameMap);
+            obj.LastPageRowCount = size(rows, 1);
+
+            % If the user clicked Next past the last populated page (or
+            % jobs were removed since the previous tick), step back to
+            % page 1 instead of showing an empty table with no obvious
+            % recovery affordance.
+            if isempty(rows) && obj.CurrentPage > 1
+                obj.CurrentPage = 1;
+                obj.updatePaginationUi(app, 0);
+                app.hideLoading();
+                obj.onRefreshJobs(false);
+                return;
+            end
+            obj.updatePaginationUi(app, size(rows, 1));
             % Auto-stop the 5s polling once every job is terminal so we
             % don't keep hammering the server with /api/jobs requests
             % long after there's nothing left to refresh. The next user
@@ -231,7 +304,12 @@ classdef JobsViewModel < handle
                 sameAsLast = strcmp(char(firstId), obj.LastDetailFetchId) ...
                     && strcmp(firstStatus, obj.LastDetailFetchStatus);
                 if sameAsLast
+                    % Skipping hideLoading here used to leave the overlay
+                    % stuck on "Loading jobs…" whenever the user re-entered
+                    % the Jobs screen on the same first-row id/status.
+                    app.JobsTable.Data = rows;
                     obj.LastRefresh = tic;
+                    app.hideLoading();
                     return;
                 end
                 obj.LastDetailFetchId     = char(firstId);
@@ -396,7 +474,7 @@ classdef JobsViewModel < handle
     end
 
     methods (Static, Access = private)
-        function result = fetchJobsAndCircuits(jobSvc, circSvc, token)
+        function result = fetchJobsAndCircuits(jobSvc, circSvc, token, skip, limit)
             % Pull jobs (required) and circuits (best-effort) so the
             % ViewModel can join circuit_id → name. If the circuits call
             % fails we still return the jobs so the dashboard renders
@@ -405,8 +483,10 @@ classdef JobsViewModel < handle
             % circSvc=[] means "skip the circuits fetch — caller has a
             % fresh cached copy". Saves one API call per auto-refresh
             % tick (12/min while on the Jobs screen).
+            if nargin < 4 || isempty(skip);  skip  = 0;  end
+            if nargin < 5 || isempty(limit); limit = 10; end
             result = struct('jobs', [], 'circuits', []);
-            result.jobs = jobSvc.listJobs(token);
+            result.jobs = jobSvc.listJobs(token, skip, limit);
             if isempty(circSvc); return; end
             try
                 result.circuits = circSvc.listCircuits(token);

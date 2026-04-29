@@ -267,20 +267,29 @@ classdef JsonHelper
 
         % resultsToRows  Map job results → 5-column cell matrix
         %   Metric | Measured | Predicted | Ideal | Notes
+        %
+        % Reads the `measured_vs_predicted` array from the
+        % `/api/jobs/{id}/results` (ResultSummary) response. Falls back
+        % to the legacy `metrics` field name for older payload shapes.
         function rows = resultsToRows(data)
             rows = cell(0, 5);
             try
                 data = JsonHelper.decodeIfJson(data);
                 metrics = {};
                 if isstruct(data)
-                    if isfield(data, 'metrics'); metrics = data.metrics; end
+                    if isfield(data, 'measured_vs_predicted')
+                        metrics = data.measured_vs_predicted;
+                    elseif isfield(data, 'metrics')
+                        metrics = data.metrics;
+                    end
                 end
                 if isempty(metrics); return; end
-                n    = numel(metrics);
+                if iscell(metrics); items = metrics; else; items = num2cell(metrics(:).'); end
+                n    = numel(items);
                 rows = cell(n, 5);
                 for i = 1:n
-                    m = metrics(i);
-                    rows{i,1} = char(JsonHelper.pick(m, {'name','metric'}));
+                    m = items{i};
+                    rows{i,1} = char(JsonHelper.pick(m, {'metric','name'}));
                     rows{i,2} = JsonHelper.toDouble(JsonHelper.pick(m, {'measured'}));
                     rows{i,3} = JsonHelper.toDouble(JsonHelper.pick(m, {'predicted'}));
                     rows{i,4} = JsonHelper.toDouble(JsonHelper.pick(m, {'ideal'}));
@@ -288,6 +297,38 @@ classdef JsonHelper
                 end
             catch ME
                 Logger.warn('JsonHelper', 'resultsToRows() failed: %s', ME.message);
+            end
+        end
+
+        % distributionToRows  Map distribution_review → 4-column cell matrix
+        %   State | Measured | Predicted | Ideal
+        %
+        % Reads the `distribution_review` array from the ResultSummary
+        % payload — the per-output-state probability comparison the
+        % Distribution Review table on the Results screen renders.
+        function rows = distributionToRows(data)
+            rows = cell(0, 4);
+            try
+                data = JsonHelper.decodeIfJson(data);
+                items = {};
+                if isstruct(data) && isfield(data, 'distribution_review')
+                    raw = data.distribution_review;
+                    if iscell(raw); items = raw;
+                    elseif ~isempty(raw); items = num2cell(raw(:).');
+                    end
+                end
+                if isempty(items); return; end
+                n = numel(items);
+                rows = cell(n, 4);
+                for i = 1:n
+                    it = items{i};
+                    rows{i,1} = char(JsonHelper.pick(it, {'state','bitstring','outcome'}));
+                    rows{i,2} = JsonHelper.toDouble(JsonHelper.pick(it, {'measured'}));
+                    rows{i,3} = JsonHelper.toDouble(JsonHelper.pick(it, {'predicted'}));
+                    rows{i,4} = JsonHelper.toDouble(JsonHelper.pick(it, {'ideal'}));
+                end
+            catch ME
+                Logger.warn('JsonHelper', 'distributionToRows() failed: %s', ME.message);
             end
         end
 

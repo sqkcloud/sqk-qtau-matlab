@@ -290,6 +290,9 @@ classdef QTAUWorkbenchApp < handle
         PauseJobButton
         JobStatusArea
         JobLogsArea
+        JobsPrevButton          % Pagination: previous page
+        JobsNextButton          % Pagination: next page
+        JobsPageLabel           % Pagination footer text
     end
 
     % ── Results tab ───────────────────────────────────────────────────────────

@@ -131,21 +131,47 @@ classdef ResultsViewModel < handle
         end
 
         function onRefreshResultsComplete(obj, app, jobId, data)
+            % Measured vs Predicted Summary table — `measured_vs_predicted`
+            % array on the ResultSummary response.
             rows = JsonHelper.resultsToRows(data);
             if ~isempty(rows)
                 app.ResultsTable.Data = rows;
+            else
+                app.ResultsTable.Data = {};
             end
-            statusStr  = char(JsonHelper.pick(data, {'status'}));
+
+            % Distribution Review table — `distribution_review` array on
+            % the same response. Was previously never populated, leaving
+            % the panel permanently empty even on completed jobs.
+            distRows = JsonHelper.distributionToRows(data);
+            if ~isempty(distRows)
+                app.ResultsDistTable.Data = distRows;
+            else
+                app.ResultsDistTable.Data = {};
+            end
+
+            % ResultSummary uses `validation_status` and `estimated_fidelity`;
+            % the older `status` / `measured_fidelity` / `fidelity` field
+            % names don't exist on this endpoint, which is why this
+            % header used to render blank for completed jobs.
+            statusStr  = char(JsonHelper.pick(data, {'validation_status','status'}));
             backendStr = char(JsonHelper.pick(data, {'backend_name','backend'}));
-            fidelity   = char(JsonHelper.pick(data, {'measured_fidelity','fidelity'}));
+            fidVal     = JsonHelper.pick(data, {'estimated_fidelity','measured_fidelity','fidelity'}, NaN);
+            if isnumeric(fidVal) && ~isempty(fidVal) && ~all(isnan(fidVal))
+                fidelity = sprintf('%.4f', double(fidVal));
+            elseif ischar(fidVal) || isstring(fidVal)
+                fidelity = char(string(fidVal));
+            else
+                fidelity = '';
+            end
             summary = { ...
                 sprintf('Job: %s', jobId), ...
                 sprintf('Backend: %s', backendStr), ...
                 sprintf('Status: %s',  statusStr), ...
                 sprintf('Fidelity: %s', fidelity)};
             app.setStatus(app.ResultJsonArea, summary);
-            app.logEvent('API', sprintf('Results loaded — job: %s  status: %s  fidelity: %s  rows: %d', ...
-                jobId, statusStr, fidelity, size(rows,1)));
+            app.logEvent('API', sprintf('Results loaded — job: %s  status: %s  fidelity: %s  metric rows: %d  dist rows: %d', ...
+                jobId, statusStr, fidelity, size(rows,1), size(distRows,1)));
             app.State.logActivity(sprintf('View results — job: %s', char(jobId)), 'Success');
             obj.LastRefresh = tic;
             app.hideLoading();
