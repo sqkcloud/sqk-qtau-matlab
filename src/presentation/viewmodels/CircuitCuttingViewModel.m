@@ -29,7 +29,7 @@ classdef CircuitCuttingViewModel < handle
         % Single source of truth for the Observables textarea placeholder.
         % Screen uses it to seed the widget; parseObservables uses it to
         % recognize and drop the line so it never gets sent as a Pauli string.
-        OBSERVABLES_PLACEHOLDER = '(default: all-Z over full circuit width)'
+        OBSERVABLES_PLACEHOLDER = '(auto: per-qubit Z + nearest-neighbor ZZ)'
     end
 
     methods
@@ -479,6 +479,21 @@ classdef CircuitCuttingViewModel < handle
                 k, obj.formatPerSub(per), obj.formatOverhead(oh, ohL)));
             obj.renderCutPlan(c);
 
+            % Pre-fill the Observables textarea with the server-suggested
+            % defaults (per-qubit Z + nearest-neighbor ZZ for circuits
+            % <=30 qubits). The operator can edit them before submit in
+            % ASSISTED mode; AUTOMATIC mode ignores the textarea entirely
+            % and the server applies the same defaults internally. We
+            % only prefill when the textarea is empty or still shows the
+            % placeholder, so we never silently overwrite an operator's
+            % typed input from a prior session.
+            try
+                obj.prefillObservablesFromAnalyze(r);
+            catch ME
+                Logger.debug('CircuitCuttingViewModel', ...
+                    'prefillObservablesFromAnalyze: %s', ME.message);
+            end
+
             % Smart-analyze recommendation. The server compares circuit
             % width against the configured IBM fleet; if at least one
             % backend fits, cutting is strictly worse than a direct
@@ -489,6 +504,42 @@ classdef CircuitCuttingViewModel < handle
             if isequal(recommended, false)
                 obj.promptDirectRunRecommendation(r);
             end
+        end
+
+        function prefillObservablesFromAnalyze(obj, r)
+            % Populate the Observables textarea with the server's
+            % default_observables field unless the operator has already
+            % typed their own list. Keeps the placeholder semantics
+            % working: if the field is empty or matches the placeholder
+            % text, replace it with one Pauli string per line.
+            app = obj.App;
+            if isempty(app.CuttingObservablesText) || ...
+                    ~isvalid(app.CuttingObservablesText)
+                return;
+            end
+            defaults = JsonHelper.pick(r, 'default_observables', {});
+            if isempty(defaults); return; end
+            if isstruct(defaults); defaults = num2cell(defaults); end
+            if ~iscell(defaults); return; end
+            defaults = defaults(~cellfun('isempty', defaults));
+            if isempty(defaults); return; end
+
+            current = app.CuttingObservablesText.Value;
+            if ischar(current); current = {current}; end
+            if isstring(current); current = cellstr(current); end
+            current = current(~cellfun('isempty', strtrim(string(current))));
+
+            placeholder = CircuitCuttingViewModel.OBSERVABLES_PLACEHOLDER;
+            isEmpty = isempty(current);
+            isPlaceholder = ~isEmpty && numel(current) == 1 && ...
+                strcmp(strtrim(char(current{1})), placeholder);
+            if ~(isEmpty || isPlaceholder)
+                return;
+            end
+
+            lines = cellfun(@(s) char(string(s)), defaults, ...
+                'UniformOutput', false);
+            app.CuttingObservablesText.Value = lines(:).';
         end
 
         function promptDirectRunRecommendation(obj, r)
