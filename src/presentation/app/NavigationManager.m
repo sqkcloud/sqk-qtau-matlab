@@ -68,6 +68,15 @@ classdef NavigationManager
             if isempty(builder); return; end
             try
                 app.showLoading(sprintf('Loading %s…', key));
+                % drawnow + pause + drawnow forces the loading overlay
+                % uihtml to actually PAINT before the synchronous builder
+                % hogs the main thread. Without the pause, the JS render
+                % is queued but not flushed: the user sees the panel
+                % render naked first (1–2 s for slow screens) and then
+                % the overlay only appears AFTER the builder returns,
+                % which is the inverse of what makes sense to a user.
+                drawnow;
+                pause(0.1);
                 drawnow;
                 builder(app);
                 app.BuiltScreens(key) = true;
