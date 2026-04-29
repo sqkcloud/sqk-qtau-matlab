@@ -1638,8 +1638,19 @@ classdef CircuitCuttingViewModel < handle
         function obs = parseObservableLines(lines, placeholder)
             % Normalize a cell/string array of textarea lines into a cell
             % of trimmed Pauli strings, dropping blanks and the placeholder
-            % sentinel. Returns {} when the user typed nothing meaningful
-            % so the server defaults to all-Z over full circuit width.
+            % sentinel. Returns {} when the user typed nothing meaningful.
+            %
+            % What happens server-side when this returns {}:
+            %   AUTOMATIC mode: server derives per-qubit Z +
+            %     nearest-neighbor ZZ from the circuit width
+            %     (default_observables_for_circuit), then runs.
+            %   ASSISTED / MANUAL: server stores observables as [] and
+            %     reconstruction returns one sentinel entry with status
+            %     "no_observables_submitted". The Reconstruction
+            %     Summary popup renders that as a tailored diagnostic
+            %     instead of a meaningless number. The onRunBatch
+            %     pre-flight surfaces a warning before submit so this
+            %     case is rare in practice.
             obs = {};
             if nargin < 2; placeholder = ''; end
             if isempty(lines); return; end
