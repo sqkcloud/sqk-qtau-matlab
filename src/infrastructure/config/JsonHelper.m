@@ -186,7 +186,9 @@ classdef JsonHelper
                 qd = JsonHelper.toDouble(q);
                 if isnan(qd); qd = 0; end
                 rows{i,2} = int32(qd);
-                rows{i,3} = char(JsonHelper.pick(items(i), {'status','operational_status'}));
+                % Uppercase Status to match Role + the Jobs / Cutting
+                % Batches convention (ONLINE / OFFLINE / MAINTENANCE).
+                rows{i,3} = upper(char(JsonHelper.pick(items(i), {'status','operational_status'})));
                 f = JsonHelper.pick(items(i), {'predicted_fidelity','fidelity','avg_fidelity'});
                 rows{i,4} = JsonHelper.toDouble(f);
                 rows{i,5} = char(JsonHelper.pick(items(i), {'queue_length','queue','queue_status'}));
