@@ -179,7 +179,13 @@ classdef JsonHelper
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
                 q = JsonHelper.pick(items(i), {'num_qubits','qubits','n_qubits'});
-                rows{i,2} = JsonHelper.toDouble(q);
+                % int32 (not double) so uitable renders qubit counts as
+                % plain integers (156) rather than the 4-decimal default
+                % MATLAB applies to doubles (156.0000). Qubit counts are
+                % always integer; fractional display was a category error.
+                qd = JsonHelper.toDouble(q);
+                if isnan(qd); qd = 0; end
+                rows{i,2} = int32(qd);
                 rows{i,3} = char(JsonHelper.pick(items(i), {'status','operational_status'}));
                 f = JsonHelper.pick(items(i), {'predicted_fidelity','fidelity','avg_fidelity'});
                 rows{i,4} = JsonHelper.toDouble(f);
