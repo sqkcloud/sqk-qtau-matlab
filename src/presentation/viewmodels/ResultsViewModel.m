@@ -306,7 +306,7 @@ classdef ResultsViewModel < handle
             backendStr = ResultsViewModel.formatBackendList( ...
                 JsonHelper.pick(batch, 'backend_assignments', {}));
 
-            mode = char(string(JsonHelper.pick(batch, {'mode'}, '')));
+            mode = upper(char(string(JsonHelper.pick(batch, {'mode'}, ''))));
             cp = JsonHelper.pick(batch, 'cut_plan', struct());
             k = JsonHelper.pick(cp, 'k', 0);
             if ~isnumeric(k); k = str2double(k); end
