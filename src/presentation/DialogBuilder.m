@@ -818,5 +818,422 @@ classdef DialogBuilder
                 '}' ...
                 '</script></body></html>'];
         end
+
+        function buildReconstructionDialog(app, bid, status, data)
+            % Polished modal for a cutting batch's reconstruction. Shows
+            % a Status pill, three KPI cards (observables / finite / NaN),
+            % a table of every expectation value with Pauli strings
+            % prettified (Z(x)156 notation), and a red diagnostic callout
+            % when one or more values came back as NaN. Replaces the
+            % textarea dump that used to render every entry as a raw
+            % "ZZZZ...Z = NaN +- 0.000000" row in the Results screen
+            % summary panel.
+            figPos = app.UIFigure.Position;
+            dlgW = min(1080, max(840, round(figPos(3) * 0.72)));
+            dlgH = min(780,  max(600, round(figPos(4) * 0.78)));
+            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
+            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
+
+            bgColor    = Theme.COLOR_BG;
+            cardBg     = Theme.COLOR_CARD;
+            cardBorder = Theme.COLOR_DIVIDER;
+            titleColor = Theme.COLOR_HEADING;
+            labelColor = Theme.COLOR_LABEL;
+
+            dlg = uifigure( ...
+                'Name', 'Reconstruction Summary', ...
+                'Position', [dlgX dlgY dlgW dlgH], ...
+                'WindowStyle', 'modal', 'Resize', 'on', ...
+                'Color', bgColor, ...
+                'CloseRequestFcn', @(src,~) delete(src));
+            try; Theme.applyFigureMode(dlg, Theme.activeName()); catch; end
+
+            outer = uigridlayout(dlg, [3 3]);
+            outer.RowHeight     = {16, '1x', 16};
+            outer.ColumnWidth   = {18, '1x', 18};
+            outer.Padding       = [0 0 0 0];
+            outer.RowSpacing    = 0;
+            outer.ColumnSpacing = 0;
+            outer.BackgroundColor = bgColor;
+
+            card = uipanel(outer, 'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', cardBg, 'BorderColor', cardBorder, ...
+                'HighlightColor', cardBorder);
+            card.Layout.Row = 2; card.Layout.Column = 2;
+
+            % Row 1: header. Row 2: KPI cards. Row 3: body (table + diag).
+            % Row 4: 1-px divider hairline. Row 5: footer (action buttons).
+            cg = uigridlayout(card, [5 1]);
+            cg.RowHeight   = {62, 84, '1x', 1, 52};
+            cg.ColumnWidth = {'1x'};
+            cg.Padding     = [20 14 20 14];
+            cg.RowSpacing  = 12;
+            cg.BackgroundColor = cardBg;
+
+            % ── Header
+            header = uigridlayout(cg, [2 1]);
+            header.Layout.Row = 1; header.Layout.Column = 1;
+            header.RowHeight = {28, 22};
+            header.RowSpacing = 4; header.Padding = [0 0 0 0];
+            header.BackgroundColor = cardBg;
+
+            titleLbl = uilabel(header, ...
+                'Text', 'Reconstruction Summary', ...
+                'FontSize', 18, 'FontWeight', 'bold', ...
+                'FontColor', titleColor, 'VerticalAlignment', 'center');
+            titleLbl.Layout.Row = 1;
+
+            subLbl = uilabel(header, ...
+                'Text', sprintf('Batch  %s   %c   Status: %s', ...
+                    bid, char(8226), upper(char(status))), ...
+                'FontSize', 12, 'FontColor', labelColor, ...
+                'VerticalAlignment', 'center');
+            subLbl.Layout.Row = 2;
+
+            % ── Execution context: cards that explain what was cut, run,
+            %    and reconstructed. These read the new BatchResultResponse
+            %    fields (subcircuit_count, backends_used, total_shots,
+            %    observables_submitted); old payloads without them just
+            %    render '--'.
+            exps  = JsonHelper.pick(data, 'expectations', {});
+            items = DialogBuilder.normaliseExpectations(exps);
+            [nObs, nFinite, nNaN] = DialogBuilder.tallyExpectations(items);
+
+            kSub   = JsonHelper.pick(data, 'subcircuit_count', []);
+            beList = JsonHelper.pick(data, 'backends_used', {});
+            shots  = JsonHelper.pick(data, 'total_shots', []);
+            nSubmitted = JsonHelper.pick(data, 'observables_submitted', []);
+
+            kpis = uigridlayout(cg, [1 4]);
+            kpis.Layout.Row = 2; kpis.Layout.Column = 1;
+            kpis.ColumnWidth = {'1x', '1.4x', '1x', '1x'};
+            kpis.ColumnSpacing = 12; kpis.Padding = [0 0 0 0];
+            kpis.BackgroundColor = cardBg;
+
+            DialogBuilder.metaCard(kpis, 1, 'Subcircuits', ...
+                DialogBuilder.formatIntOrDash(kSub), Theme.COLOR_PRIMARY);
+            DialogBuilder.metaCard(kpis, 2, 'Backends', ...
+                DialogBuilder.formatBackendsValue(beList), Theme.COLOR_PURPLE);
+            DialogBuilder.metaCard(kpis, 3, 'Total shots', ...
+                DialogBuilder.formatIntOrDash(shots), Theme.COLOR_AMBER);
+            obsLabel = sprintf('%s / %d', ...
+                DialogBuilder.formatIntOrDash(nSubmitted), nFinite);
+            if nNaN > 0
+                obsAccent = Theme.COLOR_DANGER;
+            else
+                obsAccent = Theme.COLOR_SUCCESS;
+            end
+            DialogBuilder.metaCard(kpis, 4, 'Observables (submitted / reconstructed)', ...
+                obsLabel, obsAccent);
+
+            % ── Body: table + (optional) diagnostic
+            body = uigridlayout(cg, [2 1]);
+            body.Layout.Row = 3; body.Layout.Column = 1;
+            if nNaN > 0
+                body.RowHeight = {'1x', 96};
+            else
+                body.RowHeight = {'1x', 0};
+            end
+            body.RowSpacing = 10; body.Padding = [0 0 0 0];
+            body.BackgroundColor = cardBg;
+
+            tablePanel = uipanel(body, 'Title', 'Expectation values', ...
+                'BorderType', 'line', 'BorderColor', cardBorder, ...
+                'BackgroundColor', cardBg);
+            tablePanel.Layout.Row = 1;
+
+            tg = uigridlayout(tablePanel, [1 1]);
+            tg.Padding = [10 8 10 8]; tg.BackgroundColor = cardBg;
+
+            tbl = uitable(tg);
+            tbl.ColumnName  = {'#', 'Observable', 'Value', 'Std err', 'Status'};
+            tbl.ColumnWidth = {40, 460, 120, 110, 90};
+            tbl.RowName     = {};
+            tbl.Data        = DialogBuilder.expectationsToRows(items);
+            try; StyleHelper.styleTable(tbl); catch; end
+
+            if nNaN > 0
+                diag = uipanel(body, 'Title', '', 'BorderType', 'line', ...
+                    'BorderColor', Theme.COLOR_DANGER, ...
+                    'BackgroundColor', cardBg);
+                diag.Layout.Row = 2;
+
+                dg = uigridlayout(diag, [1 2]);
+                dg.ColumnWidth = {6, '1x'};
+                dg.Padding = [0 0 0 0]; dg.ColumnSpacing = 0;
+                dg.BackgroundColor = cardBg;
+
+                strip = uipanel(dg, 'Title', '', 'BorderType', 'none');
+                strip.Layout.Column = 1;
+                strip.BackgroundColor = Theme.COLOR_DANGER;
+
+                txt = uigridlayout(dg, [2 1]);
+                txt.Layout.Column = 2;
+                txt.RowHeight = {22, '1x'};
+                txt.RowSpacing = 4; txt.Padding = [12 8 12 8];
+                txt.BackgroundColor = cardBg;
+
+                isMissingObs = DialogBuilder.expectationsHaveStatus( ...
+                    items, 'no_observables_submitted');
+                if isMissingObs
+                    headerTxt = 'No observables were submitted with this batch';
+                    bodyTxt = ['The batch was created without an ' ...
+                         'explicit observables list, so the server has ' ...
+                         'nothing to reconstruct against. Re-create the ' ...
+                         'batch via POST /api/cutting/batches and pass ' ...
+                         'observables=["Z","X","ZZ",...] - one Pauli ' ...
+                         'string per observable of interest, each ' ...
+                         'aligned with the original circuit width. ' ...
+                         'Use Copy JSON to inspect the raw payload.'];
+                else
+                    headerTxt = sprintf('%d observable(s) returned NaN', nNaN);
+                    bodyTxt = ['Possible causes: missing or empty ' ...
+                         'primitive results from one of the cut ' ...
+                         'subcircuits, observables that do not align ' ...
+                         'with the cut plan, or per-subcircuit shot ' ...
+                         'count too low for a stable estimate. ' ...
+                         'Re-run the batch with more shots or use Copy ' ...
+                         'JSON to confirm every cut label produced a ' ...
+                         'non-empty distribution.'];
+                end
+
+                hdr = uilabel(txt, 'Text', headerTxt, ...
+                    'FontWeight', 'bold', ...
+                    'FontColor', Theme.COLOR_DANGER, 'FontSize', 13);
+                hdr.Layout.Row = 1;
+
+                msg = uilabel(txt, 'Text', bodyTxt, ...
+                    'WordWrap', 'on', 'FontColor', labelColor, 'FontSize', 12);
+                msg.Layout.Row = 2;
+            end
+
+            % ── Divider: 1-px hairline separating body from footer.
+            divider = uipanel(cg, ...
+                'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_DIVIDER);
+            divider.Layout.Row = 4; divider.Layout.Column = 1;
+
+            % ── Footer.
+            % RowHeight 36 + Padding [8 8 8 8] match the QmcDialog footer
+            % so the buttons render at the same height as the rest of the
+            % app's action bars (Refresh / View Reconstruction / etc.).
+            footer = uigridlayout(cg, [1 3]);
+            footer.Layout.Row = 5; footer.Layout.Column = 1;
+            footer.RowHeight = {36};
+            footer.ColumnWidth = {'1x', 140, 100};
+            footer.ColumnSpacing = 10; footer.Padding = [8 8 8 8];
+            footer.BackgroundColor = cardBg;
+
+            uilabel(footer, 'Text', '');
+
+            copyBtn = uibutton(footer, 'Text', 'Copy JSON', ...
+                'ButtonPushedFcn', @(~,~) DialogBuilder.copyReconstructionJson(data));
+            copyBtn.Layout.Column = 2;
+            copyBtn.Tooltip = 'Copy the raw BatchResultResponse to the clipboard.';
+            try; StyleHelper.styleBtn(copyBtn, 'secondary'); catch; end
+
+            closeBtn = uibutton(footer, 'Text', 'Close', ...
+                'ButtonPushedFcn', @(~,~) delete(dlg));
+            closeBtn.Layout.Column = 3;
+            try; StyleHelper.styleBtn(closeBtn, 'primary'); catch; end
+        end
+
+        function metaCard(parent, col, label, value, accent)
+            % One KPI tile inside the Reconstruction Summary header.
+            % Mirrors the accent-strip + label-on-top + big-number-below
+            % pattern used elsewhere in the app.
+            p = uipanel(parent, 'Title', '', 'BorderType', 'line', ...
+                'BorderColor', Theme.COLOR_DIVIDER, ...
+                'BackgroundColor', Theme.COLOR_CARD);
+            p.Layout.Row = 1; p.Layout.Column = col;
+
+            g = uigridlayout(p, [1 2]);
+            g.ColumnWidth = {5, '1x'};
+            g.Padding = [0 0 0 0]; g.ColumnSpacing = 0;
+            g.BackgroundColor = Theme.COLOR_CARD;
+
+            strip = uipanel(g, 'Title', '', 'BorderType', 'none');
+            strip.Layout.Column = 1;
+            strip.BackgroundColor = accent;
+
+            inner = uigridlayout(g, [2 1]);
+            inner.Layout.Column = 2;
+            inner.RowHeight = {18, '1x'};
+            inner.Padding = [10 8 10 8]; inner.RowSpacing = 0;
+            inner.BackgroundColor = Theme.COLOR_CARD;
+
+            uilabel(inner, 'Text', label, ...
+                'FontSize', 11, 'FontColor', Theme.COLOR_MUTED);
+            uilabel(inner, 'Text', value, ...
+                'FontWeight', 'bold', 'FontSize', 22, ...
+                'FontColor', Theme.COLOR_HEADING);
+        end
+
+        function items = normaliseExpectations(exps)
+            % Coerce the JSON-decoded `expectations` field into a 1xN
+            % cell array of structs regardless of whether webread gave
+            % us a struct array, a cell of structs, or empty.
+            if iscell(exps); items = exps;
+            elseif isstruct(exps); items = num2cell(exps(:).');
+            else; items = {};
+            end
+        end
+
+        function [nObs, nFinite, nNaN] = tallyExpectations(items)
+            nObs = numel(items);
+            nFinite = 0; nNaN = 0;
+            for i = 1:nObs
+                v = JsonHelper.pick(items{i}, 'value', NaN);
+                if ~isnumeric(v); v = str2double(v); end
+                if isempty(v) || all(isnan(v))
+                    nNaN = nNaN + 1;
+                else
+                    nFinite = nFinite + 1;
+                end
+            end
+        end
+
+        function rows = expectationsToRows(items)
+            % Build 5-column table data for the popup. NaN values render
+            % as em-dash; the Status column carries the explicit "NaN"
+            % label so the failure mode stays obvious at a glance.
+            n = numel(items);
+            rows = cell(n, 5);
+            for i = 1:n
+                e   = items{i};
+                obs = char(string(JsonHelper.pick(e, 'observable', '')));
+                val = JsonHelper.pick(e, 'value', NaN);
+                err = JsonHelper.pick(e, 'std_err', 0);
+                st  = char(string(JsonHelper.pick(e, 'status', 'ok')));
+                if ~isnumeric(val); val = str2double(val); end
+                if ~isnumeric(err); err = str2double(err); end
+
+                if isempty(val) || all(isnan(val))
+                    valStr = char(8212);
+                    if strcmpi(st, 'ok'); st = 'NaN'; end
+                else
+                    valStr = sprintf('%.4f', double(val));
+                end
+                errStr = sprintf('%c %.4f', char(177), double(err));
+
+                rows{i, 1} = sprintf('%d', i);
+                rows{i, 2} = DialogBuilder.prettyObservable(obs);
+                rows{i, 3} = valStr;
+                rows{i, 4} = errStr;
+                rows{i, 5} = upper(st);
+            end
+        end
+
+        function s = prettyObservable(obs)
+            % Compress 156-char Pauli strings down to something readable.
+            %   all-Z, n>=30 -> "Z(x)156 (default fallback - no observable specified?)"
+            %   all-Z, small -> "Z(x)N (all qubits)"
+            %   all-I        -> "I(x)N (identity)"
+            %   sparse-Z     -> "Z[3, 17, 42] (156 qubits)"
+            %   long mix     -> "ZIZI...IZIZ (156 qubits)"
+            %   short        -> raw string
+            %
+            % The "default fallback" tag fires on long all-Z strings
+            % because the backend invents `"Z" * total_qubits` when the
+            % cutting batch was submitted without an explicit observables
+            % list (cutting/base.py:reconstruct_expectations). Calling
+            % that out in the table makes the diagnostic actionable.
+            if isempty(obs); s = '(none)'; return; end
+            n = numel(obs);
+            tensor = char(8855);
+            uniq = unique(obs);
+            if numel(uniq) == 1
+                p = uniq;
+                if p == 'I'
+                    s = sprintf('I%c%d (identity)', tensor, n);
+                elseif p == 'Z' && n >= 30
+                    s = sprintf( ...
+                        'Z%c%d (default fallback - no observable specified?)', ...
+                        tensor, n);
+                else
+                    s = sprintf('%c%c%d (all qubits)', p, tensor, n);
+                end
+                return;
+            end
+            isPauli = obs ~= 'I';
+            idx = find(isPauli);
+            paulis = obs(idx);
+            if numel(idx) <= 6 && all(paulis == paulis(1))
+                idxStr = strjoin( ...
+                    arrayfun(@(k) sprintf('%d', k-1), idx, ...
+                        'UniformOutput', false), ', ');
+                s = sprintf('%c[%s] (%d qubits)', paulis(1), idxStr, n);
+                return;
+            end
+            if n <= 36
+                s = obs;
+            else
+                s = sprintf('%s...%s (%d qubits)', ...
+                    obs(1:14), obs(end-13:end), n);
+            end
+        end
+
+        function copyReconstructionJson(data)
+            try
+                payload = jsonencode(data);
+                clipboard('copy', payload);
+            catch ME
+                Logger.warn('DialogBuilder', ...
+                    'copyReconstructionJson: %s', ME.message);
+            end
+        end
+
+        function s = formatIntOrDash(v)
+            % Render an integer-ish field as text, or em-dash when the
+            % value is missing / null / not a number. Used by the
+            % execution-context KPI cards so old payloads without the
+            % new fields don't render as 'NaN'.
+            if isempty(v); s = char(8212); return; end
+            if iscell(v) && isempty(v); s = char(8212); return; end
+            if ischar(v) || isstring(v)
+                t = str2double(v);
+                if isnan(t); s = char(string(v)); else; s = sprintf('%d', round(t)); end
+                return;
+            end
+            if ~isnumeric(v); s = char(8212); return; end
+            if all(isnan(v)); s = char(8212); return; end
+            s = sprintf('%d', round(double(v)));
+        end
+
+        function s = formatBackendsValue(items)
+            % Render the distinct-backends list as a comma-joined string
+            % capped at three entries followed by '+N more' so a 6-way
+            % cut still fits on one KPI card.
+            list = {};
+            if iscell(items)
+                list = items;
+            elseif isstring(items)
+                list = cellstr(items);
+            elseif ischar(items)
+                list = {items};
+            end
+            list = list(~cellfun('isempty', list));
+            if isempty(list); s = char(8212); return; end
+            shown = min(3, numel(list));
+            head = strjoin(cellfun(@char, list(1:shown), 'UniformOutput', false), ', ');
+            extra = numel(list) - shown;
+            if extra > 0
+                s = sprintf('%s  +%d', head, extra);
+            else
+                s = head;
+            end
+        end
+
+        function flag = expectationsHaveStatus(items, statusName)
+            % Return true if any expectation entry has the given status
+            % (case-insensitive). Used to drive the no-observables
+            % diagnostic callout.
+            flag = false;
+            target = lower(char(statusName));
+            for i = 1:numel(items)
+                st = lower(char(string(JsonHelper.pick(items{i}, 'status', ''))));
+                if strcmp(st, target); flag = true; return; end
+            end
+        end
     end
 end

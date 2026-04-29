@@ -362,10 +362,24 @@ classdef ResultsViewModel < handle
         end
 
         function onReconstructionLoaded(obj, app, bid, data)
+            % Render the BatchResultResponse in a polished modal popup
+            % instead of dumping every observable as raw text into the
+            % ResultJsonArea textarea. The dialog handles long Pauli
+            % strings, NaN values, and surfaces a diagnostic callout
+            % when the reconstruction returned NaN. See
+            % DialogBuilder.buildReconstructionDialog for the layout.
             app.hideLoading();
             status = char(string(JsonHelper.pick(data, {'status'}, '')));
-            lines = obj.summariseReconstruction(bid, status, data);
-            app.setStatus(app.ResultJsonArea, lines);
+            try
+                DialogBuilder.buildReconstructionDialog( ...
+                    app, char(bid), status, data);
+            catch ME
+                Logger.warn('ResultsViewModel', ...
+                    'buildReconstructionDialog failed: %s', ME.message);
+                app.setStatus(app.ResultJsonArea, { ...
+                    sprintf('Reconstruction loaded for batch %s.', bid), ...
+                    'Could not open the summary popup -- see event log.'});
+            end
             app.logEvent('API', sprintf( ...
                 'Reconstruction loaded — batch: %s  status: %s', ...
                 bid, status));
@@ -392,34 +406,6 @@ classdef ResultsViewModel < handle
             app.showError('View Reconstruction', ME);
         end
 
-        function lines = summariseReconstruction(~, bid, status, data)
-            % Render the BatchResultResponse into 4-12 readable lines for
-            % the ResultJsonArea textarea: header + each expectation row.
-            lines = {};
-            lines{end+1} = sprintf('Batch: %s', bid); %#ok<*AGROW>
-            lines{end+1} = sprintf('Status: %s', status);
-            exps = JsonHelper.pick(data, 'expectations', {});
-            if iscell(exps); arr = exps; ...
-            elseif isstruct(exps); arr = num2cell(exps); ...
-            else; arr = {}; end
-            if isempty(arr)
-                lines{end+1} = '(no expectation values yet)';
-                return;
-            end
-            lines{end+1} = '';
-            lines{end+1} = 'Reconstructed expectation values:';
-            for i = 1:numel(arr)
-                e = arr{i};
-                obsv = char(string(JsonHelper.pick(e, 'observable', '')));
-                val  = JsonHelper.pick(e, 'value', NaN);
-                err  = JsonHelper.pick(e, 'std_err', 0);
-                st   = char(string(JsonHelper.pick(e, 'status', 'ok')));
-                if ~isnumeric(val); val = str2double(val); end
-                if ~isnumeric(err); err = str2double(err); end
-                lines{end+1} = sprintf('  %s = %.6f ± %.6f  (%s)', ...
-                    obsv, double(val), double(err), st);
-            end
-        end
     end
 
     methods (Static, Access = private)
