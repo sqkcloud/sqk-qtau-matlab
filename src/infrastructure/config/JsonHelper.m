@@ -316,8 +316,16 @@ classdef JsonHelper
             rows = cell(n, 5);
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'name','strategy','strategy_name'}));
-                rows{i,2} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'depth','depth_after'}));
-                rows{i,3} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'two_qubit_gates','two_qubit_gates_after','cx_count','num_2q'}));
+                % Depth and 2Q-gate counts are integer-valued — cast to
+                % int32 so uitable renders '303' instead of '303.0000'
+                % (default 4-decimal format for double cells). Same fix
+                % as the Backends Qubits column.
+                d  = JsonHelper.toDouble(JsonHelper.pick(items(i), {'depth','depth_after'}));
+                if isnan(d); d = 0; end
+                rows{i,2} = int32(d);
+                g = JsonHelper.toDouble(JsonHelper.pick(items(i), {'two_qubit_gates','two_qubit_gates_after','cx_count','num_2q'}));
+                if isnan(g); g = 0; end
+                rows{i,3} = int32(g);
                 rows{i,4} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'predicted_fidelity','fidelity'}));
                 rows{i,5} = char(JsonHelper.pick(items(i), {'comment','notes','description'}));
             end

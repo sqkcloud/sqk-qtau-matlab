@@ -590,8 +590,11 @@ classdef BenchmarkViewModel < handle
                 comment = sprintf('opt_level=%d (estimated)', lev);
 
                 rows{lev, 1} = name;
-                rows{lev, 2} = depth;
-                rows{lev, 3} = gates;
+                % int32 so uitable renders '100' not '100.0000' — same
+                % convention as the API path in
+                % JsonHelper.benchmarkStrategyToRows.
+                rows{lev, 2} = int32(depth);
+                rows{lev, 3} = int32(gates);
                 rows{lev, 4} = round(fid, 4);
                 rows{lev, 5} = comment;
             end
