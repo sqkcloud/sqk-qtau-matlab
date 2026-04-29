@@ -104,7 +104,7 @@ function ResultsScreen(app)
     bg.ColumnWidth = {'1x', 110, 180, 195, 150};
     bg.Padding = [14 8 14 8]; bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(bg, 'Text', Labels.get('results_action_msg'));
-    desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
+    desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
     refreshBtn = uibutton(bg, 'Text', [char(8635) ' ' Labels.get('results_btn_refresh', 'Refresh')], ...
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onRefreshResults());
