@@ -232,6 +232,34 @@ classdef CircuitCuttingViewModel < handle
             end
 
             body = obj.buildCreateBody(override);
+
+            % Pre-flight: refuse to submit a batch with no observables.
+            % The server used to silently fall back to a 156-char all-Z
+            % Pauli string and return NaN reconstructions; it now returns
+            % a "no_observables_submitted" sentinel. Either way the
+            % batch's reconstruction is meaningless, so warn the operator
+            % up front instead of waiting for them to discover the
+            % problem in View Reconstruction.
+            if isempty(body.observables) || ...
+                    (iscell(body.observables) && all(cellfun('isempty', body.observables)))
+                sel = uiconfirm(app.UIFigure, ...
+                    ['No observables were entered for this cutting ' ...
+                     'batch. Reconstruction needs at least one Pauli ' ...
+                     'string (e.g. "Z", "ZZ", "X") aligned with the ' ...
+                     'circuit width to produce a meaningful expectation ' ...
+                     'value. Submitting now will run the subcircuits ' ...
+                     'on hardware but the reconstruction step will ' ...
+                     'return no usable values.'], ...
+                    'Circuit Cutting', ...
+                    'Options', {'Add Observables', 'Submit Anyway'}, ...
+                    'DefaultOption', 1, 'CancelOption', 1, 'Icon', 'warning');
+                if ~strcmp(sel, 'Submit Anyway')
+                    obj.setStatus( ...
+                        'Run cancelled: add observables (e.g. "Z") and try again.');
+                    return;
+                end
+            end
+
             % Same capture-rule as onAnalyzeCuts — never reference app.*
             % inside the background-task closure.
             svc   = app.CuttingSvc;
@@ -645,8 +673,13 @@ classdef CircuitCuttingViewModel < handle
 
         function obs = parseObservables(obj)
             % Pull Pauli strings from the Observables textarea, drop the
-            % placeholder and blank lines. Empty result → {} so the server
-            % falls back to its default all-Z over full circuit width.
+            % placeholder and blank lines. Empty result -> {}; the
+            % onRunBatch pre-flight surfaces a Submit-Anyway confirm so
+            % the operator never silently submits a batch the server
+            % cannot reconstruct. (The old "server falls back to all-Z"
+            % behaviour was removed; the server now returns a
+            % "no_observables_submitted" sentinel that the Reconstruction
+            % Summary popup renders as a tailored diagnostic.)
             lines = {};
             try
                 raw = obj.App.CuttingObservablesText.Value;
