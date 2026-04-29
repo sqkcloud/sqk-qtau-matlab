@@ -56,6 +56,10 @@ function ResultsScreen(app)
 
     app.ResultsDistTable = uitable(cg);
     app.ResultsDistTable.ColumnName = Labels.cols('results_table_cols_dist', {'State','Measured','Predicted','Ideal'});
+    % State holds bitstrings that can be 27+ chars on IBM backends;
+    % the default auto width clipped them to "00000000...". Pin a
+    % comfortable fixed width and let the numeric columns auto-size.
+    app.ResultsDistTable.ColumnWidth = {240, 'auto', 'auto', 'auto'};
     app.ResultsDistTable.Data = {};
     app.styleTable(app.ResultsDistTable);
 

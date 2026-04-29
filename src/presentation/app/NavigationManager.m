@@ -82,9 +82,22 @@ classdef NavigationManager
                 app.BuiltScreens(key) = true;
                 Logger.info('NavigationManager', ...
                     'Screen built on first nav: %s', key);
+                % Drop the build-time overlay. autoLoadScreen runs right
+                % after this returns and will re-show its own overlay
+                % via showNavLoading if the screen needs an async fetch
+                % - both calls happen in the same sync frame so the
+                % user sees no flicker. For screens WITHOUT an autoLoad
+                % case (QEC Simulation, QEC Visualization, Reports),
+                % this is the only path that hides the overlay; without
+                % it the "Loading {Screen}..." spinner stays on forever.
+                try; app.hideLoading(); catch; end
             catch ME
                 Logger.error('NavigationManager', ...
                     'Screen build failed for %s: %s', key, ME.message);
+                % Make sure a build failure also drops the overlay -
+                % otherwise a single bad screen builder leaves the
+                % entire UI stuck behind the spinner.
+                try; app.hideLoading(); catch; end
             end
         end
 
