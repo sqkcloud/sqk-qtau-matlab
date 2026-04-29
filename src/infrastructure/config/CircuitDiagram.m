@@ -4,6 +4,21 @@ classdef CircuitDiagram
     %   Usage:  lines = CircuitDiagram.render(qasmText)       % plain text
     %           html  = CircuitDiagram.renderHtml(qasmText)   % colored HTML
     %           src   = CircuitDiagram.wrapHtml(text)         % wrap in page
+    %
+    %   Static-only utility namespace. The constructor is private to
+    %   block accidental REPL instantiation — typing `CircuitDiagram`
+    %   alone (without a method call) used to silently produce
+    %       ans = CircuitDiagram with no properties.
+    %   which is confusing noise that hides the fact that no work was
+    %   being done. Now the REPL errors with "no public constructor",
+    %   which surfaces the intent: call methods via
+    %   `CircuitDiagram.<method>(...)`.
+
+    methods (Access = private)
+        function obj = CircuitDiagram()  %#ok<STOUT>
+            % Private — see classdef header for rationale.
+        end
+    end
 
     methods (Static)
 

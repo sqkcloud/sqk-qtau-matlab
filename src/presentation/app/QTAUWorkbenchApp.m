@@ -618,23 +618,22 @@ classdef QTAUWorkbenchApp < handle
                 catch; end
             end
 
-            % 5. Rebuild each screen. try/catch per-screen so a single
-            %    broken rebuild doesn't take down the rest.
-            screenFns = {@WelcomeScreen, @DashboardScreen, @CircuitsScreen, ...
-                         @NotesScreen, @UploadScreen, @AnalysisScreen, ...
-                         @BackendsScreen, @BenchmarkScreen, @PredictionScreen, ...
-                         @JobsScreen, @ResultsScreen, @DetailedAnalysisScreen, ...
-                         @BenchmarkDashboardScreen, @CircuitCuttingScreen, ...
-                         @QecSimulationScreen, ...
-                         @QecVisualizationScreen, @ReportsScreen, @SettingsScreen};
-            for i = 1:numel(screenFns)
-                try
-                    screenFns{i}(app);
-                catch ME
-                    Logger.warn('QTAUWorkbenchApp', ...
-                        'Rebuild of %s failed: %s', func2str(screenFns{i}), ME.message);
-                end
+            % 5. Rebuild Welcome eagerly (it's the user's anchor screen
+            %    and must exist for onSelectSection / auth-overlay to
+            %    have something to sit on top of). Reset BuiltScreens
+            %    so every OTHER screen rebuilds lazily the next time
+            %    the user nav-clicks it — same pattern as initial boot.
+            %    Avoids the ~32s eager-rebuild cost on every theme
+            %    change for screens the user may never re-visit in
+            %    the new theme.
+            try
+                WelcomeScreen(app);
+            catch ME
+                Logger.warn('QTAUWorkbenchApp', ...
+                    'Rebuild of Welcome failed: %s', ME.message);
             end
+            app.BuiltScreens = containers.Map('KeyType','char','ValueType','logical');
+            app.BuiltScreens('Welcome') = true;
 
             % 6. Restore the previously-active screen.
             try
