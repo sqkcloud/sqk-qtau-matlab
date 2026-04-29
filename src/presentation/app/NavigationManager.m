@@ -15,6 +15,11 @@ classdef NavigationManager
             % Dismiss any popup that might still be visible from the
             % outgoing screen before we show the new one.
             try PopupMenuManager.dismissPopups(app); catch; end
+            % Lazy screen build: builds the panel + widgets the first
+            % time the user nav-clicks here. Subsequent visits are a
+            % no-op and snap instantly. See QTAUWorkbenchApp.buildUI for
+            % the rationale (eager build cost ~32s of startup).
+            NavigationManager.ensureScreenBuilt(app, key);
             names = fieldnames(app.SectionPanels);
             for i = 1:numel(names)
                 panel = app.SectionPanels.(names{i});
@@ -40,6 +45,63 @@ classdef NavigationManager
             NavigationManager.updateNavStyles(app, key);
             NavigationManager.onResizeUI(app);
             NavigationManager.autoLoadScreen(app, key);
+        end
+
+        % ── Lazy screen building ─────────────────────────────────────────
+        function ensureScreenBuilt(app, key)
+            % Build a screen's UI on first visit, no-op after that.
+            % Welcome is built eagerly during boot; everything else is
+            % deferred so startup is ~2 s instead of ~32 s.
+            try
+                if isempty(app.BuiltScreens) || ~isa(app.BuiltScreens, 'containers.Map')
+                    app.BuiltScreens = containers.Map('KeyType','char','ValueType','logical');
+                end
+                if isKey(app.BuiltScreens, key) && app.BuiltScreens(key)
+                    return;
+                end
+            catch
+                % If BuiltScreens is somehow unusable, fall through and
+                % attempt the build — the screen builder will overwrite
+                % any half-built panel via createSectionPage.
+            end
+            builder = NavigationManager.screenBuilderFor(key);
+            if isempty(builder); return; end
+            try
+                app.showLoading(sprintf('Loading %s…', key));
+                drawnow;
+                builder(app);
+                app.BuiltScreens(key) = true;
+                Logger.info('NavigationManager', ...
+                    'Screen built on first nav: %s', key);
+            catch ME
+                Logger.error('NavigationManager', ...
+                    'Screen build failed for %s: %s', key, ME.message);
+            end
+        end
+
+        function fcn = screenBuilderFor(key)
+            % Map sidebar key → screen-builder function handle.
+            switch key
+                case 'Welcome';              fcn = @WelcomeScreen;
+                case 'Dashboard';            fcn = @DashboardScreen;
+                case 'Circuits';             fcn = @CircuitsScreen;
+                case 'Notes';                fcn = @NotesScreen;
+                case 'Upload';               fcn = @UploadScreen;
+                case 'Analysis';             fcn = @AnalysisScreen;
+                case 'Backends';             fcn = @BackendsScreen;
+                case 'Benchmark';            fcn = @BenchmarkScreen;
+                case 'Prediction';           fcn = @PredictionScreen;
+                case 'Jobs';                 fcn = @JobsScreen;
+                case 'Results';              fcn = @ResultsScreen;
+                case 'Detailed Analysis';    fcn = @DetailedAnalysisScreen;
+                case 'Benchmark Dashboard';  fcn = @BenchmarkDashboardScreen;
+                case 'Circuit Cutting';      fcn = @CircuitCuttingScreen;
+                case 'QEC Simulation';       fcn = @QecSimulationScreen;
+                case 'QEC Visualization';    fcn = @QecVisualizationScreen;
+                case 'Reports';              fcn = @ReportsScreen;
+                case 'Settings';             fcn = @SettingsScreen;
+                otherwise;                   fcn = [];
+            end
         end
 
         function autoLoadScreen(app, key)

@@ -48,6 +48,7 @@ classdef QTAUWorkbenchApp < handle
         EventLog  = {}
         EventLogArea
         SectionPanels
+        BuiltScreens               % containers.Map<char,logical> — which lazy screens have been built
 
         LoadingOverlay
         ActivityOverlay            % Reusable loading overlay for API calls
@@ -871,25 +872,23 @@ classdef QTAUWorkbenchApp < handle
             app.UIFigure.Visible = 'on';
             drawnow();
 
+            % Lazy screen-building. The legacy code built all 17 screens
+            % eagerly here, costing ~32 s of startup time before the
+            % user even saw the Welcome screen (Analysis alone took 7 s,
+            % QEC Visualization 4 s, etc.). Now each non-Welcome screen
+            % builds on first nav via NavigationManager.ensureScreenBuilt.
+            % Steady-state nav is just as fast (already-built screens
+            % skip the build); first-nav-per-screen pays a one-time
+            % 0.2–7 s cost while showing a loading overlay.
+            %
+            % BuiltScreens tracks which screens have been built so the
+            % nav manager doesn't rebuild on every visit. Welcome is
+            % still built eagerly because it's the first screen the
+            % user lands on and the auth overlay sits on top of it.
+            app.BuiltScreens = containers.Map('KeyType','char','ValueType','logical');
             WelcomeScreen(app);
+            app.BuiltScreens('Welcome') = true;
             app.updateWelcomeAuthButtons();
-            DashboardScreen(app);
-            CircuitsScreen(app);
-            NotesScreen(app);
-            UploadScreen(app);
-            AnalysisScreen(app);
-            BackendsScreen(app);
-            BenchmarkScreen(app);
-            PredictionScreen(app);
-            JobsScreen(app);
-            ResultsScreen(app);
-            DetailedAnalysisScreen(app);
-            BenchmarkDashboardScreen(app);
-            CircuitCuttingScreen(app);
-            QecSimulationScreen(app);
-            QecVisualizationScreen(app);
-            ReportsScreen(app);
-            SettingsScreen(app);
             LayoutBuilder.buildAuthOverlay(app);
             drawnow();
 
