@@ -85,7 +85,12 @@ function ResultsScreen(app)
     summaryPanel.Layout.Row = 2; summaryPanel.Layout.Column = 1; summaryPanel.BackgroundColor = Theme.COLOR_CARD;
 
     sg = uigridlayout(summaryPanel, [2 1]);
-    sg.RowHeight = {'1x',120}; sg.Padding = [12 10 12 10]; sg.BackgroundColor = Theme.COLOR_CARD;
+    % Proportional row sizing (was '1x',120). The fixed 120-px textarea
+    % squeezed the table's '1x' allocation to ~0 at smaller window
+    % heights — the table headers literally fell off-screen. With
+    % '2x','1x' both rows scale together: table gets 2/3, textarea
+    % gets 1/3. Always visible at any window size.
+    sg.RowHeight = {'2x','1x'}; sg.Padding = [12 10 12 10]; sg.BackgroundColor = Theme.COLOR_CARD;
 
     app.ResultsTable = uitable(sg);
     app.ResultsTable.ColumnName = Labels.cols('results_table_cols_summary', {'Metric','Measured','Predicted','Ideal','Notes'});
@@ -102,7 +107,10 @@ function ResultsScreen(app)
     comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 2; comparePanel.BackgroundColor = Theme.COLOR_CARD;
 
     cg = uigridlayout(comparePanel, [2 1]);
-    cg.RowHeight = {'1x',100}; cg.Padding = [12 10 12 10]; cg.BackgroundColor = Theme.COLOR_CARD;
+    % Same proportional fix as the Summary panel above — the 100-px
+    % fixed notes textarea was squeezing the Distribution table out
+    % of view at smaller window heights.
+    cg.RowHeight = {'2x','1x'}; cg.Padding = [12 10 12 10]; cg.BackgroundColor = Theme.COLOR_CARD;
 
     app.ResultsDistTable = uitable(cg);
     app.ResultsDistTable.ColumnName = Labels.cols('results_table_cols_dist', {'State','Measured','Predicted','Ideal'});
