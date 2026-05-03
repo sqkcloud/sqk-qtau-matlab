@@ -1187,7 +1187,7 @@ classdef AnalysisViewModel < handle
         end
 
         function eplg = extractEplg(cal)
-            % Try multiple field names; fall back to avg 2Q gate error.
+            % Try multiple top-level field names first.
             eplg = JsonHelper.pickNumeric(cal, 'eplg', NaN);
             if ~isnan(eplg) && eplg > 0; return; end
             eplg = JsonHelper.pickNumeric(cal, 'epc', NaN);
@@ -1195,6 +1195,49 @@ classdef AnalysisViewModel < handle
             eplg = JsonHelper.pickNumeric(cal, 'avg_2q_gate_error', NaN);
             if ~isnan(eplg) && eplg > 0; return; end
             eplg = JsonHelper.pickNumeric(cal, 'two_q_error_avg', NaN);
+            if ~isnan(eplg) && eplg > 0; return; end
+
+            % Fall back to per-coupling 2Q error if the calibration ships a
+            % populated `couplings[]` list with `gate_error_2q` per edge.
+            couplings = JsonHelper.extractList(cal, 'couplings');
+            if ~isempty(couplings)
+                vals = [];
+                for k = 1:numel(couplings)
+                    v = JsonHelper.pickNumeric(couplings(k), 'gate_error_2q', NaN);
+                    if isnan(v); v = JsonHelper.pickNumeric(couplings(k), 'cnot_error', NaN); end
+                    if isnan(v); v = JsonHelper.pickNumeric(couplings(k), 'ecr_error',  NaN); end
+                    if ~isnan(v) && v > 0; vals(end+1) = v; end %#ok<AGROW>
+                end
+                if ~isempty(vals); eplg = mean(vals); return; end
+            end
+
+            % Last-resort heuristic for IBM-shaped calibrations that only
+            % publish per-qubit `gate_error_1q` + `readout_error`. IBM 2Q
+            % errors run roughly 10× the 1Q error; readout adds a small
+            % per-layer contribution. Yields ~0.3–1% for healthy IBM
+            % devices, which is close enough to render the PEC γ̄^depth
+            % feasibility curve and the γ̄ KPI without a 2Q-calibration
+            % field. Still reads as NaN if the calibration response is
+            % entirely empty, so the "EPLG not available" empty state
+            % remains for genuinely calibration-less backends.
+            qubits = JsonHelper.extractList(cal, 'qubits');
+            if ~isempty(qubits)
+                g1 = []; rd = [];
+                for k = 1:numel(qubits)
+                    v = JsonHelper.pickNumeric(qubits(k), 'gate_error_1q', NaN);
+                    if ~isnan(v) && v > 0; g1(end+1) = v; end %#ok<AGROW>
+                    v = JsonHelper.pickNumeric(qubits(k), 'readout_error', NaN);
+                    if ~isnan(v) && v > 0; rd(end+1) = v; end %#ok<AGROW>
+                end
+                avg1q = NaN; avgRd = 0;
+                if ~isempty(g1); avg1q = mean(g1); end
+                if ~isempty(rd); avgRd = mean(rd); end
+                if ~isnan(avg1q)
+                    eplg = 10 * avg1q + 0.1 * avgRd;
+                    if eplg > 0 && eplg < 1; return; end
+                end
+            end
+            eplg = NaN;
         end
 
         function gb = computeGammaBar(eplg)
@@ -2618,6 +2661,20 @@ classdef AnalysisViewModel < handle
                     'FontSize', 9, 'Color', Theme.COLOR_SUCCESS, ...
                     'Interpreter', 'none');
             end
+            % When the sweep has only a single noise factor, the line
+            % collapses to a marker. Add an explanatory annotation so
+            % the operator understands no extrapolation curve is being
+            % drawn (vs. a chart bug). The cached QAE was run without a
+            % multi-factor sweep — re-running the QMC analysis with
+            % `noise_factors=[1, 3, 5]` will populate the curve.
+            if numel(nf) <= 1
+                text(ax, 0.5, 0.92, ...
+                    Labels.get('em_zne_single_point', ...
+                        'Single noise-factor in cached QAE — re-run QMC with multi-factor ZNE to draw a curve.'), ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center', ...
+                    'Color', Theme.COLOR_MUTED, 'FontSize', 9, ...
+                    'Interpreter', 'none');
+            end
             hold(ax, 'off');
         end
 
@@ -2775,16 +2832,69 @@ classdef AnalysisViewModel < handle
             if isempty(ax) || ~isvalid(ax); return; end
             cla(ax);
             if isempty(qae); return; end
+
+            % Sampler-mode result (preferred) — bitstring counts.
             counts = JsonHelper.pick(qae, {'raw_counts','counts'}, []);
-            if isempty(counts); return; end
-            [labels, vals] = AnalysisViewModel.pickTopBitstrings(counts, 8);
-            if isempty(labels); return; end
+            if ~isempty(counts)
+                [labels, vals] = AnalysisViewModel.pickTopBitstrings(counts, 8);
+                if isempty(labels); return; end
+                bar(ax, vals, 'FaceColor', Theme.COLOR_PRIMARY, 'EdgeColor', 'none');
+                ax.XTick = 1:numel(labels);
+                ax.XTickLabel = labels;
+                ax.XTickLabelRotation = 45;
+                ax.TickLabelInterpreter = 'none';
+                ax.XGrid = 'off'; ax.YGrid = 'on';
+                title(ax, Labels.get('em_axes_histogram_title', ...
+                    'Raw vs Mitigated counts (top bitstrings)'), ...
+                    'Interpreter', 'none');
+                return;
+            end
+
+            % QAE-mode fallback — `path_distribution` lists path-amplitude
+            % bins with {bin_index, value, probability}. Plot the top-N
+            % bins by probability so the panel is meaningful even when
+            % the result is amplitude-mode (no bitstring counts).
+            paths = JsonHelper.extractList(qae, 'path_distribution');
+            if isempty(paths); return; end
+            nPaths = numel(paths);
+            indices = zeros(1, nPaths);
+            probs   = zeros(1, nPaths);
+            for k = 1:nPaths
+                indices(k) = JsonHelper.pickNumeric(paths(k), 'bin_index',  k-1);
+                probs(k)   = JsonHelper.pickNumeric(paths(k), 'probability', 0);
+            end
+            valid = ~isnan(probs) & probs >= 0;
+            indices = indices(valid); probs = probs(valid);
+            if isempty(probs); return; end
+            % Top 8 by probability, then re-sort ascending by bin index
+            % so the x-axis reads left-to-right in register order.
+            [~, sortIdx] = sort(probs, 'descend');
+            keep = min(8, numel(sortIdx));
+            sortIdx = sortIdx(1:keep);
+            sortIdx = sortIdx(:)';
+            [~, reIdx] = sort(indices(sortIdx));
+            sortIdx = sortIdx(reIdx);
+            nEvalQ = JsonHelper.pickNumeric(qae, 'num_eval_qubits', NaN);
+            if isnan(nEvalQ) || nEvalQ <= 0
+                nEvalQ = max(1, ceil(log2(max(nPaths, 2))));
+            end
+            width = max(1, round(nEvalQ));
+            labels = cell(1, numel(sortIdx));
+            vals   = zeros(1, numel(sortIdx));
+            for k = 1:numel(sortIdx)
+                idx = sortIdx(k);
+                labels{k} = dec2bin(round(indices(idx)), width);
+                vals(k)   = probs(idx);
+            end
             bar(ax, vals, 'FaceColor', Theme.COLOR_PRIMARY, 'EdgeColor', 'none');
             ax.XTick = 1:numel(labels);
             ax.XTickLabel = labels;
             ax.XTickLabelRotation = 45;
             ax.TickLabelInterpreter = 'none';
             ax.XGrid = 'off'; ax.YGrid = 'on';
+            title(ax, Labels.get('em_axes_histogram_title_qae', ...
+                'QAE path-distribution probability (top bins)'), ...
+                'Interpreter', 'none');
         end
 
         function applyEmStatusBanner(~, app, hasQae)
