@@ -317,14 +317,23 @@ function CircuitCuttingScreen(app)
     app.CuttingBackendText = [];
 
     % ── Row 5 Left: Observables card ─────────────────────────────────────
+    %   Three-row inner grid: (1) static caption, (2) hardware-aware
+    %   coherence warning that VM.applyAnalyze toggles on for n>50
+    %   GHZ/cat circuits, (3) the Pauli-string textarea. The warning
+    %   row uses 'fit' height so it collapses to zero when the label
+    %   is hidden — preserving the 130 px outer Row 5 budget when no
+    %   warning is active. obsPanel sets Scrollable='on' as a safety
+    %   so an unusually long warning text scrolls inside the panel
+    %   rather than clipping the textarea.
     obsPanel = uipanel(g, 'Title', 'Observables', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'FontWeight', 'bold', 'FontSize', 12, ...
-        'ForegroundColor', Theme.COLOR_HEADING);
+        'ForegroundColor', Theme.COLOR_HEADING, ...
+        'Scrollable', 'on');
     obsPanel.Layout.Row = 5; obsPanel.Layout.Column = 1;
     obsPanel.BackgroundColor = Theme.COLOR_CARD;
-    og = uigridlayout(obsPanel, [2 1]);
-    og.RowHeight = {18, '1x'};
+    og = uigridlayout(obsPanel, [3 1]);
+    og.RowHeight = {18, 'fit', '1x'};
     %  Top/bottom padding trimmed (12 → 8) so the textarea keeps ~3-4
     %  visible lines inside the 130 px outer row budget at default size.
     og.Padding = [16 8 16 8]; og.RowSpacing = 6;
@@ -336,10 +345,24 @@ function CircuitCuttingScreen(app)
         'WordWrap', 'on', 'Interpreter', 'none');
     obsCaption.Layout.Row = 1;
 
+    %  Hardware-aware coherence warning. Hidden by default; populated
+    %  by CircuitCuttingViewModel.applyAnalyze when the analyze
+    %  response carries a non-empty coherence_warning field (n > 50
+    %  GHZ/cat on real hardware — weight-N witnesses sit at the noise
+    %  floor and static observables can't verify coherence at that
+    %  scale). Uses the warning amber so it reads as advisory, not
+    %  error. Visible='off' keeps the row collapsed via 'fit' height.
+    app.CuttingObservablesWarning = uilabel(og, ...
+        'Text', '', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_WARNING, ...
+        'WordWrap', 'on', 'Interpreter', 'none', ...
+        'Visible', 'off');
+    app.CuttingObservablesWarning.Layout.Row = 2;
+
     app.CuttingObservablesText = uitextarea(og, ...
         'Value', {CircuitCuttingViewModel.OBSERVABLES_PLACEHOLDER}, ...
         'Editable', 'on', 'FontSize', 12);
-    app.CuttingObservablesText.Layout.Row = 2;
+    app.CuttingObservablesText.Layout.Row = 3;
 
     % ── Row 5 Right: Options card ────────────────────────────────────────
     %   No more status line inside this card — moved to dedicated Row 4.

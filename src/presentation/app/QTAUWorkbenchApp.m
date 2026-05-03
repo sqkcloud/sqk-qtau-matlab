@@ -365,6 +365,13 @@ classdef QTAUWorkbenchApp < handle
         CuttingBackendEmptyLabel    % Shown until Analyze Cuts produces a plan
         CuttingBackendText          % Hidden legacy textarea — kept for back-compat
         CuttingObservablesText      % Pauli-string editor
+        CuttingObservablesWarning   % Hardware-aware coherence warning shown
+                                    % above the textarea when the analyze
+                                    % response carries a non-empty
+                                    % coherence_warning field (n>50 cat /
+                                    % GHZ on real hardware — weight-N
+                                    % witnesses sit at noise floor; only
+                                    % weight-2 ZZ correlators are meaningful).
         CuttingDistCheckbox         % opt-in: also reconstruct bitstring distribution
         CuttingResultsLabel         % Reconstructed expectations display
         CuttingResultsEmptyLabel    % Pretty empty-state when no batch has run yet

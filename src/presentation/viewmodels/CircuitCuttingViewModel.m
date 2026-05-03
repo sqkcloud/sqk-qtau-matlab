@@ -494,6 +494,24 @@ classdef CircuitCuttingViewModel < handle
                     'prefillObservablesFromAnalyze: %s', ME.message);
             end
 
+            % Hardware-aware coherence warning. For n>50 GHZ/cat
+            % circuits the server-side observable generator drops
+            % weight-N witnesses (X⊗ⁿ, Z⊗ⁿ) because they decay below
+            % the noise floor on real IBM hardware; the analyze
+            % response carries a non-empty coherence_warning string
+            % explaining that static observables can't verify
+            % coherence at this scale. Surface it inline above the
+            % Observables textarea so the operator sees it next to
+            % the AUTOMATIC defaults instead of discovering it after
+            % a wasted run. Empty string clears any stale warning
+            % left from a prior analyze.
+            try
+                obj.applyCoherenceWarning(r);
+            catch ME
+                Logger.debug('CircuitCuttingViewModel', ...
+                    'applyCoherenceWarning: %s', ME.message);
+            end
+
             % Smart-analyze recommendation. The server compares circuit
             % width against the configured IBM fleet; if at least one
             % backend fits, cutting is strictly worse than a direct
@@ -540,6 +558,35 @@ classdef CircuitCuttingViewModel < handle
             lines = cellfun(@(s) char(string(s)), defaults, ...
                 'UniformOutput', false);
             app.CuttingObservablesText.Value = lines(:).';
+        end
+
+        function applyCoherenceWarning(obj, r)
+            % Toggle the Observables-card warning label based on the
+            % analyze response's coherence_warning field.
+            %
+            % The server emits a non-empty string only when n exceeds
+            % the hardware noise-dominated threshold (~50q) AND the
+            % cut plan is non-trivial — i.e. when AUTOMATIC just
+            % produced a focused weight-2 ZZ set instead of the
+            % standard per-qubit Z + nearest-neighbor ZZ default.
+            % Hiding the label otherwise keeps the small-circuit UI
+            % uncluttered. Always clears stale text from a prior
+            % analyze so re-analyzing a small circuit doesn't show
+            % a leftover large-circuit warning.
+            app = obj.App;
+            if isempty(app.CuttingObservablesWarning) || ...
+                    ~isvalid(app.CuttingObservablesWarning)
+                return;
+            end
+            warningText = char(JsonHelper.pick(r, ...
+                'coherence_warning', ''));
+            if isempty(warningText)
+                app.CuttingObservablesWarning.Text = '';
+                app.CuttingObservablesWarning.Visible = 'off';
+                return;
+            end
+            app.CuttingObservablesWarning.Text = warningText;
+            app.CuttingObservablesWarning.Visible = 'on';
         end
 
         function promptDirectRunRecommendation(obj, r)
