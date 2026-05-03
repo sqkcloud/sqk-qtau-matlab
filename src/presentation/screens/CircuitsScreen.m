@@ -21,8 +21,8 @@ function CircuitsScreen(app)
     tablePanel.Layout.Row = 1; tablePanel.Layout.Column = 1;
     tablePanel.BackgroundColor = Theme.COLOR_CARD;
 
-    tg = uigridlayout(tablePanel, [2 1]);
-    tg.RowHeight = {32, '1x'};
+    tg = uigridlayout(tablePanel, [3 1]);
+    tg.RowHeight = {32, 'fit', '1x'};
     tg.Padding = Theme.KPI_INNER_PAD; tg.RowSpacing = 6; tg.BackgroundColor = Theme.COLOR_CARD;
 
     % Search bar
@@ -39,6 +39,19 @@ function CircuitsScreen(app)
         'ButtonPushedFcn', @(~,~)app.CircuitsVm.onSearch(app.CircuitsSearchField.Value));
     app.styleBtn(searchBtn, 'ghost');
 
+    % Empty-state banner above the table — populated by
+    % CircuitsViewModel.setEmptyStateMessage based on AppState
+    % (auth + active project) and the API response.  When Text is
+    % empty the row collapses ('fit'), so this is invisible during
+    % normal operation.
+    app.CircuitsEmptyStateLabel = uilabel(tg, ...
+        'Text', '', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'WordWrap', 'on');
+    app.CircuitsEmptyStateLabel.Layout.Row = 2;
+    app.CircuitsEmptyStateLabel.Layout.Column = 1;
+
     app.CircuitsTable = uitable(tg, ...
         'ColumnName', { ...
             '', ...
@@ -53,7 +66,7 @@ function CircuitsScreen(app)
         'RowName', {}, ...
         'SelectionType', 'row', ...
         'CellSelectionCallback', @(src,evt)app.CircuitsVm.onCellSelected(src, evt));
-    app.CircuitsTable.Layout.Row = 2; app.CircuitsTable.Layout.Column = 1;
+    app.CircuitsTable.Layout.Row = 3; app.CircuitsTable.Layout.Column = 1;
     app.CircuitsTable.FontSize = 12;
     app.CircuitsTable.ColumnSortable = true;
     addStyle(app.CircuitsTable, uistyle('HorizontalAlignment','center'), 'column', 1);

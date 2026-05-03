@@ -171,6 +171,7 @@ classdef QTAUWorkbenchApp < handle
     properties
         CircuitsTable
         CircuitsSearchField
+        CircuitsEmptyStateLabel    % banner above the table that explains why no rows are visible
         CircuitsPageLabel
         CircuitsPrevBtn
         CircuitsNextBtn

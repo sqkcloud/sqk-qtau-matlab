@@ -30,13 +30,27 @@ classdef CircuitsViewModel < handle
 
         function onLoadCircuits(obj)
             app = obj.App;
-            if ~app.State.isAuthenticated() || ~app.State.hasProject()
+            % Precondition checks — split so the empty-state banner can
+            % explain *why* the table is empty (auth vs no-project).
+            if ~app.State.isAuthenticated()
                 app.CircuitsTable.Data = {};
                 obj.RowCircuitIds = {};
                 obj.RowCircuits   = {};
+                obj.setEmptyStateMessage('circuits_empty_not_auth');
                 obj.updatePageLabel();
                 return;
             end
+            if ~app.State.hasProject()
+                app.CircuitsTable.Data = {};
+                obj.RowCircuitIds = {};
+                obj.RowCircuits   = {};
+                obj.setEmptyStateMessage('circuits_empty_no_project');
+                obj.updatePageLabel();
+                return;
+            end
+            % Clear the banner before fetching — a stale message from a
+            % previous open shouldn't linger while the new load is in flight.
+            obj.setEmptyStateMessage('');
             app.logEvent('API', sprintf('GET /api/circuits?skip=%d&limit=%d — project: %s', ...
                 obj.PageSkip, obj.PageLimit, char(app.State.currentProjectId)));
             skip  = obj.PageSkip;
@@ -404,9 +418,15 @@ classdef CircuitsViewModel < handle
                 app.CircuitsTable.Data = {};
                 obj.RowCircuitIds = {};
                 obj.RowCircuits   = {};
+                % Project is active but the API returned no circuits.
+                % Distinguish from "no project" by showing the upload-hint
+                % message instead of the welcome-screen-hint message.
+                obj.setEmptyStateMessage('circuits_empty_no_circuits');
                 obj.updatePageLabel();
                 return;
             end
+            % Data loaded — clear any previous empty-state banner.
+            obj.setEmptyStateMessage('');
             if isstruct(circuits)
                 circuits = num2cell(circuits);
             end
@@ -496,6 +516,32 @@ classdef CircuitsViewModel < handle
                     app.CircuitsNextBtn.Enable = size(tData, 1) >= obj.PageLimit;
                 end
             end
+        end
+
+        function setEmptyStateMessage(obj, key)
+            % Drive the empty-state banner that sits above the table.
+            % `key` is a labels.properties key; pass '' to clear.  The
+            % isprop / isvalid guards keep this safe against partially-
+            % built screens (lazy nav) and stub apps used by tests.
+            app = obj.App;
+            if ~isprop(app, 'CircuitsEmptyStateLabel'); return; end
+            if isempty(app.CircuitsEmptyStateLabel); return; end
+            if ~isvalid(app.CircuitsEmptyStateLabel); return; end
+            if isempty(key)
+                app.CircuitsEmptyStateLabel.Text = '';
+                return;
+            end
+            switch key
+                case 'circuits_empty_not_auth'
+                    fallback = 'Sign in to view circuits.';
+                case 'circuits_empty_no_project'
+                    fallback = 'No project selected — pick one on the Welcome screen first.';
+                case 'circuits_empty_no_circuits'
+                    fallback = 'No circuits in this project yet — go to Upload to add one.';
+                otherwise
+                    fallback = '';
+            end
+            app.CircuitsEmptyStateLabel.Text = Labels.get(key, fallback);
         end
     end
 end
