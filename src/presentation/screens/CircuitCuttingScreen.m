@@ -180,20 +180,34 @@ function CircuitCuttingScreen(app)
     cancelBtn.Layout.Column = 11;
     app.styleBtn(cancelBtn, 'ghost');
 
-    % ── Row 2: Status line ───────────────────────────────────────────────
-    %   Single-line, full-width muted label. Written by VM.setStatus()
-    %   during analyze/poll flows ("Batch xxx status=running 50%"), and at
-    %   build time with "Mode: assisted   Preset: generic   Press Analyze
-    %   Cuts to begin." Sits directly under the toolbar (Row 1) so the hint
-    %   reads as a tail of the toolbar instead of floating above the
-    %   Cut Plan card.
+    % ── Row 2: Status line + mitigation cost preview ─────────────────────
+    %   Two muted labels share Row 2.
+    %     Column 1 — VM-written status banner (analyze/poll progress,
+    %                build-time "Mode: assisted  Preset: generic  Press
+    %                Analyze Cuts to begin.").
+    %     Column 2 — Mitigation cost preview (right-aligned).
+    %                Populated by CircuitCuttingViewModel.applyAnalyze
+    %                from POST /api/mitigation/estimate. Empty until
+    %                Analyze succeeds; format:
+    %                "Mitigation: Standard · ~1× shots · est. 2s".
     app.CuttingStatusLabel = uilabel(g, ...
         'Text', '', ...
         'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
         'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
         'WordWrap', 'off', 'Interpreter', 'none');
     app.CuttingStatusLabel.Layout.Row = 2;
-    app.CuttingStatusLabel.Layout.Column = [1 2];
+    app.CuttingStatusLabel.Layout.Column = 1;
+
+    app.CuttingMitigationLabel = uilabel(g, ...
+        'Text', '', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center', ...
+        'WordWrap', 'off', 'Interpreter', 'none', ...
+        'Tooltip', ['Mitigation profile applied to this submission. ' ...
+                    'Click Analyze Cuts to refresh; level dropdown ' ...
+                    'lands in a follow-up.']);
+    app.CuttingMitigationLabel.Layout.Row = 2;
+    app.CuttingMitigationLabel.Layout.Column = 2;
 
     % ── Row 3: KPI strip ─────────────────────────────────────────────────
     kpiRow = uigridlayout(g, [1 4]);

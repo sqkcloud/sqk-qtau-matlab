@@ -512,6 +512,19 @@ classdef CircuitCuttingViewModel < handle
                     'applyCoherenceWarning: %s', ME.message);
             end
 
+            % Mitigation cost preview. Hits POST /api/mitigation/estimate
+            % so the operator sees "Mitigation: Standard · ~Nx shots ·
+            % est. Hms" inline on the toolbar's Row 2 right side. Driven
+            % by the freshly-resolved cut plan (per-subcircuit qubits)
+            % so the QPD shot floor is reflected in the cost. Best-
+            % effort: any HTTP failure just leaves the label blank.
+            try
+                obj.applyMitigationPreview(r);
+            catch ME
+                Logger.debug('CircuitCuttingViewModel', ...
+                    'applyMitigationPreview: %s', ME.message);
+            end
+
             % Smart-analyze recommendation. The server compares circuit
             % width against the configured IBM fleet; if at least one
             % backend fits, cutting is strictly worse than a direct
@@ -587,6 +600,106 @@ classdef CircuitCuttingViewModel < handle
             end
             app.CuttingObservablesWarning.Text = warningText;
             app.CuttingObservablesWarning.Visible = 'on';
+        end
+
+        function applyMitigationPreview(obj, r)
+            % Fetch a CostEstimate from POST /api/mitigation/estimate
+            % and populate the toolbar's mitigation cost-preview label.
+            %
+            % Request shape mirrors EstimateRequest in
+            % src/qdash/api/routers/mitigation.py:
+            %   {primitive: 'sampler', backend_name, base_shots,
+            %    circuit_qubits, cutting_overhead_qubits}
+            %
+            % Best-effort: any HTTP failure clears the label rather
+            % than surfacing an error modal — the cost preview is
+            % advisory, not a blocker. The level dropdown lands in a
+            % follow-up; for now this always asks the server for the
+            % default (Standard) so the operator sees what's actually
+            % running today.
+            app = obj.App;
+            if isempty(app.CuttingMitigationLabel) || ...
+                    ~isvalid(app.CuttingMitigationLabel)
+                return;
+            end
+            % Reset label first so a stale preview from a prior
+            % analyze doesn't linger when the new request fails.
+            app.CuttingMitigationLabel.Text = '';
+
+            svc = app.MitigationSvc;
+            if isempty(svc); return; end
+            token = '';
+            try
+                token = char(app.State.authToken);
+            catch
+                return;  % no auth, can't preview
+            end
+            if isempty(token); return; end
+
+            % Pull partition shape off the analyze response so the
+            % QPD shot floor is reflected in the cost.
+            candidates = JsonHelper.pick(r, 'candidates', {});
+            cutPlan = struct();
+            if ~isempty(candidates)
+                cutPlan = candidates(1);
+                if iscell(candidates); cutPlan = candidates{1}; end
+            end
+            perSub = JsonHelper.pick(cutPlan, 'per_subcircuit_qubits', {});
+            % Largest subcircuit drives the per-child mitigation
+            % regime (matches the cutting service's own resolve call).
+            maxSub = 0;
+            try
+                vals = double(cell2mat(perSub));
+                if ~isempty(vals); maxSub = max(vals); end
+            catch
+                % perSub may already be numeric — fall through
+                try
+                    vals = double(perSub);
+                    if ~isempty(vals); maxSub = max(vals); end
+                catch; end
+            end
+
+            n = double(JsonHelper.pick(r, 'circuit_width', 0));
+
+            % Backend: prefer the user's currently selected backend
+            % from State; fall back to the first auto-assigned one in
+            % the cut plan; finally to empty (server treats as non-IBM
+            % and omits the IQP figure).
+            backendName = '';
+            try
+                backendName = char(app.State.selectedBackend);
+            catch; end
+            if isempty(backendName)
+                assigns = JsonHelper.pick(cutPlan, 'backend_assignments', {});
+                if ~isempty(assigns)
+                    a = assigns(1);
+                    if iscell(assigns); a = assigns{1}; end
+                    try
+                        backendName = char(JsonHelper.pick(a, 'backend_name', ''));
+                    catch; end
+                end
+            end
+
+            body = struct( ...
+                'primitive', 'sampler', ...
+                'backend_name', backendName, ...
+                'base_shots', int32(4096), ...
+                'circuit_qubits', int32(n), ...
+                'cutting_overhead_qubits', int32(maxSub));
+
+            try
+                resp = svc.estimate(body, token);
+            catch ME
+                Logger.debug('CircuitCuttingViewModel', ...
+                    'applyMitigationPreview: estimate failed: %s', ...
+                    ME.message);
+                return;
+            end
+
+            summary = char(JsonHelper.pick(resp, 'summary', ''));
+            if ~isempty(summary)
+                app.CuttingMitigationLabel.Text = summary;
+            end
         end
 
         function promptDirectRunRecommendation(obj, r)

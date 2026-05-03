@@ -76,6 +76,7 @@ classdef QTAUWorkbenchApp < handle
         BenchmarkSvc    % BenchmarkService
         QmcSvc          % QmcService (Quantum Amplitude Estimation / QMC)
         CuttingSvc      % CuttingService (circuit cutting + reconstruction)
+        MitigationSvc   % MitigationService (QEM ladder + cost preview)
     end
 
     % ── Screen callback services ──────────────────────────────────────────────
@@ -346,6 +347,12 @@ classdef QTAUWorkbenchApp < handle
         CuttingAnalyzeBtn           % Analyze Cuts button (toggled enable on incompat)
         CuttingRunBtn               % Run Cutting button (toggled enable on incompat)
         CuttingStatusLabel          % Status banner (kept for back-compat / VM hooks)
+        CuttingMitigationLabel      % One-line "Mitigation: <Level> · ~Nx
+                                    % shots · est. Hms" populated by
+                                    % CircuitCuttingViewModel.applyAnalyze
+                                    % from POST /api/mitigation/estimate.
+                                    % Right-aligned on the toolbar's
+                                    % status row.
         % KPI strip — one big number per metric, IBM-Quantum-style at-a-glance
         CuttingKpiKValue            % Subcircuits count
         CuttingKpiOverheadValue     % Sampling overhead (formatted scientific)
@@ -473,6 +480,7 @@ classdef QTAUWorkbenchApp < handle
             app.BenchmarkSvc  = app.Services.BenchmarkSvc;
             app.QmcSvc        = app.Services.QmcSvc;
             app.CuttingSvc    = app.Services.CuttingSvc;
+            app.MitigationSvc = app.Services.MitigationSvc;
 
             Logger.info('QTAUWorkbenchApp', 'Services ready — creating WelcomeVm (lazy init for others)');
             app.WelcomeVm = WelcomeViewModel(app);
