@@ -22,10 +22,16 @@ function ReportsScreen(app)
     t = app.createSectionPage('Reports');
 
     g = uigridlayout(t, [3 1]);
+    %  Body row pinned to fixed 410 px (was '1x' flex; operator measured
+    %  ~380 px on their workspace and asked for 30 px more breathing
+    %  room). Fixed pixel value gives a deterministic block height
+    %  regardless of window size, so the Generator + Library always
+    %  render at the same dimensions.
+    %
     %  Workflow row bumped 60 → 90 (per operator review) so the action
     %  buttons + description sit comfortably with breathing room above
     %  and below the panel border.
-    g.RowHeight     = {92, '1x', 90};
+    g.RowHeight     = {92, 410, 90};
     g.ColumnWidth   = {'1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
