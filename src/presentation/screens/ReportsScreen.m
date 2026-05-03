@@ -126,9 +126,18 @@ function ReportsScreen(app)
     app.ReportStatusArea = uitextarea(gg, 'Editable', 'off');
     app.ReportStatusArea.FontSize = 12;
     app.ReportStatusArea.Layout.Row = 6; app.ReportStatusArea.Layout.Column = [1 2];
-    app.ReportStatusArea.Value = strsplit(Labels.get('reports_status_initial', ...
-        ['Set report title and format, then click Generate.\n' ...
-         'Right-click any row in the library for distribution actions.']), '\n');
+    %  Status panel uses a 3-tier format inspired by IBM Quantum
+    %  Composer / Cirq session status:
+    %    line 1 — state glyph + state name (●/✔/⚠/✗)
+    %    line 2 — concise secondary describing what to do or what
+    %             just happened (file path, error message, id)
+    %    line 3 — optional supporting hint
+    %  Cell array assigned directly so we don't depend on strsplit /
+    %  escape-sequence interpretation in labels.properties.
+    app.ReportStatusArea.Value = { ...
+        [char(9679) ' Ready'], ...                                              % ●
+        '   Set a title and format, then click Generate.', ...
+        '   Right-click any row to open, email, or print.'};
 
     % ── Library (right) ─────────────────────────────────────────────────────
     %  Same as the Generator: parented directly to body (no rightCol
