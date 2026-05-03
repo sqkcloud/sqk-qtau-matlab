@@ -815,6 +815,15 @@ classdef CircuitCuttingViewModel < handle
                     body.mitigation_level = int32(lvl);
                 end
             catch; end
+            % Phase 3.3: also_run_raw checkbox → server-side sibling
+            % Raw batch via CuttingBatchService.create_batch's Phase
+            % 3.2 plumbing. Only sets the field when explicitly
+            % checked so the doc-create payload stays minimal.
+            try
+                if logical(obj.App.CuttingAlsoRunRawCheckbox.Value)
+                    body.also_run_raw = true;
+                end
+            catch; end
         end
 
         function c = firstCandidate(obj)

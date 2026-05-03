@@ -389,6 +389,14 @@ classdef QTAUWorkbenchApp < handle
                                     % witnesses sit at noise floor; only
                                     % weight-2 ZZ correlators are meaningful).
         CuttingDistCheckbox         % opt-in: also reconstruct bitstring distribution
+        CuttingAlsoRunRawCheckbox   % Phase 3.3: when checked, the cutting
+                                    % batch service spawns a sibling Raw
+                                    % batch (mitigation_level=0)
+                                    % alongside the primary so the
+                                    % Results screen can render
+                                    % mitigated-vs-raw side-by-side.
+                                    % Routed via the also_run_raw field
+                                    % on CreateBatchRequest.
         CuttingResultsLabel         % Reconstructed expectations display
         CuttingResultsEmptyLabel    % Pretty empty-state when no batch has run yet
     end

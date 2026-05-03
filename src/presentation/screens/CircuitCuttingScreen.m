@@ -416,8 +416,8 @@ function CircuitCuttingScreen(app)
         'ForegroundColor', Theme.COLOR_HEADING);
     optPanel.Layout.Row = 5; optPanel.Layout.Column = 2;
     optPanel.BackgroundColor = Theme.COLOR_CARD;
-    oog = uigridlayout(optPanel, [2 1]);
-    oog.RowHeight = {28, '1x'};
+    oog = uigridlayout(optPanel, [3 1]);
+    oog.RowHeight = {28, 28, '1x'};
     %  Top/bottom padding trimmed (12 → 8) so the wrapped hint fits the
     %  130 px outer row budget without clipping at default size.
     oog.Padding = [16 8 16 8]; oog.RowSpacing = 8;
@@ -428,13 +428,28 @@ function CircuitCuttingScreen(app)
         'Value', false, 'FontSize', 12, 'FontColor', Theme.COLOR_LABEL);
     app.CuttingDistCheckbox.Layout.Row = 1;
 
+    %  also_run_raw — Phase 3.3 dual-run flag. When checked, the
+    %  server spawns a sibling Raw (mitigation_level=0) batch
+    %  alongside the primary so the Results screen can render the
+    %  mitigated-vs-raw delta. Doubles the IBM cost of this run; the
+    %  tooltip surfaces the cost note so the operator opts in
+    %  knowingly.
+    app.CuttingAlsoRunRawCheckbox = uicheckbox(oog, ...
+        'Text', 'Also run raw (level-0 sibling) for comparison', ...
+        'Value', false, 'FontSize', 12, 'FontColor', Theme.COLOR_LABEL, ...
+        'Tooltip', ['Run a parallel level-0 (Raw) batch alongside the ' ...
+                    'mitigated one so the Results screen can compare ' ...
+                    'mitigated vs raw side-by-side. Doubles the IBM ' ...
+                    'shot budget for this submission.']);
+    app.CuttingAlsoRunRawCheckbox.Layout.Row = 2;
+
     hintLbl = uilabel(oog, ...
         'Text', ['All modes share the same pipeline — only UI auto-fill ' ...
                  'differs. Sampling overhead grows ~4ᵏ.'], ...
         'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, ...
         'WordWrap', 'on', 'Interpreter', 'none', ...
         'VerticalAlignment', 'top');
-    hintLbl.Layout.Row = 2;
+    hintLbl.Layout.Row = 3;
 
     % ── Row 6: Reconstructed Results card ────────────────────────────────
     %   Scrollable='on' so long expectation-value lists fall back to a
