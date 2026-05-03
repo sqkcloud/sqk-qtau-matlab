@@ -26,10 +26,10 @@ function AnalysisScreen(app)
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
-    % ── Circuit selector + Analyze + QMC launcher ────────────────────────────
-    topBar = uigridlayout(g, [1 4]);
+    % ── Circuit selector + Analyze + QMC launcher + Error Mitigation launcher
+    topBar = uigridlayout(g, [1 5]);
     topBar.Layout.Row = 1; topBar.Layout.Column = [1 2];
-    topBar.ColumnWidth = {90, '1x', 110, 260};
+    topBar.ColumnWidth = {90, '1x', 110, 260, 220};
     topBar.Padding = [0 0 0 0]; topBar.ColumnSpacing = 8;
     topBar.BackgroundColor = Theme.COLOR_BG;
 
@@ -61,6 +61,20 @@ function AnalysisScreen(app)
     app.QmcOpenButton.FontSize = 14;
     app.QmcOpenButton.Tooltip = ...
         'Open the Quantum Monte Carlo Simulation popup';
+
+    % Launcher for the Quantum Error Mitigation Analysis popup. The full
+    % control + plot UI lives in the modal dialog built by
+    % DialogBuilder.buildErrorMitigationDialog. Reads cached QAE, cutting
+    % and mitigation-estimate data — no async-job submission of its own.
+    app.EmOpenButton = uibutton(topBar, ...
+        'Text', [char(9881) ' ' ...
+                 Labels.get('analysis_btn_error_mitigation', 'Error Mitigation')], ...
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onOpenEmDialog());
+    app.EmOpenButton.Layout.Row = 1; app.EmOpenButton.Layout.Column = 5;
+    app.styleBtn(app.EmOpenButton, 'secondary');
+    app.EmOpenButton.FontSize = 14;
+    app.EmOpenButton.Tooltip = ...
+        'Open the Quantum Error Mitigation Analysis popup';
 
     % ── Extracted Features (left) ─────────────────────────────────────────────
     p1 = uipanel(g, 'Title', Labels.get('analysis_panel_features'), ...

@@ -701,6 +701,156 @@ classdef AnalysisViewModel < handle
             % through the full analyze pipeline.
             obj.buildQVHeatmap(data);
         end
+
+        % ── Quantum Error Mitigation Analysis popup (Phase 6.x) ───────────
+        %   Reads /api/mitigation/levels + /api/mitigation/estimate +
+        %   cached QAE result + /api/cutting/analyze and renders the
+        %   results into the dialog built by
+        %   DialogBuilder.buildErrorMitigationDialog.  No async-job
+        %   submission; every endpoint returns synchronously.
+
+        function onOpenEmDialog(obj)
+            app = obj.App;
+            if ~isempty(app.EmDialog) && isvalid(app.EmDialog)
+                figure(app.EmDialog); return;
+            end
+            DialogBuilder.buildErrorMitigationDialog(app);
+            obj.loadEmBackendsForDialog(app);
+            obj.loadEmInitialData(app);
+        end
+
+        function onCloseEmDialog(obj)
+            app = obj.App;
+            try
+                if ~isempty(app.EmDialog) && isvalid(app.EmDialog)
+                    delete(app.EmDialog);
+                end
+            catch
+            end
+            app.EmDialog = [];
+        end
+
+        function onEmFormChanged(obj)
+            % Form-tweak handler -- refresh /api/mitigation/estimate sweep
+            % and re-render the technique table + cost summary.
+            obj.refreshEmEstimateBundle(obj.App);
+        end
+
+        function onEmRefreshEstimate(obj)
+            % Explicit "Estimate" button click: same as form-change but
+            % also re-renders the gamma-vs-depth and cutting overhead
+            % charts so live backend choice is reflected everywhere.
+            app = obj.App;
+            obj.refreshEmEstimateBundle(app);
+            obj.renderEmKpis(app);
+            obj.renderEmGammaDepthCurve(app);
+            obj.renderEmOverheadCutsCurve(app);
+        end
+
+        function onEmApplyToBenchmark(obj)
+            app = obj.App;
+            if isempty(app.EmEstimateBundle)
+                uialert(AnalysisViewModel.emAlertParent(app), ...
+                    'Run Estimate first to populate the technique comparison.', ...
+                    'Apply', 'Icon', 'warning');
+                return;
+            end
+            pick = AnalysisViewModel.bestRecommendation(app.EmEstimateBundle);
+            if isempty(pick)
+                uialert(AnalysisViewModel.emAlertParent(app), ...
+                    'No recommendation available - pick a different backend.', ...
+                    'Apply', 'Icon', 'warning');
+                return;
+            end
+            targetValue = AnalysisViewModel.mapEmTechniqueToBenchmark(pick.levelId);
+            try
+                if ~isempty(app.BenchmarkMitigationDropdown) && ...
+                        isvalid(app.BenchmarkMitigationDropdown)
+                    items = app.BenchmarkMitigationDropdown.ItemsData;
+                    idx = find(strcmp(items, targetValue), 1);
+                    if ~isempty(idx)
+                        app.BenchmarkMitigationDropdown.Value = items{idx};
+                    end
+                end
+            catch
+            end
+            obj.onCloseEmDialog();
+            app.onSelectSection('Benchmark');
+            app.logEvent('UI', sprintf( ...
+                'Error Mitigation -> Benchmark (level=%d, target=%s)', ...
+                pick.levelId, targetValue));
+        end
+
+        function onEmExportJson(obj)
+            app = obj.App;
+            alertParent = AnalysisViewModel.emAlertParent(app);
+            if isempty(app.EmEstimateBundle)
+                uialert(alertParent, ...
+                    'Run Estimate first to produce the bundle.', ...
+                    'Export JSON', 'Icon', 'warning');
+                return;
+            end
+            out = struct();
+            out.circuit_id = char(app.State.selectedCircuitId);
+            out.circuit_name = char(app.State.selectedCircuitName);
+            try; out.backend = char(app.EmBackendDropdown.Value); catch; out.backend = ''; end
+            out.bundle = app.EmEstimateBundle;
+            out.qae_cached = ~isempty(app.EmQaeCached);
+            out.cutting_cached = ~isempty(app.EmCuttingCached);
+            try
+                payload = jsonencode(out, 'PrettyPrint', true);
+            catch
+                payload = jsonencode(out);
+            end
+            safeName = regexprep(char(app.State.selectedCircuitName), '[^A-Za-z0-9_\-]', '_');
+            if isempty(safeName); safeName = 'circuit'; end
+            stamp = char(datetime('now', 'Format', 'yyyyMMdd_HHmm'));
+            defaultName = sprintf('EmAnalysis_%s_%s.json', safeName, stamp);
+            [fileName, pathName] = uiputfile( ...
+                {'*.json', 'JSON (*.json)'}, ...
+                'Export Error Mitigation Analysis', defaultName);
+            if isequal(fileName, 0); return; end
+            target = fullfile(pathName, fileName);
+            try
+                fid = fopen(target, 'w');
+                fprintf(fid, '%s', payload);
+                fclose(fid);
+                uialert(alertParent, ...
+                    sprintf('Exported to:\n%s', target), ...
+                    'Export JSON', 'Icon', 'success');
+                app.logEvent('API', sprintf('EM bundle exported to %s', target));
+            catch ME
+                uialert(alertParent, ME.message, 'Export JSON', 'Icon', 'error');
+            end
+        end
+
+        function onEmGenerateReport(obj)
+            app = obj.App;
+            alertParent = AnalysisViewModel.emAlertParent(app);
+            if ~app.State.isAuthenticated()
+                uialert(alertParent, Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning'); return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(alertParent, ...
+                    'Select a circuit before generating the report.', ...
+                    'Generate Report', 'Icon', 'warning'); return;
+            end
+            cid = app.State.selectedCircuitId;
+            app.showLoading('Generating Error Mitigation report...');
+            sections = { ...
+                'executive_summary', 'circuit_summary', 'feature_analysis', ...
+                'error_mitigation', 'key_insights'};
+            reportTitle = sprintf('Quantum Error Mitigation Report - %s', ...
+                char(app.State.selectedCircuitName));
+            reportSvc = app.ReportSvc;
+            token     = app.State.authToken;
+            AsyncRunner.run( ...
+                @() reportSvc.generateReport(reportTitle, 'technical', 'pdf', ...
+                                             cid, '', '', sections, token), ...
+                @(data) obj.onQmcReportGenerated(app, data), ...
+                @(ME)   obj.onQmcReportError(app, ME));
+        end
     end
 
     methods (Static, Access = private)
@@ -921,6 +1071,172 @@ classdef AnalysisViewModel < handle
             if strcmp(ext, '.') || strcmp(ext, '..'); ext = '.pdf'; end
             savedPath = fullfile(tempdir, sprintf('qmc_report_%s%s', reportId, ext));
             reportSvc.downloadReportFile(reportId, token, savedPath);
+        end
+
+        % ── Quantum Error Mitigation helpers (Phase 6.x) ────────────────
+        function parent = emAlertParent(app)
+            % Pick the right uialert parent so the alert draws on top of
+            % the Quantum Error Mitigation modal popup when it is open.
+            parent = app.UIFigure;
+            try
+                if ~isempty(app.EmDialog) && isvalid(app.EmDialog) ...
+                        && strcmp(app.EmDialog.Visible, 'on')
+                    parent = app.EmDialog;
+                end
+            catch
+            end
+        end
+
+        function eplg = extractEplg(cal)
+            % Try multiple field names; fall back to avg 2Q gate error.
+            eplg = JsonHelper.pickNumeric(cal, 'eplg', NaN);
+            if ~isnan(eplg) && eplg > 0; return; end
+            eplg = JsonHelper.pickNumeric(cal, 'epc', NaN);
+            if ~isnan(eplg) && eplg > 0; return; end
+            eplg = JsonHelper.pickNumeric(cal, 'avg_2q_gate_error', NaN);
+            if ~isnan(eplg) && eplg > 0; return; end
+            eplg = JsonHelper.pickNumeric(cal, 'two_q_error_avg', NaN);
+        end
+
+        function gb = computeGammaBar(eplg)
+            % gammabar = (1 - EPLG)^(-2). Returns NaN for invalid input.
+            if isnan(eplg) || eplg <= 0 || eplg >= 1
+                gb = NaN; return;
+            end
+            gb = (1 - eplg)^(-2);
+        end
+
+        function ovh = computeGammaBarOverhead(gammaBar, depth)
+            % PEC sampling overhead = gammabar^depth.  Capped at 1e30
+            % for plotting stability on log axes.
+            if isnan(gammaBar) || isnan(depth) || depth <= 0
+                ovh = NaN; return;
+            end
+            ovh = gammaBar^depth;
+            if isinf(ovh) || ovh > 1e30; ovh = 1e30; end
+        end
+
+        function q = pickQubits(meta)
+            q = JsonHelper.pickNumeric(meta, 'num_qubits', NaN);
+            if isnan(q); q = JsonHelper.pickNumeric(meta, 'qubits', NaN); end
+            if isnan(q); q = JsonHelper.pickNumeric(meta, 'width', NaN); end
+        end
+
+        function d = pickDepth(meta)
+            d = JsonHelper.pickNumeric(meta, 'depth', NaN);
+            if isnan(d); d = JsonHelper.pickNumeric(meta, 'circuit_depth', NaN); end
+        end
+
+        function n2q = pickTwoQGates(meta)
+            n2q = JsonHelper.pickNumeric(meta, 'num_2q_gates', NaN);
+            if isnan(n2q); n2q = JsonHelper.pickNumeric(meta, 'two_qubit_gates', NaN); end
+            if isnan(n2q); n2q = JsonHelper.pickNumeric(meta, 'cnot_count', NaN); end
+        end
+
+        function s = fmtIntKpi(v)
+            if isnan(v); s = '-'; else; s = sprintf('%d', round(v)); end
+        end
+
+        function biasReduction = estimateBiasReduction(levelId)
+            % Heuristic mapping from MitigationService level id to a
+            % rough bias-reduction factor.  Operator-facing only -- the
+            % UI labels these as "estimated".
+            switch double(levelId)
+                case 0;  biasReduction = 1.0;   % Raw
+                case 1;  biasReduction = 1.6;   % Standard
+                case 2;  biasReduction = 2.8;   % Aggressive
+                case 3;  biasReduction = 2.5;   % Custom (depends on options)
+                case 4;  biasReduction = 3.5;   % TEM
+                otherwise; biasReduction = 1.0;
+            end
+        end
+
+        function pick = bestRecommendation(bundle)
+            % Heuristic ranking: maximise biasReduction / log(1+shotMul).
+            pick = [];
+            bestScore = -Inf;
+            for i = 1:numel(bundle)
+                b = bundle{i};
+                if isempty(b.estimate); continue; end
+                cost = JsonHelper.pick(b.estimate, {'cost'}, struct());
+                shotMul = JsonHelper.pickNumeric(cost, 'shot_multiplier', 1.0);
+                bias = AnalysisViewModel.estimateBiasReduction(b.levelId);
+                score = bias / log(1 + max(shotMul, 1.0));
+                if score > bestScore
+                    bestScore = score; pick = b;
+                end
+            end
+        end
+
+        function targetValue = mapEmTechniqueToBenchmark(levelId)
+            % Map MitigationService level id to BenchmarkScreen
+            % mitigation dropdown ItemsData.
+            switch double(levelId)
+                case 0;  targetValue = 'none';
+                case 1;  targetValue = 'measurement_mitigation';
+                case 2;  targetValue = 'zero_noise_extrapolation';
+                case 3;  targetValue = 'zero_noise_extrapolation';
+                case 4;  targetValue = 'readout_calibration';
+                otherwise; targetValue = 'none';
+            end
+        end
+
+        function factors = parseZneFactors(s)
+            % Parse "1.0, 3.0, 5.0" -> [1.0 3.0 5.0]; defaults on parse fail.
+            factors = [1.0 3.0 5.0];
+            try
+                parts = strsplit(strtrim(char(s)), ',');
+                out = [];
+                for i = 1:numel(parts)
+                    v = str2double(strtrim(parts{i}));
+                    if ~isnan(v) && v > 0
+                        out(end+1) = v; %#ok<AGROW>
+                    end
+                end
+                if ~isempty(out); factors = out; end
+            catch
+            end
+        end
+
+        function opts = currentEmOptions(app)
+            % Snapshot the form's advanced controls into a struct that
+            % matches the MitigationPlan options schema.
+            opts = struct();
+            try
+                opts.zne_noise_factors = AnalysisViewModel.parseZneFactors( ...
+                    app.EmZneFactorsField.Value);
+                opts.zne_extrapolator  = char(app.EmExtrapolatorDropdown.Value);
+                opts.dd_sequence       = char(app.EmDdSequenceDropdown.Value);
+                opts.twirling_gates    = logical(app.EmTwirlGatesCheckbox.Value);
+                opts.twirling_measure  = logical(app.EmTwirlMeasureCheckbox.Value);
+                opts.tem_enable        = logical(app.EmTemCheckbox.Value);
+                opts.also_run_raw      = logical(app.EmAlsoRunRawCheckbox.Value);
+            catch
+            end
+        end
+
+        function [labels, vals] = pickTopBitstrings(counts, n)
+            % Convert a struct of bitstring->count into the top-n
+            % normalised probabilities, ordered by descending magnitude.
+            labels = {}; vals = [];
+            if ~isstruct(counts); return; end
+            f = fieldnames(counts);
+            if isempty(f); return; end
+            nums = zeros(1, numel(f));
+            for i = 1:numel(f)
+                nums(i) = double(counts.(f{i}));
+            end
+            [nums, idx] = sort(nums, 'descend');
+            keys = f(idx);
+            take = min(n, numel(nums));
+            total = sum(nums);
+            if total <= 0; return; end
+            labels = cell(1, take);
+            vals = zeros(1, take);
+            for i = 1:take
+                labels{i} = keys{i};
+                vals(i)   = nums(i) / total;
+            end
         end
 
     end
@@ -1848,6 +2164,481 @@ classdef AnalysisViewModel < handle
                     curName, round(curDepth), round(curWidth), curFid);
             catch ME
                 Logger.warn('AnalysisViewModel', 'buildQVHeatmap failed: %s', ME.message);
+            end
+        end
+
+        % ── Quantum Error Mitigation private renderers (Phase 6.x) ──────
+
+        function loadEmBackendsForDialog(obj, app)
+            if ~app.State.isAuthenticated(); return; end
+            token = app.State.authToken;
+            cid = '';
+            if app.State.hasCircuit(); cid = char(app.State.selectedCircuitId); end
+            backendSvc = app.BackendSvc;
+            circSvc    = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() AnalysisViewModel.fetchBackendList(backendSvc, circSvc, cid, token), ...
+                @(data) obj.onEmBackendsLoaded(app, data), ...
+                @(ME)   obj.onEmBackendsError(app, ME));
+        end
+
+        function onEmBackendsLoaded(obj, app, data)
+            if isempty(app.EmBackendDropdown) || ~isvalid(app.EmBackendDropdown); return; end
+            items = JsonHelper.extractList(data, 'backends');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.EmBackendDropdown.Items = {'(no backends)'};
+                app.EmBackendDropdown.ItemsData = {''};
+                app.EmBackendDropdown.Value = '';
+                return;
+            end
+            names = cell(1, n);
+            for i = 1:n
+                names{i} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+            end
+            app.EmBackendDropdown.Items     = names;
+            app.EmBackendDropdown.ItemsData = names;
+            sel = '';
+            try; sel = char(app.State.selectedBackend); catch; end
+            match = find(strcmp(names, sel), 1);
+            if ~isempty(match)
+                app.EmBackendDropdown.Value = names{match};
+            else
+                app.EmBackendDropdown.Value = names{1};
+            end
+            obj.refreshEmEstimateBundle(app);
+            obj.renderEmKpis(app);
+            obj.renderEmGammaDepthCurve(app);
+        end
+
+        function onEmBackendsError(~, app, ME)
+            if ~isempty(app.EmBackendDropdown) && isvalid(app.EmBackendDropdown)
+                app.EmBackendDropdown.Items = {'(load failed)'};
+                app.EmBackendDropdown.ItemsData = {''};
+                app.EmBackendDropdown.Value = '';
+            end
+            Logger.warn('AnalysisViewModel', 'EM backend load failed: %s', ME.message);
+        end
+
+        function loadEmInitialData(obj, app)
+            % Fan-out parallel fetches: levels, cached QAE, circuit meta.
+            % Each callback paints its panel independently.
+            if ~app.State.isAuthenticated(); return; end
+            token = app.State.authToken;
+
+            mitSvc = app.MitigationSvc;
+            AsyncRunner.run( ...
+                @() mitSvc.listLevels(token), ...
+                @(data) obj.onEmLevelsLoaded(app, data), ...
+                @(ME)   Logger.warn('AnalysisViewModel', ...
+                    'EM levels load failed: %s', ME.message));
+
+            if app.State.hasCircuit()
+                qmcSvc = app.QmcSvc;
+                cid = char(app.State.selectedCircuitId);
+                AsyncRunner.run( ...
+                    @() qmcSvc.getLast(cid, token), ...
+                    @(data) obj.onEmQaeLoaded(app, data), ...
+                    @(ME)   obj.onEmQaeMissing(app, ME));
+
+                circSvc = app.CircuitSvc;
+                AsyncRunner.run( ...
+                    @() circSvc.getCircuit(cid, token), ...
+                    @(data) obj.onEmCircuitMetaLoaded(app, data), ...
+                    @(ME)   Logger.debug('AnalysisViewModel', ...
+                        'EM circuit meta load: %s', ME.message));
+            else
+                obj.applyEmStatusBanner(app, false);
+            end
+            obj.renderEmOverheadCutsCurve(app);
+        end
+
+        function onEmLevelsLoaded(obj, app, data)
+            if isempty(app.EmLevelDropdown) || ~isvalid(app.EmLevelDropdown); return; end
+            levels = JsonHelper.extractList(data, 'levels');
+            if isempty(levels); levels = JsonHelper.asList(data); end
+            if isempty(levels); return; end
+            n = numel(levels);
+            items = cell(1, n);
+            itemsData = cell(1, n);
+            for i = 1:n
+                lid = JsonHelper.pickNumeric(levels(i), 'id', i-1);
+                lab = char(JsonHelper.pick(levels(i), {'label','name'}));
+                if isempty(lab); lab = sprintf('Level %d', lid); end
+                items{i}     = lab;
+                itemsData{i} = double(lid);
+            end
+            app.EmLevelDropdown.Items     = items;
+            app.EmLevelDropdown.ItemsData = itemsData;
+            % Default to "Standard" (id=1) when present, else first.
+            if any(cellfun(@(x)isequal(x, 1), itemsData))
+                app.EmLevelDropdown.Value = 1;
+            else
+                app.EmLevelDropdown.Value = itemsData{1};
+            end
+            app.EmLevels = levels;
+            obj.refreshEmEstimateBundle(app);
+        end
+
+        function onEmQaeLoaded(obj, app, data)
+            app.EmQaeCached = data;
+            obj.renderEmZneCurve(app, data);
+            obj.renderEmRawMitigatedHistogram(app, data);
+            obj.applyEmStatusBanner(app, true);
+        end
+
+        function onEmQaeMissing(obj, app, ~)
+            app.EmQaeCached = [];
+            obj.applyEmStatusBanner(app, false);
+        end
+
+        function onEmCircuitMetaLoaded(obj, app, data)
+            app.EmCircuitMeta = data;
+            obj.renderEmKpis(app);
+            obj.renderEmGammaDepthCurve(app);
+        end
+
+        function refreshEmEstimateBundle(obj, app)
+            % Sweep /api/mitigation/estimate over every published level
+            % so the technique table + recommendation card reflect the
+            % current backend / shots / primitive.
+            if isempty(app.EmLevelDropdown) || ~isvalid(app.EmLevelDropdown); return; end
+            if ~app.State.isAuthenticated(); return; end
+            backend = char(app.EmBackendDropdown.Value);
+            if isempty(backend); return; end
+
+            token = app.State.authToken;
+            mitSvc = app.MitigationSvc;
+            primitive = char(app.EmPrimitiveDropdown.Value);
+            baseShots = double(app.EmBaseShotsField.Value);
+            qubits = AnalysisViewModel.pickQubits(app.EmCircuitMeta);
+            if isnan(qubits); qubits = 5; end
+
+            sweepLevels = app.EmLevels;
+            if isempty(sweepLevels); return; end
+            n = numel(sweepLevels);
+            bundle = cell(1, n);
+            currentLid = double(app.EmLevelDropdown.Value);
+            for i = 1:n
+                lid = JsonHelper.pickNumeric(sweepLevels(i), 'id', i-1);
+                body = struct( ...
+                    'mitigation_level',         double(lid), ...
+                    'primitive',                primitive, ...
+                    'backend_name',             backend, ...
+                    'base_shots',               baseShots, ...
+                    'circuit_qubits',           round(qubits), ...
+                    'cutting_overhead_qubits',  0);
+                if currentLid == lid && lid == 3
+                    body.mitigation_options = AnalysisViewModel.currentEmOptions(app);
+                end
+                est = [];
+                try
+                    est = mitSvc.estimate(body, token);
+                catch ME
+                    Logger.debug('AnalysisViewModel', ...
+                        'EM estimate fail (lid=%d): %s', lid, ME.message);
+                end
+                bundle{i} = struct( ...
+                    'levelId',  double(lid), ...
+                    'label',    char(JsonHelper.pick(sweepLevels(i), ...
+                        {'label','name'}, sprintf('Level %d', lid))), ...
+                    'estimate', est);
+            end
+            app.EmEstimateBundle = bundle;
+            obj.renderEmTechniqueTable(app, bundle);
+            obj.renderEmRecommendation(app, bundle);
+            obj.refreshEmCostSummary(app, bundle);
+        end
+
+        function refreshEmCostSummary(~, app, bundle)
+            if isempty(app.EmCostSummaryLabel) || ~isvalid(app.EmCostSummaryLabel); return; end
+            selLid = double(app.EmLevelDropdown.Value);
+            found = [];
+            for i = 1:numel(bundle)
+                if bundle{i}.levelId == selLid
+                    found = bundle{i}; break;
+                end
+            end
+            if isempty(found) || isempty(found.estimate)
+                app.EmCostSummaryLabel.Text = '-';
+                app.EmConflictLabel.Text = '';
+                return;
+            end
+            summary = char(JsonHelper.pick(found.estimate, {'summary'}, ''));
+            if isempty(summary)
+                cost = JsonHelper.pick(found.estimate, {'cost'}, struct());
+                eff  = JsonHelper.pickNumeric(cost, 'effective_shots', NaN);
+                wall = JsonHelper.pickNumeric(cost, 'est_wall_seconds', NaN);
+                if isnan(eff);  shotS = '?'; else; shotS = sprintf('%d', round(eff)); end
+                if isnan(wall); wallS = '?'; else; wallS = sprintf('%.1fs', wall); end
+                summary = sprintf('Effective shots: %s ; est. wall: %s', shotS, wallS);
+            end
+            app.EmCostSummaryLabel.Text = summary;
+            plan = JsonHelper.pick(found.estimate, {'plan'}, struct());
+            notes = JsonHelper.extractList(plan, 'conflicts');
+            if isempty(notes); notes = JsonHelper.extractList(plan, 'notes'); end
+            if iscell(notes) && ~isempty(notes)
+                strs = cell(1, numel(notes));
+                for k = 1:numel(notes); strs{k} = char(string(notes{k})); end
+                app.EmConflictLabel.Text = strjoin(strs, ' ; ');
+            else
+                app.EmConflictLabel.Text = '';
+            end
+        end
+
+        function renderEmKpis(~, app)
+            if isempty(app.EmKpiLabels); return; end
+            qubits = AnalysisViewModel.pickQubits(app.EmCircuitMeta);
+            depth  = AnalysisViewModel.pickDepth(app.EmCircuitMeta);
+            twoq   = AnalysisViewModel.pickTwoQGates(app.EmCircuitMeta);
+            app.EmKpiLabels{1}.Text = AnalysisViewModel.fmtIntKpi(qubits);
+            app.EmKpiLabels{2}.Text = AnalysisViewModel.fmtIntKpi(depth);
+            app.EmKpiLabels{3}.Text = AnalysisViewModel.fmtIntKpi(twoq);
+
+            gammaTxt = '-';
+            advTxt   = Labels.get('em_advantage_unknown', '-');
+            advColor = Theme.COLOR_MUTED;
+            try
+                backend = char(app.EmBackendDropdown.Value);
+                if ~isempty(backend) && app.State.isAuthenticated()
+                    cal = app.BackendSvc.getCalibration(backend, app.State.authToken);
+                    eplg = AnalysisViewModel.extractEplg(cal);
+                    if ~isnan(eplg) && eplg > 0
+                        gammaBar = AnalysisViewModel.computeGammaBar(eplg);
+                        if ~isnan(gammaBar)
+                            gammaTxt = sprintf('%.3f', gammaBar);
+                            if ~isnan(depth) && depth > 0
+                                ovh = AnalysisViewModel.computeGammaBarOverhead(gammaBar, depth);
+                                if ~isnan(ovh) && ovh < 1e4
+                                    advTxt   = Labels.get('em_advantage_yes', 'feasible');
+                                    advColor = Theme.COLOR_SUCCESS;
+                                elseif ~isnan(ovh)
+                                    advTxt   = Labels.get('em_advantage_no', 'infeasible');
+                                    advColor = Theme.COLOR_DANGER;
+                                end
+                            end
+                        end
+                    end
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'EM gammabar compute failed: %s', ME.message);
+            end
+            app.EmKpiLabels{4}.Text = gammaTxt;
+            app.EmKpiLabels{5}.Text = advTxt;
+            try; app.EmKpiLabels{5}.FontColor = advColor; catch; end
+        end
+
+        function renderEmZneCurve(~, app, qae)
+            ax = app.EmZneAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            cla(ax);
+            ax.XGrid = 'on'; ax.YGrid = 'on';
+            if isempty(qae); return; end
+            curve = JsonHelper.extractList(qae, 'mitigation_curve');
+            if isempty(curve); return; end
+            n = numel(curve);
+            nf = zeros(1, n); val = zeros(1, n);
+            for i = 1:n
+                nf(i)  = JsonHelper.pickNumeric(curve(i), 'noise_factor', NaN);
+                val(i) = JsonHelper.pickNumeric(curve(i), 'amplitude', NaN);
+            end
+            valid = ~isnan(nf) & ~isnan(val);
+            nf = nf(valid); val = val(valid);
+            if isempty(nf); return; end
+            [nf, idx] = sort(nf); val = val(idx);
+            hold(ax, 'on');
+            plot(ax, nf, val, '-o', 'LineWidth', 2, 'MarkerSize', 7, ...
+                'MarkerFaceColor', Theme.COLOR_PRIMARY, ...
+                'Color', Theme.COLOR_PRIMARY);
+            mitVal = JsonHelper.pickNumeric(qae, 'mitigated_amplitude', NaN);
+            if ~isnan(mitVal)
+                scatter(ax, 0, mitVal, 90, 'filled', ...
+                    'MarkerFaceColor', Theme.COLOR_SUCCESS, ...
+                    'MarkerEdgeColor', 'none');
+                text(ax, 0.05, mitVal, ' c=0 (mitigated)', ...
+                    'FontSize', 9, 'Color', Theme.COLOR_SUCCESS, ...
+                    'Interpreter', 'none');
+            end
+            hold(ax, 'off');
+        end
+
+        function renderEmGammaDepthCurve(~, app)
+            ax = app.EmGammaDepthAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            cla(ax);
+            ax.XGrid = 'on'; ax.YGrid = 'on';
+            ax.XScale = 'log'; ax.YScale = 'log';
+            eplg = NaN;
+            try
+                backend = char(app.EmBackendDropdown.Value);
+                if ~isempty(backend) && app.State.isAuthenticated()
+                    cal = app.BackendSvc.getCalibration(backend, app.State.authToken);
+                    eplg = AnalysisViewModel.extractEplg(cal);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'EM gamma curve calibration miss: %s', ME.message);
+            end
+            if isnan(eplg) || eplg <= 0
+                text(ax, 0.5, 0.5, ...
+                    'EPLG / 2Q error not available for this backend', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center', ...
+                    'Color', Theme.COLOR_MUTED, 'Interpreter', 'none');
+                return;
+            end
+            gammaBar = AnalysisViewModel.computeGammaBar(eplg);
+            if isnan(gammaBar); return; end
+            depthRange = logspace(0, 4, 60);
+            overhead = arrayfun(@(d) AnalysisViewModel.computeGammaBarOverhead(gammaBar, d), depthRange);
+            hold(ax, 'on');
+            plot(ax, depthRange, overhead, '-', 'LineWidth', 2, ...
+                'Color', Theme.COLOR_PRIMARY);
+            yline(ax, 1e4, '--', 'classical-sim threshold', ...
+                'Color', Theme.COLOR_DANGER, ...
+                'LabelHorizontalAlignment', 'left', ...
+                'Interpreter', 'none');
+            curDepth = AnalysisViewModel.pickDepth(app.EmCircuitMeta);
+            if ~isnan(curDepth) && curDepth > 0
+                xline(ax, curDepth, ':', ...
+                    sprintf('this circuit (depth=%d)', round(curDepth)), ...
+                    'Color', Theme.COLOR_HEADING, ...
+                    'LabelHorizontalAlignment', 'center', ...
+                    'Interpreter', 'none');
+            end
+            hold(ax, 'off');
+        end
+
+        function renderEmOverheadCutsCurve(obj, app)
+            ax = app.EmOverheadCutsAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            cla(ax);
+            ax.XGrid = 'on'; ax.YGrid = 'on';
+            ax.XScale = 'linear'; ax.YScale = 'log';
+            % Theoretical 4^k baseline always renders, even before async lands.
+            kRange = 0:8;
+            theoretical = 4 .^ kRange;
+            hold(ax, 'on');
+            plot(ax, kRange, theoretical, '--', ...
+                'Color', Theme.COLOR_MUTED, 'LineWidth', 1.5);
+            yline(ax, 1e4, '--', 'feasibility', ...
+                'Color', Theme.COLOR_DANGER, ...
+                'Interpreter', 'none');
+            hold(ax, 'off');
+            if ~app.State.isAuthenticated() || ~app.State.hasCircuit(); return; end
+            cid = char(app.State.selectedCircuitId);
+            cuttingSvc = app.CuttingSvc;
+            token      = app.State.authToken;
+            AsyncRunner.run( ...
+                @() cuttingSvc.analyzeCuts(cid, [], token), ...
+                @(data) obj.onEmCuttingAnalyzed(app, data), ...
+                @(ME)   Logger.debug('AnalysisViewModel', ...
+                    'EM cutting analyze: %s', ME.message));
+        end
+
+        function onEmCuttingAnalyzed(~, app, data)
+            ax = app.EmOverheadCutsAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            app.EmCuttingCached = data;
+            k = JsonHelper.pickNumeric(data, 'k', NaN);
+            overhead = JsonHelper.pickNumeric(data, 'sampling_overhead', NaN);
+            overheadLog = JsonHelper.pickNumeric(data, 'sampling_overhead_log10', NaN);
+            if (isnan(overhead) || overhead <= 0) && ~isnan(overheadLog)
+                overhead = 10^overheadLog;
+            end
+            if isnan(k) || isnan(overhead) || overhead <= 0; return; end
+            hold(ax, 'on');
+            scatter(ax, k, overhead, 120, 'filled', ...
+                'MarkerFaceColor', Theme.COLOR_PRIMARY, ...
+                'MarkerEdgeColor', 'none');
+            text(ax, k+0.2, overhead, sprintf(' k=%d, %.1fx', round(k), overhead), ...
+                'FontSize', 10, 'Color', Theme.COLOR_PRIMARY, ...
+                'Interpreter', 'none');
+            hold(ax, 'off');
+        end
+
+        function renderEmTechniqueTable(~, app, bundle)
+            if isempty(app.EmTechniqueTable) || ~isvalid(app.EmTechniqueTable); return; end
+            n = numel(bundle);
+            rows = cell(n, 5);
+            for i = 1:n
+                b = bundle{i};
+                est = b.estimate;
+                if isempty(est)
+                    rows(i,:) = {b.label, '-', '-', '-', ''};
+                    continue;
+                end
+                cost = JsonHelper.pick(est, {'cost'}, struct());
+                shotMul = JsonHelper.pickNumeric(cost, 'shot_multiplier', 1.0);
+                wall    = JsonHelper.pickNumeric(cost, 'est_wall_seconds', NaN);
+                bias    = AnalysisViewModel.estimateBiasReduction(b.levelId);
+                rows{i,1} = b.label;
+                rows{i,2} = sprintf('%.1fx', bias);
+                rows{i,3} = sprintf('%.2fx', shotMul);
+                if isnan(wall); rows{i,4} = '-'; else; rows{i,4} = sprintf('%.1f', wall); end
+                rows{i,5} = '';
+            end
+            pick = AnalysisViewModel.bestRecommendation(bundle);
+            if ~isempty(pick)
+                for i = 1:n
+                    if bundle{i}.levelId == pick.levelId
+                        rows{i,5} = char(10003);   % checkmark
+                        break;
+                    end
+                end
+            end
+            app.EmTechniqueTable.Data = rows;
+        end
+
+        function renderEmRecommendation(~, app, bundle)
+            if isempty(app.EmRecommendationLabel) || ~isvalid(app.EmRecommendationLabel); return; end
+            pick = AnalysisViewModel.bestRecommendation(bundle);
+            if isempty(pick) || isempty(pick.estimate)
+                app.EmRecommendationLabel.Text = Labels.get('em_recommendation_empty', ...
+                    'Pick a backend and circuit to see a recommendation.');
+                return;
+            end
+            cost = JsonHelper.pick(pick.estimate, {'cost'}, struct());
+            shotMul = JsonHelper.pickNumeric(cost, 'shot_multiplier', 1.0);
+            wall    = JsonHelper.pickNumeric(cost, 'est_wall_seconds', NaN);
+            bias    = AnalysisViewModel.estimateBiasReduction(pick.levelId);
+            if isnan(wall); wallS = '?'; else; wallS = sprintf('%.1fs', wall); end
+            txt = sprintf(['Pick: %s\n' ...
+                           '  est. bias reduction: %.1fx\n' ...
+                           '  shot overhead:       %.2fx\n' ...
+                           '  est. wall-clock:     %s\n\n' ...
+                           'Heuristic ranking - review the table for full tradeoffs.'], ...
+                pick.label, bias, shotMul, wallS);
+            app.EmRecommendationLabel.Text = txt;
+        end
+
+        function renderEmRawMitigatedHistogram(~, app, qae)
+            ax = app.EmHistogramAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            cla(ax);
+            if isempty(qae); return; end
+            counts = JsonHelper.pick(qae, {'raw_counts','counts'}, []);
+            if isempty(counts); return; end
+            [labels, vals] = AnalysisViewModel.pickTopBitstrings(counts, 8);
+            if isempty(labels); return; end
+            bar(ax, vals, 'FaceColor', Theme.COLOR_PRIMARY, 'EdgeColor', 'none');
+            ax.XTick = 1:numel(labels);
+            ax.XTickLabel = labels;
+            ax.XTickLabelRotation = 45;
+            ax.TickLabelInterpreter = 'none';
+            ax.XGrid = 'off'; ax.YGrid = 'on';
+        end
+
+        function applyEmStatusBanner(~, app, hasQae)
+            if isempty(app.EmStatusBanner) || ~isvalid(app.EmStatusBanner); return; end
+            if hasQae
+                app.EmStatusBanner.Text = Labels.get('em_footer_hint', '');
+                app.EmStatusBanner.FontColor = Theme.COLOR_MUTED;
+            else
+                app.EmStatusBanner.Text = Labels.get('em_status_no_qae_result', ...
+                    'No measured QMC result yet on this circuit.');
+                app.EmStatusBanner.FontColor = Theme.COLOR_WARNING;
             end
         end
     end

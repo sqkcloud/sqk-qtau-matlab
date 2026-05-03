@@ -242,6 +242,48 @@ classdef QTAUWorkbenchApp < handle
         QmcPollTimer = []    % MATLAB timer driving QMC job polling (empty when idle)
     end
 
+    % ── Quantum Error Mitigation Analysis popup (Phase 6.x) ───────────────────
+    %   Hosted inside the modal popup built by
+    %   DialogBuilder.buildErrorMitigationDialog; the launcher button sits
+    %   next to QmcOpenButton on the Analysis screen toolbar.  No backend
+    %   changes — every panel reads cached QAE / cutting / mitigation data
+    %   that is already exposed by the FastAPI services.
+    properties
+        EmOpenButton
+        EmDialog                    % uifigure handle while popup is open
+        EmCircuitInfoLabel          % "qubits / depth / 2Q" header line on form
+        EmBackendDropdown
+        EmPrimitiveDropdown         % sampler / estimator
+        EmBaseShotsField
+        EmLevelDropdown             % populated from /api/mitigation/levels
+        EmZneFactorsField           % editfield, comma-separated noise factors
+        EmExtrapolatorDropdown      % linear / polynomial / exponential / richardson
+        EmDdSequenceDropdown        % XpXm / XY4 / XY8
+        EmTwirlGatesCheckbox
+        EmTwirlMeasureCheckbox
+        EmTemCheckbox
+        EmAlsoRunRawCheckbox
+        EmCostSummaryLabel          % live one-line summary from /api/mitigation/estimate
+        EmConflictLabel             % notes / conflicts banner (non-empty -> red)
+        EmKpiLabels                 % cell{1,5}: qubits, depth, 2Q, gammabar, advantage
+        EmZneAxes                   % measured ZNE curve (cached qae.mitigation_curve)
+        EmGammaDepthAxes            % gammabar^depth feasibility curve
+        EmOverheadCutsAxes          % cutting overhead vs target k sweep
+        EmTechniqueTable            % per-technique comparison table
+        EmHistogramAxes             % raw vs mitigated bitstring distribution
+        EmRecommendationLabel       % auto-picked stack, parented to a card panel
+        EmStatusBanner              % "predicted only" / "no result" microcopy
+        EmRunButton                 % refresh estimate + render
+        EmApplyButton               % navigate to Benchmark with prefill
+        EmExportButton              % export bundle JSON
+        EmReportButton              % generate report (reuses ReportSvc)
+        EmLevels = []               % cached /api/mitigation/levels response
+        EmEstimateBundle = []       % cell of {techniqueId, label, plan, cost} per row
+        EmQaeCached = []            % cached QAE result struct (or [] if none)
+        EmCuttingCached = []        % cached /cutting/analyze sweep
+        EmCircuitMeta = []          % qubits / depth / 2Q / etc. from CircuitSvc.getCircuit
+    end
+
     % ── Backends tab ──────────────────────────────────────────────────────────
     properties
         BackendTable
