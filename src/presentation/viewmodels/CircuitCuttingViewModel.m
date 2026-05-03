@@ -150,6 +150,21 @@ classdef CircuitCuttingViewModel < handle
             obj.refreshStatus();
         end
 
+        function onMitigationLevelChanged(obj, ~)
+            % Toolbar dropdown change handler. Re-triggers the cost-
+            % preview line so the operator sees the new shots / wall-
+            % clock / IQP estimate immediately. The dropdown's value
+            % flows into the create-batch body at Run time via
+            % buildCreateBody — no other state needs updating here.
+            try
+                obj.applyMitigationPreview(obj.LastAnalyze);
+            catch ME
+                Logger.debug('CircuitCuttingViewModel', ...
+                    'onMitigationLevelChanged → applyMitigationPreview: %s', ...
+                    ME.message);
+            end
+        end
+
         % ── Analyze ──────────────────────────────────────────────────────
         function onAnalyzeCuts(obj)
             app = obj.App;
@@ -680,12 +695,23 @@ classdef CircuitCuttingViewModel < handle
                 end
             end
 
+            % Read the operator's chosen ladder level off the toolbar
+            % dropdown. Falls back to system default (None ⇒ Standard
+            % at the server) when the dropdown isn't built yet.
+            mitigLevel = [];
+            try
+                mitigLevel = app.CuttingMitigationDropdown.Value;
+            catch; end
+
             body = struct( ...
                 'primitive', 'sampler', ...
                 'backend_name', backendName, ...
                 'base_shots', int32(4096), ...
                 'circuit_qubits', int32(n), ...
                 'cutting_overhead_qubits', int32(maxSub));
+            if ~isempty(mitigLevel) && isnumeric(mitigLevel)
+                body.mitigation_level = int32(mitigLevel);
+            end
 
             try
                 resp = svc.estimate(body, token);
@@ -777,6 +803,18 @@ classdef CircuitCuttingViewModel < handle
             if overrideFeasibility
                 body.feasibility_override = true;
             end
+            % Phase 3.1: thread the toolbar's chosen mitigation level
+            % into the create-batch body. Server reads
+            % req.get('mitigation_level', ...) → MitigationService.
+            % resolve(...) so the resolved plan reflects the operator's
+            % choice. Empty / non-numeric ⇒ omit the field so the
+            % server falls back to its default (Standard).
+            try
+                lvl = obj.App.CuttingMitigationDropdown.Value;
+                if isnumeric(lvl)
+                    body.mitigation_level = int32(lvl);
+                end
+            catch; end
         end
 
         function c = firstCandidate(obj)

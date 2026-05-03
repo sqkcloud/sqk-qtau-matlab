@@ -353,6 +353,15 @@ classdef QTAUWorkbenchApp < handle
                                     % from POST /api/mitigation/estimate.
                                     % Right-aligned on the toolbar's
                                     % status row.
+        CuttingMitigationDropdown   % Phase 3.1: ladder-level selector
+                                    % (Raw / Standard / Aggressive / TEM
+                                    % / Custom). Populated from
+                                    % GET /api/mitigation/levels with a
+                                    % hardcoded fallback. Drives the
+                                    % create-batch body's
+                                    % mitigation_level field at Run
+                                    % time and re-triggers the cost-
+                                    % preview line on every change.
         % KPI strip — one big number per metric, IBM-Quantum-style at-a-glance
         CuttingKpiKValue            % Subcircuits count
         CuttingKpiOverheadValue     % Sampling overhead (formatted scientific)
