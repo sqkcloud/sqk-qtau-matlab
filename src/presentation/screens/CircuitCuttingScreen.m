@@ -101,7 +101,17 @@ function CircuitCuttingScreen(app)
     %   [Mitigation ▼] | [Preset ▼] | [Analyze] | [Run] | [Cancel]
     tb = uigridlayout(g, [1 13]);
     tb.Layout.Row = 1; tb.Layout.Column = [1 2];
-    tb.ColumnWidth = {60, 180, 50, 110, 56, 80, '1x', 70, 140, 140, 120, 100, 110};
+    %  Trimmed cols 10–13 (Preset / Analyze / Run / Cancel) so the
+    %  rightmost button isn't clipped on narrower workspaces. Old
+    %  widths {…140, 120, 100, 110} added to 1216 px of fixed columns
+    %  + 96 px of inter-column spacing = 1312 px minimum, which exactly
+    %  consumed the parent's inner width and pushed Cancel past the
+    %  right edge (only "✕ Canc" was visible). New widths
+    %  {…110, 110, 80, 100} drop the deterministic minimum to 1242 px
+    %  and still fit the live labels: "Generic" (and the Phase-2
+    %  "CT Imaging 160Q" plan) inside 110 px, "⌕ Analyze" inside 110,
+    %  "▶ Run" inside 80, "✕ Cancel" inside 100.
+    tb.ColumnWidth = {60, 180, 50, 110, 56, 80, '1x', 70, 140, 110, 110, 80, 100};
     tb.Padding = [0 0 0 0]; tb.ColumnSpacing = 8;
     tb.BackgroundColor = Theme.COLOR_BG;
 
