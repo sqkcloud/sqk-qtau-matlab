@@ -28,7 +28,13 @@ function ReportsScreen(app)
     %  label re-fits the smaller panel automatically.
     g.RowHeight     = {82, '1x', 60};
     g.ColumnWidth   = {'1x'};
-    g.Padding       = [16 16 16 16];
+    %  Bumped bottom padding 16 → 56 (delta +40 px) so the body row
+    %  (Generator + Library) is 40 px shorter — claws back vertical
+    %  space without disturbing the KPI strip or the Workflow row's
+    %  fixed heights. The Generator's "Last action" textarea and the
+    %  Library's table both use '1x' flex internally, so they absorb
+    %  the trim transparently.
+    g.Padding       = [16 16 16 56];
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
