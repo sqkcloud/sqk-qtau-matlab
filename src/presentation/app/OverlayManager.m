@@ -71,6 +71,18 @@ classdef OverlayManager
                         host = app.QmcDialog;
                     end
                 catch; end
+                % Same isprop+isvalid pattern for the Quantum Error
+                % Mitigation popup so its async refresh paths (estimate
+                % sweep + calibration fetch on backend / level / form
+                % change) get the standard spinner instead of an
+                % unresponsive modal. Checked AFTER QmcDialog so an
+                % EmDialog opened on top correctly takes priority.
+                try
+                    if isprop(app, 'EmDialog') && ~isempty(app.EmDialog) ...
+                            && isvalid(app.EmDialog) && strcmp(app.EmDialog.Visible, 'on')
+                        host = app.EmDialog;
+                    end
+                catch; end
                 figW = host.Position(3);
                 figH = host.Position(4);
 

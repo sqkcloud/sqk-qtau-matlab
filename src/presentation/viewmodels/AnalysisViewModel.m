@@ -737,13 +737,17 @@ classdef AnalysisViewModel < handle
         end
 
         function onEmRefreshEstimate(obj)
-            % Explicit "Estimate" button click: same as form-change but
-            % also re-renders the gamma-vs-depth and cutting overhead
-            % charts so live backend choice is reflected everywhere.
+            % Explicit "Estimate" button click: same as form-change. The
+            % async refresh in refreshEmEstimateBundle now also re-renders
+            % the KPI strip and PEC γ̄^depth chart in its onOk callback,
+            % so the previously-duplicated direct calls to renderEmKpis /
+            % renderEmGammaDepthCurve here have been removed (they would
+            % otherwise issue a second sync calibration GET — ~4s of UI
+            % freeze on cold cache — before the async work even started).
+            % The cuts curve has its own independent /api/cutting/analyze
+            % async path, so we still kick that here.
             app = obj.App;
             obj.refreshEmEstimateBundle(app);
-            obj.renderEmKpis(app);
-            obj.renderEmGammaDepthCurve(app);
             obj.renderEmOverheadCutsCurve(app);
         end
 
@@ -926,6 +930,121 @@ classdef AnalysisViewModel < handle
                 Logger.debug('AnalysisViewModel', ...
                     'buildEmReportMetadata: bundle echo skipped: %s', ME.message);
             end
+        end
+
+        function cal = lookupCachedCalibration(app, backend)
+            % Return the cached calibration data when its `backend` key
+            % matches the requested backend; otherwise []. Lets KPI /
+            % gamma-depth renderers reuse the calibration fetched by
+            % the most recent runAsyncWithLoading sweep instead of
+            % issuing another sync HTTP call (which on cold cache adds
+            % ~4s of UI freeze).
+            cal = [];
+            try
+                cache = app.EmCachedCalibration;
+                if isstruct(cache) ...
+                        && isfield(cache, 'backend') && isfield(cache, 'data') ...
+                        && strcmp(char(cache.backend), char(backend)) ...
+                        && ~isempty(cache.data)
+                    cal = cache.data;
+                end
+            catch
+            end
+        end
+
+        function snap = snapshotEmFormState(app)
+            % MAIN THREAD: snapshot every form input the async refresh
+            % needs into a struct of plain values. Decouples the
+            % background work from the live UI handles so the worker
+            % can't deref a torn-down dropdown if the dialog closes
+            % mid-flight.
+            snap = struct( ...
+                'backend',      '', ...
+                'primitive',    'sampler', ...
+                'baseShots',    4096, ...
+                'qubits',       5, ...
+                'sweepLevels',  [], ...
+                'currentLid',   1, ...
+                'options',      [], ...
+                'token',        '');
+            try; snap.backend     = char(app.EmBackendDropdown.Value);     catch; end
+            try; snap.primitive   = char(app.EmPrimitiveDropdown.Value);   catch; end
+            try; snap.baseShots   = double(app.EmBaseShotsField.Value);    catch; end
+            try; snap.currentLid  = double(app.EmLevelDropdown.Value);     catch; end
+            try; snap.sweepLevels = app.EmLevels;                          catch; end
+            try; snap.token       = app.State.authToken;                   catch; end
+            q = AnalysisViewModel.pickQubits(app.EmCircuitMeta);
+            if ~isnan(q); snap.qubits = q; end
+            % Capture Custom-level options only when Custom is the live
+            % selection — matches the legacy behaviour of forwarding
+            % advanced options to /api/mitigation/estimate only for the
+            % currently-selected level.
+            if snap.currentLid == 3 || snap.currentLid == -1
+                try; snap.options = AnalysisViewModel.currentEmOptions(app); catch; end
+            end
+        end
+
+        function results = computeEmRefresh(mitSvc, backendSvc, token, snap)
+            % BACKGROUND POOL: estimate sweep + calibration GET.
+            % Pure compute over the snapshot, no UI references. Returns
+            % a results struct consumed by applyEmRefreshResults on the
+            % main thread.
+            n = numel(snap.sweepLevels);
+            bundle = cell(1, n);
+            for i = 1:n
+                lid = JsonHelper.pickNumeric(snap.sweepLevels(i), 'id', i-1);
+                body = struct( ...
+                    'mitigation_level',         double(lid), ...
+                    'primitive',                snap.primitive, ...
+                    'backend_name',             snap.backend, ...
+                    'base_shots',               snap.baseShots, ...
+                    'circuit_qubits',           round(snap.qubits), ...
+                    'cutting_overhead_qubits',  0);
+                if snap.currentLid == lid && (lid == 3 || lid == -1) ...
+                        && ~isempty(snap.options)
+                    body.mitigation_options = snap.options;
+                end
+                est = [];
+                try
+                    est = mitSvc.estimate(body, token);
+                catch ME
+                    Logger.debug('AnalysisViewModel', ...
+                        'EM estimate fail (lid=%d): %s', lid, ME.message);
+                end
+                bundle{i} = struct( ...
+                    'levelId',  double(lid), ...
+                    'label',    char(JsonHelper.pick(snap.sweepLevels(i), ...
+                        {'label','name'}, sprintf('Level %d', lid))), ...
+                    'estimate', est);
+            end
+            cal = [];
+            if ~isempty(snap.backend)
+                try
+                    cal = backendSvc.getCalibration(snap.backend, token);
+                catch ME
+                    Logger.debug('AnalysisViewModel', ...
+                        'EM calibration fail (%s): %s', snap.backend, ME.message);
+                end
+            end
+            results = struct('bundle', {bundle}, 'calibration', cal);
+        end
+
+        function onEmRefreshError(app, ME)
+            % runAsyncWithLoading hides the overlay before this fires,
+            % so we just log here. Per-call HTTP failures are already
+            % tolerated inside computeEmRefresh; reaching this branch
+            % implies the background pool itself failed (rare).
+            Logger.warn('AnalysisViewModel', ...
+                'EM refresh failed: %s', ME.message);
+            try
+                if isprop(app, 'EmStatusBanner') ...
+                        && ~isempty(app.EmStatusBanner) ...
+                        && isvalid(app.EmStatusBanner)
+                    app.EmStatusBanner.Text = Labels.get( ...
+                        'em_status_refresh_failed', ...
+                        'Refresh failed - see event log for details.');
+                end
+            catch; end
         end
 
         function ladder = staticEmLevelLadder()
@@ -2353,9 +2472,13 @@ classdef AnalysisViewModel < handle
             else
                 app.EmBackendDropdown.Value = names{1};
             end
+            % refreshEmEstimateBundle is now async and re-renders KPI +
+            % PEC γ̄^depth in its onOk, so we don't fire those here too.
+            % The async path also re-fetches the freshly-selected
+            % backend's calibration, which keeps γ̄ Score / Advantage
+            % aligned with the new backend instead of using a stale
+            % cache from the previous selection.
             obj.refreshEmEstimateBundle(app);
-            obj.renderEmKpis(app);
-            obj.renderEmGammaDepthCurve(app);
         end
 
         function onEmBackendsError(~, app, ME)
@@ -2500,55 +2623,61 @@ classdef AnalysisViewModel < handle
         end
 
         function refreshEmEstimateBundle(obj, app)
-            % Sweep /api/mitigation/estimate over every published level
-            % so the technique table + recommendation card reflect the
-            % current backend / shots / primitive.
+            % Async-wrapped refresh of the estimate sweep + calibration.
+            %
+            % Triggered on every QEM form change (backend / mitigation
+            % level / primitive / base shots / advanced options) and on
+            % the explicit Estimate button. Uses the standard
+            % runAsyncWithLoading pattern so the UI thread stays
+            % responsive and the spinner overlay (re-parented to
+            % EmDialog by OverlayManager) gives the operator visible
+            % feedback while the 5 estimate POSTs + 1 calibration GET
+            % run on the background pool.
             if isempty(app.EmLevelDropdown) || ~isvalid(app.EmLevelDropdown); return; end
             if ~app.State.isAuthenticated(); return; end
-            backend = char(app.EmBackendDropdown.Value);
-            if isempty(backend); return; end
 
-            token = app.State.authToken;
-            mitSvc = app.MitigationSvc;
-            primitive = char(app.EmPrimitiveDropdown.Value);
-            baseShots = double(app.EmBaseShotsField.Value);
-            qubits = AnalysisViewModel.pickQubits(app.EmCircuitMeta);
-            if isnan(qubits); qubits = 5; end
+            snap = AnalysisViewModel.snapshotEmFormState(app);
+            if isempty(snap.backend); return; end
+            if isempty(snap.sweepLevels); return; end
 
-            sweepLevels = app.EmLevels;
-            if isempty(sweepLevels); return; end
-            n = numel(sweepLevels);
-            bundle = cell(1, n);
-            currentLid = double(app.EmLevelDropdown.Value);
-            for i = 1:n
-                lid = JsonHelper.pickNumeric(sweepLevels(i), 'id', i-1);
-                body = struct( ...
-                    'mitigation_level',         double(lid), ...
-                    'primitive',                primitive, ...
-                    'backend_name',             backend, ...
-                    'base_shots',               baseShots, ...
-                    'circuit_qubits',           round(qubits), ...
-                    'cutting_overhead_qubits',  0);
-                if currentLid == lid && lid == 3
-                    body.mitigation_options = AnalysisViewModel.currentEmOptions(app);
-                end
-                est = [];
-                try
-                    est = mitSvc.estimate(body, token);
-                catch ME
-                    Logger.debug('AnalysisViewModel', ...
-                        'EM estimate fail (lid=%d): %s', lid, ME.message);
-                end
-                bundle{i} = struct( ...
-                    'levelId',  double(lid), ...
-                    'label',    char(JsonHelper.pick(sweepLevels(i), ...
-                        {'label','name'}, sprintf('Level %d', lid))), ...
-                    'estimate', est);
+            mitSvc     = app.MitigationSvc;
+            backendSvc = app.BackendSvc;
+            token      = snap.token;
+
+            msg = Labels.get('loading_em_refresh', ...
+                'Refreshing mitigation analysis...');
+            app.runAsyncWithLoading(msg, ...
+                @() AnalysisViewModel.computeEmRefresh( ...
+                        mitSvc, backendSvc, token, snap), ...
+                @(results) obj.applyEmRefreshResults(app, results, snap.backend), ...
+                @(ME)      AnalysisViewModel.onEmRefreshError(app, ME));
+        end
+
+        function applyEmRefreshResults(obj, app, results, backend)
+            % MAIN THREAD continuation of refreshEmEstimateBundle. The
+            % overlay is already hidden by runAsyncWithLoading before
+            % this fires, so each downstream renderer paints into a
+            % visible dialog without any extra spinner churn.
+            if isempty(app.EmDialog) || ~isvalid(app.EmDialog); return; end
+            if ~isstruct(results); return; end
+
+            bundle = [];
+            cal    = [];
+            try; bundle = results.bundle;      catch; end
+            try; cal    = results.calibration; catch; end
+
+            if iscell(bundle)
+                app.EmEstimateBundle = bundle;
+                obj.renderEmTechniqueTable(app, bundle);
+                obj.renderEmRecommendation(app, bundle);
+                obj.refreshEmCostSummary(app, bundle);
             end
-            app.EmEstimateBundle = bundle;
-            obj.renderEmTechniqueTable(app, bundle);
-            obj.renderEmRecommendation(app, bundle);
-            obj.refreshEmCostSummary(app, bundle);
+            if ~isempty(cal)
+                app.EmCachedCalibration = struct( ...
+                    'backend', char(backend), 'data', cal);
+            end
+            obj.renderEmKpis(app);
+            obj.renderEmGammaDepthCurve(app);
         end
 
         function refreshEmCostSummary(~, app, bundle)
@@ -2601,8 +2730,12 @@ classdef AnalysisViewModel < handle
             advColor = Theme.COLOR_MUTED;
             try
                 backend = char(app.EmBackendDropdown.Value);
-                if ~isempty(backend) && app.State.isAuthenticated()
-                    cal = app.BackendSvc.getCalibration(backend, app.State.authToken);
+                if ~isempty(backend)
+                    cal = AnalysisViewModel.lookupCachedCalibration(app, backend);
+                    if isempty(cal) && app.State.isAuthenticated()
+                        cal = app.BackendSvc.getCalibration( ...
+                            backend, app.State.authToken);
+                    end
                     eplg = AnalysisViewModel.extractEplg(cal);
                     if ~isnan(eplg) && eplg > 0
                         gammaBar = AnalysisViewModel.computeGammaBar(eplg);
@@ -2687,8 +2820,12 @@ classdef AnalysisViewModel < handle
             eplg = NaN;
             try
                 backend = char(app.EmBackendDropdown.Value);
-                if ~isempty(backend) && app.State.isAuthenticated()
-                    cal = app.BackendSvc.getCalibration(backend, app.State.authToken);
+                if ~isempty(backend)
+                    cal = AnalysisViewModel.lookupCachedCalibration(app, backend);
+                    if isempty(cal) && app.State.isAuthenticated()
+                        cal = app.BackendSvc.getCalibration( ...
+                            backend, app.State.authToken);
+                    end
                     eplg = AnalysisViewModel.extractEplg(cal);
                 end
             catch ME

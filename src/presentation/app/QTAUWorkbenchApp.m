@@ -283,6 +283,10 @@ classdef QTAUWorkbenchApp < handle
         EmQaeCached = []            % cached QAE result struct (or [] if none)
         EmCuttingCached = []        % cached /cutting/analyze sweep
         EmCircuitMeta = []          % qubits / depth / 2Q / etc. from CircuitSvc.getCircuit
+        EmCachedCalibration = []    % {backend, data} cache fetched alongside the
+                                    %   estimate sweep so renderEmKpis +
+                                    %   renderEmGammaDepthCurve don't issue their
+                                    %   own sync calibration GETs.
     end
 
     % ── Backends tab ──────────────────────────────────────────────────────────
