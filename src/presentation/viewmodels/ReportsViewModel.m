@@ -232,13 +232,80 @@ classdef ReportsViewModel < handle
             end
         end
 
-        function onDownloadError(~, app, ~, ME)
+        function onDownloadError(obj, app, reportId, ME)
             app.hideLoading();
             app.logEvent('ERROR', sprintf( ...
                 'Report download FAILED: %s', ME.message));
+            % HTTP 404 from /api/reports/{id}/download means the
+            % rendered file is gone but the metadata still exists in
+            % MongoDB — typically because the api container was
+            % restarted and /tmp/qdash_reports (the default
+            % _REPORTS_DIR) is ephemeral on the container's overlay
+            % filesystem. Offer to re-render from the existing
+            % metadata instead of just showing a raw error.
+            isMissingFile = contains(string(ME.message), 'HTTP404') ...
+                || contains(string(ME.message), 'status 404') ...
+                || contains(string(ME.identifier), 'HTTP404');
+            if isMissingFile && ~isempty(reportId)
+                obj.onMissingFileRegenerate(app, reportId);
+                return;
+            end
             app.setStatus(app.ReportStatusArea, { ...
                 'Download failed.', ME.message});
             app.showError('Download Report', ME);
+        end
+
+        function onMissingFileRegenerate(obj, app, reportId)
+            % Walk the operator through regenerating the report from
+            % its still-extant metadata. Logs the diagnosis and pops a
+            % uiconfirm so the operator can decide whether to spend
+            % the (small) extra POST.
+            Logger.warn('ReportsViewModel', ...
+                'Report file missing on server (id=%s) — offering regenerate', ...
+                reportId);
+            app.setStatus(app.ReportStatusArea, { ...
+                'Report file missing on server.', ...
+                sprintf('id: %s', reportId), ...
+                'Most likely cause: the api container was restarted and', ...
+                '/tmp/qdash_reports (default _REPORTS_DIR) is ephemeral.', ...
+                'Mount that path as a docker volume to persist files.'});
+            choice = uiconfirm(app.UIFigure, ...
+                sprintf(['The rendered report file for this entry is no longer ' ...
+                         'on the server (HTTP 404). The metadata still ' ...
+                         'exists in MongoDB.\n\nRe-generate this report ' ...
+                         'from its existing metadata?']), ...
+                'Report file missing', ...
+                'Options', {'Re-generate', 'Cancel'}, ...
+                'DefaultOption', 1, 'CancelOption', 2, ...
+                'Icon', 'warning');
+            if ~strcmp(choice, 'Re-generate')
+                return;
+            end
+            % Fetch the metadata to read back the format / sections so
+            % the new POST mirrors the original generate call.
+            svc = app.ReportSvc;
+            token = app.State.authToken;
+            try
+                meta = svc.getReport(reportId, token);
+            catch ME2
+                app.showError('Re-generate Report', ME2);
+                return;
+            end
+            title    = char(JsonHelper.pick(meta, {'title'}, ...
+                            char(app.ReportTitleField.Value)));
+            fmt      = lower(char(JsonHelper.pick(meta, {'format'}, 'pdf')));
+            sections = JsonHelper.extractList(meta, 'sections');
+            if isempty(sections); sections = {'all'}; end
+            if ~iscell(sections); sections = {char(sections)}; end
+            cid      = char(JsonHelper.pick(meta, {'circuit_id'},    ''));
+            pid      = char(JsonHelper.pick(meta, {'prediction_id'}, ''));
+            jid      = char(JsonHelper.pick(meta, {'job_record_id'}, ''));
+            app.showLoading(Labels.get('loading_report', 'Generating report...'));
+            workFcn = @() svc.generateReport(title, 'technical', fmt, ...
+                cid, pid, jid, sections, token);
+            AsyncRunner.run(workFcn, ...
+                @(data) obj.onGenerateComplete(app, fmt, title, data), ...
+                @(ME3)  obj.onGenerateError(app, fmt, ME3));
         end
 
         % ── Share continuation ────────────────────────────────────────
