@@ -22,19 +22,9 @@ function ReportsScreen(app)
     t = app.createSectionPage('Reports');
 
     g = uigridlayout(t, [3 1]);
-    %  KPI strip row was 92 px and pushed the Workflow row off-screen
-    %  on smaller workspaces — trimmed to 82 px (per operator review).
-    %  The kpiCard interior uses {16, '1x'} row heights so the value
-    %  label re-fits the smaller panel automatically.
-    g.RowHeight     = {82, '1x', 60};
+    g.RowHeight     = {92, '1x', 60};
     g.ColumnWidth   = {'1x'};
-    %  Bumped bottom padding 16 → 56 (delta +40 px) so the body row
-    %  (Generator + Library) is 40 px shorter — claws back vertical
-    %  space without disturbing the KPI strip or the Workflow row's
-    %  fixed heights. The Generator's "Last action" textarea and the
-    %  Library's table both use '1x' flex internally, so they absorb
-    %  the trim transparently.
-    g.Padding       = [16 16 16 56];
+    g.Padding       = [16 16 16 16];
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
@@ -122,10 +112,22 @@ function ReportsScreen(app)
          'Right-click any row in the library for distribution actions.']), '\n');
 
     % ── Library (right) ─────────────────────────────────────────────────────
-    libPanel = uipanel(body, ...
+    %  Wrap the Library in a 2-row sub-grid {'1x', 30} so the Library
+    %  panel sits in the flex row and a 30 px filler row absorbs the
+    %  trim — Generator (left column of body) stays full-height,
+    %  Library (right column) ends 30 px earlier, and there's no gap
+    %  at the bottom of the screen overall.
+    rightCol = uigridlayout(body, [2 1]);
+    rightCol.Layout.Row = 1; rightCol.Layout.Column = 2;
+    rightCol.RowHeight   = {'1x', 30};
+    rightCol.ColumnWidth = {'1x'};
+    rightCol.Padding = [0 0 0 0]; rightCol.RowSpacing = 0;
+    rightCol.BackgroundColor = Theme.COLOR_BG;
+
+    libPanel = uipanel(rightCol, ...
         'Title', Labels.get('reports_panel_library', 'Reports library'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    libPanel.Layout.Row = 1; libPanel.Layout.Column = 2;
+    libPanel.Layout.Row = 1; libPanel.Layout.Column = 1;
     libPanel.BackgroundColor = Theme.COLOR_CARD;
 
     lg = uigridlayout(libPanel, [3 1]);
