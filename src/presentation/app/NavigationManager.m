@@ -67,12 +67,17 @@ classdef NavigationManager
             builder = NavigationManager.screenBuilderFor(key);
             if isempty(builder); return; end
             try
-                app.showLoading(sprintf('Loading %s…', key));
+                % Use the same message format as showNavLoading so the
+                % idempotent fast-path in OverlayManager.showLoading
+                % matches and the second showLoading call (from
+                % autoLoadScreen) is a no-op instead of an HTMLSource
+                % rebuild that flickers.
+                app.showLoading(sprintf('Loading %s...', key));
                 % drawnow + pause + drawnow forces the loading overlay
                 % uihtml to actually PAINT before the synchronous builder
                 % hogs the main thread. Without the pause, the JS render
                 % is queued but not flushed: the user sees the panel
-                % render naked first (1–2 s for slow screens) and then
+                % render naked first (1-2 s for slow screens) and then
                 % the overlay only appears AFTER the builder returns,
                 % which is the inverse of what makes sense to a user.
                 drawnow;
@@ -82,15 +87,16 @@ classdef NavigationManager
                 app.BuiltScreens(key) = true;
                 Logger.info('NavigationManager', ...
                     'Screen built on first nav: %s', key);
-                % Drop the build-time overlay. autoLoadScreen runs right
-                % after this returns and will re-show its own overlay
-                % via showNavLoading if the screen needs an async fetch
-                % - both calls happen in the same sync frame so the
-                % user sees no flicker. For screens WITHOUT an autoLoad
-                % case (QEC Simulation, QEC Visualization, Reports),
-                % this is the only path that hides the overlay; without
-                % it the "Loading {Screen}..." spinner stays on forever.
-                try; app.hideLoading(); catch; end
+                % NOTE: previously this hid the overlay here ("drop the
+                % build-time overlay so autoLoadScreen can re-show its
+                % own").  That caused a visible double-flicker because
+                % hideLoading -> showLoading triggered two CEF render
+                % frames.  Instead we leave the overlay UP and let
+                % autoLoadScreen either (a) keep it up via the
+                % idempotent showNavLoading call (when async work is
+                % about to fire) or (b) hide it at end-of-autoLoadScreen
+                % when no async work was kicked.  Single continuous
+                % overlay, no flicker.
             catch ME
                 Logger.error('NavigationManager', ...
                     'Screen build failed for %s: %s', key, ME.message);
@@ -138,11 +144,21 @@ classdef NavigationManager
             % cannot leave a stuck overlay.  Fresh-cache hits skip the
             % overlay entirely so nav stays snappy when there's nothing
             % to fetch.
+            %
+            % asyncStarted tracks whether any case in the switch below
+            % actually kicked async work (which will hide the overlay
+            % from its own callback).  When false, we hide the
+            % build-time overlay (left up by ensureScreenBuilt) at the
+            % end of this function so the user sees a single continuous
+            % overlay, never the previous double-flicker.
+            asyncStarted = false;
+
             switch key
                 case 'Welcome'
                     if app.State.isAuthenticated() && ~NavigationManager.isScreenFresh(app.WelcomeVm, ttl)
                         NavigationManager.showNavLoading(app, 'Welcome');
                         app.WelcomeVm.onFetchProjects();
+                        asyncStarted = true;
                     end
                 case 'Upload'
                     if ~isempty(app.UploadVm)
@@ -156,6 +172,7 @@ classdef NavigationManager
                         if ~NavigationManager.isScreenFresh(app.UploadVm, ttl)
                             NavigationManager.showNavLoading(app, 'Upload');
                             app.UploadVm.onRefreshCircuits();
+                            asyncStarted = true;
                         end
                     end
                 case 'Circuits'
@@ -163,11 +180,13 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.CircuitsVm, ttl)
                         NavigationManager.showNavLoading(app, 'Circuits');
                         app.CircuitsVm.onLoadCircuits();
+                        asyncStarted = true;
                     end
                 case 'Dashboard'
                     if ~isempty(app.DashboardVm) && ~NavigationManager.isScreenFresh(app.DashboardVm, ttl)
                         NavigationManager.showNavLoading(app, 'Dashboard');
                         app.DashboardVm.onRefreshDashboard();
+                        asyncStarted = true;
                     elseif ~isempty(app.DashboardVm)
                         % Screen is fresh but activities may have changed from other screens
                         app.DashboardVm.refreshActivityTable();
@@ -177,29 +196,34 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.NotesVm, ttl)
                         NavigationManager.showNavLoading(app, 'Notes');
                         app.NotesVm.onLoadNotes();
+                        asyncStarted = true;
                     end
                 case 'Analysis'
                     if ~isempty(app.AnalysisVm) && ~NavigationManager.isScreenFresh(app.AnalysisVm, ttl)
                         NavigationManager.showNavLoading(app, 'Analysis');
                         app.AnalysisVm.onEnter();
+                        asyncStarted = true;
                     end
                 case 'Backends'
                     if ~isempty(app.BackendsVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.BackendsVm, ttl)
                         NavigationManager.showNavLoading(app, 'Backends');
                         app.BackendsVm.onRefreshBackends();
+                        asyncStarted = true;
                     end
                 case 'Prediction'
                     if ~isempty(app.PredictionVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.PredictionVm, ttl)
                         NavigationManager.showNavLoading(app, 'Prediction');
                         app.PredictionVm.onEnter();
+                        asyncStarted = true;
                     end
                 case 'Jobs'
                     if ~isempty(app.JobsVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.JobsVm, ttl)
                         NavigationManager.showNavLoading(app, 'Jobs');
                         app.JobsVm.onRefreshJobs();
+                        asyncStarted = true;
                     end
                     % Keep the Job Monitoring Dashboard live: auto-poll
                     % GET /api/jobs every 5s while the Jobs screen is
@@ -215,12 +239,14 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.ResultsVm, ttl)
                         NavigationManager.showNavLoading(app, 'Results');
                         app.ResultsVm.onRefreshResults();
+                        asyncStarted = true;
                     end
                 case 'Benchmark'
                     if ~isempty(app.BenchmarkVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.BenchmarkVm, ttl)
                         NavigationManager.showNavLoading(app, 'Benchmark');
                         app.BenchmarkVm.onLoadBenchmark();
+                        asyncStarted = true;
                     end
                 case 'Detailed Analysis'
                     % On first entry, paint seeded demo charts so the layout
@@ -238,25 +264,38 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.DetailedAnalysisVm, ttl)
                         NavigationManager.showNavLoading(app, 'Detailed Analysis');
                         app.DetailedAnalysisVm.onEnter();
+                        asyncStarted = true;
                     end
                 case 'Benchmark Dashboard'
                     if ~isempty(app.BenchmarkDashboardVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.BenchmarkDashboardVm, ttl)
                         NavigationManager.showNavLoading(app, 'Benchmark Dashboard');
                         app.BenchmarkDashboardVm.onEnter();
+                        asyncStarted = true;
                     end
                 case 'Circuit Cutting'
                     if ~isempty(app.CircuitCuttingVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.CircuitCuttingVm, ttl)
                         NavigationManager.showNavLoading(app, 'Circuit Cutting');
                         app.CircuitCuttingVm.onEnter();
+                        asyncStarted = true;
                     end
                 case 'Settings'
                     if ~isempty(app.SettingsVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.SettingsVm, ttl)
                         NavigationManager.showNavLoading(app, 'Settings');
                         app.SettingsVm.onEnter();
+                        asyncStarted = true;
                     end
+            end
+
+            % No async work fired -> drop any leftover build-time overlay
+            % that ensureScreenBuilt left up.  Covers (a) screens with no
+            % autoLoad case (Reports / QEC Simulation / QEC Visualization)
+            % and (b) fresh-cache subsequent visits.  When asyncStarted
+            % is true the VM's own done/error callback will hide.
+            if ~asyncStarted
+                try; app.hideLoading(); catch; end
             end
         end
 

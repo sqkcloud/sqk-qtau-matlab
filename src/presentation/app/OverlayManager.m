@@ -67,6 +67,33 @@ classdef OverlayManager
                     app.ActivityOverlay = uihtml(host);
                 end
                 app.ActivityOverlay.Position = [0 0 figW figH];
+
+                % ── Idempotent fast path ─────────────────────────────────
+                % If the overlay is already visible with the same message
+                % and showTimer flag, skip the HTMLSource rebuild.  Setting
+                % HTMLSource forces the CEF browser to tear down + remount
+                % the entire DOM, which produces a visible flicker on
+                % every nav click (the "loading-twice" symptom: build-time
+                % overlay -> autoLoadScreen overlay).  The cache lives on
+                % the overlay's own UserData property so no new
+                % QTAUWorkbenchApp property is needed.
+                cachedMsg = '';
+                cachedShowTimer = [];
+                try
+                    ud = app.ActivityOverlay.UserData;
+                    if isstruct(ud)
+                        if isfield(ud, 'lastMsg');       cachedMsg = ud.lastMsg; end
+                        if isfield(ud, 'lastShowTimer'); cachedShowTimer = ud.lastShowTimer; end
+                    end
+                catch
+                end
+                alreadyShown = ~needCreate && ...
+                    strcmp(app.ActivityOverlay.Visible, 'on');
+                if alreadyShown && isequal(cachedMsg, char(msg)) ...
+                        && isequal(cachedShowTimer, showTimer)
+                    drawnow();
+                    return;
+                end
                 % Elapsed timer JS (only rendered when showTimer is true)
                 if showTimer
                     timerHtml = [ ...
@@ -111,6 +138,14 @@ classdef OverlayManager
                     '</div></div></body></html>'];
                 app.ActivityOverlay.Visible = 'on';
                 uistack(app.ActivityOverlay, 'top');
+                % Persist (msg, showTimer) so the next showLoading call with
+                % identical args can short-circuit via the idempotent fast
+                % path above and skip the HTMLSource rebuild flicker.
+                try
+                    app.ActivityOverlay.UserData = struct( ...
+                        'lastMsg', char(msg), 'lastShowTimer', showTimer);
+                catch
+                end
                 drawnow();
             catch ME
                 Logger.debug('OverlayManager', 'showLoading: %s', ME.message);
