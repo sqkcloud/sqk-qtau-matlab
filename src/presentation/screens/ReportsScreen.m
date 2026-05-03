@@ -37,9 +37,16 @@ function ReportsScreen(app)
     lbl = uilabel(gg, 'Text', Labels.get('reports_label_format'));
     lbl.FontColor = Theme.COLOR_LABEL;
     lbl.Layout.Row = 2; lbl.Layout.Column = 1;
-    fmtItems   = Labels.items('reports_format_items', {'PDF','Word (docx)','HTML','MATLAB Live Script'});
-    fmtDefault = Labels.get('reports_format_default', 'PDF');
-    app.ReportFormatDropdown = uidropdown(gg, 'Items', fmtItems, 'Value', fmtDefault);
+    %  Format options trimmed to what the backend's
+    %  /api/reports/generate actually supports (pdf | html | json).
+    %  The previous list also offered "Word (docx)" and "MATLAB Live
+    %  Script" which the server has no renderer for — picking them
+    %  silently fell back to PDF, which was misleading. ItemsData
+    %  carries the lowercase wire value so the VM can post it as-is.
+    app.ReportFormatDropdown = uidropdown(gg, ...
+        'Items',     {'PDF', 'HTML', 'JSON'}, ...
+        'ItemsData', {'pdf', 'html', 'json'}, ...
+        'Value',     'pdf');
     app.ReportFormatDropdown.Layout.Row = 2; app.ReportFormatDropdown.Layout.Column = 2;
 
     lbl = uilabel(gg, 'Text', Labels.get('reports_label_sections'));
@@ -89,15 +96,30 @@ function ReportsScreen(app)
     desc = uilabel(ag, 'Text', Labels.get('reports_distribute_desc'));
     desc.FontSize = 13; desc.FontColor = Theme.COLOR_LABEL;
     desc.Layout.Row = 1; desc.Layout.Column = 1; desc.WordWrap = 'on';
-    b = uibutton(ag, 'Text', [char(8595) ' ' Labels.get('reports_btn_download_pdf')]);
+    %  Distribution buttons were previously inert (no ButtonPushedFcn).
+    %  Wire each to the matching VM handler so the row actually does
+    %  something: PDF re-downloads + opens the currently-selected
+    %  report; Email prompts for a recipient and POSTs to
+    %  /api/reports/{id}/share; Print is the same as Open (the OS
+    %  default viewer's Cmd-P / Ctrl-P is the cross-platform print
+    %  surface — MATLAB has no portable print API for arbitrary file
+    %  types). All three short-circuit with a uialert when no report
+    %  is selected.
+    b = uibutton(ag, 'Text', [char(8595) ' ' Labels.get('reports_btn_download_pdf')], ...
+        'ButtonPushedFcn', @(~,~) app.ReportsVm.onDownloadPdf());
     b.Layout.Row = 1; b.Layout.Column = 2; app.styleBtn(b, 'primary');
     b.FontSize = 14;
-    b = uibutton(ag, 'Text', [char(9993) ' ' Labels.get('reports_btn_share_email')]);
+    b.Tooltip = 'Stream the selected report and open it in the OS default viewer.';
+    b = uibutton(ag, 'Text', [char(9993) ' ' Labels.get('reports_btn_share_email')], ...
+        'ButtonPushedFcn', @(~,~) app.ReportsVm.onShareEmail());
     b.Layout.Row = 1; b.Layout.Column = 3; app.styleBtn(b, 'secondary');
     b.FontSize = 14;
-    b = uibutton(ag, 'Text', [char(9113) ' ' Labels.get('reports_btn_print')]);
+    b.Tooltip = 'POST /api/reports/{id}/share with a recipient address.';
+    b = uibutton(ag, 'Text', [char(9113) ' ' Labels.get('reports_btn_print')], ...
+        'ButtonPushedFcn', @(~,~) app.ReportsVm.onPrintReport());
     b.Layout.Row = 1; b.Layout.Column = 4; app.styleBtn(b, 'ghost');
     b.FontSize = 14;
+    b.Tooltip = 'Open in default viewer; print from there (no portable MATLAB print API).';
 
     % ── Workflow Complete action bar ───────────────────────────────────────────
     bottom = uipanel(g, 'Title', Labels.get('reports_panel_workflow'), ...

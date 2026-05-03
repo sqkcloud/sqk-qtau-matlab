@@ -287,13 +287,25 @@ classdef NavigationManager
                         app.SettingsVm.onEnter();
                         asyncStarted = true;
                     end
+                case 'Reports'
+                    %  Populate the GeneratedReportList with the user's
+                    %  existing reports (newest first) so Open / PDF /
+                    %  Email work even on a fresh tab visit. The VM's
+                    %  loadReportsList runs async via AsyncRunner; if
+                    %  it fails it logs a warn and leaves the list
+                    %  empty (Generate still works either way).
+                    if ~isempty(app.ReportsVm) && app.State.isAuthenticated()
+                        NavigationManager.showNavLoading(app, 'Reports');
+                        app.ReportsVm.loadReportsList();
+                        asyncStarted = true;
+                    end
             end
 
             % No async work fired -> drop any leftover build-time overlay
             % that ensureScreenBuilt left up.  Covers (a) screens with no
-            % autoLoad case (Reports / QEC Simulation / QEC Visualization)
-            % and (b) fresh-cache subsequent visits.  When asyncStarted
-            % is true the VM's own done/error callback will hide.
+            % autoLoad case (QEC Simulation / QEC Visualization) and
+            % (b) fresh-cache subsequent visits.  When asyncStarted is
+            % true the VM's own done/error callback will hide.
             if ~asyncStarted
                 try; app.hideLoading(); catch; end
             end
