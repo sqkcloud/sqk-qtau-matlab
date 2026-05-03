@@ -301,6 +301,12 @@ classdef QTAUWorkbenchApp < handle
         ResultsTable
         ResultJsonArea
         ResultsDistTable
+        % Phase 4.2: Mitigated/Raw toggle row (hidden by default,
+        % populated by ResultsViewModel.applySiblingToggle when the
+        % loaded batch carries a non-empty sibling_group_id).
+        ResultsMitigationToggleGrid  % parent uipanel — Visible toggled
+        ResultsMitigatedToggleBtn    % left half of the segmented control
+        ResultsRawToggleBtn          % right half
         CuttingBatchesTable    % Cutting Batches list on the Results screen
         SelectedBatchId = ""   % Most recently picked cutting batch row
     end

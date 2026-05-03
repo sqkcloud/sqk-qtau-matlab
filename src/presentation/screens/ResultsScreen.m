@@ -26,21 +26,61 @@ function ResultsScreen(app)
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     summaryPanel.Layout.Row = 1; summaryPanel.Layout.Column = 1; summaryPanel.BackgroundColor = Theme.COLOR_CARD;
 
-    sg = uigridlayout(summaryPanel, [2 1]);
-    % Proportional row sizing (was '1x',120). The fixed 120-px textarea
-    % squeezed the table's '1x' allocation to ~0 at smaller window
-    % heights — the table headers literally fell off-screen. With
-    % '2x','1x' both rows scale together: table gets 2/3, textarea
-    % gets 1/3. Always visible at any window size.
-    sg.RowHeight = {'2x','1x'}; sg.Padding = [12 10 12 10]; sg.BackgroundColor = Theme.COLOR_CARD;
+    sg = uigridlayout(summaryPanel, [3 1]);
+    %  Three-row inner grid: (1) Mitigated/Raw toggle (Phase 4.2,
+    %  hidden by default — only visible when the loaded batch carries
+    %  sibling_group_id), (2) summary table, (3) result-text area.
+    %  The toggle row uses a fixed 32px height; when its parent panel
+    %  is Visible='off' the row collapses visually so the table +
+    %  textarea retain their existing 2:1 proportional split.
+    sg.RowHeight = {32, '2x', '1x'};
+    sg.Padding = [12 10 12 10]; sg.BackgroundColor = Theme.COLOR_CARD;
+
+    %  Phase 4.2 — Mitigated/Raw segmented control.
+    %  Two buttons share a 4-column grid; ResultsViewModel toggles
+    %  styles ('primary' for active / 'ghost' for inactive) and
+    %  Visible on the parent panel based on the loaded batch's
+    %  mitigation_role + sibling_group_id.
+    app.ResultsMitigationToggleGrid = uipanel(sg, ...
+        'BorderType', 'none', ...
+        'BackgroundColor', Theme.COLOR_CARD, ...
+        'Visible', 'off');
+    app.ResultsMitigationToggleGrid.Layout.Row = 1;
+    tg = uigridlayout(app.ResultsMitigationToggleGrid, [1 4]);
+    tg.ColumnWidth = {'fit', 130, 130, '1x'};
+    tg.Padding = [0 0 0 0]; tg.ColumnSpacing = 6;
+    tg.BackgroundColor = Theme.COLOR_CARD;
+
+    toggleLbl = uilabel(tg, 'Text', 'Compare:', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_LABEL, ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+    toggleLbl.Layout.Column = 1;
+
+    app.ResultsMitigatedToggleBtn = uibutton(tg, ...
+        'Text', 'Mitigated', ...
+        'Tooltip', ['Show the mitigated batch (operator-chosen ' ...
+                    'level applied at submit time).'], ...
+        'ButtonPushedFcn', @(~,~) app.ResultsVm.onMitigationToggleClicked('primary'));
+    app.ResultsMitigatedToggleBtn.Layout.Column = 2;
+    app.styleBtn(app.ResultsMitigatedToggleBtn, 'primary');
+
+    app.ResultsRawToggleBtn = uibutton(tg, ...
+        'Text', 'Raw (level 0)', ...
+        'Tooltip', ['Show the raw level-0 sibling batch spawned by ' ...
+                    'also_run_raw at submit time. Same circuit, ' ...
+                    'no mitigation — useful for direct comparison.'], ...
+        'ButtonPushedFcn', @(~,~) app.ResultsVm.onMitigationToggleClicked('raw'));
+    app.ResultsRawToggleBtn.Layout.Column = 3;
+    app.styleBtn(app.ResultsRawToggleBtn, 'ghost');
 
     app.ResultsTable = uitable(sg);
+    app.ResultsTable.Layout.Row = 2;
     app.ResultsTable.ColumnName = Labels.cols('results_table_cols_summary', {'Metric','Measured','Predicted','Ideal','Notes'});
     app.ResultsTable.Data = {};
     app.styleTable(app.ResultsTable);
 
     app.ResultJsonArea = uitextarea(sg, 'Editable', 'off');
-    app.ResultJsonArea.Layout.Row = 2; app.ResultJsonArea.FontSize = 12;
+    app.ResultJsonArea.Layout.Row = 3; app.ResultJsonArea.FontSize = 12;
     app.ResultJsonArea.Value = {Labels.get('results_summary_initial')};
 
     % ── Distribution Review (right) ───────────────────────────────────────────

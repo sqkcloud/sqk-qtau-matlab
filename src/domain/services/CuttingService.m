@@ -57,6 +57,22 @@ classdef CuttingService < handle
             result = obj.Client.getAuth(endpoint, token);
         end
 
+        % ── Sibling pair lookup (Phase 4) ────────────────────────────────
+        function result = getSiblingPair(obj, groupId, token)
+            % GET /api/cutting/sibling/{sibling_group_id}
+            %
+            % Returns {sibling_group_id, primary_batch_id, raw_batch_id,
+            % primary_status, raw_status}. Either batch field may be
+            % empty string when only one sibling exists in the group
+            % (e.g. raw sibling persistence failed). Used by the
+            % Results screen Mitigated/Raw toggle to resolve the
+            % partner batch when the loaded result carries a non-empty
+            % sibling_group_id.
+            endpoint = sprintf('/api/cutting/sibling/%s', ...
+                FastAPIClient.encodePathSegment(char(groupId)));
+            result = obj.Client.getAuth(endpoint, token);
+        end
+
         % ── Cancel ───────────────────────────────────────────────────────
         function result = cancelBatch(obj, batchId, token)
             % DELETE /api/cutting/batches/{batch_id}

@@ -3,6 +3,16 @@ classdef ResultsViewModel < handle
     properties
         LastRefresh = []     % tic value — used by autoLoadScreen for freshness caching
         CuttingBatches = {}  % cached list of batch dicts from /api/cutting/batches
+        % Phase 4.2 — Mitigated/Raw sibling pair for the currently-
+        % displayed cutting batch result. Empty fields when the
+        % current result has no sibling. Populated by
+        % applySiblingToggle from
+        % GET /api/cutting/sibling/{group_id}.
+        SiblingPair = struct( ...
+            'group_id', '', ...
+            'primary_id', '', ...
+            'raw_id', '', ...
+            'active_role', '')
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
@@ -83,6 +93,44 @@ classdef ResultsViewModel < handle
                 @() svc.getBatchResult(bid, token), ...
                 @(data) obj.onReconstructionLoaded(app, bid, data), ...
                 @(ME)   obj.onReconstructionError(app, bid, ME));
+        end
+
+        function onMitigationToggleClicked(obj, role)
+            % Phase 4.2 toggle handler. ``role`` is 'primary' or 'raw'
+            % depending on which toggle button the operator clicked.
+            % Re-fetches the alternate batch's result and reuses the
+            % existing reconstruction-rendering pipeline.
+            app = obj.App;
+            role = char(role);
+            if isempty(obj.SiblingPair.group_id)
+                return;
+            end
+            if strcmp(role, 'primary')
+                target = char(obj.SiblingPair.primary_id);
+            else
+                target = char(obj.SiblingPair.raw_id);
+            end
+            if isempty(target)
+                uialert(app.UIFigure, ...
+                    sprintf('No %s sibling exists for this batch.', role), ...
+                    'Results', 'Icon', 'info');
+                return;
+            end
+            if strcmp(target, char(app.SelectedBatchId))
+                return;  % already showing this batch
+            end
+            obj.SiblingPair.active_role = role;
+            obj.refreshToggleStyle();
+            app.SelectedBatchId = string(target);
+            app.logEvent('CUT', sprintf( ...
+                'Mitigation toggle → %s sibling: %s', role, target));
+            app.showLoading(Labels.get('loading_results', 'Loading results...'));
+            svc   = app.CuttingSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.getBatchResult(target, token), ...
+                @(data) obj.onReconstructionLoaded(app, target, data), ...
+                @(ME)   obj.onReconstructionError(app, target, ME));
         end
     end
 
@@ -386,6 +434,19 @@ classdef ResultsViewModel < handle
             app.State.logActivity(sprintf( ...
                 'View cutting reconstruction — batch: %s', bid), 'Success');
             obj.LastRefresh = tic;
+
+            % Phase 4.2 — Mitigated/Raw toggle. When the loaded batch
+            % carries a non-empty sibling_group_id, resolve the pair
+            % via GET /api/cutting/sibling/{group_id} and show the
+            % toggle row above the result table. Best-effort: any
+            % HTTP failure leaves the toggle hidden rather than
+            % surfacing an error modal.
+            try
+                obj.applySiblingToggle(data);
+            catch ME
+                Logger.debug('ResultsViewModel', ...
+                    'applySiblingToggle: %s', ME.message);
+            end
         end
 
         function onReconstructionError(~, app, bid, ME)
@@ -462,6 +523,102 @@ classdef ResultsViewModel < handle
             end
             if isempty(seen); return; end
             s = strjoin(seen, ', ');
+        end
+
+        function applySiblingToggle(obj, data)
+            % Resolve the sibling pair for the freshly-loaded batch
+            % result and toggle the Mitigated/Raw row visibility on
+            % the Results screen.
+            %
+            % When ``data.sibling_group_id`` is empty: hide the toggle
+            % entirely (single-batch workflows are unaffected).
+            %
+            % When non-empty: cache the loaded role on
+            % obj.SiblingPair.active_role and call
+            % GET /api/cutting/sibling/{group_id} to resolve both
+            % batch ids. Updates button styles to highlight the
+            % currently-displayed role.
+            app = obj.App;
+            if isempty(app.ResultsMitigationToggleGrid) || ...
+                    ~isvalid(app.ResultsMitigationToggleGrid)
+                return;
+            end
+
+            groupId = char(string(JsonHelper.pick(data, ...
+                'sibling_group_id', '')));
+            role = char(string(JsonHelper.pick(data, ...
+                'mitigation_role', '')));
+
+            if isempty(groupId)
+                % No sibling — collapse the toggle row.
+                app.ResultsMitigationToggleGrid.Visible = 'off';
+                obj.SiblingPair = struct( ...
+                    'group_id', '', 'primary_id', '', ...
+                    'raw_id', '', 'active_role', '');
+                return;
+            end
+
+            % Reuse cached pair when we've already resolved this
+            % group — saves a redundant HTTP round-trip when the
+            % operator toggles back and forth.
+            if ~strcmp(obj.SiblingPair.group_id, groupId)
+                token = '';
+                try
+                    token = char(app.State.authToken);
+                catch; end
+                if isempty(token); return; end
+                try
+                    pair = app.CuttingSvc.getSiblingPair(groupId, token);
+                catch ME
+                    Logger.debug('ResultsViewModel', ...
+                        'getSiblingPair failed: %s', ME.message);
+                    app.ResultsMitigationToggleGrid.Visible = 'off';
+                    return;
+                end
+                obj.SiblingPair = struct( ...
+                    'group_id',    groupId, ...
+                    'primary_id',  char(string(JsonHelper.pick(pair, ...
+                                       'primary_batch_id', ''))), ...
+                    'raw_id',      char(string(JsonHelper.pick(pair, ...
+                                       'raw_batch_id', ''))), ...
+                    'active_role', role);
+            else
+                obj.SiblingPair.active_role = role;
+            end
+
+            % Hide the toggle when only one sibling exists — there's
+            % nothing to toggle to.
+            if isempty(obj.SiblingPair.primary_id) || ...
+                    isempty(obj.SiblingPair.raw_id)
+                app.ResultsMitigationToggleGrid.Visible = 'off';
+                return;
+            end
+
+            app.ResultsMitigationToggleGrid.Visible = 'on';
+            obj.refreshToggleStyle();
+        end
+
+        function refreshToggleStyle(obj)
+            % Highlight whichever role is active by flipping the button
+            % styles between 'primary' (active) and 'ghost' (inactive).
+            app = obj.App;
+            if isempty(app.ResultsMitigatedToggleBtn) || ...
+                    ~isvalid(app.ResultsMitigatedToggleBtn)
+                return;
+            end
+            isRawActive = strcmp(char(obj.SiblingPair.active_role), 'raw');
+            try
+                if isRawActive
+                    app.styleBtn(app.ResultsMitigatedToggleBtn, 'ghost');
+                    app.styleBtn(app.ResultsRawToggleBtn,       'primary');
+                else
+                    app.styleBtn(app.ResultsMitigatedToggleBtn, 'primary');
+                    app.styleBtn(app.ResultsRawToggleBtn,       'ghost');
+                end
+            catch ME
+                Logger.debug('ResultsViewModel', ...
+                    'refreshToggleStyle: %s', ME.message);
+            end
         end
     end
 end
