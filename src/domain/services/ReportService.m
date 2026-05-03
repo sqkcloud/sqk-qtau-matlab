@@ -101,10 +101,21 @@ classdef ReportService < handle
         end
 
         % List all reports accessible to the current user.
-        function data = listReports(obj, token)
-            Logger.info('ReportService', 'listReports → GET /api/reports');
+        %   Optional `skip` / `limit` enable server-side pagination via
+        %   ?skip=&limit= query params. The Reports library uses this
+        %   so large report archives don't pull in one giant payload.
+        %   1-arg form (`listReports(token)`) preserved for legacy
+        %   callers — those send no query string.
+        function data = listReports(obj, token, skip, limit)
+            if nargin >= 4
+                ep = sprintf('/api/reports?skip=%d&limit=%d', ...
+                    round(skip), round(limit));
+            else
+                ep = '/api/reports';
+            end
+            Logger.info('ReportService', 'listReports → GET %s', ep);
             try
-                data = obj.Client.getAuth('/api/reports', token);
+                data = obj.Client.getAuth(ep, token);
                 Logger.info('ReportService', 'listReports → response received');
             catch ME
                 Logger.error('ReportService', 'listReports FAILED: %s', ME.message);

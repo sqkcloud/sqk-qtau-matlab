@@ -1,18 +1,19 @@
-% ReportsScreen  Redesigned Reports tab UI (Phase 6.5).
+% ReportsScreen  Redesigned Reports tab UI (Phase 6.6).
 %
-%   Layout (4 rows):
+%   Layout (3 rows):
 %     Row 1 (92 px):  KPI strip  → Total / PDF / HTML / Latest
 %     Row 2 ('1x'):   Body       → Generator (left, 380 px) | Library (right, '1x')
-%     Row 3 (60 px):  Distribution row (Open / PDF / Email / Print)
-%     Row 4 (60 px):  Workflow row    (Detailed Analysis / Restart Pipeline)
+%     Row 3 (60 px):  Workflow   → Detailed Analysis · Restart Pipeline
 %
-%   Replaces the old 3-box layout that had:
-%     - oversized empty boxes
-%     - raw-text status area exposing /private/var/folders paths
-%     - uilistbox of unstyled formatted strings (no columns, no sort, no search)
-%     - no summary KPIs, no refresh button
-%     - inert PDF / Email / Print buttons (now wired)
-%     - a Restart Pipeline button that crashed when SettingsVm was lazy
+%   Phase 6.6 changes vs Phase 6.5:
+%     - Distribution row (PDF / Email / Print) removed; those actions
+%       now live in a right-click context menu on the Reports library
+%       (PopupMenuManager.buildReportsPopup, mirroring the Backends /
+%       Circuits convention).
+%     - "Selected · …" detail line below the table removed; the table
+%       row highlight is the selection feedback.
+%     - Pagination footer added (Prev · page indicator · Next) using
+%       the server's ?skip=&limit= query params.
 %
 %   All visible strings come from resources/labels.properties via Labels.
 
@@ -20,8 +21,8 @@ function ReportsScreen(app)
     Logger.info('ReportsScreen', 'Building Reports tab UI');
     t = app.createSectionPage('Reports');
 
-    g = uigridlayout(t, [4 1]);
-    g.RowHeight     = {92, '1x', 60, 60};
+    g = uigridlayout(t, [3 1]);
+    g.RowHeight     = {92, '1x', 60};
     g.ColumnWidth   = {'1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -108,7 +109,7 @@ function ReportsScreen(app)
     app.ReportStatusArea.Layout.Row = 6; app.ReportStatusArea.Layout.Column = [1 2];
     app.ReportStatusArea.Value = strsplit(Labels.get('reports_status_initial', ...
         ['Set report title and format, then click Generate.\n' ...
-         'Requires authentication and a completed analysis.']), '\n');
+         'Right-click any row in the library for distribution actions.']), '\n');
 
     % ── Library (right) ─────────────────────────────────────────────────────
     libPanel = uipanel(body, ...
@@ -118,12 +119,12 @@ function ReportsScreen(app)
     libPanel.BackgroundColor = Theme.COLOR_CARD;
 
     lg = uigridlayout(libPanel, [3 1]);
-    lg.RowHeight = {32, '1x', 'fit'};
+    lg.RowHeight = {32, '1x', 32};
     lg.ColumnWidth = {'1x'};
     lg.Padding = [12 10 12 10]; lg.RowSpacing = 8;
     lg.BackgroundColor = Theme.COLOR_CARD;
 
-    % Toolbar: search + open + refresh
+    % Toolbar: search + Open + Refresh
     tb = uigridlayout(lg, [1 3]);
     tb.Layout.Row = 1; tb.Layout.Column = 1;
     tb.ColumnWidth = {'1x', 110, 40};
@@ -141,7 +142,8 @@ function ReportsScreen(app)
         'ButtonPushedFcn', @(~,~) app.ReportsVm.onOpenReport());
     openBtn.Layout.Row = 1; openBtn.Layout.Column = 2;
     app.styleBtn(openBtn, 'primary');
-    openBtn.Tooltip = 'Stream the selected report and open it in the OS default viewer.';
+    openBtn.Tooltip = ['Stream the selected report and open it in the OS default viewer. ' ...
+                       'Right-click a row for Download / Email / Print.'];
     app.OpenReportButton = openBtn;
 
     app.ReportsRefreshBtn = uibutton(tb, ...
@@ -162,67 +164,46 @@ function ReportsScreen(app)
         'CellSelectionCallback', @(src,evt) app.ReportsVm.onTableSelection(evt));
     app.ReportsTable.Layout.Row = 2; app.ReportsTable.Layout.Column = 1;
     app.styleTable(app.ReportsTable);
+    app.ReportsTable.Tooltip = 'Right-click a row for Open / Download / Email / Print.';
 
-    % Selected detail
-    app.ReportsDetailLabel = uilabel(lg, ...
-        'Text', Labels.get('reports_detail_empty', ...
-            'Pick a row to see its sections, status, and id.'), ...
+    % Pagination footer (Prev · page indicator · Next)
+    pg = uigridlayout(lg, [1 3]);
+    pg.Layout.Row = 3; pg.Layout.Column = 1;
+    pg.ColumnWidth = {90, '1x', 90};
+    pg.Padding = [0 0 0 0]; pg.ColumnSpacing = 8;
+    pg.BackgroundColor = Theme.COLOR_CARD;
+
+    app.ReportsPrevBtn = uibutton(pg, ...
+        'Text', [char(8678) ' ' Labels.get('reports_btn_prev', 'Prev')], ...   % ⇐
+        'ButtonPushedFcn', @(~,~) app.ReportsVm.onPrevPage());
+    app.ReportsPrevBtn.Layout.Row = 1; app.ReportsPrevBtn.Layout.Column = 1;
+    app.styleBtn(app.ReportsPrevBtn, 'ghost');
+    app.ReportsPrevBtn.Enable = 'off';
+
+    app.ReportsPageIndicator = uilabel(pg, ...
+        'Text', Labels.get('reports_page_indicator', 'Page 1'), ...
         'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
-        'WordWrap', 'on');
-    app.ReportsDetailLabel.Layout.Row = 3; app.ReportsDetailLabel.Layout.Column = 1;
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
+    app.ReportsPageIndicator.Layout.Row = 1; app.ReportsPageIndicator.Layout.Column = 2;
 
-    % Legacy: GeneratedReportList is no longer rendered, but stale code
-    % paths might dereference it. Keep at [] so VM lookup paths
-    % (currentReportId / loadReportsList) short-circuit safely via their
-    % isvalid / try-catch guards.
+    app.ReportsNextBtn = uibutton(pg, ...
+        'Text', [Labels.get('reports_btn_next', 'Next') ' ' char(8680)], ...   % ⇒
+        'ButtonPushedFcn', @(~,~) app.ReportsVm.onNextPage());
+    app.ReportsNextBtn.Layout.Row = 1; app.ReportsNextBtn.Layout.Column = 3;
+    app.styleBtn(app.ReportsNextBtn, 'ghost');
+    app.ReportsNextBtn.Enable = 'off';
+
+    % Legacy: GeneratedReportList no longer rendered. ReportsDetailLabel
+    % no longer rendered (removed per Phase 6.6 — selection is the
+    % feedback). VM lookup paths guard with isvalid / try-catch.
     app.GeneratedReportList = [];
+    app.ReportsDetailLabel  = [];
 
-    % ── Row 3 — Distribution ────────────────────────────────────────────────
-    actionPanel = uipanel(g, ...
-        'Title', Labels.get('reports_panel_distribute', 'Distribution'), ...
-        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    actionPanel.Layout.Row = 3; actionPanel.Layout.Column = 1;
-    actionPanel.BackgroundColor = Theme.COLOR_CARD;
-
-    ag = uigridlayout(actionPanel, [1 4]);
-    ag.RowHeight = {34};
-    ag.ColumnWidth = {'1x', 130, 130, 110};
-    ag.Padding = [14 8 14 8]; ag.ColumnSpacing = 10;
-    ag.BackgroundColor = Theme.COLOR_CARD;
-
-    desc = uilabel(ag, ...
-        'Text', Labels.get('reports_distribute_desc', ...
-            'Distribute the selected report via the channels below.'), ...
-        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
-        'VerticalAlignment', 'center', 'WordWrap', 'on');
-    desc.Layout.Row = 1; desc.Layout.Column = 1;
-
-    btnPdf = uibutton(ag, ...
-        'Text', [char(8595) ' ' Labels.get('reports_btn_download_pdf', 'Download')], ...
-        'ButtonPushedFcn', @(~,~) app.ReportsVm.onDownloadPdf());
-    btnPdf.Layout.Row = 1; btnPdf.Layout.Column = 2;
-    app.styleBtn(btnPdf, 'secondary'); btnPdf.FontSize = 14;
-    btnPdf.Tooltip = 'Stream the selected report and open it locally.';
-
-    btnEmail = uibutton(ag, ...
-        'Text', [char(9993) ' ' Labels.get('reports_btn_share_email', 'Email')], ...
-        'ButtonPushedFcn', @(~,~) app.ReportsVm.onShareEmail());
-    btnEmail.Layout.Row = 1; btnEmail.Layout.Column = 3;
-    app.styleBtn(btnEmail, 'secondary'); btnEmail.FontSize = 14;
-    btnEmail.Tooltip = 'POST /api/reports/{id}/share with a recipient address.';
-
-    btnPrint = uibutton(ag, ...
-        'Text', [char(9113) ' ' Labels.get('reports_btn_print', 'Print')], ...
-        'ButtonPushedFcn', @(~,~) app.ReportsVm.onPrintReport());
-    btnPrint.Layout.Row = 1; btnPrint.Layout.Column = 4;
-    app.styleBtn(btnPrint, 'ghost'); btnPrint.FontSize = 14;
-    btnPrint.Tooltip = 'Open in OS default viewer (use Cmd-P / Ctrl-P from there).';
-
-    % ── Row 4 — Workflow ────────────────────────────────────────────────────
+    % ── Row 3 — Workflow ────────────────────────────────────────────────────
     bottom = uipanel(g, ...
         'Title', Labels.get('reports_panel_workflow', 'Workflow'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    bottom.Layout.Row = 4; bottom.Layout.Column = 1;
+    bottom.Layout.Row = 3; bottom.Layout.Column = 1;
     bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     bg = uigridlayout(bottom, [1 3]);
@@ -252,14 +233,21 @@ function ReportsScreen(app)
     btnRestart.Tooltip = ['Reset selectedCircuitId / selectedJobId / predictionId ' ...
                           'and return to the Welcome screen.'];
 
+    % ── Right-click context-menu wiring ─────────────────────────────────────
+    %   Mirror the Backends/Circuits convention: a chained
+    %   WindowButtonDownFcn that detects right-clicks (SelectionType =
+    %   'alt') over a selected table row, then calls
+    %   app.showReportsPopupMenu(x, y).
+    prevFcn = app.UIFigure.WindowButtonDownFcn;
+    app.UIFigure.WindowButtonDownFcn = ...
+        @(src, evt) handleReportsMouseDown(app, prevFcn, src, evt);
+
     Logger.info('ReportsScreen', 'Reports tab UI built successfully');
 end
 
 % ── Local helpers ───────────────────────────────────────────────────────────
 
 function valueLabel = kpiCard(parent, title, initialValue)
-    % KPI card: small grey title + large primary value. Returns the
-    % value uilabel handle so the VM can update its Text.
     panel = uipanel(parent, 'Title', '', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'BackgroundColor', Theme.COLOR_CARD);
@@ -278,14 +266,46 @@ function valueLabel = kpiCard(parent, title, initialValue)
 end
 
 function restartPipelineSafely(app)
-    % Lazy-init SettingsVm. NavigationManager.autoLoadScreen would
-    % create it on Settings nav, but if the operator hits Restart on
-    % the Reports screen *before* visiting Settings, app.SettingsVm is
-    % [] and the original `app.SettingsVm.onRestartPipeline()` direct
-    % callback throws "Dot indexing is not supported for variables of
-    % this type." This guard creates the VM on demand.
     if isempty(app.SettingsVm)
         app.SettingsVm = SettingsViewModel(app);
     end
     app.SettingsVm.onRestartPipeline();
+end
+
+function handleReportsMouseDown(app, prevFcn, src, evt)
+    % Chained WindowButtonDownFcn: forward to any prior handler first,
+    % then react only when the Reports section is the active one and
+    % the click is a right-click (alt) over a selected table row.
+    if ~isempty(prevFcn)
+        try prevFcn(src, evt); catch; end
+    end
+    if ~isSectionVisible(app, 'Reports'); return; end
+    cp = app.UIFigure.CurrentPoint;
+    % Click outside an open popup → dismiss it.
+    if ~isempty(app.ReportsPopupPanel) && isvalid(app.ReportsPopupPanel) ...
+            && strcmp(app.ReportsPopupPanel.Visible, 'on')
+        pp = app.ReportsPopupPanel.Position;
+        insidePopup = cp(1) >= pp(1) && cp(1) <= pp(1)+pp(3) && ...
+                      cp(2) >= pp(2) && cp(2) <= pp(2)+pp(4);
+        if insidePopup; return; end
+        app.hideReportsPopupMenu();
+    end
+    try; selType = app.UIFigure.SelectionType; catch; selType = 'normal'; end
+    if ~strcmp(selType, 'alt'); return; end
+    if isempty(app.ReportsTable) || ~isvalid(app.ReportsTable); return; end
+    sel = app.ReportsTable.Selection;
+    if isempty(sel); return; end
+    app.showReportsPopupMenu(cp(1), cp(2));
+end
+
+function tf = isSectionVisible(app, key)
+    tf = false;
+    try
+        if isstruct(app.SectionPanels) && isfield(app.SectionPanels, key) ...
+                && isvalid(app.SectionPanels.(key))
+            tf = strcmp(app.SectionPanels.(key).Visible, 'on');
+        end
+    catch
+        tf = false;
+    end
 end

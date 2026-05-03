@@ -507,9 +507,17 @@ classdef QTAUWorkbenchApp < handle
         ReportsTable                 % uitable: Format / Title / Created / Status
         ReportsSearchField           % uieditfield: client-side filter
         ReportsRefreshBtn            % uibutton: manual reload
-        ReportsDetailLabel           % uilabel: selected-row metadata pill
+        ReportsDetailLabel           % legacy uilabel handle (now [] — Selected line removed)
         ReportsCachedItems = {}      % cell of report metadata structs (cache
                                      % for search filter without HTTP round-trip)
+        % ── Phase 6.6 — pagination + right-click popup ────────────────
+        ReportsCurrentPage = 1       % 1-indexed current page
+        ReportsPageSize    = 20      % items per page (server skip/limit)
+        ReportsPrevBtn               % uibutton: prev page
+        ReportsNextBtn               % uibutton: next page
+        ReportsPageIndicator         % uilabel: "Page N · Y items"
+        ReportsPopupPanel            % uipanel: right-click context menu
+                                     % (built lazily by PopupMenuManager.buildReportsPopup)
     end
 
     % ── Settings tab ──────────────────────────────────────────────────────────
@@ -860,6 +868,16 @@ classdef QTAUWorkbenchApp < handle
         end
         function hideBackendsPopupMenu(app)
             PopupMenuManager.hideBackendsPopup(app);
+        end
+
+        function buildReportsPopupMenu(app)
+            PopupMenuManager.buildReportsPopup(app);
+        end
+        function showReportsPopupMenu(app, x, y)
+            PopupMenuManager.showReportsPopup(app, x, y);
+        end
+        function hideReportsPopupMenu(app)
+            PopupMenuManager.hideReportsPopup(app);
         end
 
         function onFigureMouseDown(app)

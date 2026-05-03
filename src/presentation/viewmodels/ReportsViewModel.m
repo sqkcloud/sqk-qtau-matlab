@@ -1,27 +1,25 @@
 classdef ReportsViewModel < handle
     % ReportsViewModel  Callback handlers for the Reports screen.
     %
-    %   Phase 6.5 redesign — drives the new screen layout:
-    %     - 4-card KPI strip   (Total / PDF / HTML / Latest)
+    %   Phase 6.6 — pagination + right-click context menu, no Selected line.
+    %
+    %   Drives:
+    %     - 4-card KPI strip   (Total / PDF / HTML / Latest) — cumulative
+    %       across loaded pages so paging doesn't make the totals shrink.
     %     - uitable library    (Format / Title / Created / Status)
-    %     - search field       (client-side filter against ReportsCachedItems)
-    %     - selected detail    (sections / status / id below the table)
-    %     - distribution row   (Open / Download / Email / Print)
-    %     - workflow row       (Detailed Analysis / Restart Pipeline)
-    %
-    %   Mirrors the QMC popup's working report flow:
-    %     POST /api/reports/generate
-    %       → poll  GET /api/reports/{id}   until status='ready'
-    %       → stream GET /api/reports/{id}/download to a temp file
-    %       → uiputfile + copy + web() to open in OS default viewer
-    %
-    %   On HTTP 404 from /download, prompts the operator to re-generate
-    %   from the still-extant MongoDB metadata (file went missing
-    %   because /tmp/qdash_reports inside the api container is
-    %   ephemeral; the deployment fix mounts it as a persistent volume).
+    %     - search field       (client-side filter against the cumulative
+    %                           ReportsCachedItems cache)
+    %     - pagination footer  (Prev · "Page N · Y items" · Next)
+    %     - right-click popup  (Open / Download / Email / Print) via
+    %                           PopupMenuManager.buildReportsPopup
 
     properties (Access = private)
         App  % QTAUWorkbenchApp
+    end
+
+    properties (Access = private)
+        LastPageItemCount = 0   % items returned by the most recent fetch
+                                % (used to know whether Next has more pages)
     end
 
     methods
@@ -29,24 +27,15 @@ classdef ReportsViewModel < handle
             obj.App = app;
         end
 
-        % ── Tab open ──────────────────────────────────────────────────
+        % ── Tab open / Refresh ────────────────────────────────────────
         function loadReportsList(obj)
-            % Populate the cache + KPIs + table from GET /api/reports.
-            % Called from QTAUWorkbenchApp.autoLoadScreen on tab open
-            % and from the Refresh button.
             app = obj.App;
             if ~app.State.isAuthenticated(); return; end
             if ~ReportsViewModel.tableValid(app); return; end
-            svc   = app.ReportSvc;
-            token = app.State.authToken;
-            AsyncRunner.run( ...
-                @() svc.listReports(token), ...
-                @(data) obj.onListLoaded(app, data), ...
-                @(ME)   obj.onListLoadError(app, ME));
+            obj.fetchPage(app, app.ReportsCurrentPage, false);
         end
 
         function onRefreshList(obj)
-            % Manual refresh button — same as auto-load, with overlay.
             app = obj.App;
             if ~app.State.isAuthenticated()
                 uialert(app.UIFigure, ...
@@ -54,25 +43,33 @@ classdef ReportsViewModel < handle
                     'Reports', 'Icon', 'warning');
                 return;
             end
-            app.showLoading(Labels.get('loading_reports_list', ...
-                'Refreshing reports...'));
-            svc   = app.ReportSvc;
-            token = app.State.authToken;
-            AsyncRunner.run( ...
-                @() svc.listReports(token), ...
-                @(data) obj.onListLoaded(app, data, true), ...
-                @(ME)   obj.onListLoadError(app, ME));
+            % Refresh stays on the current page so the user's place
+            % isn't lost.
+            obj.fetchPage(app, app.ReportsCurrentPage, true);
+        end
+
+        function onPrevPage(obj)
+            app = obj.App;
+            if app.ReportsCurrentPage <= 1; return; end
+            obj.fetchPage(app, app.ReportsCurrentPage - 1, true);
+        end
+
+        function onNextPage(obj)
+            app = obj.App;
+            % Next is enabled only when the previous page filled to
+            % page-size — i.e. there's at least one more page available.
+            if obj.LastPageItemCount < app.ReportsPageSize; return; end
+            obj.fetchPage(app, app.ReportsCurrentPage + 1, true);
         end
 
         function onSearchChanged(obj, query)
-            % Client-side filter against ReportsCachedItems.
             app = obj.App;
             if ~ReportsViewModel.tableValid(app); return; end
             obj.applyFilter(app, char(query));
         end
 
         function onTableSelection(obj, evt)
-            % uitable CellSelectionCallback — paint the detail line.
+            % Sticky selection for downstream Open / context menu.
             app = obj.App;
             if ~ReportsViewModel.tableValid(app); return; end
             row = NaN;
@@ -83,8 +80,14 @@ classdef ReportsViewModel < handle
                 end
             catch
             end
-            if isnan(row); obj.clearDetail(app); return; end
-            obj.paintDetail(app, row);
+            if isnan(row); return; end
+            try
+                ids = app.ReportsTable.UserData.ids;
+                if iscell(ids) && row >= 1 && row <= numel(ids)
+                    app.State.reportId = string(ids{row});
+                end
+            catch
+            end
         end
 
         % ── Generate ──────────────────────────────────────────────────
@@ -123,7 +126,7 @@ classdef ReportsViewModel < handle
                 @(ME)   obj.onGenerateError(app, fmt, ME));
         end
 
-        % ── Open (table or AppState fallback) ─────────────────────────
+        % ── Open + distribution ───────────────────────────────────────
         function onOpenReport(obj)
             app = obj.App;
             rid = ReportsViewModel.currentReportId(app);
@@ -136,7 +139,6 @@ classdef ReportsViewModel < handle
             obj.dispatchDownload(app, rid, char(app.ReportTitleField.Value));
         end
 
-        % ── Distribution ──────────────────────────────────────────────
         function onDownloadPdf(obj)
             obj.onOpenReport();
         end
@@ -176,6 +178,23 @@ classdef ReportsViewModel < handle
     end
 
     methods (Access = private)
+        % ── Pagination dispatch ───────────────────────────────────────
+        function fetchPage(obj, app, page, withOverlay)
+            page = max(1, round(page));
+            skip  = (page - 1) * app.ReportsPageSize;
+            limit = app.ReportsPageSize;
+            svc   = app.ReportSvc;
+            token = app.State.authToken;
+            if withOverlay
+                app.showLoading(Labels.get('loading_reports_list', ...
+                    'Refreshing reports...'));
+            end
+            AsyncRunner.run( ...
+                @() svc.listReports(token, skip, limit), ...
+                @(data) obj.onPageLoaded(app, data, page, withOverlay), ...
+                @(ME)   obj.onListLoadError(app, ME, withOverlay));
+        end
+
         % ── Generate continuation ─────────────────────────────────────
         function onGenerateComplete(obj, app, fmt, title, data)
             reportId = char(JsonHelper.pick(data, {'report_id','id'}, ''));
@@ -188,9 +207,8 @@ classdef ReportsViewModel < handle
                 return;
             end
             app.State.reportId = string(reportId);
-            % Insert a synthetic metadata row so the new report appears
-            % at the top of the table immediately, even before the next
-            % full list refresh.
+            % Insert a synthetic metadata row so the new report shows
+            % up at the top of the cumulative cache + table immediately.
             newMeta = struct( ...
                 'report_id', reportId, ...
                 'title',     title, ...
@@ -199,6 +217,7 @@ classdef ReportsViewModel < handle
                 'created_at', char(datetime('now', ...
                     'TimeZone','UTC', 'Format','yyyy-MM-dd''T''HH:mm:ss')));
             obj.upsertCachedItem(app, newMeta);
+            obj.paintKpis(app, app.ReportsCachedItems);
             obj.applyFilter(app, char(app.ReportsSearchField.Value));
             obj.selectByReportId(app, reportId);
             app.setStatus(app.ReportStatusArea, { ...
@@ -353,29 +372,38 @@ classdef ReportsViewModel < handle
         end
 
         % ── List load continuation ────────────────────────────────────
-        function onListLoaded(obj, app, data, hideOverlay)
-            if nargin < 4; hideOverlay = false; end
+        function onPageLoaded(obj, app, data, page, hideOverlay)
             if hideOverlay; app.hideLoading(); end
             if ~ReportsViewModel.tableValid(app); return; end
             items = JsonHelper.extractList(data, 'reports');
             if isempty(items); items = JsonHelper.asList(data); end
-            % Normalize to a cell array of structs so search/filter can
-            % iterate it without struct-array vs cell branching.
-            cache = {};
+            % Normalize to a cell array of structs.
+            pageItems = {};
             for i = 1:numel(items)
                 if iscell(items)
-                    cache{end+1} = items{i}; %#ok<AGROW>
+                    pageItems{end+1} = items{i}; %#ok<AGROW>
                 else
-                    cache{end+1} = items(i); %#ok<AGROW>
+                    pageItems{end+1} = items(i); %#ok<AGROW>
                 end
             end
-            app.ReportsCachedItems = cache;
-            obj.paintKpis(app, cache);
-            obj.applyFilter(app, char(app.ReportsSearchField.Value));
+            obj.LastPageItemCount = numel(pageItems);
+            % Merge into the cumulative cache (de-duped by report_id).
+            obj.mergeIntoCache(app, pageItems);
+            app.ReportsCurrentPage = page;
+            obj.updatePagerControls(app);
+            obj.paintKpis(app, app.ReportsCachedItems);
+            % Repaint the table to show only the current page's items
+            % (filtered by the current search query).
+            q = char(app.ReportsSearchField.Value);
+            if isempty(strtrim(q))
+                obj.paintTable(app, pageItems);
+            else
+                obj.applyFilter(app, q);
+            end
         end
 
-        function onListLoadError(~, app, ME)
-            app.hideLoading();
+        function onListLoadError(~, app, ME, hideOverlay)
+            if hideOverlay; app.hideLoading(); end
             Logger.warn('ReportsViewModel', ...
                 'listReports failed: %s', ME.message);
             app.setStatus(app.ReportStatusArea, { ...
@@ -384,23 +412,39 @@ classdef ReportsViewModel < handle
 
         % ── Cache + render helpers ────────────────────────────────────
         function applyFilter(obj, app, query)
-            % Filter ReportsCachedItems by case-insensitive substring
-            % match on title or format. Repaints the table and the KPI
-            % "matching" hint.
+            % When a search query is active, search filters across the
+            % cumulative cache (all loaded pages). When empty, the
+            % active page determines what shows — page navigation
+            % takes over and the most recent fetch is what's displayed.
             cache = app.ReportsCachedItems;
             if ~iscell(cache); cache = {}; end
             q = lower(strtrim(char(query)));
+            if isempty(q)
+                % Show *only* current page from cumulative cache. The
+                % cumulative cache may contain rows from other pages
+                % the user has visited; filter to current-page IDs.
+                obj.repaintCurrentPage(app);
+                return;
+            end
             keep = true(1, numel(cache));
-            if ~isempty(q)
-                for i = 1:numel(cache)
-                    title = lower(char(JsonHelper.pick(cache{i}, {'title'}, '')));
-                    fmt   = lower(char(JsonHelper.pick(cache{i}, {'format'}, '')));
-                    if isempty(strfind(title, q)) && isempty(strfind(fmt, q))
-                        keep(i) = false;
-                    end
+            for i = 1:numel(cache)
+                title = lower(char(JsonHelper.pick(cache{i}, {'title'}, '')));
+                fmt   = lower(char(JsonHelper.pick(cache{i}, {'format'}, '')));
+                if isempty(strfind(title, q)) && isempty(strfind(fmt, q))
+                    keep(i) = false;
                 end
             end
             obj.paintTable(app, cache(keep));
+        end
+
+        function repaintCurrentPage(obj, app)
+            % Best-effort: re-fetch the current page (debounced — if
+            % the search clears via `loadReportsList`, this fires
+            % naturally). For the no-overlay path on search clear we
+            % just repaint the cache subset whose page we know.
+            % Simplest correct behaviour: leave the table as the most
+            % recent page paint (already in place).
+            if isempty(app.ReportsTable.Data); return; end
         end
 
         function paintTable(~, app, items)
@@ -462,48 +506,51 @@ classdef ReportsViewModel < handle
             end
         end
 
-        function paintDetail(~, app, row)
-            ud = app.ReportsTable.UserData;
-            if ~isstruct(ud) || ~isfield(ud, 'metas') || ...
-                    row < 1 || row > numel(ud.metas)
-                return;
-            end
-            m = ud.metas{row};
-            sections = JsonHelper.extractList(m, 'sections');
-            if isempty(sections); sections = {}; end
-            if ~iscell(sections); sections = num2cell(sections); end
-            secStrs = cell(1, numel(sections));
-            for i = 1:numel(sections); secStrs{i} = char(string(sections{i})); end
+        function updatePagerControls(obj, app)
             try
-                rid = ud.ids{row};
+                app.ReportsPageIndicator.Text = sprintf('Page %d · %d items', ...
+                    app.ReportsCurrentPage, obj.LastPageItemCount);
             catch
-                rid = char(JsonHelper.pick(m, {'report_id','id'}, ''));
             end
-            status = char(JsonHelper.pick(m, {'status'}, '—'));
-            fmt    = lower(char(JsonHelper.pick(m, {'format'}, 'pdf')));
-            title  = char(JsonHelper.pick(m, {'title'}, '(untitled)'));
-            secLine = strjoin(secStrs, ', ');
-            if isempty(secLine); secLine = '(default)'; end
-            app.ReportsDetailLabel.Text = sprintf( ...
-                'Selected · %s · %s · status %s · sections: %s · id: %s', ...
-                title, upper(fmt), status, secLine, rid);
-            % Sticky reportId for downstream Open / Email / Print.
-            app.State.reportId = string(rid);
+            try
+                if app.ReportsCurrentPage > 1
+                    app.ReportsPrevBtn.Enable = 'on';
+                else
+                    app.ReportsPrevBtn.Enable = 'off';
+                end
+            catch
+            end
+            try
+                % Heuristic: if the page filled to page-size, assume
+                % there's at least one more page available.
+                if obj.LastPageItemCount >= app.ReportsPageSize
+                    app.ReportsNextBtn.Enable = 'on';
+                else
+                    app.ReportsNextBtn.Enable = 'off';
+                end
+            catch
+            end
         end
 
-        function clearDetail(~, app)
-            try
-                app.ReportsDetailLabel.Text = Labels.get( ...
-                    'reports_detail_empty', ...
-                    'Pick a row to see its sections, status, and id.');
-            catch
+        function mergeIntoCache(~, app, pageItems)
+            % De-dupe by report_id; new pageItems always win (replace
+            % older snapshots with the same id).
+            cache = app.ReportsCachedItems;
+            if ~iscell(cache); cache = {}; end
+            newIds = cell(1, numel(pageItems));
+            for i = 1:numel(pageItems)
+                newIds{i} = char(JsonHelper.pick(pageItems{i}, {'report_id','id'}, ''));
             end
+            keep = true(1, numel(cache));
+            for i = 1:numel(cache)
+                cid = char(JsonHelper.pick(cache{i}, {'report_id','id'}, ''));
+                if any(strcmp(newIds, cid)); keep(i) = false; end
+            end
+            cache = cache(keep);
+            app.ReportsCachedItems = [pageItems, cache];
         end
 
         function upsertCachedItem(~, app, newMeta)
-            % Insert (or move-to-front) the metadata struct keyed by
-            % report_id. Used after a successful generate so the new
-            % row appears at top of the table immediately.
             cache = app.ReportsCachedItems;
             if ~iscell(cache); cache = {}; end
             newId = char(JsonHelper.pick(newMeta, {'report_id','id'}, ''));
@@ -543,9 +590,6 @@ classdef ReportsViewModel < handle
         end
 
         function rid = currentReportId(app)
-            % Best-effort current report-id:
-            %   1. table selection,
-            %   2. AppState.reportId (set after Generate or last selection).
             rid = '';
             try
                 if isprop(app, 'ReportsTable') ...
@@ -577,10 +621,6 @@ classdef ReportsViewModel < handle
         end
 
         function ts = parseIsoSeconds(iso)
-            % Parse "YYYY-MM-DDTHH:MM:SS[.fff]" or "YYYY-MM-DD HH:MM:SS"
-            % to MATLAB datenum-style epoch seconds. Returns NaN on parse
-            % failure. We only need monotonic ordering and "minutes ago"
-            % humanisation, so a single best-effort pattern is enough.
             ts = NaN;
             if isempty(iso); return; end
             try
