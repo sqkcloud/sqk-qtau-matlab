@@ -71,7 +71,11 @@ function ReportsScreen(app)
     genPanel.BackgroundColor = Theme.COLOR_CARD;
 
     gg = uigridlayout(genPanel, [6 2]);
-    gg.RowHeight   = {30, 30, 30, 38, 16, '1x'};
+    %  Generate button row bumped 38 → 42 so the primary action has
+    %  more visual weight, matching the convention used by other
+    %  screens' headline buttons (e.g. Welcome's Sign-in, Backends'
+    %  Submit Pool).
+    gg.RowHeight   = {30, 30, 30, 42, 16, '1x'};
     gg.ColumnWidth = {110, '1x'};
     gg.Padding = [16 12 16 12];
     gg.RowSpacing = 8; gg.ColumnSpacing = 8;
@@ -231,30 +235,49 @@ function ReportsScreen(app)
     bottom.Layout.Row = 3; bottom.Layout.Column = 1;
     bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
-    bg = uigridlayout(bottom, [1 3]);
-    bg.RowHeight = {34};
-    bg.ColumnWidth = {'1x', 170, 170};
-    bg.Padding = [14 8 14 8]; bg.ColumnSpacing = 10;
+    %  Workflow row restack (Phase 6.7 polish): description on top,
+    %  buttons centered on the bottom row. The previous [1 3] grid
+    %  with RowHeight={34} pinned the buttons to the top of the 90 px
+    %  panel and left ~40 px of empty space below them. The new
+    %  [2 1] layout uses the full height meaningfully.
+    bg = uigridlayout(bottom, [2 1]);
+    bg.RowHeight = {'1x', 38};
+    bg.ColumnWidth = {'1x'};
+    bg.Padding = [18 12 18 12]; bg.RowSpacing = 6;
     bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
     flowDesc = uilabel(bg, ...
         'Text', Labels.get('reports_action_msg', ...
             'Generate, preview, and distribute your analysis report — or restart the pipeline.'), ...
         'FontSize', 13, 'FontWeight', 'bold', ...
+        'HorizontalAlignment', 'left', ...
         'VerticalAlignment', 'center', 'WordWrap', 'on');
     flowDesc.Layout.Row = 1; flowDesc.Layout.Column = 1;
 
-    btnDA = uibutton(bg, ...
+    %  Buttons sit on a dedicated bottom row, right-aligned via a
+    %  3-column sub-grid that pushes them to the right with a flex
+    %  spacer on the left. Wider buttons (180 vs 170) match the
+    %  visual weight of the larger row.
+    btnRow = uigridlayout(bg, [1 3]);
+    btnRow.Layout.Row = 2; btnRow.Layout.Column = 1;
+    btnRow.RowHeight   = {'1x'};
+    btnRow.ColumnWidth = {'1x', 180, 180};
+    btnRow.Padding = [0 0 0 0]; btnRow.ColumnSpacing = 10;
+    btnRow.BackgroundColor = Theme.COLOR_ACCENT_BG;
+
+    btnDA = uibutton(btnRow, ...
         'Text', [char(9651) ' Detailed Analysis'], ...
         'ButtonPushedFcn', @(~,~) app.onSelectSection('Detailed Analysis'));
     btnDA.Layout.Row = 1; btnDA.Layout.Column = 2;
     app.styleBtn(btnDA, 'ghost');
+    btnDA.FontSize = 13;
 
-    btnRestart = uibutton(bg, ...
+    btnRestart = uibutton(btnRow, ...
         'Text', Labels.get('reports_btn_restart', 'Restart Pipeline'), ...
         'ButtonPushedFcn', @(~,~) restartPipelineSafely(app));
     btnRestart.Layout.Row = 1; btnRestart.Layout.Column = 3;
     app.styleBtn(btnRestart, 'primary');
+    btnRestart.FontSize = 13;
     btnRestart.Tooltip = ['Reset selectedCircuitId / selectedJobId / predictionId ' ...
                           'and return to the Welcome screen.'];
 
