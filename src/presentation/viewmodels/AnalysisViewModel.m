@@ -1240,12 +1240,16 @@ classdef AnalysisViewModel < handle
             % Heuristic mapping from MitigationService level id to a
             % rough bias-reduction factor.  Operator-facing only -- the
             % UI labels these as "estimated".
+            %
+            % Level IDs match the backend's MitigationService enum:
+            %   0 = Raw, 1 = Standard, 2 = Aggressive, 3 = TEM,
+            %   -1 = Custom (advanced).
             switch double(levelId)
                 case 0;  biasReduction = 1.0;   % Raw
                 case 1;  biasReduction = 1.6;   % Standard
                 case 2;  biasReduction = 2.8;   % Aggressive
-                case 3;  biasReduction = 2.5;   % Custom (depends on options)
-                case 4;  biasReduction = 3.5;   % TEM
+                case 3;  biasReduction = 3.5;   % TEM (utility-scale)
+                case -1; biasReduction = 2.5;   % Custom (depends on options)
                 otherwise; biasReduction = 1.0;
             end
         end
