@@ -59,6 +59,11 @@ classdef AppState < handle
         defaultOptimization double = 3
         defaultTimeout      double = 120
         logLevel            string = "info"
+        % Phase 3.6: persisted user preference for the QEM ladder
+        % level. Cutting toolbar dropdown initialises from this; the
+        % Settings → Defaults dialog edits it. -1 = Custom, 0 = Raw,
+        % 1 = Standard (default), 2 = Aggressive, 3 = TEM.
+        preferredMitigationLevel double = 1
 
         % ── Activity log ─────────────────────────────────────────────────────
         % Cell array of {timestamp, action, status} rows for Recent Activity.

@@ -459,6 +459,12 @@ classdef QTAUWorkbenchApp < handle
         DefaultOptField
         SettingsTimeoutField
         SettingsLogLevelDropdown
+        SettingsMitigationLevelDropdown   % Phase 3.6: default-level picker
+                                          % on Settings → Defaults dialog.
+                                          % Persists to user_preferences as
+                                          % default_mitigation_level and
+                                          % seeds app.State.preferred-
+                                          % MitigationLevel.
         EmailNotifyCheck
         NotifyEmailField
         AlertThresholdDropdown
