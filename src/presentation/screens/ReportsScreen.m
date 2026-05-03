@@ -22,7 +22,10 @@ function ReportsScreen(app)
     t = app.createSectionPage('Reports');
 
     g = uigridlayout(t, [3 1]);
-    g.RowHeight     = {92, '1x', 60};
+    %  Workflow row bumped 60 → 90 (per operator review) so the action
+    %  buttons + description sit comfortably with breathing room above
+    %  and below the panel border.
+    g.RowHeight     = {92, '1x', 90};
     g.ColumnWidth   = {'1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
