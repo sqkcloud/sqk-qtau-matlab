@@ -201,11 +201,18 @@ classdef JsonHelper
         % jobsToRows  Map /jobs response → 5-column cell matrix
         %   Job ID | Backend | Status | Progress | Created
         function rows = jobsToRows(data, circuitNameMap)
-            % 6-column layout: Job ID | Circuit | Backend | Status |
-            % Progress | Created. `circuitNameMap` (optional) is a
-            % containers.Map keyed by circuit_id → display name; when
-            % supplied, the Circuit cell shows the name, otherwise it
-            % falls back to the raw circuit_id.
+            % 7-column layout: Job ID | Circuit | Backend | Status |
+            % Progress | Created | Mitigation. `circuitNameMap`
+            % (optional) is a containers.Map keyed by circuit_id →
+            % display name; when supplied, the Circuit cell shows the
+            % name, otherwise it falls back to the raw circuit_id.
+            %
+            % Column 7 (Mitigation, Phase 5.2) reads from each job's
+            % mitigation_plan.name field — the resolved QEM ladder
+            % level applied at submit time (e.g. 'standard',
+            % 'aggressive'). Empty string for jobs persisted before
+            % Phase 2.2 or for direct API calls that bypassed
+            % MitigationService.
             %
             % Rows are sorted by Created (column 6) descending so the
             % most recent submission always lands at the top of the
@@ -216,11 +223,11 @@ classdef JsonHelper
             % caller that hits /api/jobs without the sort param, or a
             % malformed doc with a missing submitted_at.
             if nargin < 2; circuitNameMap = containers.Map(); end
-            rows  = cell(0, 6);
+            rows  = cell(0, 7);
             items = JsonHelper.extractListSafe(data, 'jobs');
             n = numel(items);
             if n == 0; return; end
-            rows = cell(n, 6);
+            rows = cell(n, 7);
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'job_record_id','job_id','id'}));
 
@@ -265,6 +272,31 @@ classdef JsonHelper
                     rows{i,5} = char(pctStr);
                 end
                 rows{i,6} = char(JsonHelper.pick(items(i), {'created_at','submitted_at'}));
+
+                % Column 7: Mitigation badge. Read mitigation_plan.name
+                % (Phase 2.2 schema) → display string. Falls back to
+                % the level-id integer when only mitigation_plan.level
+                % is present, then to empty string. Older jobs without
+                % the mitigation_plan field render as empty cells.
+                rows{i,7} = '';
+                try
+                    mp = JsonHelper.pick(items(i), {'mitigation_plan'}, struct());
+                    if isstruct(mp) || isa(mp, 'containers.Map')
+                        nm = char(string(JsonHelper.pick(mp, {'name'}, '')));
+                        if isempty(nm)
+                            % No name → fall back to the integer level
+                            % so Custom (-1) and unknown roles still
+                            % render something the operator can identify.
+                            lvl = JsonHelper.pick(mp, {'level'}, []);
+                            if isnumeric(lvl) && ~isempty(lvl)
+                                nm = sprintf('level=%d', int32(lvl));
+                            end
+                        end
+                        rows{i,7} = char(nm);
+                    end
+                catch
+                    rows{i,7} = '';
+                end
             end
 
             % Sort newest-first by the Created column. ISO-8601 strings

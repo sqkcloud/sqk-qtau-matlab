@@ -56,7 +56,7 @@ function JobsScreen(app)
     jg.Padding = [12 10 12 10]; jg.BackgroundColor = Theme.COLOR_CARD;
     app.JobsTable = uitable(jg);
     app.JobsTable.Layout.Row = 1; app.JobsTable.Layout.Column = 1;
-    app.JobsTable.ColumnName = Labels.cols('jobs_table_cols', {'Job ID','Circuit','Backend','Status','Progress','Created'});
+    app.JobsTable.ColumnName = Labels.cols('jobs_table_cols', {'Job ID','Circuit','Backend','Status','Progress','Created','Mitigation'});
     app.JobsTable.Data = {};
     app.JobsTable.SelectionChangedFcn = @(src,~)app.JobsVm.onJobTableSelect(src);
     app.styleTable(app.JobsTable);
