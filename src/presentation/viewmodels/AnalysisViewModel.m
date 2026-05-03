@@ -164,13 +164,38 @@ classdef AnalysisViewModel < handle
                 app.QmcBackendField.Items     = {'(no backends)'};
                 app.QmcBackendField.ItemsData = {''};
                 app.QmcBackendField.Value     = '';
+                app.QmcBackendMeta = [];
                 return;
             end
             names = cell(1, n);
+            labels = cell(1, n);
+            metaRows = repmat(struct('name','', 'num_qubits', 0), 1, n);
+            % Width of the active circuit (0 when unknown). Used here to
+            % render an inline warning marker on too-narrow backends so
+            % the operator sees the mismatch at choice time instead of
+            % discovering it only after Run QMC fails server-side.
+            cWidth = 0;
+            try; cWidth = double(app.State.selectedCircuitQubits); catch; end
+            if isnan(cWidth); cWidth = 0; end
             for i = 1:n
-                names{i} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+                bname = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+                bq    = JsonHelper.toDouble(JsonHelper.pick(items(i), {'num_qubits','qubit_count'}));
+                if ~isfinite(bq); bq = 0; end
+                names{i} = bname;
+                metaRows(i).name = bname;
+                metaRows(i).num_qubits = bq;
+                if bq > 0
+                    if cWidth > 0 && bq < cWidth
+                        labels{i} = sprintf('%s (%dq — too narrow)', bname, round(bq));
+                    else
+                        labels{i} = sprintf('%s (%dq)', bname, round(bq));
+                    end
+                else
+                    labels{i} = bname;
+                end
             end
-            app.QmcBackendField.Items     = names;
+            app.QmcBackendMeta = metaRows;
+            app.QmcBackendField.Items     = labels;
             app.QmcBackendField.ItemsData = names;
             % Prefer the currently-selected backend if present, else first.
             sel = char(app.State.selectedBackend);
@@ -213,6 +238,30 @@ classdef AnalysisViewModel < handle
             mode = char(app.QmcModeDropdown.Value);
             backend = char(app.QmcBackendField.Value);
             if strcmp(mode, 'statevector'); backend = ''; end
+
+            % Pre-flight width check: if we know both the circuit width
+            % and the picked backend's qubit count, fail fast in the UI
+            % rather than waiting for the server to reject. Catches the
+            % common QMC pitfall of selecting a 156q IBM device for a
+            % 255q QASMBench circuit (CircuitTooWideForTarget).
+            if strcmp(mode, 'runtime') && ~isempty(backend)
+                cWidth = 0;
+                try; cWidth = double(app.State.selectedCircuitQubits); catch; end
+                if isnan(cWidth); cWidth = 0; end
+                bWidth = AnalysisViewModel.lookupBackendQubits(app, backend);
+                if cWidth > 0 && bWidth > 0 && cWidth > bWidth
+                    msg = sprintf( ...
+                        ['Circuit "%s" needs %d qubits but backend "%s" only supports %d.\n\n', ...
+                         'Pick a backend with %d+ qubits, switch Execution Mode to "Statevector (local)" ', ...
+                         'for circuits up to ~30 qubits, or split the workload via Circuit Cutting before running QMC.'], ...
+                        char(app.State.selectedCircuitName), round(cWidth), backend, round(bWidth), round(cWidth));
+                    uialert(alertParent, msg, 'Quantum Monte Carlo', 'Icon', 'warning');
+                    app.logEvent('WARN', sprintf('QMC blocked client-side — circuit %dq > backend %s %dq', ...
+                        round(cWidth), backend, round(bWidth)));
+                    return;
+                end
+            end
+
             shots = double(app.QmcShotsField.Value);
             epsilon = double(app.QmcEpsilonField.Value);
             confidence = double(app.QmcConfidenceField.Value);
@@ -1202,6 +1251,26 @@ classdef AnalysisViewModel < handle
             tf = isstruct(data) && isfield(data, 'backends') && ~isempty(data.backends);
         end
 
+        function q = lookupBackendQubits(app, backendName)
+            % Return num_qubits for the given backend from the cached
+            % QMC dropdown metadata, or 0 if unknown. The pre-flight
+            % width check in onRunQmcAnalysis falls back to "no check"
+            % when this returns 0 so a missing field never blocks Run.
+            q = 0;
+            try
+                meta = app.QmcBackendMeta;
+                if isempty(meta); return; end
+                names = arrayfun(@(s) string(s.name), meta);
+                idx = find(names == string(backendName), 1);
+                if ~isempty(idx)
+                    q = double(meta(idx).num_qubits);
+                end
+            catch
+                q = 0;
+            end
+            if isnan(q); q = 0; end
+        end
+
         function s = prettyJobStatus(status, serverMessage)
             % Convert a raw status+message into something user-friendly
             % for the loading overlay.
@@ -2052,6 +2121,17 @@ classdef AnalysisViewModel < handle
                 name  = char(JsonHelper.pick(data, {'circuit_name','name'}));
                 depth = char(JsonHelper.pick(data, {'depth'}));
                 width = char(JsonHelper.pick(data, {'num_qubits','width'}));
+
+                % Track the circuit's qubit count on AppState so the QMC
+                % popup can pre-flight a runtime-mode submission against
+                % the chosen IBM backend's coupling-map width before
+                % POSTing /qae/analyze (rejects e.g. ghz_state_n255 on
+                % ibm_pittsburgh's 156q before the backend transpile
+                % crashes with CircuitTooWideForTarget).
+                widthNum = JsonHelper.toDouble(JsonHelper.pick(data, {'num_qubits','width'}));
+                if isfinite(widthNum) && widthNum > 0
+                    app.State.selectedCircuitQubits = double(widthNum);
+                end
 
                 % Extract gate counts from gate_counts map or fallback fields
                 gcMap = JsonHelper.safeField(data, 'gate_counts', struct());

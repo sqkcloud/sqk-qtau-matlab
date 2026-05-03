@@ -31,6 +31,11 @@ classdef AppState < handle
         selectedFile        string = ""
         selectedCircuitId   string = ""
         selectedCircuitName string = ""
+        % Width of the currently-selected circuit. Populated whenever a
+        % circuit doc is loaded (Analyze, list, getCircuit). Used by the
+        % QMC pre-flight check to reject runtime submissions that would
+        % overflow the chosen IBM backend's coupling map.
+        selectedCircuitQubits double = 0
 
         % ── Backend selection ─────────────────────────────────────────────────
         selectedBackend string = ""
@@ -138,10 +143,11 @@ classdef AppState < handle
         % Resets all pipeline IDs without touching auth so the user can start a
         % new run without logging in again.
         function resetPipeline(obj)
-            obj.selectedFile        = "";
-            obj.selectedCircuitId   = "";
-            obj.selectedCircuitName = "";
-            obj.selectedBackend     = "";
+            obj.selectedFile          = "";
+            obj.selectedCircuitId     = "";
+            obj.selectedCircuitName   = "";
+            obj.selectedCircuitQubits = 0;
+            obj.selectedBackend       = "";
             obj.backupBackend       = "";
             obj.selectedJobId       = "";
             obj.predictionId        = "";

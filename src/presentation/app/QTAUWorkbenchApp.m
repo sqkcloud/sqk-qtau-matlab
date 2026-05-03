@@ -241,6 +241,7 @@ classdef QTAUWorkbenchApp < handle
         QmcLastResult = []   % struct cache of most recent QMC response
         QmcActiveJobId = ''  % job_id of the currently-polling async QMC job ('' when idle)
         QmcPollTimer = []    % MATLAB timer driving QMC job polling (empty when idle)
+        QmcBackendMeta = []  % struct array {name, num_qubits} for the loaded QMC backend dropdown — used by the runtime-mode pre-flight width check
     end
 
     % ── Quantum Error Mitigation Analysis popup (Phase 6.x) ───────────────────
