@@ -30,20 +30,30 @@ document lists the screen, ViewModel, service, and backend router.
 
 ## Workspace screens
 
-| # | Screen | Document | Purpose |
-|---|--------|----------|---------|
-| 9  | Welcome             | [`welcome.md`](welcome.md)              | Login + project picker |
-| 10 | Dashboard           | [`dashboard.md`](dashboard.md)          | Workflow summary, readiness storyboard |
-| 11 | Circuits            | [`circuits.md`](circuits.md)            | Browse/search project circuits |
-| 12 | Upload              | [`upload.md`](upload.md)                | Circuit upload + format detection |
-| 13 | Analysis            | [`analysis.md`](analysis.md)            | Feature extraction + QMC/QEM popups |
-| 14 | Detailed Analysis   | [`detailed-analysis.md`](detailed-analysis.md) | Heatmaps, drift, qubit metrics |
-| 15 | Backends            | [`backends.md`](backends.md)            | Backend explorer with primary/backup |
-| 16 | Jobs                | [`jobs.md`](jobs.md)                    | Job dashboard, auto-refresh every 5 s |
-| 17 | Results             | [`results.md`](results.md)              | Measured vs predicted vs ideal |
-| 18 | Reports             | [`reports.md`](reports.md)              | PDF/HTML/JSON report generation |
-| 19 | Settings            | [`settings.md`](settings.md)            | Account, defaults, storage, notifications |
-| 20 | Notes               | [`notes.md`](notes.md)                  | Working notes (hidden in nav) |
+The remaining workspace screens are documented in two places:
+
+- [`analysis.md`](analysis.md) — full per-feature page for the
+  Analysis screen (the QMC + QEM popup launchpad).
+- [`reports.md`](reports.md) — full per-feature page for the Reports
+  screen (Generate / Download / Email / Print, poll-and-stream flow).
+- [`screens-overview.md`](screens-overview.md) — consolidated
+  per-section pages for the rest, each with the seven-section
+  template at compact size.
+
+| # | Screen | Where | Purpose |
+|---|--------|-------|---------|
+| 9  | Welcome             | [`screens-overview.md` §A](screens-overview.md#a-welcome)             | Login + project picker |
+| 10 | Dashboard           | [`screens-overview.md` §B](screens-overview.md#b-dashboard)           | Workflow summary, readiness storyboard |
+| 11 | Circuits            | [`screens-overview.md` §C](screens-overview.md#c-circuits)            | Browse/search project circuits |
+| 12 | Upload              | [`screens-overview.md` §D](screens-overview.md#d-upload)              | Circuit upload + format detection |
+| 13 | Analysis            | [`analysis.md`](analysis.md)                                          | Feature extraction + QMC/QEM popups |
+| 14 | Detailed Analysis   | [`screens-overview.md` §E](screens-overview.md#e-detailed-analysis)   | Heatmaps, drift, qubit metrics |
+| 15 | Backends            | [`screens-overview.md` §F](screens-overview.md#f-backends)            | Backend explorer with primary/backup |
+| 16 | Jobs                | [`screens-overview.md` §G](screens-overview.md#g-jobs)                | Job dashboard, auto-refresh every 5 s |
+| 17 | Results             | [`screens-overview.md` §H](screens-overview.md#h-results)             | Measured vs predicted vs ideal |
+| 18 | Reports             | [`reports.md`](reports.md)                                            | PDF/HTML/JSON report generation |
+| 19 | Settings            | [`screens-overview.md` §J](screens-overview.md#j-settings)            | Account, defaults, storage, notifications |
+| 20 | Notes               | [`screens-overview.md` §K](screens-overview.md#k-notes)               | Working notes (hidden in nav) |
 
 ## Cross-cutting concerns
 
