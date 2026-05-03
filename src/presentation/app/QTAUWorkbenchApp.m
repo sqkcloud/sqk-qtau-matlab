@@ -498,7 +498,18 @@ classdef QTAUWorkbenchApp < handle
         GenerateReportButton
         ReportStatusArea
         OpenReportButton
-        GeneratedReportList
+        GeneratedReportList          % legacy uilistbox handle (kept = [] now)
+        % ── Phase 6.5 redesign — KPI strip + table-based library ──────
+        ReportsKpiTotal              % uilabel: total report count
+        ReportsKpiPdf                % uilabel: PDF count
+        ReportsKpiHtml               % uilabel: HTML count
+        ReportsKpiLatest             % uilabel: human-readable "N min ago"
+        ReportsTable                 % uitable: Format / Title / Created / Status
+        ReportsSearchField           % uieditfield: client-side filter
+        ReportsRefreshBtn            % uibutton: manual reload
+        ReportsDetailLabel           % uilabel: selected-row metadata pill
+        ReportsCachedItems = {}      % cell of report metadata structs (cache
+                                     % for search filter without HTTP round-trip)
     end
 
     % ── Settings tab ──────────────────────────────────────────────────────────
