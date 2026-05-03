@@ -838,6 +838,11 @@ classdef AnalysisViewModel < handle
             end
             cid = app.State.selectedCircuitId;
             app.showLoading(Labels.get('loading_em_report', 'Generating Error Mitigation report...'));
+            % `quantum_monte_carlo` is *deliberately* omitted so the
+            % backend chooses its QEM-specific PDF builder, not the QMC
+            % one. The `report_kind` metadata flag below is the primary
+            % signal — the section-list check is a belt-and-braces
+            % fallback for older servers that don't read metadata.
             sections = { ...
                 'executive_summary', 'circuit_summary', 'feature_analysis', ...
                 'error_mitigation', 'key_insights'};
@@ -845,15 +850,109 @@ classdef AnalysisViewModel < handle
                 char(app.State.selectedCircuitName));
             reportSvc = app.ReportSvc;
             token     = app.State.authToken;
+            metadata  = AnalysisViewModel.buildEmReportMetadata(app);
             AsyncRunner.run( ...
                 @() reportSvc.generateReport(reportTitle, 'technical', 'pdf', ...
-                                             cid, '', '', sections, token), ...
+                                             cid, '', '', sections, token, metadata), ...
                 @(data) obj.onQmcReportGenerated(app, data), ...
                 @(ME)   obj.onQmcReportError(app, ME));
         end
     end
 
     methods (Static, Access = private)
+
+        function metadata = buildEmReportMetadata(app)
+            % Compose the metadata struct the QEM "Generate Report" path
+            % posts to /api/reports/generate. Tells the backend to route
+            % to its dedicated QEM PDF builder and supplies the in-memory
+            % bundle (technique sweep + form state) so the server doesn't
+            % need to re-run /api/mitigation/estimate to draw the table.
+            metadata = struct('report_kind', 'error_mitigation');
+
+            form = struct();
+            try; form.backend          = char(app.EmBackendDropdown.Value);    catch; end
+            try; form.primitive        = char(app.EmPrimitiveDropdown.Value);  catch; end
+            try; form.base_shots       = double(app.EmBaseShotsField.Value);   catch; end
+            try; form.level_id         = double(app.EmLevelDropdown.Value);    catch; end
+            try
+                idx = find(cellfun(@(x)isequal(x, form.level_id), ...
+                    app.EmLevelDropdown.ItemsData), 1);
+                if ~isempty(idx)
+                    form.level_label = app.EmLevelDropdown.Items{idx};
+                end
+            catch; end
+            try; form.zne_factors      = char(app.EmZneFactorsField.Value);    catch; end
+            try; form.zne_extrapolator = char(app.EmExtrapolatorDropdown.Value); catch; end
+            try; form.dd_sequence      = char(app.EmDdSequenceDropdown.Value); catch; end
+            try; form.twirl_gates      = logical(app.EmTwirlGatesCheckbox.Value);   catch; end
+            try; form.twirl_measurement= logical(app.EmTwirlMeasureCheckbox.Value); catch; end
+            try; form.tem              = logical(app.EmTemCheckbox.Value);     catch; end
+            try; form.also_run_raw     = logical(app.EmAlsoRunRawCheckbox.Value); catch; end
+            try
+                kpi5 = app.EmKpiLabels{5}.Text;
+                if ischar(kpi5) || isstring(kpi5)
+                    form.advantage = char(string(kpi5));
+                end
+            catch; end
+            try
+                kpi4 = app.EmKpiLabels{4}.Text;
+                form.gamma_bar = str2double(char(string(kpi4)));
+                if isnan(form.gamma_bar); form = rmfield(form, 'gamma_bar'); end
+            catch; end
+            try
+                if ~isempty(app.EmRecommendationLabel) && isvalid(app.EmRecommendationLabel)
+                    form.recommendation = char(string(app.EmRecommendationLabel.Text));
+                end
+            catch; end
+            metadata.em_form = form;
+
+            % Echo the technique-sweep bundle so the backend can render
+            % the comparison table without re-fetching estimates. Each
+            % entry is shaped {level_id, label, estimate}.
+            try
+                bundle = app.EmEstimateBundle;
+                if iscell(bundle) && ~isempty(bundle)
+                    cleaned = cell(1, numel(bundle));
+                    for i = 1:numel(bundle)
+                        row = bundle{i};
+                        cleaned{i} = struct( ...
+                            'level_id', double(row.levelId), ...
+                            'label',    char(string(row.label)), ...
+                            'estimate', row.estimate);
+                    end
+                    metadata.em_bundle = cleaned;
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'buildEmReportMetadata: bundle echo skipped: %s', ME.message);
+            end
+        end
+
+        function ladder = staticEmLevelLadder()
+            % Static mirror of /api/mitigation/levels — keeps the QEM
+            % popup usable when the deployed FastAPI server lacks the
+            % endpoint. Field shape matches LevelInfo so downstream
+            % renderers (refreshEmEstimateBundle, renderEmTechniqueTable,
+            % renderEmRecommendation) see the same struct layout as a
+            % live response.
+            ladder = struct( ...
+                'id', { 0, 1, 2, 3, -1 }, ...
+                'name', { 'raw', 'standard', 'aggressive', 'tem', 'custom' }, ...
+                'label', { 'Raw', 'Standard (default)', 'Aggressive', ...
+                           'TEM (utility-scale)', 'Custom (advanced)' }, ...
+                'description', { ...
+                    'Bare primitive — no mitigation. Use for hardware benchmarks.', ...
+                    'Pauli twirling + measurement TREX + dynamical decoupling.', ...
+                    'Standard + Zero-Noise Extrapolation (3-point exponential).', ...
+                    'Standard + Algorithmiq Tensor-Network Error Mitigation (Phase 4).', ...
+                    'Operator-supplied per-technique override.'}, ...
+                'overhead_hint', { ...
+                    '1× shots, 1× wall-clock', ...
+                    '~1× shots, ~1× wall-clock', ...
+                    '~3× shots, ~3× wall-clock', ...
+                    '~5–15× wall-clock (Phase 4)', ...
+                    'varies'});
+        end
 
         function step = niceTickStep(range, targetTicks)
             % Pick a human-readable tick step for the given numeric range.
@@ -2224,6 +2323,15 @@ classdef AnalysisViewModel < handle
         function loadEmInitialData(obj, app)
             % Fan-out parallel fetches: levels, cached QAE, circuit meta.
             % Each callback paints its panel independently.
+
+            % Paint the static fallback ladder *first* so the Mitigation
+            % level dropdown is usable immediately. The async fetch below
+            % overrides this on success. On failure (e.g. older deployed
+            % servers without /api/mitigation/levels) the fallback stays
+            % put — this is what stops the dropdown getting stuck on
+            % "(loading...)".
+            obj.applyEmLocalLevelFallback(app);
+
             if ~app.State.isAuthenticated(); return; end
             token = app.State.authToken;
 
@@ -2231,8 +2339,7 @@ classdef AnalysisViewModel < handle
             AsyncRunner.run( ...
                 @() mitSvc.listLevels(token), ...
                 @(data) obj.onEmLevelsLoaded(app, data), ...
-                @(ME)   Logger.warn('AnalysisViewModel', ...
-                    'EM levels load failed: %s', ME.message));
+                @(ME)   obj.onEmLevelsLoadFailed(app, ME));
 
             if app.State.hasCircuit()
                 qmcSvc = app.QmcSvc;
@@ -2278,6 +2385,52 @@ classdef AnalysisViewModel < handle
                 app.EmLevelDropdown.Value = itemsData{1};
             end
             app.EmLevels = levels;
+            obj.refreshEmEstimateBundle(app);
+        end
+
+        function onEmLevelsLoadFailed(obj, app, ME)
+            % /api/mitigation/levels returned an error (commonly 404 on
+            % older deployed servers). Keep the static fallback ladder
+            % already painted by applyEmLocalLevelFallback so the dialog
+            % stays usable. Log once so operators can see why we fell back.
+            Logger.warn('AnalysisViewModel', ...
+                'EM levels load failed: %s — using local fallback ladder', ...
+                ME.message);
+            % If the dropdown was somehow re-initialised back to the
+            % "(loading...)" placeholder between the request and the
+            % error, repaint the fallback defensively.
+            if ~isempty(app.EmLevelDropdown) && isvalid(app.EmLevelDropdown)
+                items = app.EmLevelDropdown.Items;
+                if numel(items) <= 1 && ...
+                        (isempty(items) || strcmp(items{1}, '(loading...)'))
+                    obj.applyEmLocalLevelFallback(app);
+                end
+            end
+        end
+
+        function applyEmLocalLevelFallback(obj, app)
+            % Static QEM ladder mirroring the backend's LevelInfo response
+            % at src/qdash/api/routers/mitigation.py:list_levels. Used so
+            % the Mitigation-level dropdown is populated synchronously at
+            % dialog-open time (and as a fallback when the endpoint fails).
+            if isempty(app.EmLevelDropdown) || ~isvalid(app.EmLevelDropdown)
+                return;
+            end
+            ladder = AnalysisViewModel.staticEmLevelLadder();
+            n = numel(ladder);
+            items = cell(1, n);
+            itemsData = cell(1, n);
+            for i = 1:n
+                items{i}     = ladder(i).label;
+                itemsData{i} = double(ladder(i).id);
+            end
+            app.EmLevelDropdown.Items     = items;
+            app.EmLevelDropdown.ItemsData = itemsData;
+            % Default to Standard (id=1).
+            app.EmLevelDropdown.Value = 1;
+            app.EmLevels = ladder;
+            % Kick the estimate sweep so the technique table populates
+            % even when the levels endpoint is unavailable.
             obj.refreshEmEstimateBundle(app);
         end
 
