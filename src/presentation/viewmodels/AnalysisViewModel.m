@@ -134,6 +134,15 @@ classdef AnalysisViewModel < handle
                 Logger.debug('AnalysisViewModel', 'No cached QMC result: %s', ME.message);
                 AnalysisViewModel.toggleIbmLogButton(app, []);
             end
+            % Show the viability banner immediately based on circuit
+            % width alone (statevector branch). The runtime branch will
+            % re-evaluate once loadQmcBackends completes asynchronously.
+            try
+                v = AnalysisViewModel.evaluateQmcViability(app);
+                AnalysisViewModel.applyQmcViability(app, v);
+            catch ME
+                Logger.debug('AnalysisViewModel', 'Initial QMC viability eval failed: %s', ME.message);
+            end
         end
 
         % Populate app.QmcBackendField (uidropdown) using BackendService,
@@ -206,6 +215,28 @@ classdef AnalysisViewModel < handle
                 app.QmcBackendField.Value = names{1};
             end
             app.logEvent('LOAD', sprintf('Loaded %d backends into QMC dropdown', n));
+            % Now that we know each backend's width, evaluate whether
+            % QMC can actually run for the active circuit. This drives
+            % the banner + Run-button enable state in one place.
+            try
+                v = AnalysisViewModel.evaluateQmcViability(app);
+                AnalysisViewModel.applyQmcViability(app, v);
+            catch ME
+                Logger.warn('AnalysisViewModel', 'QMC viability evaluation failed: %s', ME.message);
+            end
+        end
+
+        % Public refresh hook used by the QMC dialog's Mode/Backend
+        % dropdowns. Re-evaluates viability and updates the banner +
+        % Run button without re-fetching backend metadata.
+        function refreshQmcViability(obj)
+            app = obj.App;
+            try
+                v = AnalysisViewModel.evaluateQmcViability(app);
+                AnalysisViewModel.applyQmcViability(app, v);
+            catch ME
+                Logger.warn('AnalysisViewModel', 'QMC viability refresh failed: %s', ME.message);
+            end
         end
 
         function onQmcBackendsError(~, app, ME)
@@ -1269,6 +1300,148 @@ classdef AnalysisViewModel < handle
                 q = 0;
             end
             if isnan(q); q = 0; end
+        end
+
+        function v = evaluateQmcViability(app)
+            % Decide whether QMC can run for the currently selected
+            % circuit, in either Statevector (local) or any of the
+            % loaded IBM Runtime backends. Returns a struct so the UI
+            % layer can render a single banner + tooltip without
+            % duplicating the rules.
+            %
+            % Limits:
+            %   • Statevector: 30 qubits — Statevector.from_instruction
+            %     allocates 2^n complex amplitudes; 30q ~ 16 GiB which
+            %     is the practical ceiling on a typical workstation.
+            %   • Runtime: bounded by the widest available IBM backend.
+            STATEVECTOR_QUBIT_LIMIT = 30;
+
+            v = struct( ...
+                'ok', true, ...
+                'statevector_ok', true, ...
+                'runtime_ok', true, ...
+                'circuit_qubits', 0, ...
+                'max_runtime_qubits', 0, ...
+                'current_backend_qubits', 0, ...
+                'current_mode', '', ...
+                'reason', '');
+
+            cw = 0;
+            try; cw = double(app.State.selectedCircuitQubits); catch; end
+            if isnan(cw); cw = 0; end
+            v.circuit_qubits = cw;
+
+            % Statevector branch — only width matters, no backend.
+            if cw > 0 && cw > STATEVECTOR_QUBIT_LIMIT
+                v.statevector_ok = false;
+            end
+
+            % Runtime branch — need at least one backend with width >= cw.
+            maxQ = 0;
+            try
+                meta = app.QmcBackendMeta;
+                if ~isempty(meta)
+                    qs = arrayfun(@(s) double(s.num_qubits), meta);
+                    qs = qs(isfinite(qs) & qs > 0);
+                    if ~isempty(qs); maxQ = max(qs); end
+                end
+            catch
+            end
+            v.max_runtime_qubits = maxQ;
+            if cw > 0 && maxQ > 0 && cw > maxQ
+                v.runtime_ok = false;
+            end
+
+            % Currently-selected mode + backend (best-effort — the dialog
+            % may not be open yet when this is called).
+            try
+                if ~isempty(app.QmcModeDropdown) && isvalid(app.QmcModeDropdown)
+                    v.current_mode = char(app.QmcModeDropdown.Value);
+                end
+            catch
+            end
+            try
+                if ~isempty(app.QmcBackendField) && isvalid(app.QmcBackendField)
+                    bn = char(app.QmcBackendField.Value);
+                    v.current_backend_qubits = AnalysisViewModel.lookupBackendQubits(app, bn);
+                end
+            catch
+            end
+
+            % Overall verdict: blocked only when neither mode can run.
+            if ~v.statevector_ok && ~v.runtime_ok && cw > 0
+                v.ok = false;
+                if maxQ > 0
+                    v.reason = sprintf( ...
+                        ['QMC isn''t applicable to this circuit. The active circuit "%s" has %d qubits, ', ...
+                         'which exceeds both the local Statevector ceiling (%d qubits) and the widest ', ...
+                         'available IBM Runtime backend (%d qubits). Load a smaller amplitude-oracle ', ...
+                         'circuit (see samples/aqs-qmc/, e.g. aqs_qmc_var_7q_*.qasm) and reopen QMC.'], ...
+                        char(app.State.selectedCircuitName), round(cw), STATEVECTOR_QUBIT_LIMIT, round(maxQ));
+                else
+                    v.reason = sprintf( ...
+                        ['QMC isn''t applicable to this circuit. The active circuit "%s" has %d qubits, ', ...
+                         'beyond the local Statevector ceiling (%d qubits). Load a smaller amplitude-oracle ', ...
+                         'circuit (see samples/aqs-qmc/, e.g. aqs_qmc_var_7q_*.qasm) and reopen QMC.'], ...
+                        char(app.State.selectedCircuitName), round(cw), STATEVECTOR_QUBIT_LIMIT);
+                end
+            end
+        end
+
+        function applyQmcViability(app, v)
+            % Render the verdict from evaluateQmcViability into the QMC
+            % dialog: banner text+visibility, Mode dropdown adornment,
+            % and Run-button enable state. Also gates the per-mode hint
+            % so the user can see WHICH branch failed.
+            STATEVECTOR_QUBIT_LIMIT = 30;
+
+            % Banner — visible only when the overall verdict is blocked.
+            try
+                if ~isempty(app.QmcBanner) && isvalid(app.QmcBanner)
+                    if ~v.ok
+                        if ~isempty(app.QmcBannerLabel) && isvalid(app.QmcBannerLabel)
+                            app.QmcBannerLabel.Text = char(v.reason);
+                        end
+                        app.QmcBanner.Visible = 'on';
+                    else
+                        app.QmcBanner.Visible = 'off';
+                    end
+                end
+            catch
+            end
+
+            % Mode dropdown — adorn unavailable items with a "(too wide)"
+            % hint so the user sees which branch is the bottleneck.
+            try
+                if ~isempty(app.QmcModeDropdown) && isvalid(app.QmcModeDropdown)
+                    svLbl = 'Statevector (local)';
+                    rtLbl = 'IBM Runtime';
+                    if ~v.statevector_ok
+                        svLbl = sprintf('Statevector (local) — max %dq', STATEVECTOR_QUBIT_LIMIT);
+                    end
+                    if ~v.runtime_ok && v.max_runtime_qubits > 0
+                        rtLbl = sprintf('IBM Runtime — max %dq', round(v.max_runtime_qubits));
+                    end
+                    app.QmcModeDropdown.Items = {svLbl, rtLbl};
+                    % ItemsData is unchanged — the submit payload still
+                    % uses the bare 'statevector' / 'runtime' tokens.
+                end
+            catch
+            end
+
+            % Run QMC button — disabled if neither mode can run.
+            try
+                if ~isempty(app.QmcRunButton) && isvalid(app.QmcRunButton)
+                    if ~v.ok
+                        app.QmcRunButton.Enable = 'off';
+                        app.QmcRunButton.Tooltip = char(v.reason);
+                    else
+                        app.QmcRunButton.Enable = 'on';
+                        app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
+                    end
+                end
+            catch
+            end
         end
 
         function s = prettyJobStatus(status, serverMessage)

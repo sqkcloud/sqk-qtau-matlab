@@ -495,12 +495,16 @@ classdef DialogBuilder
                 'BorderColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            % Inside the card: header / body / footer. Footer row is
-            % tuned so the Run / Generate Report / Close buttons render
-            % at the same ~44 px height as other action-bar buttons in
-            % the app (e.g. the Analysis screen's Next / Visualize row).
-            cg = uigridlayout(card, [4 1]);
-            cg.RowHeight = {40, '1x', 1, 52};
+            % Inside the card: header / banner / body / divider / footer.
+            % The banner row is hidden by default and toggled visible by
+            % AnalysisViewModel.applyQmcViability when the active circuit
+            % can't run in either Statevector (≤30q) or any available
+            % IBM Runtime backend. Footer row stays tuned so the Run /
+            % Generate Report / Close buttons render at the same ~44 px
+            % height as other action-bar buttons in the app (e.g. the
+            % Analysis screen's Next / Visualize row).
+            cg = uigridlayout(card, [5 1]);
+            cg.RowHeight = {40, 'fit', '1x', 1, 52};
             cg.ColumnWidth = {'1x'};
             cg.Padding = [18 14 18 14];
             cg.RowSpacing = 10;
@@ -519,9 +523,27 @@ classdef DialogBuilder
                 'VerticalAlignment', 'center');
             titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
 
+            % ── Viability banner (hidden by default) ───────────────────
+            % Shown when the active circuit can't be analysed in any
+            % mode — e.g. a 255q QASMBench benchmark with no IBM device
+            % wide enough and beyond local-statevector reach. Driven by
+            % AnalysisViewModel.applyQmcViability after the backend list
+            % loads and on every Mode/Backend dropdown change.
+            app.QmcBanner = uigridlayout(cg, [1 1]);
+            app.QmcBanner.Layout.Row = 2; app.QmcBanner.Layout.Column = 1;
+            app.QmcBanner.ColumnWidth = {'1x'};
+            app.QmcBanner.Padding = [12 10 12 10];
+            app.QmcBanner.BackgroundColor = [0.36 0.27 0.10];  % amber on dark
+            app.QmcBanner.Visible = 'off';
+            app.QmcBannerLabel = uilabel(app.QmcBanner, ...
+                'Text', '', ...
+                'FontColor', [1.00 0.92 0.74], ...
+                'WordWrap', 'on', ...
+                'VerticalAlignment', 'top');
+
             % ── Body: controls+KPI (left)  |  plots (right) ────────────
             body = uigridlayout(cg, [1 2]);
-            body.Layout.Row = 2; body.Layout.Column = 1;
+            body.Layout.Row = 3; body.Layout.Column = 1;
             body.ColumnWidth = {320, '1x'};
             body.Padding = [0 0 0 0]; body.ColumnSpacing = Theme.GRID_ROW_SPACING;
             body.BackgroundColor = cardBg;
@@ -545,7 +567,8 @@ classdef DialogBuilder
             app.QmcModeDropdown = uidropdown(form, ...
                 'Items',     {'Statevector (local)', 'IBM Runtime'}, ...
                 'ItemsData', {'statevector',          'runtime'}, ...
-                'Value',     'runtime');
+                'Value',     'runtime', ...
+                'ValueChangedFcn', @(~,~) app.AnalysisVm.refreshQmcViability());
 
             uilabel(form, 'Text', 'Backend (runtime)', 'FontColor', labelColor);
             % Populated from BackendService at open time; see
@@ -554,7 +577,8 @@ classdef DialogBuilder
             app.QmcBackendField = uidropdown(form, ...
                 'Items',     {'(loading...)'}, ...
                 'ItemsData', {''}, ...
-                'Value',     '');
+                'Value',     '', ...
+                'ValueChangedFcn', @(~,~) app.AnalysisVm.refreshQmcViability());
 
             uilabel(form, 'Text', 'Shots', 'FontColor', labelColor);
             app.QmcShotsField = uispinner(form, ...
@@ -715,7 +739,7 @@ classdef DialogBuilder
             divider = uipanel(cg, ...
                 'BorderType', 'none', ...
                 'BackgroundColor', Theme.COLOR_DIVIDER);
-            divider.Layout.Row = 3; divider.Layout.Column = 1;
+            divider.Layout.Row = 4; divider.Layout.Column = 1;
 
             % ── Footer: Run / Download IBM Log / Generate Report / Close ──
             % Column widths (120 / 150 / 160 / 100) and padding ([8 8 8 8])
@@ -723,7 +747,7 @@ classdef DialogBuilder
             % the same footprint as other action bars in the app (e.g.
             % the Analysis screen's Next / Back / Visualize row).
             footer = uigridlayout(cg, [1 5]);
-            footer.Layout.Row = 4; footer.Layout.Column = 1;
+            footer.Layout.Row = 5; footer.Layout.Column = 1;
             footer.RowHeight = {36};
             footer.ColumnWidth = {'1x', 120, 150, 160, 100};
             footer.Padding = [8 8 8 8]; footer.ColumnSpacing = 10;

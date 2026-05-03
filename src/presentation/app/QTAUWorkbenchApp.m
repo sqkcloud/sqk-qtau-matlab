@@ -242,6 +242,8 @@ classdef QTAUWorkbenchApp < handle
         QmcActiveJobId = ''  % job_id of the currently-polling async QMC job ('' when idle)
         QmcPollTimer = []    % MATLAB timer driving QMC job polling (empty when idle)
         QmcBackendMeta = []  % struct array {name, num_qubits} for the loaded QMC backend dropdown — used by the runtime-mode pre-flight width check
+        QmcBanner = []       % uigridlayout banner shown above the QMC body when the active circuit cannot run in any mode
+        QmcBannerLabel = []  % uilabel inside the banner — text refreshed by AnalysisViewModel.applyQmcViability
     end
 
     % ── Quantum Error Mitigation Analysis popup (Phase 6.x) ───────────────────
