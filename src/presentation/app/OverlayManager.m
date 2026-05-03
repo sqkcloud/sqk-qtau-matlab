@@ -4,6 +4,51 @@ classdef OverlayManager
     %
     %   Extracted from QTAUWorkbenchApp to reduce class size.
     %   All methods are static — call as OverlayManager.showLoading(app, msg).
+    %
+    % ┌────────────────────────────────────────────────────────────────────┐
+    % │  LOADING-SCREEN CONVENTIONS  (Phase 6.4 — applies app-wide)        │
+    % ├────────────────────────────────────────────────────────────────────┤
+    % │ 1. Preferred entrypoint                                            │
+    % │      app.runAsyncWithLoading(msg, work, onOk, onErr)               │
+    % │      app.runSyncWithLoading(msg, fn)                               │
+    % │    Both guarantee show + hide pairing including on the error path. │
+    % │    Existing app.showLoading / app.hideLoading still work for       │
+    % │    legacy paired call sites; do not migrate just for migration's   │
+    % │    sake.                                                           │
+    % │                                                                    │
+    % │ 2. Message text                                                    │
+    % │    Always go through Labels.get('loading_<scope>_<action>',        │
+    % │                                  '<English fallback>').            │
+    % │    Format: "<Verb-ing> <object>..."                                │
+    % │      - 3 ASCII dots, NEVER U+2026 ellipsis (the idempotent guard   │
+    % │        in showLoading is char-equal so a single Unicode mismatch   │
+    % │        defeats the dedup and reintroduces the double-flicker).    │
+    % │      - Capitalize the first letter, no trailing space.             │
+    % │    Examples:                                                       │
+    % │      loading_circuits_list   = Loading circuits...                 │
+    % │      loading_jobs_submit     = Submitting job to IBM Quantum...    │
+    % │      loading_em_report       = Generating Error Mitigation report. │
+    % │                                                                    │
+    % │ 3. Idempotency                                                     │
+    % │    showLoading(msg) is a no-op when the overlay is already visible │
+    % │    with that same msg + showTimer.  Calling show twice in a row    │
+    % │    with the same args does NOT cause a CEF re-render flicker.      │
+    % │    See the fast-path check inside showLoading below.               │
+    % │                                                                    │
+    % │ 4. Pairing rules                                                   │
+    % │    Every showLoading must be matched by a hideLoading on every     │
+    % │    code path (success, error, cancel).  The runAsync/runSync       │
+    % │    helpers wire this for you.  A 20s safety timer                  │
+    % │    (NavigationManager.armNavOverlayTimer) catches forgotten hides. │
+    % │                                                                    │
+    % │ 5. Where the overlay parents                                       │
+    % │    By default the overlay parents to app.UIFigure.  When a modal   │
+    % │    dialog is open (Quantum Monte Carlo / Error Mitigation popup)   │
+    % │    the overlay re-parents to that dialog automatically — see the   │
+    % │    QmcDialog check at the top of showLoading.  Other dialogs that  │
+    % │    want overlay coverage should follow the same isprop+isvalid     │
+    % │    pattern.                                                        │
+    % └────────────────────────────────────────────────────────────────────┘
 
     methods (Static)
 

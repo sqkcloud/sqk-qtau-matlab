@@ -249,7 +249,7 @@ classdef AnalysisViewModel < handle
             % empty controls while the server is running rather than stale
             % values from a previous run.
             obj.resetQmcUi(app);
-            app.showLoading('Running Quantum Monte Carlo simulation...');
+            app.showLoading(Labels.get('loading_qmc_run', 'Running Quantum Monte Carlo simulation...'));
 
             qaeSvc = app.QmcSvc;
             token  = app.State.authToken;
@@ -328,7 +328,7 @@ classdef AnalysisViewModel < handle
             fmt      = 'jsonl';
             tmpPath  = fullfile(tempdir, sprintf('quantum_exec_log_%s.%s', runtimeJobId, fmt));
             app.logEvent('API', sprintf('GET /api/circuits/%s/qae/ibm-log (job=%s)', cid, runtimeJobId));
-            app.showLoading('Fetching IBM Runtime log...');
+            app.showLoading(Labels.get('loading_qmc_ibm_log', 'Fetching IBM Runtime log...'));
             AsyncRunner.run( ...
                 @() qaeSvc.downloadIbmLog(cid, token, fmt, tmpPath), ...
                 @(savedPath) obj.onIbmLogDownloaded(app, savedPath, runtimeJobId, circName, fmt), ...
@@ -358,7 +358,7 @@ classdef AnalysisViewModel < handle
                 obj.onRunQmcAnalysis();
                 return;  % report will be requested after analyze completes (user clicks again)
             end
-            app.showLoading('Generating PDF report...');
+            app.showLoading(Labels.get('loading_qmc_report', 'Generating PDF report...'));
             sections = { ...
                 'executive_summary', 'circuit_summary', 'feature_analysis', ...
                 'quantum_monte_carlo', 'key_insights'};
@@ -837,7 +837,7 @@ classdef AnalysisViewModel < handle
                     'Generate Report', 'Icon', 'warning'); return;
             end
             cid = app.State.selectedCircuitId;
-            app.showLoading('Generating Error Mitigation report...');
+            app.showLoading(Labels.get('loading_em_report', 'Generating Error Mitigation report...'));
             sections = { ...
                 'executive_summary', 'circuit_summary', 'feature_analysis', ...
                 'error_mitigation', 'key_insights'};
@@ -1259,7 +1259,7 @@ classdef AnalysisViewModel < handle
             % the main thread so we don't need AsyncRunner here — each
             % tick does one fast HTTP GET.
             obj.stopQmcPoll(app);
-            app.showLoading('Queued — waiting for backend...');
+            app.showLoading(Labels.get('loading_qmc_queued', 'Queued — waiting for backend...'));
             t = timer( ...
                 'ExecutionMode', 'fixedSpacing', ...
                 'Period',        3.0, ...
@@ -1422,7 +1422,7 @@ classdef AnalysisViewModel < handle
             % Poll until status='ready', then stream the file to disk.
             % Generation is synchronous in the current backend but we
             % poll defensively in case it flips to async in the future.
-            app.showLoading('Downloading PDF report...');
+            app.showLoading(Labels.get('loading_report_download', 'Downloading PDF report...'));
             reportSvc = app.ReportSvc;
             token     = app.State.authToken;
             circName  = char(app.State.selectedCircuitName);

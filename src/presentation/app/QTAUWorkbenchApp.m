@@ -623,6 +623,52 @@ classdef QTAUWorkbenchApp < handle
             OverlayManager.hideLoading(app);
         end
 
+        % runAsyncWithLoading  Standardized show + AsyncRunner + auto-hide.
+        %
+        %   The recommended idiom for any VM action that does asynchronous
+        %   work behind a loading overlay.  Replaces the four-line
+        %   show / AsyncRunner.run(work, onOk, onErr) / hide-in-onOk /
+        %   hide-in-onErr boilerplate that was duplicated across ~150
+        %   sites and was the source of "forgot to hide on the error
+        %   path" bugs that left a stuck overlay.
+        %
+        %   Pattern:
+        %     app.runAsyncWithLoading( ...
+        %         Labels.get('loading_circuits_list', 'Loading circuits...'), ...
+        %         @() svc.listCircuits(token), ...
+        %         @(data) obj.onLoaded(data), ...
+        %         @(ME)   obj.onError(ME));
+        %
+        %   onOk and onErr may be empty ([]) for fire-and-forget work.
+        %   The overlay is hidden BEFORE either user callback runs, so
+        %   the callback can safely call showLoading again with a
+        %   different message (chained operations).
+        function runAsyncWithLoading(app, msg, work, onOk, onErr)
+            if nargin < 4; onOk  = []; end
+            if nargin < 5; onErr = []; end
+            app.showLoading(msg);
+            wrappedOk  = @(data) QTAUWorkbenchApp.dispatchAfterHide(app, onOk,  data);
+            wrappedErr = @(ME)   QTAUWorkbenchApp.dispatchAfterHide(app, onErr, ME);
+            AsyncRunner.run(work, wrappedOk, wrappedErr);
+        end
+
+        % runSyncWithLoading  Standardized show + sync work + auto-hide.
+        %
+        %   For synchronous work that needs an overlay (rare, but used by
+        %   some seed/import paths). hideLoading is wired through
+        %   onCleanup so it fires even if `fn` errors or is interrupted
+        %   by Ctrl-C.
+        %
+        %   Pattern:
+        %     app.runSyncWithLoading( ...
+        %         Labels.get('loading_clearing_cache', 'Clearing cache...'), ...
+        %         @() obj.purgeLocalCache());
+        function runSyncWithLoading(app, msg, fn)
+            app.showLoading(msg);
+            cleanup = onCleanup(@() app.hideLoading()); %#ok<NASGU>
+            fn();
+        end
+
         function showAuthOverlay(app)
             OverlayManager.showAuthOverlay(app);
         end
@@ -1013,6 +1059,26 @@ classdef QTAUWorkbenchApp < handle
             end
         end
 
+    end
+
+    % ── Private static helpers ─────────────────────────────────────────────
+    methods (Static, Access = private)
+        function dispatchAfterHide(app, callback, arg)
+            % Used by runAsyncWithLoading: drop the overlay first so any
+            % nested showLoading inside the user callback is observed,
+            % then invoke the callback (if non-empty) with its argument.
+            % Errors raised by the callback are logged but not rethrown
+            % — AsyncRunner already isolates the worker thread, and
+            % crashing the dispatcher would leave the overlay in an
+            % indeterminate state.
+            try; app.hideLoading(); catch; end
+            if isempty(callback); return; end
+            try
+                callback(arg);
+            catch ME
+                Logger.warn('runAsyncWithLoading', '%s', ME.message);
+            end
+        end
     end
 
 end

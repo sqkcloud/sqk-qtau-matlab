@@ -195,7 +195,7 @@ classdef BackendsViewModel < handle
             if ~app.State.hasCircuit()
                 uialert(app.UIFigure, Labels.get('error_no_circuit'), 'Submit Pool', 'Icon', 'warning'); return;
             end
-            app.showLoading('Checking IBM runtime status...');
+            app.showLoading(Labels.get('loading_backends_check_runtime', 'Checking IBM runtime status...'));
             settingsSvc = app.SettingsSvc;
             token       = app.State.authToken;
             AsyncRunner.run( ...

@@ -186,7 +186,7 @@ classdef WelcomeViewModel < handle
             end
 
             app.logEvent('API', sprintf('DELETE /api/projects/%s', projectId));
-            app.showLoading('Deleting project...');
+            app.showLoading(Labels.get('loading_projects_delete', 'Deleting project...'));
             svc = app.ProjectSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...

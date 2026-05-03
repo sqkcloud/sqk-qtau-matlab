@@ -402,7 +402,7 @@ classdef CircuitsViewModel < handle
 
         function doDeleteCircuit(obj, cid, ~)
             app = obj.App;
-            app.showLoading('Deleting circuit...');
+            app.showLoading(Labels.get('loading_circuits_delete', 'Deleting circuit...'));
             svc   = app.CircuitSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...
