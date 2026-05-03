@@ -22,7 +22,11 @@ function ReportsScreen(app)
     t = app.createSectionPage('Reports');
 
     g = uigridlayout(t, [3 1]);
-    g.RowHeight     = {92, '1x', 60};
+    %  KPI strip row was 92 px and pushed the Workflow row off-screen
+    %  on smaller workspaces — trimmed to 82 px (per operator review).
+    %  The kpiCard interior uses {16, '1x'} row heights so the value
+    %  label re-fits the smaller panel automatically.
+    g.RowHeight     = {82, '1x', 60};
     g.ColumnWidth   = {'1x'};
     g.Padding       = [16 16 16 16];
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
