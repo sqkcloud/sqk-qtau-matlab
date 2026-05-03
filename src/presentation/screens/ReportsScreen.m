@@ -61,17 +61,13 @@ function ReportsScreen(app)
     body.BackgroundColor = Theme.COLOR_BG;
 
     % ── Generator (left) ────────────────────────────────────────────────────
-    %  Same 2-row sub-grid wrapper as the Library (right column), so
-    %  both panels end at the same y-coordinate. The Generator panel
-    %  sits in the flex row; a 30 px filler row absorbs the trim.
-    leftCol = uigridlayout(body, [2 1]);
-    leftCol.Layout.Row = 1; leftCol.Layout.Column = 1;
-    leftCol.RowHeight   = {'1x', 30};
-    leftCol.ColumnWidth = {'1x'};
-    leftCol.Padding = [0 0 0 0]; leftCol.RowSpacing = 0;
-    leftCol.BackgroundColor = Theme.COLOR_BG;
-
-    genPanel = uipanel(leftCol, 'Title', Labels.get('reports_panel_generator'), ...
+    %  Parented directly to body (no leftCol wrapper) so the panel
+    %  fills the body row's full 410 px height and the gap to the
+    %  Workflow row is just g.RowSpacing — matching the KPI ↔ body
+    %  gap above it. The earlier 30 px filler wrapper was made
+    %  redundant by pinning the body row to a fixed 410 px (was '1x'
+    %  flex with the wrapper trimming 30 px from each panel).
+    genPanel = uipanel(body, 'Title', Labels.get('reports_panel_generator'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     genPanel.Layout.Row = 1; genPanel.Layout.Column = 1;
     genPanel.BackgroundColor = Theme.COLOR_CARD;
@@ -135,22 +131,15 @@ function ReportsScreen(app)
          'Right-click any row in the library for distribution actions.']), '\n');
 
     % ── Library (right) ─────────────────────────────────────────────────────
-    %  Wrap the Library in a 2-row sub-grid {'1x', 30} so the Library
-    %  panel sits in the flex row and a 30 px filler row absorbs the
-    %  trim — Generator (left column of body) stays full-height,
-    %  Library (right column) ends 30 px earlier, and there's no gap
-    %  at the bottom of the screen overall.
-    rightCol = uigridlayout(body, [2 1]);
-    rightCol.Layout.Row = 1; rightCol.Layout.Column = 2;
-    rightCol.RowHeight   = {'1x', 30};
-    rightCol.ColumnWidth = {'1x'};
-    rightCol.Padding = [0 0 0 0]; rightCol.RowSpacing = 0;
-    rightCol.BackgroundColor = Theme.COLOR_BG;
-
-    libPanel = uipanel(rightCol, ...
+    %  Same as the Generator: parented directly to body (no rightCol
+    %  wrapper). The body row is pinned at 410 px so we don't need
+    %  the 30 px filler that the wrappers used to add — removing it
+    %  equalises the gap to the Workflow row with the gap to the KPI
+    %  strip above.
+    libPanel = uipanel(body, ...
         'Title', Labels.get('reports_panel_library', 'Reports library'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    libPanel.Layout.Row = 1; libPanel.Layout.Column = 1;
+    libPanel.Layout.Row = 1; libPanel.Layout.Column = 2;
     libPanel.BackgroundColor = Theme.COLOR_CARD;
 
     lg = uigridlayout(libPanel, [3 1]);
