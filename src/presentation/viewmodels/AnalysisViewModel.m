@@ -119,6 +119,12 @@ classdef AnalysisViewModel < handle
             % Populate the backend dropdown from BackendService so the
             % popup mirrors the Backends screen's list.
             obj.loadQmcBackends();
+            % Lazy-fetch the active circuit's qubit count if we don't
+            % already know it. Without this the viability check has no
+            % data when the user opens QMC before clicking Analyze, and
+            % silently lets a too-wide circuit submit (server still
+            % rejects with 422, but the UX is worse).
+            obj.loadQmcCircuitMeta();
             % Best-effort: pre-populate with the last cached result for
             % this circuit so returning users see data immediately.
             try
@@ -177,15 +183,7 @@ classdef AnalysisViewModel < handle
                 return;
             end
             names = cell(1, n);
-            labels = cell(1, n);
             metaRows = repmat(struct('name','', 'num_qubits', 0), 1, n);
-            % Width of the active circuit (0 when unknown). Used here to
-            % render an inline warning marker on too-narrow backends so
-            % the operator sees the mismatch at choice time instead of
-            % discovering it only after Run QMC fails server-side.
-            cWidth = 0;
-            try; cWidth = double(app.State.selectedCircuitQubits); catch; end
-            if isnan(cWidth); cWidth = 0; end
             for i = 1:n
                 bname = char(JsonHelper.pick(items(i), {'name','backend_name'}));
                 bq    = JsonHelper.toDouble(JsonHelper.pick(items(i), {'num_qubits','qubit_count'}));
@@ -193,19 +191,14 @@ classdef AnalysisViewModel < handle
                 names{i} = bname;
                 metaRows(i).name = bname;
                 metaRows(i).num_qubits = bq;
-                if bq > 0
-                    if cWidth > 0 && bq < cWidth
-                        labels{i} = sprintf('%s (%dq — too narrow)', bname, round(bq));
-                    else
-                        labels{i} = sprintf('%s (%dq)', bname, round(bq));
-                    end
-                else
-                    labels{i} = bname;
-                end
             end
             app.QmcBackendMeta = metaRows;
-            app.QmcBackendField.Items     = labels;
             app.QmcBackendField.ItemsData = names;
+            % Decorate dropdown labels using the current circuit width.
+            % Decoration is shared with the post-circuit-meta refresh so
+            % a missing selectedCircuitQubits doesn't leave the dropdown
+            % stuck without "too narrow" hints.
+            AnalysisViewModel.decorateQmcBackendDropdown(app);
             % Prefer the currently-selected backend if present, else first.
             sel = char(app.State.selectedBackend);
             match = find(strcmp(names, sel), 1);
@@ -246,6 +239,54 @@ classdef AnalysisViewModel < handle
                 app.QmcBackendField.Value     = '';
             end
             Logger.warn('AnalysisViewModel', 'QMC backend load failed: %s', ME.message);
+        end
+
+        % Lazy-fetch the selected circuit's qubit count when the QMC
+        % popup opens. Required because selectedCircuitQubits is only
+        % populated by Analyze; users who open QMC straight from the
+        % circuit picker have a stale 0, which silently disables the
+        % viability check.
+        function loadQmcCircuitMeta(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated() || ~app.State.hasCircuit(); return; end
+            % Already known — no need to round-trip.
+            try
+                if double(app.State.selectedCircuitQubits) > 0; return; end
+            catch
+            end
+            cid = char(app.State.selectedCircuitId);
+            token = app.State.authToken;
+            circSvc = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() circSvc.getCircuit(cid, token), ...
+                @(data) obj.onQmcCircuitMetaLoaded(app, data), ...
+                @(ME) Logger.debug('AnalysisViewModel', ...
+                    'QMC circuit-meta fetch failed: %s', ME.message));
+        end
+
+        function onQmcCircuitMetaLoaded(~, app, data)
+            % Receive the circuit doc, extract num_qubits, and refresh
+            % the dropdown labels + viability banner.
+            try
+                q = JsonHelper.toDouble(JsonHelper.pick(data, {'num_qubits','width'}));
+                if isfinite(q) && q > 0
+                    app.State.selectedCircuitQubits = double(q);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'QMC circuit-meta parse failed: %s', ME.message);
+                return;
+            end
+            % Recompute dropdown decorations and viability now that we
+            % know the circuit width.
+            try
+                AnalysisViewModel.decorateQmcBackendDropdown(app);
+                v = AnalysisViewModel.evaluateQmcViability(app);
+                AnalysisViewModel.applyQmcViability(app, v);
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'QMC viability refresh after meta load failed: %s', ME.message);
+            end
         end
 
         % Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)
@@ -1280,6 +1321,40 @@ classdef AnalysisViewModel < handle
 
         function tf = hasBackends(data)
             tf = isstruct(data) && isfield(data, 'backends') && ~isempty(data.backends);
+        end
+
+        function decorateQmcBackendDropdown(app)
+            % Regenerate Items labels for app.QmcBackendField using the
+            % cached app.QmcBackendMeta and app.State.selectedCircuitQubits.
+            % Pure function — call it whenever either input changes.
+            % ItemsData (the bare backend names used for submission) is
+            % left intact; only the human-readable labels move.
+            try
+                if isempty(app.QmcBackendField) || ~isvalid(app.QmcBackendField); return; end
+                meta = app.QmcBackendMeta;
+                if isempty(meta); return; end
+                cWidth = 0;
+                try; cWidth = double(app.State.selectedCircuitQubits); catch; end
+                if isnan(cWidth); cWidth = 0; end
+                n = numel(meta);
+                labels = cell(1, n);
+                for i = 1:n
+                    bname = char(meta(i).name);
+                    bq    = double(meta(i).num_qubits);
+                    if ~isfinite(bq); bq = 0; end
+                    if bq > 0
+                        if cWidth > 0 && bq < cWidth
+                            labels{i} = sprintf('%s (%dq — too narrow)', bname, round(bq));
+                        else
+                            labels{i} = sprintf('%s (%dq)', bname, round(bq));
+                        end
+                    else
+                        labels{i} = bname;
+                    end
+                end
+                app.QmcBackendField.Items = labels;
+            catch
+            end
         end
 
         function q = lookupBackendQubits(app, backendName)
