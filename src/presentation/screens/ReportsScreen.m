@@ -52,7 +52,17 @@ function ReportsScreen(app)
     body.BackgroundColor = Theme.COLOR_BG;
 
     % ── Generator (left) ────────────────────────────────────────────────────
-    genPanel = uipanel(body, 'Title', Labels.get('reports_panel_generator'), ...
+    %  Same 2-row sub-grid wrapper as the Library (right column), so
+    %  both panels end at the same y-coordinate. The Generator panel
+    %  sits in the flex row; a 30 px filler row absorbs the trim.
+    leftCol = uigridlayout(body, [2 1]);
+    leftCol.Layout.Row = 1; leftCol.Layout.Column = 1;
+    leftCol.RowHeight   = {'1x', 30};
+    leftCol.ColumnWidth = {'1x'};
+    leftCol.Padding = [0 0 0 0]; leftCol.RowSpacing = 0;
+    leftCol.BackgroundColor = Theme.COLOR_BG;
+
+    genPanel = uipanel(leftCol, 'Title', Labels.get('reports_panel_generator'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     genPanel.Layout.Row = 1; genPanel.Layout.Column = 1;
     genPanel.BackgroundColor = Theme.COLOR_CARD;
