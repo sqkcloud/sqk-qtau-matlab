@@ -484,18 +484,29 @@ function CircuitCuttingScreen(app)
         'Scrollable', 'on');
     resPanel.Layout.Row = 6; resPanel.Layout.Column = [1 2];
     resPanel.BackgroundColor = Theme.COLOR_CARD;
-    rg = uigridlayout(resPanel, [1 1]);
-    %  Inner row uses 'fit' so when the empty-state copy (or future
-    %  long results display) needs more vertical space than the panel
-    %  is allocated, the grid grows past the panel and resPanel.Scrollable
-    %  paints a real scrollbar instead of clipping the content.
-    rg.RowHeight = {'fit'};
-    %  Top/bottom padding trimmed (14 → 10) so the 2-paragraph empty-state
-    %  copy fits the ~95 px Row 6 budget at default 1600×870 figure.
+    %  Three inner rows: existing label/textarea content ('fit' so it
+    %  can grow), a state-header strip (18 px), and a 4-button action
+    %  bar (44 px). The action bar is always visible — buttons are
+    %  individually gated by CircuitCuttingViewModel.refreshActionButtons
+    %  so they enable as the underlying state advances. State header
+    %  stays hidden until a batch is dispatched.
+    rg = uigridlayout(resPanel, [3 1]);
+    rg.RowHeight = {'fit', 18, 44};
+    rg.RowSpacing = 8;
     rg.Padding = [18 10 18 10]; rg.BackgroundColor = Theme.COLOR_CARD;
 
+    % Row 1: empty-state / results display. Uses an inner [2 1] sub-grid
+    % so the placeholder + textarea overlap (one shown at a time) without
+    % needing two top-level rows.
+    contentGrid = uigridlayout(rg, [2 1]);
+    contentGrid.Layout.Row = 1;
+    contentGrid.RowHeight = {'fit', 'fit'};
+    contentGrid.RowSpacing = 0;
+    contentGrid.Padding = [0 0 0 0];
+    contentGrid.BackgroundColor = Theme.COLOR_CARD;
+
     % Empty state (visible until renderResult writes real values).
-    app.CuttingResultsEmptyLabel = uilabel(rg, ...
+    app.CuttingResultsEmptyLabel = uilabel(contentGrid, ...
         'Text', ['⚛  Reconstructed expectation values appear here once ' ...
                  'the batch completes. Press Run Cutting to dispatch all ' ...
                  'k subcircuits in parallel.'], ...
@@ -504,9 +515,66 @@ function CircuitCuttingScreen(app)
         'WordWrap', 'on', 'Interpreter', 'none');
 
     % Real-results textarea — created hidden, made visible by renderResult.
-    app.CuttingResultsLabel = uitextarea(rg, ...
+    app.CuttingResultsLabel = uitextarea(contentGrid, ...
         'Value', '', 'Editable', 'off', 'FontSize', 12, ...
         'Visible', 'off');
+
+    % Row 2: state header — "Batch <id> · Status: <status>" once a batch
+    % exists. Hidden until startPolling fires the first refreshActionButtons.
+    app.CuttingActionsHeader = uilabel(rg, ...
+        'Text', '', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
+        'Interpreter', 'none', 'Visible', 'off');
+    app.CuttingActionsHeader.Layout.Row = 2;
+
+    % Row 3: action bar. Workflow order — Jobs (live progress) → Results
+    % (per-job analysis) → View Reconstruction (this batch's
+    % expectations) → Detailed Analysis (circuit-level deep-dive). All
+    % gated; default disabled with educational tooltips until the
+    % underlying state is ready (see refreshActionButtons in the VM).
+    actionRow = uigridlayout(rg, [1 5]);
+    actionRow.Layout.Row = 3;
+    actionRow.ColumnWidth = {'1x', 150, 150, 180, 170};
+    actionRow.ColumnSpacing = 8;
+    actionRow.Padding = [0 0 0 0];
+    actionRow.BackgroundColor = Theme.COLOR_CARD;
+
+    %  Spacer column keeps the buttons right-aligned, matching the
+    %  Run / Cancel toolbar above and the QmcDialog footer button bar.
+    uilabel(actionRow, 'Text', '');
+
+    app.CuttingJobsBtn = uibutton(actionRow, ...
+        'Text', [char(128193) '  Jobs'], ...
+        'Enable', 'off', ...
+        'Tooltip', 'Run a cutting batch first to populate the jobs list.', ...
+        'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onJumpToJobs());
+    app.CuttingJobsBtn.Layout.Column = 2;
+    app.styleBtn(app.CuttingJobsBtn, 'ghost');
+
+    app.CuttingResultsBtn = uibutton(actionRow, ...
+        'Text', [char(128202) '  Results'], ...
+        'Enable', 'off', ...
+        'Tooltip', 'Waiting for at least one subcircuit job to complete.', ...
+        'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onJumpToResults());
+    app.CuttingResultsBtn.Layout.Column = 3;
+    app.styleBtn(app.CuttingResultsBtn, 'ghost');
+
+    app.CuttingViewReconBtn = uibutton(actionRow, ...
+        'Text', [char(9986) '  View Reconstruction'], ...
+        'Enable', 'off', ...
+        'Tooltip', 'Reconstruction is available once the batch completes.', ...
+        'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onViewBatchReconstruction());
+    app.CuttingViewReconBtn.Layout.Column = 4;
+    app.styleBtn(app.CuttingViewReconBtn, 'primary');
+
+    app.CuttingDetailedAnalysisBtn = uibutton(actionRow, ...
+        'Text', [char(128270) '  Detailed Analysis'], ...
+        'Enable', 'off', ...
+        'Tooltip', 'Pick a circuit at the top of this screen first.', ...
+        'ButtonPushedFcn', @(~,~) app.CircuitCuttingVm.onJumpToDetailedAnalysis());
+    app.CuttingDetailedAnalysisBtn.Layout.Column = 5;
+    app.styleBtn(app.CuttingDetailedAnalysisBtn, 'ghost');
 
     Logger.info('CircuitCuttingScreen', 'Circuit Cutting tab built');
 end

@@ -23,6 +23,16 @@ classdef CircuitCuttingViewModel < handle
         LastCuttabilityResult     = []   % Cached struct from checkQasmCuttable
         BackendPool               = {}   % cached cell of struct {name, num_qubits} from /api/backends
         RowControls               = {}   % per-row {nameDropdown, shotsField} for editable assignments
+        % Last-known batch status (e.g. 'queued', 'executing',
+        % 'completed', 'failed', 'partial_failure'). Updated by every
+        % poll tick; consumed by refreshActionButtons to gate the four
+        % post-run buttons without re-polling.
+        LastBatchStatus           = ''
+        % Cached child-job statuses populated by every poll tick.
+        % Each entry: struct('job_id', char, 'status', char). Lets the
+        % Results-button gate "at least one terminal child" without a
+        % separate /api/jobs round-trip.
+        LastChildStates           = {}
     end
 
     properties (Constant)
@@ -52,6 +62,11 @@ classdef CircuitCuttingViewModel < handle
             obj.loadBackendPool();
             obj.refreshStatus();
             obj.LastRefresh = tic;
+            % First paint: gate the action-bar buttons so a pre-selected
+            % circuit from another screen lights up Detailed Analysis,
+            % and a still-active batch from a previous visit lights up
+            % the rest. No-op when neither is true.
+            obj.refreshActionButtons();
         end
 
         % ── Backend pool ─────────────────────────────────────────────────
@@ -126,6 +141,10 @@ classdef CircuitCuttingViewModel < handle
             obj.LastAnalyze = [];  % stale analysis — force re-run for the new circuit
             obj.refreshStatus();
             obj.checkCuttability(cid);
+            % The Detailed Analysis action-bar button gates on having a
+            % selected circuit; flip it on the moment the operator
+            % picks one.
+            obj.refreshActionButtons();
         end
 
         % ── Mode / preset dropdowns ──────────────────────────────────────
@@ -301,6 +320,100 @@ classdef CircuitCuttingViewModel < handle
             end
             obj.stopPolling();
             obj.refreshStatus();
+        end
+
+        % ── Post-run navigation ──────────────────────────────────────────
+        %
+        %   Four quick jumps from the Reconstructed Results block to the
+        %   downstream artifacts of the current cutting batch. Each is
+        %   gated by refreshActionButtons (which updates Enable + Tooltip)
+        %   so they only fire when their target is meaningful.
+
+        function onJumpToJobs(obj)
+            % Open the Jobs screen so the operator can watch this batch's
+            % subcircuit jobs progress live. We surface the first child's
+            % job_id on app.State.selectedJobId so the Jobs screen pre-
+            % selects something familiar; the table itself shows the full
+            % project list (per-batch filtering is a future enhancement).
+            app = obj.App;
+            cid = obj.firstChildJobId();
+            if ~isempty(cid); app.State.selectedJobId = string(cid); end
+            app.logEvent('NAV', sprintf( ...
+                'Cutting → Jobs (batch %s)', obj.ActiveBatchId));
+            app.onSelectSection('Jobs');
+        end
+
+        function onJumpToResults(obj)
+            % Open the Results screen. The Results screen's existing
+            % ``GET /api/jobs hunting for a completed job`` flow auto-
+            % picks the first completed child job in the project; passing
+            % a known-completed child via selectedJobId pre-empts that
+            % search so the operator sees the right run on first paint.
+            app = obj.App;
+            cid = obj.firstTerminalChildJobId();
+            if ~isempty(cid); app.State.selectedJobId = string(cid); end
+            % Also stash the batch id so Results' "View Reconstruction"
+            % button knows which batch to fetch when the user clicks it.
+            if ~isempty(obj.ActiveBatchId)
+                app.SelectedBatchId = string(obj.ActiveBatchId);
+            end
+            app.logEvent('NAV', sprintf( ...
+                'Cutting → Results (batch %s, child %s)', ...
+                obj.ActiveBatchId, cid));
+            app.onSelectSection('Results');
+        end
+
+        function onViewBatchReconstruction(obj)
+            % Open the Reconstruction Summary popup directly here — same
+            % popup the Results screen renders, but driven by the batch
+            % we already own so the operator doesn't have to bounce.
+            app = obj.App;
+            bid = obj.ActiveBatchId;
+            if isempty(strtrim(char(bid)))
+                uialert(app.UIFigure, ...
+                    'Run a cutting batch first.', ...
+                    'View Reconstruction', 'Icon', 'info');
+                return;
+            end
+            app.logEvent('API', sprintf( ...
+                'GET /api/cutting/batches/%s/result', bid));
+            svc   = app.CuttingSvc;
+            token = app.State.authToken;
+            try
+                data = svc.getBatchResult(bid, token);
+            catch ME
+                Logger.warn('CircuitCuttingViewModel', ...
+                    'getBatchResult: %s', ME.message);
+                uialert(app.UIFigure, ME.message, ...
+                    'View Reconstruction', 'Icon', 'error');
+                return;
+            end
+            status = char(JsonHelper.pick(data, 'status', obj.LastBatchStatus));
+            try
+                DialogBuilder.buildReconstructionDialog(app, bid, status, data);
+            catch ME
+                Logger.warn('CircuitCuttingViewModel', ...
+                    'buildReconstructionDialog: %s', ME.message);
+                uialert(app.UIFigure, ME.message, ...
+                    'View Reconstruction', 'Icon', 'error');
+            end
+        end
+
+        function onJumpToDetailedAnalysis(obj)
+            % Open the Detailed Analysis screen for the active circuit.
+            % That screen reads app.State.selectedCircuitId on entry,
+            % which the Cutting circuit picker already keeps in sync.
+            app = obj.App;
+            if ~app.State.hasCircuit()
+                uialert(app.UIFigure, ...
+                    'Pick a circuit at the top of this screen first.', ...
+                    'Detailed Analysis', 'Icon', 'info');
+                return;
+            end
+            app.logEvent('NAV', sprintf( ...
+                'Cutting → Detailed Analysis (circuit %s)', ...
+                char(app.State.selectedCircuitId)));
+            app.onSelectSection('Detailed Analysis');
         end
 
         % ── Circuits ─────────────────────────────────────────────────────
@@ -1092,11 +1205,20 @@ classdef CircuitCuttingViewModel < handle
             obj.ActiveBatchId = char(JsonHelper.pick(batchResp, 'batch_id', ''));
             if isempty(obj.ActiveBatchId); return; end
             obj.stopPolling();
+            % Reset cached gating state so a re-run resets the Results /
+            % View Reconstruction buttons to disabled until the new
+            % batch advances. ``LastBatchStatus`` is seeded from the
+            % submit response (typically 'queued' / 'partitioning').
+            obj.LastBatchStatus = char(JsonHelper.pick(batchResp, 'status', 'queued'));
+            obj.LastChildStates = {};
             obj.PollTimer = timer('Period', 3, ...
                 'ExecutionMode', 'fixedRate', ...
                 'TimerFcn', @(~,~) obj.pollTick());
             start(obj.PollTimer);
             obj.App.logEvent('CUT', sprintf('Batch %s dispatched', obj.ActiveBatchId));
+            % Gate buttons now: Jobs becomes available, the rest stay
+            % disabled until a child or the batch reaches terminal.
+            obj.refreshActionButtons();
         end
 
         function pollTick(obj)
@@ -1131,6 +1253,21 @@ classdef CircuitCuttingViewModel < handle
                 if ~isnumeric(pct); pct = 0; end
                 obj.setStatus(sprintf('Batch %s   status=%s   %d%%', ...
                     obj.ActiveBatchId, st, int32(pct)));
+
+                % Cache batch + child statuses so refreshActionButtons
+                % can gate the post-run buttons without a second round-
+                % trip. The batch poll already enriches its response
+                % with each child's {job_id, status} when subcircuits
+                % is present; fall back to the legacy child_job_states
+                % field name on older payloads.
+                obj.LastBatchStatus = st;
+                children = JsonHelper.pick(r, 'subcircuits', {});
+                if isempty(children)
+                    children = JsonHelper.pick(r, 'child_job_states', {});
+                end
+                obj.LastChildStates = DialogBuilder.cellOrEmpty(children);
+                obj.refreshActionButtons();
+
                 terminal = ismember(st, ...
                     {'completed','failed','cancelled','partial_failure'});
                 if terminal
@@ -1150,6 +1287,21 @@ classdef CircuitCuttingViewModel < handle
                 obj.renderResult(r);
                 obj.App.logEvent('CUT', sprintf('Batch %s result fetched', ...
                     obj.ActiveBatchId));
+                % Refresh cached gating state from the terminal payload
+                % so View Reconstruction lights up immediately. The
+                % terminal status arrived via the poll just before this
+                % call, but the child-state list on /result is the
+                % canonical "what actually finished" snapshot.
+                st = char(JsonHelper.pick(r, 'status', obj.LastBatchStatus));
+                if ~isempty(st); obj.LastBatchStatus = st; end
+                children = JsonHelper.pick(r, 'subcircuits', {});
+                if isempty(children)
+                    children = JsonHelper.pick(r, 'child_job_states', {});
+                end
+                if ~isempty(DialogBuilder.cellOrEmpty(children))
+                    obj.LastChildStates = DialogBuilder.cellOrEmpty(children);
+                end
+                obj.refreshActionButtons();
             catch ME
                 Logger.warn('CircuitCuttingViewModel', ...
                     'fetchResult: %s', ME.message);
@@ -1650,6 +1802,124 @@ classdef CircuitCuttingViewModel < handle
                 obj.App.CuttingStatusLabel.Text = msg;
             catch
                 % label not yet built (first call from constructor)
+            end
+        end
+
+        % ── Action-bar gating ────────────────────────────────────────────
+        %
+        %   Recompute Enable + Tooltip for each of the four post-run
+        %   buttons (Jobs / Results / View Reconstruction / Detailed
+        %   Analysis) based on:
+        %
+        %     - whether a batch has been dispatched (ActiveBatchId)
+        %     - whether at least one child job is in a terminal status
+        %     - whether the batch is in a terminal status itself
+        %     - whether a circuit is selected at the top of the screen
+        %
+        %   Called from startPolling, pollTick, fetchResult, and
+        %   onCircuitChanged so the buttons re-enable as state advances
+        %   without anyone having to remember to update them.
+
+        function refreshActionButtons(obj)
+            app = obj.App;
+
+            % State header: only meaningful once a batch exists. Shows
+            % "Batch <id> · Status: <status>" so the operator knows what
+            % the buttons below are operating on.
+            try
+                if ~isempty(app.CuttingActionsHeader) && isvalid(app.CuttingActionsHeader)
+                    if isempty(obj.ActiveBatchId)
+                        app.CuttingActionsHeader.Visible = 'off';
+                        app.CuttingActionsHeader.Text = '';
+                    else
+                        st = obj.LastBatchStatus;
+                        if isempty(st); st = 'pending'; end
+                        app.CuttingActionsHeader.Text = sprintf( ...
+                            'Batch %s   %c   Status: %s', ...
+                            obj.ActiveBatchId, char(8226), upper(st));
+                        app.CuttingActionsHeader.Visible = 'on';
+                    end
+                end
+            catch
+            end
+
+            haveBatch  = ~isempty(obj.ActiveBatchId);
+            haveCircuit = false;
+            try; haveCircuit = app.State.hasCircuit(); catch; end
+
+            % Jobs: enables the moment a batch is dispatched.
+            obj.gateButton(app.CuttingJobsBtn, haveBatch, ...
+                'Open the Jobs screen to track this batch''s subcircuit jobs.', ...
+                'Run a cutting batch first to populate the jobs list.');
+
+            % Results: enables when at least one child has a terminal
+            % status (completed | failed | cancelled). Failed children
+            % still let the operator open Results to see error trends.
+            haveTerminalChild = ~isempty(obj.firstTerminalChildJobId());
+            obj.gateButton(app.CuttingResultsBtn, haveTerminalChild, ...
+                'Open the Results screen for this batch''s completed subcircuit job.', ...
+                'Waiting for at least one subcircuit job to complete.');
+
+            % View Reconstruction: only meaningful once the batch itself
+            % is terminal. Partial-failure batches still get NaN entries
+            % for failed labels, but the popup's diagnostic panel
+            % explains that case clearly — better than hiding it.
+            terminal = ismember(lower(strtrim(char(obj.LastBatchStatus))), ...
+                {'completed','failed','cancelled','partial_failure'});
+            obj.gateButton(app.CuttingViewReconBtn, haveBatch && terminal, ...
+                'Open the Reconstruction Summary popup for this batch.', ...
+                'Reconstruction is available once the batch reaches a terminal status.');
+
+            % Detailed Analysis: needs only a selected circuit; runs
+            % independently of execution.
+            obj.gateButton(app.CuttingDetailedAnalysisBtn, haveCircuit, ...
+                'Open Detailed Analysis for the active circuit.', ...
+                'Pick a circuit at the top of this screen first.');
+        end
+
+        function gateButton(~, btn, enable, enabledTip, disabledTip)
+            % Set Enable + Tooltip on a button in one place. Defensive:
+            % silently no-ops when the button hasn't been built yet
+            % (e.g. during the screen's first construction pass).
+            try
+                if isempty(btn) || ~isvalid(btn); return; end
+                if enable
+                    btn.Enable = 'on';
+                    btn.Tooltip = enabledTip;
+                else
+                    btn.Enable = 'off';
+                    btn.Tooltip = disabledTip;
+                end
+            catch
+            end
+        end
+
+        function cid = firstChildJobId(obj)
+            % First child job id from the cached child states, '' when
+            % there isn't one yet (e.g. dispatch raced ahead of the
+            % first poll). Used to seed selectedJobId on Jump-to-Jobs.
+            cid = '';
+            for i = 1:numel(obj.LastChildStates)
+                e = obj.LastChildStates{i};
+                jid = char(string(JsonHelper.pick(e, 'job_id', '')));
+                if ~isempty(jid); cid = jid; return; end
+            end
+        end
+
+        function cid = firstTerminalChildJobId(obj)
+            % First child whose status is terminal (completed / failed /
+            % cancelled). Used to gate the Results button and to seed
+            % selectedJobId on Jump-to-Results so the Results screen
+            % shows a meaningful run on first paint.
+            cid = '';
+            for i = 1:numel(obj.LastChildStates)
+                e = obj.LastChildStates{i};
+                st = lower(strtrim(char(string( ...
+                    JsonHelper.pick(e, 'status', '')))));
+                if ismember(st, {'completed','done','success','failed','cancelled'})
+                    jid = char(string(JsonHelper.pick(e, 'job_id', '')));
+                    if ~isempty(jid); cid = jid; return; end
+                end
             end
         end
 

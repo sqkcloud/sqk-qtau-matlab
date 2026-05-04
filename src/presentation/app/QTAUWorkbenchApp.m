@@ -455,6 +455,16 @@ classdef QTAUWorkbenchApp < handle
                                     % on CreateBatchRequest.
         CuttingResultsLabel         % Reconstructed expectations display
         CuttingResultsEmptyLabel    % Pretty empty-state when no batch has run yet
+        % Post-run action bar — quick jumps from a finished cutting batch
+        % to the four downstream artifacts (job list, results screen,
+        % reconstruction popup, detailed analysis). Each button is
+        % gated by CircuitCuttingViewModel.refreshActionButtons based
+        % on batch state (none / dispatched / partly-complete / done).
+        CuttingActionsHeader              % "Batch <id> · Status: <status>" line
+        CuttingJobsBtn                    % Jump to Jobs screen
+        CuttingResultsBtn                 % Jump to Results screen
+        CuttingViewReconBtn               % Open reconstruction popup
+        CuttingDetailedAnalysisBtn        % Jump to Detailed Analysis screen
     end
 
     % ── QEC Simulation tab ────────────────────────────────────────────────────
