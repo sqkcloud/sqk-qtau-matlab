@@ -217,9 +217,26 @@ classdef BenchmarkViewModel < handle
             if ~isempty(mitig) && ~strcmp(mitig, 'none')
                 payload.error_mitigation = mitig;
             end
+            % Phase 2.4: forward the operator's chosen QEM ladder level
+            % so the server's MitigationService.resolve() honors it
+            % through the SamplerV2 stack instead of silently applying
+            % the Standard default. Without this, Settings → "Default
+            % mitigation level" had no effect on standard job submits
+            % even though the field exists on SubmitJobRequest.
+            try
+                lvl = double(app.State.preferredMitigationLevel);
+                if isfinite(lvl)
+                    payload.mitigation_level = int32(lvl);
+                end
+            catch
+            end
 
+            mitLogStr = mitig;
+            if isfield(payload, 'mitigation_level')
+                mitLogStr = sprintf('%s (level=%d)', mitig, payload.mitigation_level);
+            end
             app.logEvent('API', sprintf('POST /api/jobs/submit — circuit: %s  backend: %s  shots: %d  opt: %d  mitig: %s', ...
-                circuitId, backendName, shots, opt, mitig));
+                circuitId, backendName, shots, opt, mitLogStr));
             app.showLoading(Labels.get('loading_submitting_bench', ...
                 'Submitting benchmark to IBM Quantum...'));
             jobSvc = app.JobSvc;

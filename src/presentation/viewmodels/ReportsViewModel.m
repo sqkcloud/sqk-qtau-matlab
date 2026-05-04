@@ -33,6 +33,10 @@ classdef ReportsViewModel < handle
             if ~app.State.isAuthenticated(); return; end
             if ~ReportsViewModel.tableValid(app); return; end
             obj.fetchPage(app, app.ReportsCurrentPage, false);
+            % Pre-seed the report title so the operator doesn't have to
+            % retype it every visit. Skipped when the field already has
+            % content so existing typing is preserved.
+            ReportsViewModel.seedReportTitle(app);
         end
 
         function onRefreshList(obj)
@@ -603,6 +607,45 @@ classdef ReportsViewModel < handle
             tf = isprop(app, 'ReportsTable') ...
                 && ~isempty(app.ReportsTable) ...
                 && isvalid(app.ReportsTable);
+        end
+
+        function seedReportTitle(app)
+            % Pre-seed app.ReportTitleField with a sensible default
+            % derived from the current run context. Format:
+            %   "<circuit> on <backend> — <YYYY-MM-DD>"
+            % Falls back to a date-only template when no run context
+            % is available. Skipped when the field already has
+            % non-whitespace content so existing operator typing is
+            % preserved across screen visits.
+            try
+                if ~isprop(app, 'ReportTitleField') ...
+                        || isempty(app.ReportTitleField) ...
+                        || ~isvalid(app.ReportTitleField)
+                    return;
+                end
+                cur = char(app.ReportTitleField.Value);
+                if ~isempty(strtrim(cur)); return; end
+
+                circuit = '';
+                backend = '';
+                try; circuit = strtrim(char(app.State.selectedCircuitName)); catch; end
+                try; backend = strtrim(char(app.State.selectedBackend));    catch; end
+                today = char(datetime('now', 'Format', 'yyyy-MM-dd'));
+
+                if ~isempty(circuit) && ~isempty(backend)
+                    seed = sprintf('%s on %s %c %s', ...
+                        circuit, backend, char(8212), today);
+                elseif ~isempty(circuit)
+                    seed = sprintf('%s %c %s', circuit, char(8212), today);
+                else
+                    seed = sprintf('Quantum Run Report %c %s', ...
+                        char(8212), today);
+                end
+                app.ReportTitleField.Value = seed;
+            catch ME
+                Logger.debug('ReportsViewModel', ...
+                    'seedReportTitle: %s', ME.message);
+            end
         end
 
         function rid = currentReportId(app)

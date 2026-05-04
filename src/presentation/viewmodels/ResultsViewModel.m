@@ -95,6 +95,32 @@ classdef ResultsViewModel < handle
                 @(ME)   obj.onReconstructionError(app, bid, ME));
         end
 
+        function onGenerateReportFromResults(obj)
+            % Bridge from the Results screen to Reports. Confirms a
+            % job context exists, then navigates — the Reports screen's
+            % own onEnter (loadReportsList) auto-seeds the title from
+            % app.State.selectedCircuitName / selectedBackend so the
+            % operator only has to confirm format/sections, not retype
+            % the title.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            jid = char(app.State.selectedJobId);
+            if isempty(strtrim(jid))
+                uialert(app.UIFigure, ...
+                    'Wait for a completed job to load first, then try again.', ...
+                    'Generate Report', 'Icon', 'info');
+                return;
+            end
+            app.logEvent('NAV', sprintf( ...
+                'Results → Reports (job %s)', jid));
+            app.onSelectSection('Reports');
+        end
+
         function onMitigationToggleClicked(obj, role)
             % Phase 4.2 toggle handler. ``role`` is 'primary' or 'raw'
             % depending on which toggle button the operator clicked.

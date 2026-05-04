@@ -140,8 +140,8 @@ function ResultsScreen(app)
     bottom.Layout.Row = 3; bottom.Layout.Column = [1 2];
     bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
-    bg = uigridlayout(bottom, [1 5]);
-    bg.ColumnWidth = {'1x', 110, 180, 195, 150};
+    bg = uigridlayout(bottom, [1 6]);
+    bg.ColumnWidth = {'1x', 110, 180, 195, 170, 110};
     bg.Padding = [14 8 14 8]; bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(bg, 'Text', Labels.get('results_action_msg'));
     desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
@@ -157,9 +157,16 @@ function ResultsScreen(app)
     tmp = uibutton(bg, 'Text', [char(9651) ' Detailed Analysis'], ...  % Detailed Analysis nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Detailed Analysis'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'primary');
+    % P3: Generate Report bridge — pre-fills title via Reports'
+    % loadReportsList → seedReportTitle and lets the operator confirm
+    % format / sections without retyping the run identity.
+    tmp = uibutton(bg, 'Text', [char(128196) ' Generate Report'], ...  % 📄
+        'ButtonPushedFcn', @(~,~)app.ResultsVm.onGenerateReportFromResults());
+    tmp.Layout.Row = 1; tmp.Layout.Column = 5; app.styleBtn(tmp, 'secondary');
+    tmp.Tooltip = 'Open Reports with the title pre-filled for the active job.';
     tmp = uibutton(bg, 'Text', [char(9635) ' Jobs'], ...  % Jobs nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Jobs'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 5; app.styleBtn(tmp, 'ghost');
+    tmp.Layout.Row = 1; tmp.Layout.Column = 6; app.styleBtn(tmp, 'ghost');
 
     Logger.info('ResultsScreen', 'Results tab UI built successfully');
 end

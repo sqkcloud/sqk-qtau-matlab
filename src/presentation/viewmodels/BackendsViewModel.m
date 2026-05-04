@@ -329,6 +329,17 @@ classdef BackendsViewModel < handle
             obj.PoolFailed = 0;
             jobSvc = app.JobSvc;
             token  = app.State.authToken;
+            % Phase 2.4: capture the operator's chosen QEM ladder level
+            % once per pool so every per-backend payload below carries
+            % it. Without this, a multi-backend pool submit silently
+            % defaulted to Standard server-side regardless of what the
+            % operator picked in Settings → "Default mitigation level".
+            mitigLvl = [];
+            try
+                lvl = double(app.State.preferredMitigationLevel);
+                if isfinite(lvl); mitigLvl = int32(lvl); end
+            catch
+            end
             for i = 1:n
                 backend = char(string(backends{i}));
                 payload = struct( ...
@@ -338,6 +349,9 @@ classdef BackendsViewModel < handle
                     'optimization_level', opt);
                 if ~isempty(mitig) && ~strcmp(mitig, 'none')
                     payload.error_mitigation = mitig;
+                end
+                if ~isempty(mitigLvl)
+                    payload.mitigation_level = mitigLvl;
                 end
                 idx = i;
                 AsyncRunner.run( ...
