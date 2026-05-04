@@ -306,6 +306,17 @@ classdef ResultsViewModel < handle
             app.State.logActivity(sprintf('View results — job: %s', char(jobId)), 'Success');
             obj.LastRefresh = tic;
             app.hideLoading();
+            % Tier B/C visual layer — populate the new identity strip,
+            % KPI row, mitigation/timing/context tiles, and histogram
+            % chart from the same response. Defensive: each helper
+            % silently no-ops on missing widgets / fields so the
+            % legacy populate path above stays robust either way.
+            try
+                ResultsViewModel.applyHeroAndKpis(app, jobId, data, statusStr);
+            catch ME
+                Logger.warn('ResultsViewModel', ...
+                    'applyHeroAndKpis: %s', ME.message);
+            end
         end
 
         function onRefreshResultsError(~, app, jobId, ME)
@@ -702,6 +713,319 @@ classdef ResultsViewModel < handle
                 Logger.debug('ResultsViewModel', ...
                     'refreshToggleStyle: %s', ME.message);
             end
+        end
+
+        % ── Tier B/C render helpers (M2) ─────────────────────────────────
+        function applyHeroAndKpis(app, jobId, data, statusStr)
+            % Populate the identity strip, KPI row, mitigation/timing/
+            % context tiles, and histogram from a /api/jobs/{id}/results
+            % response. Each block is wrapped in its own try/catch so
+            % a missing field never blocks the rest.
+            cname   = char(app.State.selectedCircuitName);
+            backend = char(JsonHelper.pick(data, {'backend_name','backend'}));
+            shots   = JsonHelper.pickNumeric(data, 'shots', NaN);
+            ibmJob  = char(JsonHelper.pick(data, {'ibm_job_id'}, ''));
+
+            % Identity strip.
+            try
+                if ~isempty(app.ResultsHeroSubtitle) && isvalid(app.ResultsHeroSubtitle)
+                    parts = {};
+                    if ~isempty(cname);   parts{end+1} = cname;   end %#ok<AGROW>
+                    if ~isempty(backend); parts{end+1} = backend; end %#ok<AGROW>
+                    if isfinite(shots) && shots > 0
+                        parts{end+1} = sprintf('%d shots', round(shots));
+                    end
+                    if isempty(parts)
+                        sub = 'Run a job to populate this view.';
+                    else
+                        sub = strjoin(parts, [' ' char(8226) ' ']);
+                    end
+                    app.ResultsHeroSubtitle.Text = sub;
+                end
+                if ~isempty(app.ResultsHeroJobLine) && isvalid(app.ResultsHeroJobLine)
+                    line = sprintf('Job %s', char(jobId));
+                    if ~isempty(ibmJob)
+                        line = sprintf('%s   %c   IBM %s', line, char(8226), ibmJob);
+                    end
+                    line = sprintf('%s   %c   Run %s', line, char(8226), ...
+                        char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm')));
+                    app.ResultsHeroJobLine.Text = line;
+                end
+            catch
+            end
+
+            % Status pill.
+            try
+                ResultsViewModel.setStatusPill(app, statusStr);
+            catch
+            end
+
+            % KPI row — Fidelity / Success / Dominant / 2Q / Readout.
+            fidVal = JsonHelper.pickNumeric(data, ...
+                {'estimated_fidelity','measured_fidelity','fidelity'}, NaN);
+            succVal = JsonHelper.pickNumeric(data, 'success_rate', NaN);
+            domState = char(JsonHelper.pick(data, {'most_frequent_bitstring'}, ''));
+            idealOverlap = JsonHelper.pickNumeric(data, 'ideal_overlap', NaN);
+            twoQ = JsonHelper.pickNumeric(data, ...
+                {'two_qubit_error_impact','features.two_qubit_error_impact'}, NaN);
+            readout = JsonHelper.pickNumeric(data, ...
+                {'readout_contribution','features.readout_contribution'}, NaN);
+
+            ResultsViewModel.setKpi(app.ResultsKpiFidelityVal, app.ResultsKpiFidelitySub, ...
+                ResultsViewModel.fmtRatio(fidVal), ...
+                ResultsViewModel.fmtIdealSub(idealOverlap, 'ideal'));
+            ResultsViewModel.setKpi(app.ResultsKpiSuccessVal, app.ResultsKpiSuccessSub, ...
+                ResultsViewModel.fmtPct(succVal), ...
+                ResultsViewModel.fmtIdealSub(1.0, 'ideal'));
+            ResultsViewModel.setKpi(app.ResultsKpiDominantVal, app.ResultsKpiDominantSub, ...
+                ResultsViewModel.fmtBitstring(domState), '');
+            ResultsViewModel.setKpi(app.ResultsKpiTwoQVal, app.ResultsKpiTwoQSub, ...
+                ResultsViewModel.fmtRatio(twoQ), 'gate noise');
+            ResultsViewModel.setKpi(app.ResultsKpiReadoutVal, app.ResultsKpiReadoutSub, ...
+                ResultsViewModel.fmtRatio(readout), 'measurement');
+
+            % Mitigation / Timing / Context tiles. Pull what's
+            % available; show "—" for unknown fields.
+            mit = JsonHelper.safeField(data, 'mitigation_plan', struct());
+            if ~isstruct(mit); mit = struct(); end
+            ResultsViewModel.setKvLabels(app.ResultsMitigationLabels, { ...
+                ResultsViewModel.mitigationLevelLabel(mit), ...
+                ResultsViewModel.boolBadge(mit, 'twirling_gates', 'twirling_measure'), ...
+                ResultsViewModel.boolBadge(mit, 'dd_enable'), ...
+                ResultsViewModel.boolBadge(mit, 'zne_enable')});
+            ResultsViewModel.setKvLabels(app.ResultsTimingLabels, { ...
+                ResultsViewModel.timingDelta( ...
+                    JsonHelper.pick(data, {'submitted_at'}, ''), ...
+                    JsonHelper.pick(data, {'started_at','running_at'}, '')), ...
+                ResultsViewModel.timingDelta( ...
+                    JsonHelper.pick(data, {'started_at','running_at'}, ''), ...
+                    JsonHelper.pick(data, {'completed_at'}, '')), ...
+                ResultsViewModel.timingDelta( ...
+                    JsonHelper.pick(data, {'submitted_at'}, ''), ...
+                    JsonHelper.pick(data, {'completed_at'}, ''))});
+            projName = char(app.State.currentProjectName);
+            if isempty(projName); projName = char(app.State.currentProjectId); end
+            ResultsViewModel.setKvLabels(app.ResultsContextLabels, { ...
+                projName, ...
+                char(JsonHelper.pick(data, {'submitted_at'}, char(8212))), ...
+                char(app.State.currentUser)});
+
+            % Histogram.
+            try
+                ResultsViewModel.paintResultsHistogram(app, data);
+            catch
+            end
+        end
+
+        function setStatusPill(app, statusStr)
+            if isempty(app.ResultsStatusPill) || ~isvalid(app.ResultsStatusPill)
+                return;
+            end
+            s = lower(strtrim(char(statusStr)));
+            switch s
+                case {'pass','success','completed','done'}
+                    bg = Theme.COLOR_SUCCESS;
+                    txt = upper(s);
+                case {'marginal','warning','warn'}
+                    bg = Theme.COLOR_AMBER;
+                    txt = upper(s);
+                case {'fail','failed','error','cancelled'}
+                    bg = Theme.COLOR_DANGER;
+                    txt = upper(s);
+                case {'queued','pending','running','executing'}
+                    bg = Theme.COLOR_PRIMARY;
+                    txt = upper(s);
+                otherwise
+                    bg = Theme.COLOR_DIVIDER;
+                    txt = char(8212);
+                    if ~isempty(s); txt = upper(s); end
+            end
+            app.ResultsStatusPill.Text = txt;
+            app.ResultsStatusPill.BackgroundColor = bg;
+            % White-on-bg always reads against these palette entries.
+            app.ResultsStatusPill.FontColor = [1 1 1];
+        end
+
+        function setKpi(valLbl, subLbl, valTxt, subTxt)
+            try
+                if ~isempty(valLbl) && isvalid(valLbl); valLbl.Text = valTxt; end
+                if ~isempty(subLbl) && isvalid(subLbl); subLbl.Text = subTxt; end
+            catch
+            end
+        end
+
+        function setKvLabels(handles, values)
+            try
+                if isempty(handles); return; end
+                n = min(numel(handles), numel(values));
+                for i = 1:n
+                    h = handles{i};
+                    if ~isempty(h) && isvalid(h)
+                        h.Text = char(string(values{i}));
+                    end
+                end
+            catch
+            end
+        end
+
+        function s = fmtRatio(v)
+            if ~isnumeric(v) || isempty(v) || all(isnan(v))
+                s = char(8212); return;
+            end
+            s = sprintf('%.4f', double(v));
+        end
+
+        function s = fmtPct(v)
+            if ~isnumeric(v) || isempty(v) || all(isnan(v))
+                s = char(8212); return;
+            end
+            s = sprintf('%.1f%%', 100 * double(v));
+        end
+
+        function s = fmtIdealSub(v, prefix)
+            if ~isnumeric(v) || isempty(v) || all(isnan(v))
+                s = ''; return;
+            end
+            s = sprintf('(%s %.4f)', prefix, double(v));
+        end
+
+        function s = fmtBitstring(b)
+            b = char(string(b));
+            if isempty(strtrim(b)); s = char(8212); return; end
+            if numel(b) > 14
+                s = sprintf('%s%s%s', b(1:5), char(8230), b(end-5:end));
+            else
+                s = b;
+            end
+        end
+
+        function s = mitigationLevelLabel(mit)
+            if ~isstruct(mit); s = char(8212); return; end
+            lvl = JsonHelper.pickNumeric(mit, 'level', NaN);
+            nm  = char(JsonHelper.pick(mit, {'name'}, ''));
+            if isfinite(lvl) && ~isempty(nm)
+                s = sprintf('%s (lvl %d)', nm, round(lvl));
+            elseif ~isempty(nm)
+                s = nm;
+            elseif isfinite(lvl)
+                s = sprintf('lvl %d', round(lvl));
+            else
+                s = char(8212);
+            end
+        end
+
+        function s = boolBadge(mit, varargin)
+            if ~isstruct(mit); s = char(8212); return; end
+            anyTrue = false;
+            for i = 1:numel(varargin)
+                v = JsonHelper.pick(mit, varargin{i}, []);
+                if islogical(v) && any(v); anyTrue = true; break; end
+                if isnumeric(v) && any(v); anyTrue = true; break; end
+                if (ischar(v) || isstring(v)) && ~isempty(v) ...
+                        && ~strcmpi(strtrim(char(v)), 'off') ...
+                        && ~strcmpi(strtrim(char(v)), 'none')
+                    anyTrue = true; break;
+                end
+            end
+            if anyTrue; s = 'ON'; else; s = 'off'; end
+        end
+
+        function s = timingDelta(startIso, endIso)
+            try
+                if isempty(startIso) || isempty(endIso); s = char(8212); return; end
+                t0 = datetime(string(startIso), 'InputFormat', ...
+                    'yyyy-MM-dd''T''HH:mm:ss', 'TimeZone', 'UTC');
+                t1 = datetime(string(endIso),   'InputFormat', ...
+                    'yyyy-MM-dd''T''HH:mm:ss', 'TimeZone', 'UTC');
+                d = seconds(t1 - t0);
+                if ~isfinite(d) || d < 0; s = char(8212); return; end
+                if d < 60
+                    s = sprintf('%.0fs', d);
+                elseif d < 3600
+                    s = sprintf('%dm %02ds', floor(d/60), mod(round(d), 60));
+                else
+                    s = sprintf('%dh %02dm', floor(d/3600), floor(mod(d, 3600)/60));
+                end
+            catch
+                s = char(8212);
+            end
+        end
+
+        function paintResultsHistogram(app, data)
+            % Top-N states + "other" bucket. Uses the response's
+            % `histogram_data` field (sorted, with bitstring/count/
+            % probability) when present; falls back to distribution_review
+            % rows otherwise. Ideal overlay is plotted as a dashed line
+            % on the same axes when distribution_review carries an
+            % `ideal` column.
+            if isempty(app.ResultsHistogramAxes) || ~isvalid(app.ResultsHistogramAxes)
+                return;
+            end
+            ax = app.ResultsHistogramAxes;
+            cla(ax);
+            states = {}; measured = []; ideals = [];
+            % Prefer histogram_data (richer, already sorted).
+            hd = JsonHelper.pick(data, {'histogram_data'}, []);
+            if iscell(hd) && ~isempty(hd)
+                topN = min(5, numel(hd));
+                for i = 1:topN
+                    e = hd{i};
+                    states{end+1} = char(string(JsonHelper.pick(e, ...
+                        {'bitstring','state'}, ''))); %#ok<AGROW>
+                    measured(end+1) = JsonHelper.pickNumeric(e, ...
+                        'probability', NaN); %#ok<AGROW>
+                    ideals(end+1) = NaN; %#ok<AGROW>
+                end
+                if numel(hd) > topN
+                    rest = 0;
+                    for i = (topN + 1):numel(hd)
+                        p = JsonHelper.pickNumeric(hd{i}, 'probability', 0);
+                        if isfinite(p); rest = rest + p; end
+                    end
+                    states{end+1} = 'other';
+                    measured(end+1) = rest;
+                    ideals(end+1) = NaN;
+                end
+            end
+            % Fall back to distribution_review (carries ideal column).
+            if isempty(states)
+                dr = JsonHelper.pick(data, {'distribution_review'}, []);
+                if iscell(dr) && ~isempty(dr)
+                    for i = 1:min(6, numel(dr))
+                        e = dr{i};
+                        states{end+1} = char(string(JsonHelper.pick(e, ...
+                            {'state'}, ''))); %#ok<AGROW>
+                        measured(end+1) = JsonHelper.pickNumeric(e, ...
+                            'measured', NaN); %#ok<AGROW>
+                        ideals(end+1) = JsonHelper.pickNumeric(e, ...
+                            'ideal', NaN); %#ok<AGROW>
+                    end
+                end
+            end
+            if isempty(states); return; end
+            x = 1:numel(states);
+            % Truncate state labels for x-axis readability.
+            shortStates = cellfun(@(s) ResultsViewModel.fmtBitstring(s), ...
+                states, 'UniformOutput', false);
+            bar(ax, x, measured, ...
+                'FaceColor', Theme.COLOR_PRIMARY, 'EdgeColor', 'none', ...
+                'FaceAlpha', 0.85);
+            hold(ax, 'on');
+            % Ideal overlay where available.
+            haveIdeal = any(isfinite(ideals));
+            if haveIdeal
+                plot(ax, x, ideals, ...
+                    'LineStyle', '--', 'Marker', 'o', ...
+                    'Color', Theme.COLOR_SUCCESS, 'LineWidth', 1.4, ...
+                    'MarkerFaceColor', Theme.COLOR_SUCCESS);
+                legend(ax, {'Measured','Ideal'}, 'Location', 'best', ...
+                    'TextColor', Theme.COLOR_LABEL, 'Box', 'off');
+            end
+            hold(ax, 'off');
+            ax.XTick = x;
+            ax.XTickLabel = shortStates;
+            ax.YLim = [0 1];
+            ax.XGrid = 'off'; ax.YGrid = 'on';
         end
     end
 end

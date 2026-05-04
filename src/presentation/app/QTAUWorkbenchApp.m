@@ -371,6 +371,29 @@ classdef QTAUWorkbenchApp < handle
         % pre-fills the title for the active job.
         ResultsDownloadJsonBtn
         ResultsGeneratePdfBtn
+        % ── Tier B/C visual redesign widgets (M2) ───────────────────
+        % Identity strip across the top of the Results screen.
+        ResultsHeroTitle              % "Quantum Run Report"
+        ResultsHeroSubtitle           % "<circuit> · <backend> · <shots>"
+        ResultsHeroJobLine            % "Job <id> · Run <timestamp>"
+        ResultsStatusPill             % colour-coded uilabel pill
+        % 5 KPI cards (value + ideal sub-label).
+        ResultsKpiFidelityVal
+        ResultsKpiFidelitySub
+        ResultsKpiSuccessVal
+        ResultsKpiSuccessSub
+        ResultsKpiDominantVal
+        ResultsKpiDominantSub
+        ResultsKpiTwoQVal
+        ResultsKpiTwoQSub
+        ResultsKpiReadoutVal
+        ResultsKpiReadoutSub
+        % Distribution + histogram row.
+        ResultsHistogramAxes          % uiaxes — bars + ideal overlay
+        % Mitigation / Timing / Context tiles (cell arrays of uilabels).
+        ResultsMitigationLabels = {}  % {LevelVal, TwirlingVal, DDVal, ZNEVal}
+        ResultsTimingLabels    = {}   % {QueuedVal, RunVal, TotalVal}
+        ResultsContextLabels   = {}   % {ProjectVal, SubmittedVal, UserVal}
     end
 
     % ── Detailed Analysis tab ─────────────────────────────────────────────────
