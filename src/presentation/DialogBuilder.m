@@ -1218,17 +1218,22 @@ classdef DialogBuilder
         end
 
         function buildReconstructionDialog(app, bid, status, data)
-            % Polished modal for a cutting batch's reconstruction. Shows
-            % a Status pill, three KPI cards (observables / finite / NaN),
-            % a table of every expectation value with Pauli strings
-            % prettified (Z(x)156 notation), and a red diagnostic callout
-            % when one or more values came back as NaN. Replaces the
-            % textarea dump that used to render every entry as a raw
-            % "ZZZZ...Z = NaN +- 0.000000" row in the Results screen
-            % summary panel.
+            % Polished modal for a cutting batch's reconstruction. Tier 2
+            % layout: status pill, top-level KPI strip (subcircuits /
+            % backends / total shots / observables submitted-vs-
+            % reconstructed), a Cut Topology panel (γ + log10(γ) +
+            % recommended shots, a qubit-strip showing per-qubit
+            % partition labels, and per-subcircuit cards listing
+            % backend / shots / sub-experiments / status), an
+            % Expectation values table with Pauli strings prettified
+            % (Z(x)156 notation), and a diagnostic callout when one or
+            % more values came back as NaN. The topology panel is
+            % collapsed (RowHeight=0) for legacy batches whose result
+            % payload predates the partition_labels / subcircuits
+            % fields, so the dialog renders cleanly against either.
             figPos = app.UIFigure.Position;
-            dlgW = min(1080, max(840, round(figPos(3) * 0.72)));
-            dlgH = min(780,  max(600, round(figPos(4) * 0.78)));
+            dlgW = min(1180, max(960, round(figPos(3) * 0.78)));
+            dlgH = min(900,  max(680, round(figPos(4) * 0.86)));
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
 
@@ -1259,10 +1264,21 @@ classdef DialogBuilder
                 'HighlightColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            % Row 1: header. Row 2: KPI cards. Row 3: body (table + diag).
-            % Row 4: 1-px divider hairline. Row 5: footer (action buttons).
-            cg = uigridlayout(card, [5 1]);
-            cg.RowHeight   = {62, 84, '1x', 1, 52};
+            % Row 1: header. Row 2: top KPI cards. Row 3: Cut Topology
+            % panel (collapses to 0 when no partition_labels). Row 4:
+            % body (table + diag). Row 5: 1-px divider. Row 6: footer.
+            partLabels = JsonHelper.pick(data, 'partition_labels', {});
+            subList    = JsonHelper.pick(data, 'subcircuits', {});
+            haveTopo   = (~isempty(partLabels) && ~all(cellfun('isempty', ...
+                DialogBuilder.cellOrEmpty(partLabels)))) ...
+                || ~isempty(DialogBuilder.cellOrEmpty(subList));
+            if haveTopo
+                topoRowHeight = 'fit';
+            else
+                topoRowHeight = 0;
+            end
+            cg = uigridlayout(card, [6 1]);
+            cg.RowHeight   = {62, 84, topoRowHeight, '1x', 1, 52};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [20 14 20 14];
             cg.RowSpacing  = 12;
@@ -1314,19 +1330,39 @@ classdef DialogBuilder
                 DialogBuilder.formatBackendsValue(beList), Theme.COLOR_PURPLE);
             DialogBuilder.metaCard(kpis, 3, 'Total shots', ...
                 DialogBuilder.formatIntOrDash(shots), Theme.COLOR_AMBER);
-            obsLabel = sprintf('%s / %d', ...
-                DialogBuilder.formatIntOrDash(nSubmitted), nFinite);
+            obsLabel = sprintf('%s submitted %c %d reconstructed', ...
+                DialogBuilder.formatIntOrDash(nSubmitted), char(8226), nFinite);
             if nNaN > 0
                 obsAccent = Theme.COLOR_DANGER;
             else
                 obsAccent = Theme.COLOR_SUCCESS;
             end
-            DialogBuilder.metaCard(kpis, 4, 'Observables (submitted / reconstructed)', ...
+            DialogBuilder.metaCard(kpis, 4, 'Observables', ...
                 obsLabel, obsAccent);
+
+            % ── Cut Topology panel (Tier 2). Renders γ KPIs +
+            %    qubit-colour-strip + per-subcircuit cards. Collapses
+            %    silently when the result payload doesn't carry
+            %    partition_labels / subcircuits (legacy batches).
+            if haveTopo
+                topoPanel = uipanel(cg, ...
+                    'Title', '', 'BorderType', 'line', ...
+                    'BorderColor', cardBorder, ...
+                    'BackgroundColor', cardBg);
+                topoPanel.Layout.Row = 3; topoPanel.Layout.Column = 1;
+                DialogBuilder.renderTopologyPanel(topoPanel, data);
+            else
+                % Reserve the row but draw nothing — keeps the rest of
+                % the layout stable when topology data is absent.
+                spacer = uipanel(cg, ...
+                    'Title', '', 'BorderType', 'none', ...
+                    'BackgroundColor', cardBg);
+                spacer.Layout.Row = 3; spacer.Layout.Column = 1;
+            end
 
             % ── Body: table + (optional) diagnostic
             body = uigridlayout(cg, [2 1]);
-            body.Layout.Row = 3; body.Layout.Column = 1;
+            body.Layout.Row = 4; body.Layout.Column = 1;
             if nNaN > 0
                 body.RowHeight = {'1x', 96};
             else
@@ -1409,14 +1445,14 @@ classdef DialogBuilder
             divider = uipanel(cg, ...
                 'BorderType', 'none', ...
                 'BackgroundColor', Theme.COLOR_DIVIDER);
-            divider.Layout.Row = 4; divider.Layout.Column = 1;
+            divider.Layout.Row = 5; divider.Layout.Column = 1;
 
             % ── Footer.
             % RowHeight 36 + Padding [8 8 8 8] match the QmcDialog footer
             % so the buttons render at the same height as the rest of the
             % app's action bars (Refresh / View Reconstruction / etc.).
             footer = uigridlayout(cg, [1 3]);
-            footer.Layout.Row = 5; footer.Layout.Column = 1;
+            footer.Layout.Row = 6; footer.Layout.Column = 1;
             footer.RowHeight = {36};
             footer.ColumnWidth = {'1x', 140, 100};
             footer.ColumnSpacing = 10; footer.Padding = [8 8 8 8];
@@ -1439,6 +1475,315 @@ classdef DialogBuilder
                 'ButtonPushedFcn', @(~,~) delete(dlg));
             closeBtn.Layout.Column = 3;
             try; StyleHelper.styleBtn(closeBtn, 'primary'); catch; end
+        end
+
+        function renderTopologyPanel(parent, data)
+            % Tier 2 panel: γ summary card row, qubit-strip showing
+            % which partition each qubit landed in, and per-subcircuit
+            % cards listing backend / shots / sub-experiments / status.
+            cardBg     = Theme.COLOR_CARD;
+            cardBorder = Theme.COLOR_DIVIDER;
+
+            outer = uigridlayout(parent, [3 1]);
+            outer.RowHeight = {22, 'fit', 'fit'};
+            outer.RowSpacing = 8;
+            outer.Padding = [12 10 12 12];
+            outer.BackgroundColor = cardBg;
+
+            uilabel(outer, 'Text', 'Cut topology', ...
+                'FontSize', 13, 'FontWeight', 'bold', ...
+                'FontColor', Theme.COLOR_HEADING);
+
+            % γ + log10(γ) + recommended-shots strip (compact mini-KPIs).
+            gammaRow = uigridlayout(outer, [1 3]);
+            gammaRow.ColumnWidth = {'1x', '1x', '1.4x'};
+            gammaRow.ColumnSpacing = 10;
+            gammaRow.Padding = [0 0 0 0];
+            gammaRow.BackgroundColor = cardBg;
+
+            gamma     = JsonHelper.pickNumeric(data, 'sampling_overhead', NaN);
+            gammaLog  = JsonHelper.pickNumeric(data, 'sampling_overhead_log10', NaN);
+            recShots  = DialogBuilder.formatRecommendedShots(gamma);
+            DialogBuilder.miniKpi(gammaRow, 1, 'Sampling overhead γ', ...
+                DialogBuilder.formatGamma(gamma, gammaLog), Theme.COLOR_AMBER);
+            if isfinite(gammaLog)
+                logTxt = sprintf('%.3f', gammaLog);
+            elseif isfinite(gamma) && gamma > 0
+                logTxt = sprintf('%.3f', log10(gamma));
+            else
+                logTxt = char(8212);
+            end
+            DialogBuilder.miniKpi(gammaRow, 2, 'log10(γ)', logTxt, Theme.COLOR_PURPLE);
+            DialogBuilder.miniKpi(gammaRow, 3, 'Recommended shots / sub-experiment', ...
+                recShots, Theme.COLOR_PRIMARY);
+
+            % Qubit strip + per-subcircuit cards. Use a 2-row layout
+            % rather than two flat children so the strip can flex full
+            % width while the cards self-size.
+            stack = uigridlayout(outer, [2 1]);
+            stack.RowHeight = {'fit', 'fit'};
+            stack.RowSpacing = 8;
+            stack.Padding = [0 0 0 0];
+            stack.BackgroundColor = cardBg;
+
+            DialogBuilder.renderQubitStrip(stack, data, cardBorder);
+            DialogBuilder.renderSubcircuitCards(stack, data);
+        end
+
+        function miniKpi(parent, col, label, value, accent)
+            % Compact inline KPI used inside the Cut Topology panel —
+            % thinner than metaCard, no accent strip, label-on-top.
+            p = uipanel(parent, 'Title', '', 'BorderType', 'line', ...
+                'BorderColor', Theme.COLOR_DIVIDER, ...
+                'BackgroundColor', Theme.COLOR_CARD);
+            p.Layout.Row = 1; p.Layout.Column = col;
+
+            g = uigridlayout(p, [1 2]);
+            g.ColumnWidth = {4, '1x'};
+            g.Padding = [0 0 0 0]; g.ColumnSpacing = 0;
+            g.BackgroundColor = Theme.COLOR_CARD;
+
+            strip = uipanel(g, 'Title', '', 'BorderType', 'none');
+            strip.Layout.Column = 1;
+            strip.BackgroundColor = accent;
+
+            inner = uigridlayout(g, [2 1]);
+            inner.Layout.Column = 2;
+            inner.RowHeight = {16, '1x'};
+            inner.Padding = [10 4 10 4]; inner.RowSpacing = 0;
+            inner.BackgroundColor = Theme.COLOR_CARD;
+
+            uilabel(inner, 'Text', label, ...
+                'FontSize', 11, 'FontColor', Theme.COLOR_MUTED);
+            uilabel(inner, 'Text', value, ...
+                'FontWeight', 'bold', 'FontSize', 16, ...
+                'FontColor', Theme.COLOR_HEADING);
+        end
+
+        function renderQubitStrip(parent, data, borderCol)
+            % Horizontal strip of n cells (n = circuit width) coloured
+            % by partition label. Each cell's tooltip names the qubit
+            % index and its assigned subcircuit so a 255-wide strip
+            % stays inspectable. Falls back to a caption when no
+            % partition labels are present.
+            cardBg = Theme.COLOR_CARD;
+            row = uigridlayout(parent, [2 1]);
+            row.RowHeight = {18, 28};
+            row.RowSpacing = 4;
+            row.Padding = [0 0 0 0];
+            row.BackgroundColor = cardBg;
+
+            uilabel(row, 'Text', 'Partition map (one cell per qubit, coloured by subcircuit)', ...
+                'FontSize', 11, 'FontColor', Theme.COLOR_MUTED);
+
+            partLabels = DialogBuilder.cellOrEmpty( ...
+                JsonHelper.pick(data, 'partition_labels', {}));
+            n = numel(partLabels);
+            if n == 0
+                uilabel(row, 'Text', '(no partition labels available)', ...
+                    'FontColor', Theme.COLOR_MUTED, 'FontSize', 12);
+                return;
+            end
+            % Distinct labels in stable order so colour mapping is
+            % deterministic across renders.
+            uniq = {};
+            for i = 1:n
+                lbl = char(string(partLabels{i}));
+                if ~any(strcmp(uniq, lbl)); uniq{end+1} = lbl; end %#ok<AGROW>
+            end
+
+            stripGrid = uigridlayout(row, [1 n]);
+            stripGrid.ColumnWidth = repmat({'1x'}, 1, n);
+            stripGrid.ColumnSpacing = 0;
+            stripGrid.Padding = [0 0 0 0];
+            stripGrid.BackgroundColor = cardBg;
+
+            for i = 1:n
+                lbl = char(string(partLabels{i}));
+                idx = find(strcmp(uniq, lbl), 1);
+                accent = DialogBuilder.subcircuitAccent(idx);
+                cell = uipanel(stripGrid, 'Title', '', 'BorderType', 'none', ...
+                    'BackgroundColor', accent);
+                cell.Layout.Column = i;
+                cell.Tooltip = sprintf('Qubit %d  →  %s', i - 1, lbl);
+            end
+            % Row 2 is a hidden divider so the strip vertical-aligns
+            % cleanly above the per-subcircuit cards.
+            sep = uipanel(row, 'Title', '', 'BorderType', 'none', ...
+                'BackgroundColor', borderCol);
+            sep.Layout.Row = 2;
+            sep.Visible = 'off';
+        end
+
+        function renderSubcircuitCards(parent, data)
+            % One card per subcircuit. Layout: 1 row, k columns. Each
+            % card shows label / qubit count / backend / shots /
+            % sub-experiments / status with a colour strip matching
+            % the qubit-strip palette so the user can read across.
+            cardBg = Theme.COLOR_CARD;
+            subList = DialogBuilder.cellOrEmpty( ...
+                JsonHelper.pick(data, 'subcircuits', {}));
+            perQubits = DialogBuilder.cellOrEmpty( ...
+                JsonHelper.pick(data, 'per_subcircuit_qubits', {}));
+            k = numel(subList);
+            if k == 0
+                lbl = uilabel(parent, ...
+                    'Text', '(per-subcircuit detail unavailable)', ...
+                    'FontColor', Theme.COLOR_MUTED, 'FontSize', 12);
+                lbl.Layout.Row = 2;
+                return;
+            end
+            cards = uigridlayout(parent, [1 k]);
+            cards.ColumnWidth = repmat({'1x'}, 1, k);
+            cards.ColumnSpacing = 8;
+            cards.Padding = [0 0 0 0];
+            cards.BackgroundColor = cardBg;
+
+            for i = 1:k
+                e = subList{i};
+                lbl = char(string(JsonHelper.pick(e, 'label', sprintf('s%d', i-1))));
+                backend = char(string(JsonHelper.pick(e, 'backend', '')));
+                shots   = JsonHelper.pickNumeric(e, 'shots', 0);
+                nExp    = JsonHelper.pickNumeric(e, 'num_subexperiments', 0);
+                stat    = char(string(JsonHelper.pick(e, 'status', '')));
+                if i <= numel(perQubits)
+                    nq = JsonHelper.toDouble(perQubits{i});
+                else
+                    nq = NaN;
+                end
+
+                card = uipanel(cards, 'Title', '', 'BorderType', 'line', ...
+                    'BorderColor', Theme.COLOR_DIVIDER, ...
+                    'BackgroundColor', cardBg);
+                card.Layout.Column = i;
+
+                cardGrid = uigridlayout(card, [1 2]);
+                cardGrid.ColumnWidth = {5, '1x'};
+                cardGrid.Padding = [0 0 0 0]; cardGrid.ColumnSpacing = 0;
+                cardGrid.BackgroundColor = cardBg;
+
+                strip = uipanel(cardGrid, 'Title', '', 'BorderType', 'none', ...
+                    'BackgroundColor', DialogBuilder.subcircuitAccent(i));
+                strip.Layout.Column = 1;
+
+                inner = uigridlayout(cardGrid, [5 1]);
+                inner.Layout.Column = 2;
+                inner.RowHeight = {18, 16, 16, 16, 18};
+                inner.RowSpacing = 2;
+                inner.Padding = [10 6 10 6];
+                inner.BackgroundColor = cardBg;
+
+                if isfinite(nq) && nq > 0
+                    titleTxt = sprintf('%s  %c  %d qubits', lbl, char(8226), round(nq));
+                else
+                    titleTxt = lbl;
+                end
+                uilabel(inner, 'Text', titleTxt, ...
+                    'FontWeight', 'bold', 'FontSize', 13, ...
+                    'FontColor', Theme.COLOR_HEADING);
+
+                if isempty(backend); backend = char(8212); end
+                uilabel(inner, 'Text', sprintf('Backend: %s', backend), ...
+                    'FontSize', 11, 'FontColor', Theme.COLOR_LABEL);
+                uilabel(inner, 'Text', sprintf('Shots: %s', ...
+                    DialogBuilder.formatIntOrDash(shots)), ...
+                    'FontSize', 11, 'FontColor', Theme.COLOR_LABEL);
+                uilabel(inner, 'Text', sprintf('Sub-experiments: %s', ...
+                    DialogBuilder.formatIntOrDash(nExp)), ...
+                    'FontSize', 11, 'FontColor', Theme.COLOR_LABEL);
+
+                statTxt = upper(stat);
+                if isempty(strtrim(statTxt)); statTxt = char(8212); end
+                statColor = DialogBuilder.statusAccent(stat);
+                uilabel(inner, 'Text', sprintf('Status: %s', statTxt), ...
+                    'FontSize', 11, 'FontWeight', 'bold', ...
+                    'FontColor', statColor);
+            end
+        end
+
+        function c = subcircuitAccent(idx)
+            % Stable accent palette for subcircuit cards / strip cells.
+            % Cycles through 6 distinct colours so even a 6-cut batch
+            % stays distinguishable.
+            palette = [ ...
+                Theme.COLOR_PRIMARY; ...
+                Theme.COLOR_SUCCESS; ...
+                Theme.COLOR_AMBER;   ...
+                Theme.COLOR_PURPLE;  ...
+                Theme.COLOR_DANGER;  ...
+                [0.25 0.62 0.85]];
+            n = size(palette, 1);
+            i = mod(max(0, idx - 1), n) + 1;
+            c = palette(i, :);
+        end
+
+        function c = statusAccent(stat)
+            % Map IBM-job status strings to the existing job-status
+            % palette used elsewhere in the app.
+            switch lower(strtrim(char(stat)))
+                case 'completed'; c = Theme.COLOR_SUCCESS;
+                case {'running', 'executing'}; c = Theme.COLOR_PRIMARY;
+                case {'queued', 'pending', 'partitioning', 'reconstructing'}
+                    c = Theme.COLOR_AMBER;
+                case {'failed', 'cancelled', 'partial_failure'}
+                    c = Theme.COLOR_DANGER;
+                otherwise; c = Theme.COLOR_MUTED;
+            end
+        end
+
+        function s = formatGamma(gamma, gammaLog)
+            % Render γ in scientific form when it's huge (the cutting
+            % addon's own ceiling is 1e6 — anything above ~1e3 is
+            % already operationally rough), plain decimal otherwise.
+            if isfinite(gamma) && gamma > 0
+                if gamma >= 1e3
+                    s = sprintf('%.2e', gamma);
+                else
+                    s = sprintf('%.1f', gamma);
+                end
+                return;
+            end
+            if isfinite(gammaLog) && gammaLog > 0
+                s = sprintf('10^%.1f', gammaLog);
+                return;
+            end
+            s = char(8212);
+        end
+
+        function s = formatRecommendedShots(gamma)
+            % Rule-of-thumb shot guidance: each sub-experiment needs
+            % roughly γ × 10^4 shots to recover simulator-level
+            % precision after QPD reconstruction. We round up to the
+            % next power of 2 (4096, 8192, 16384, ...) for IBM-friendly
+            % numbers and cap at 1e6 — above that any single-batch run
+            % is operationally infeasible and the operator should cut
+            % differently or accept high std_err.
+            if ~isfinite(gamma) || gamma <= 0
+                s = char(8212);
+                return;
+            end
+            target = gamma * 1e4;
+            target = min(target, 1e6);
+            rec = 2 ^ ceil(log2(max(target, 1)));
+            if rec >= 1e6
+                s = sprintf('%.1e (capped)', rec);
+            else
+                s = sprintf('%d', round(rec));
+            end
+        end
+
+        function out = cellOrEmpty(v)
+            % Coerce a JSON-decoded list field into a cell array. webread
+            % returns either a cell, a struct array (for homogeneous
+            % object lists), a numeric array, or an empty/struct/[] for
+            % missing fields. The dialog renderers all want a cell.
+            if isempty(v); out = {}; return; end
+            if iscell(v); out = v; return; end
+            if isstruct(v); out = num2cell(v(:).'); return; end
+            if isnumeric(v) || islogical(v); out = num2cell(v(:).'); return; end
+            if isstring(v); out = cellstr(v(:).'); return; end
+            if ischar(v); out = {v}; return; end
+            out = {};
         end
 
         function metaCard(parent, col, label, value, accent)
