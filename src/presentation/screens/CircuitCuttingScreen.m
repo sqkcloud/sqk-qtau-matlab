@@ -484,14 +484,22 @@ function CircuitCuttingScreen(app)
         'Scrollable', 'on');
     resPanel.Layout.Row = 6; resPanel.Layout.Column = [1 2];
     resPanel.BackgroundColor = Theme.COLOR_CARD;
-    %  Three inner rows: existing label/textarea content ('fit' so it
-    %  can grow), a state-header strip (18 px), and a 4-button action
-    %  bar (44 px). The action bar is always visible — buttons are
-    %  individually gated by CircuitCuttingViewModel.refreshActionButtons
-    %  so they enable as the underlying state advances. State header
-    %  stays hidden until a batch is dispatched.
+    %  Three inner rows: empty-state / results content (flex '1x' so
+    %  it absorbs leftover space), a state-header strip (18 px fixed),
+    %  and a 4-button action bar (44 px fixed). Using '1x' for the
+    %  content row — instead of the previous 'fit' — guarantees the
+    %  fixed-height state header and action bar always reserve their
+    %  pixel allotment FIRST; the content row gets whatever is left.
+    %  At small window sizes this means the placeholder text squeezes
+    %  (acceptable — it's informational), but the action bar buttons
+    %  stay visible and clickable (essential — they're interactive).
+    %  The previous 'fit' was greedy: WordWrap on the placeholder
+    %  label combined with the inner contentGrid's 'fit' rows pushed
+    %  the action bar past the bottom of the panel at default
+    %  window heights, and uipanel.Scrollable did not always show a
+    %  scrollbar in that borderline case.
     rg = uigridlayout(resPanel, [3 1]);
-    rg.RowHeight = {'fit', 18, 44};
+    rg.RowHeight = {'1x', 18, 44};
     rg.RowSpacing = 8;
     rg.Padding = [18 10 18 10]; rg.BackgroundColor = Theme.COLOR_CARD;
 
