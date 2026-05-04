@@ -498,38 +498,27 @@ function CircuitCuttingScreen(app)
     %  the action bar past the bottom of the panel at default
     %  window heights, and uipanel.Scrollable did not always show a
     %  scrollbar in that borderline case.
-    %  Inner grid — two rows:
-    %    Row 1 (18 px, hidden by default): "Batch <id> · Status: <status>"
-    %      state header. CircuitCuttingViewModel.refreshActionButtons
-    %      flips Visible='on' once a batch is dispatched.
-    %    Row 2 (36 px, fixed): action bar — call-to-action text on the
-    %      left + 4 navigation buttons on the right, all on a single
-    %      row to match the layout pattern used by the Results action
-    %      bar (Refresh / View Reconstruction / Detailed Analysis /
-    %      Generate Report / Jobs).
-    rg = uigridlayout(resPanel, [2 1]);
-    rg.RowHeight = {18, 36};
-    rg.RowSpacing = 8;
+    %  Inner grid — single row containing the action bar (CTA label
+    %  + 4 navigation buttons). The state-header strip that lived in
+    %  row 1 of the previous layout was removed because the toolbar
+    %  above the panel already shows the same batch identity / status
+    %  via setStatus(app.CuttingStatusLabel, ...) — keeping it inside
+    %  the panel was duplicate information. Removing it pulls the
+    %  action row ~26 px closer to the panel's top border.
+    rg = uigridlayout(resPanel, [1 1]);
+    rg.RowHeight = {36};
+    rg.RowSpacing = 0;
     rg.Padding = [18 10 18 10]; rg.BackgroundColor = Theme.COLOR_CARD;
 
-    % Row 1: state header — hidden until startPolling fires the first
-    % refreshActionButtons.
-    app.CuttingActionsHeader = uilabel(rg, ...
-        'Text', '', ...
-        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, ...
-        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
-        'Interpreter', 'none', 'Visible', 'off');
-    app.CuttingActionsHeader.Layout.Row = 1;
-
-    % Row 2: action bar. Single-row layout — call-to-action label
-    % occupies the flex column on the left; four navigation buttons
-    % (Jobs → Results → View Reconstruction → Detailed Analysis) sit on
-    % the right at widths matching the Results screen footer for visual
-    % consistency. All buttons are gated by refreshActionButtons in the
-    % VM, with educational disabled tooltips until the underlying state
-    % is ready.
+    % Action bar. Single-row layout — call-to-action label occupies
+    % the flex column on the left; four navigation buttons (Jobs →
+    % Results → View Reconstruction → Detailed Analysis) sit on the
+    % right at widths matching the Results screen footer for visual
+    % consistency. All buttons are gated by refreshActionButtons in
+    % the VM, with educational disabled tooltips until the underlying
+    % state is ready.
     actionRow = uigridlayout(rg, [1 5]);
-    actionRow.Layout.Row = 2;
+    actionRow.Layout.Row = 1;
     actionRow.ColumnWidth = {'1x', 110, 110, 180, 195};
     actionRow.ColumnSpacing = 8;
     actionRow.Padding = [0 0 0 0];
@@ -548,21 +537,31 @@ function CircuitCuttingScreen(app)
         'WordWrap', 'on', 'Interpreter', 'none');
     app.CuttingResultsEmptyLabel.Layout.Column = 1;
 
-    % Hidden legacy widget — CuttingResultsLabel is the textarea that
-    % the VM's renderResult populates after a successful batch. It used
-    % to share the panel with the empty-state label; with the new
-    % single-row layout we keep it instantiated under a Visible='off'
-    % host parent so the renderer's setStatus(app.CuttingResultsLabel,
-    % ...) and Visible='on' calls don't crash and don't briefly flash a
-    % stray textarea on screen (parent visibility wins over child
-    % visibility in MATLAB's uifigure model). The View Reconstruction
-    % popup is the user-facing surface for actual reconstructed values.
+    % Hidden legacy host — keeps two widgets instantiated as
+    % app.* properties so VM call-sites don't crash, but never
+    % renders inline (parent Visible='off' wins over child Visible).
+    %
+    %   * CuttingResultsLabel — textarea the VM's renderResult
+    %     populates after a successful batch. The View Reconstruction
+    %     popup is the canonical surface for actual reconstructed
+    %     values; this textarea is just a back-compat target.
+    %   * CuttingActionsHeader — "Batch <id> · Status" line the
+    %     M2 design rendered above the action row. Removed from the
+    %     visible grid (the toolbar above the panel already shows
+    %     the same status), retained here so refreshActionButtons
+    %     can still set Text/Visible without checking for the widget.
     legacyHost = uipanel(rg, 'Title', '', 'BorderType', 'none', ...
         'Visible', 'off', 'BackgroundColor', Theme.COLOR_CARD);
-    legacyHost.Layout.Row = 1;  % share row with state header (also invisible by default)
-    legacyHostGrid = uigridlayout(legacyHost, [1 1]);
+    legacyHost.Layout.Row = 1;  % share cell with action row (Visible='off' wins)
+    legacyHostGrid = uigridlayout(legacyHost, [2 1]);
+    legacyHostGrid.RowHeight = {'fit', 'fit'};
     legacyHostGrid.Padding = [0 0 0 0];
     legacyHostGrid.BackgroundColor = Theme.COLOR_CARD;
+    app.CuttingActionsHeader = uilabel(legacyHostGrid, ...
+        'Text', '', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
+        'Interpreter', 'none', 'Visible', 'off');
     app.CuttingResultsLabel = uitextarea(legacyHostGrid, ...
         'Value', '', 'Editable', 'off', 'FontSize', 12, ...
         'Visible', 'off');
