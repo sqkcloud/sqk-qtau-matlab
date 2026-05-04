@@ -31,9 +31,14 @@ function AnalysisScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Circuit selector + Analyze + QMC launcher + Error Mitigation launcher
-    topBar = uigridlayout(g, [1 7]);
+    topBar = uigridlayout(g, [1 6]);
     topBar.Layout.Row = 1; topBar.Layout.Column = [1 2];
-    topBar.ColumnWidth = {90, '1x', 110, 260, 220, 150, 170};
+    %  Order: Circuit-label / dropdown / Upload / Analyze / QMC / EM.
+    %  Upload sits before Analyze so the operator's natural flow is
+    %  pick-circuit → upload-if-needed → analyze. Download JSON +
+    %  Generate Report moved to the bottom Decision row, gated by
+    %  applyAnalysisData (only enabled after a successful analyze).
+    topBar.ColumnWidth = {90, '1x', 110, 110, 260, 220};
     topBar.Padding = [0 0 0 0]; topBar.ColumnSpacing = 8;
     topBar.BackgroundColor = Theme.COLOR_BG;
 
@@ -47,9 +52,21 @@ function AnalysisScreen(app)
         'ValueChangedFcn', @(src,~)app.AnalysisVm.onCircuitSelected(src.Value));
     app.AnalysisCircuitDropdown.Layout.Row = 1; app.AnalysisCircuitDropdown.Layout.Column = 2;
 
+    %  Upload bridge — pre-Analyze step. Lets the operator switch to
+    %  the Upload screen without having to navigate via the sidebar
+    %  when the currently-selected circuit isn't the one they want.
+    app.AnalysisUploadBtn = uibutton(topBar, ...
+        'Text', [char(8593) ' Upload'], ...  % ↑
+        'ButtonPushedFcn', @(~,~)app.onSelectSection('Upload'));
+    app.AnalysisUploadBtn.Layout.Row = 1; app.AnalysisUploadBtn.Layout.Column = 3;
+    app.styleBtn(app.AnalysisUploadBtn, 'ghost');
+    app.AnalysisUploadBtn.FontSize = 14;
+    app.AnalysisUploadBtn.Tooltip = ...
+        'Open the Upload screen to add a new circuit.';
+
     app.AnalyzeButton = uibutton(topBar, 'Text', [char(9881) ' ' Labels.get('analysis_btn_analyze')], ...
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onAnalyzeCircuit());
-    app.AnalyzeButton.Layout.Row = 1; app.AnalyzeButton.Layout.Column = 3;
+    app.AnalyzeButton.Layout.Row = 1; app.AnalyzeButton.Layout.Column = 4;
     app.styleBtn(app.AnalyzeButton, 'primary');
     app.AnalyzeButton.FontSize = 14;
     app.AnalyzeButton.Tooltip = 'POST /api/circuits/{id}/analyze + match-benchmarks';
@@ -60,7 +77,7 @@ function AnalysisScreen(app)
     app.QmcOpenButton = uibutton(topBar, ...
         'Text', [char(9883) ' Quantum Monte Carlo'], ...
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onOpenQmcDialog());
-    app.QmcOpenButton.Layout.Row = 1; app.QmcOpenButton.Layout.Column = 4;
+    app.QmcOpenButton.Layout.Row = 1; app.QmcOpenButton.Layout.Column = 5;
     app.styleBtn(app.QmcOpenButton, 'secondary');
     app.QmcOpenButton.FontSize = 14;
     app.QmcOpenButton.Tooltip = ...
@@ -74,33 +91,11 @@ function AnalysisScreen(app)
         'Text', [char(9881) ' ' ...
                  Labels.get('analysis_btn_error_mitigation', 'Error Mitigation')], ...
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onOpenEmDialog());
-    app.EmOpenButton.Layout.Row = 1; app.EmOpenButton.Layout.Column = 5;
+    app.EmOpenButton.Layout.Row = 1; app.EmOpenButton.Layout.Column = 6;
     app.styleBtn(app.EmOpenButton, 'secondary');
     app.EmOpenButton.FontSize = 14;
     app.EmOpenButton.Tooltip = ...
         'Open the Quantum Error Mitigation Analysis popup';
-
-    % Tier B exports — Download JSON dumps the analyze response to a
-    % user-chosen .json file; Generate Report bridges to the Reports
-    % screen with the title pre-filled by Reports' loadReportsList →
-    % seedReportTitle so the operator only confirms format / sections.
-    app.AnalysisDownloadJsonBtn = uibutton(topBar, ...
-        'Text', [char(8681) ' Download JSON'], ...  % ⬇
-        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onDownloadAnalysisJson());
-    app.AnalysisDownloadJsonBtn.Layout.Row = 1;
-    app.AnalysisDownloadJsonBtn.Layout.Column = 6;
-    app.styleBtn(app.AnalysisDownloadJsonBtn, 'ghost');
-    app.AnalysisDownloadJsonBtn.Tooltip = ...
-        'Save /api/circuits/{id}/analysis to a .json file.';
-
-    app.AnalysisGeneratePdfBtn = uibutton(topBar, ...
-        'Text', [char(128196) ' Generate Report'], ...  % 📄
-        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateRunReport());
-    app.AnalysisGeneratePdfBtn.Layout.Row = 1;
-    app.AnalysisGeneratePdfBtn.Layout.Column = 7;
-    app.styleBtn(app.AnalysisGeneratePdfBtn, 'secondary');
-    app.AnalysisGeneratePdfBtn.Tooltip = ...
-        'Open Reports with the title pre-filled for the active circuit.';
 
     % ── KPI strip (M3 — populated by AnalysisVm.applyAnalysisData) ────────────
     %  5 cards: Qubits / Depth / Total gates / 2Q ratio / Parallelism.
@@ -188,8 +183,8 @@ function AnalysisScreen(app)
     exportPanel.Layout.Row = 5; exportPanel.Layout.Column = [1 2];
     exportPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
 
-    eg = uigridlayout(exportPanel, [1 5]);
-    eg.ColumnWidth = {'1x', 150, 170, 170, 120};
+    eg = uigridlayout(exportPanel, [1 6]);
+    eg.ColumnWidth = {'1x', 150, 170, 170, 150, 170};
     eg.Padding = [14 8 14 8]; eg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(eg, 'Text', Labels.get('analysis_action_msg'));
     desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
@@ -204,12 +199,36 @@ function AnalysisScreen(app)
         [char(9986) ' ' Labels.get('analysis_btn_circuit_cutting', 'Circuit Cutting')], ...
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onCircuitCuttingBridge());
     tmp.Layout.Row = 1; tmp.Layout.Column = 3; app.styleBtn(tmp, 'secondary');
-    tmp = uibutton(eg, 'Text', [char(9004) ' ' Labels.get('analysis_btn_next')], ...
+    tmp = uibutton(eg, 'Text', [char(9004) ' ' Labels.get('analysis_btn_next', ...
+            'Select Backend')], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Backends'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'primary');
-    tmp = uibutton(eg, 'Text', [char(8593) ' Upload'], ...  % Upload nav icon
-        'ButtonPushedFcn', @(~,~)app.onSelectSection('Upload'));
-    tmp.Layout.Row = 1; tmp.Layout.Column = 5; app.styleBtn(tmp, 'ghost');
+    % Tier B exports — Download JSON dumps the analyze response to a
+    % user-chosen .json file; Generate Report bridges to the Reports
+    % screen with the title pre-filled. Both start disabled and are
+    % toggled on by AnalysisVm.applyAnalysisData after a successful
+    % analyze (and back off when the circuit selection changes — see
+    % AnalysisVm.onCircuitSelected). This prevents the operator from
+    % exporting stale or never-fetched data.
+    app.AnalysisDownloadJsonBtn = uibutton(eg, ...
+        'Text', [char(8681) ' Download JSON'], ...  % ⬇
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onDownloadAnalysisJson());
+    app.AnalysisDownloadJsonBtn.Layout.Row = 1;
+    app.AnalysisDownloadJsonBtn.Layout.Column = 5;
+    app.styleBtn(app.AnalysisDownloadJsonBtn, 'ghost');
+    app.AnalysisDownloadJsonBtn.Enable = 'off';
+    app.AnalysisDownloadJsonBtn.Tooltip = ...
+        'Run Analyze first; this saves the response as a .json file.';
+
+    app.AnalysisGeneratePdfBtn = uibutton(eg, ...
+        'Text', [char(128196) ' Generate Report'], ...  % 📄
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateRunReport());
+    app.AnalysisGeneratePdfBtn.Layout.Row = 1;
+    app.AnalysisGeneratePdfBtn.Layout.Column = 6;
+    app.styleBtn(app.AnalysisGeneratePdfBtn, 'secondary');
+    app.AnalysisGeneratePdfBtn.Enable = 'off';
+    app.AnalysisGeneratePdfBtn.Tooltip = ...
+        'Run Analyze first; this opens Reports with the title pre-filled.';
 
     Logger.info('AnalysisScreen', 'Analysis tab UI built successfully');
 end

@@ -84,6 +84,12 @@ classdef AnalysisViewModel < handle
             end
             app.logEvent('UI', sprintf('Circuit selected: %s (%s)', ...
                 char(app.State.selectedCircuitName), circuitId));
+            % M7 — disable the export buttons whenever the circuit
+            % changes. They re-enable after a successful Analyze in
+            % applyAnalysisData. Without this, the operator could
+            % export the prior circuit's analyze response under the
+            % new circuit's filename — confusingly stale.
+            obj.toggleExportButtons(false);
         end
 
         function onDownloadAnalysisJson(obj)
@@ -2531,9 +2537,49 @@ classdef AnalysisViewModel < handle
                     Logger.debug('AnalysisViewModel', ...
                         'KPI populate failed: %s', ME.message);
                 end
+                % M7 — enable Download JSON / Generate Report now that
+                % a fresh analyze response exists for this circuit.
+                obj.toggleExportButtons(true);
             catch ME
                 Logger.warn('AnalysisViewModel', 'applyAnalysisData tree build failed: %s', ME.message);
                 uitreenode(app.FeatureTree, 'Text', JsonHelper.pretty(data));
+            end
+        end
+
+        function toggleExportButtons(obj, enable)
+            % M7 — flip Download JSON / Generate Report between
+            % enabled and disabled. Tooltip swaps between the
+            % "available" and "run Analyze first" copy so the disabled
+            % state is educational rather than mysterious.
+            app = obj.App;
+            if enable
+                onTip = 'Save /api/circuits/{id}/analysis to a .json file.';
+                offTip = 'Run Analyze first; this saves the response as a .json file.';
+                pdfOn = 'Open Reports with the title pre-filled for the active circuit.';
+                pdfOff = 'Run Analyze first; this opens Reports with the title pre-filled.';
+                jsonState = 'on';  jsonTip = onTip;  %#ok<NASGU>
+                pdfState  = 'on';  pdfTip  = pdfOn;  %#ok<NASGU>
+            else
+                jsonState = 'off';
+                jsonTip = 'Run Analyze first; this saves the response as a .json file.';
+                pdfState = 'off';
+                pdfTip = 'Run Analyze first; this opens Reports with the title pre-filled.';
+            end
+            try
+                if ~isempty(app.AnalysisDownloadJsonBtn) ...
+                        && isvalid(app.AnalysisDownloadJsonBtn)
+                    app.AnalysisDownloadJsonBtn.Enable = jsonState;
+                    app.AnalysisDownloadJsonBtn.Tooltip = jsonTip;
+                end
+            catch
+            end
+            try
+                if ~isempty(app.AnalysisGeneratePdfBtn) ...
+                        && isvalid(app.AnalysisGeneratePdfBtn)
+                    app.AnalysisGeneratePdfBtn.Enable = pdfState;
+                    app.AnalysisGeneratePdfBtn.Tooltip = pdfTip;
+                end
+            catch
             end
         end
 

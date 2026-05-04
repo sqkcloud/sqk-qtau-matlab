@@ -202,10 +202,14 @@ classdef QTAUWorkbenchApp < handle
     properties
         AnalysisCircuitDropdown
         AnalyzeButton
+        AnalysisUploadBtn       % Upload bridge button moved into the toolbar (M7)
         % Tier B exports — Download JSON dumps the analyze response
         % via Exporter.toJsonFile; Generate Report bridges to the
         % Reports screen whose loadReportsList → seedReportTitle
-        % pre-fills the title for the active circuit.
+        % pre-fills the title for the active circuit. M7: both
+        % buttons start disabled and only enable after a successful
+        % AnalysisVm.applyAnalysisData; disabled again on circuit
+        % change so they never export stale data.
         AnalysisDownloadJsonBtn
         AnalysisGeneratePdfBtn
         % ── Tier C KPI row (M3) ─────────────────────────────────────
