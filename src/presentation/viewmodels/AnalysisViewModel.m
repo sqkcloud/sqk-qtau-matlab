@@ -205,6 +205,11 @@ classdef AnalysisViewModel < handle
                     app.QmcLastResult = cached;
                     obj.renderQmcResult(app, cached);
                     AnalysisViewModel.toggleIbmLogButton(app, cached);
+                    % M9 — cached result exists, so the export trio
+                    % (Download Results / Download IBM Log / Generate
+                    % Report) becomes meaningful immediately on dialog
+                    % open. Reveal the buttons.
+                    AnalysisViewModel.revealQmcResultButtons(app);
                 end
             catch ME
                 Logger.debug('AnalysisViewModel', 'No cached QMC result: %s', ME.message);
@@ -480,6 +485,34 @@ classdef AnalysisViewModel < handle
                     delete(app.QmcDialog);
                 end
             catch
+            end
+        end
+
+        function onDownloadQmcResults(obj)
+            % M9 — export the cached QMC result struct (app.QmcLastResult)
+            % to a user-chosen .json file via the Exporter utility. The
+            % button that fires this is hidden until Run QMC succeeds,
+            % so QmcLastResult should always be populated when this
+            % runs; we still defend against a stale click.
+            app = obj.App;
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            if isempty(app.QmcLastResult)
+                uialert(alertParent, ...
+                    'Run QMC first — there is no cached result to export.', ...
+                    'Download Results', 'Icon', 'info');
+                return;
+            end
+            data = app.QmcLastResult;
+            cname = char(app.State.selectedCircuitName);
+            jid = char(JsonHelper.pick(data, {'runtime_job_id','job_id'}, ''));
+            if isempty(jid); jid = Exporter.todayStamp(); end
+            fname = Exporter.suggestFilename('QMC', { ...
+                cname, jid, Exporter.todayStamp()});
+            ok = Exporter.toJsonFile(data, fname, alertParent);
+            if ok
+                app.logEvent('FILE', sprintf('QMC results JSON saved (job %s)', jid));
+                app.State.logActivity( ...
+                    sprintf('Download QMC Results — %s', cname), 'Success');
             end
         end
 
@@ -1630,6 +1663,59 @@ classdef AnalysisViewModel < handle
             end
         end
 
+        function revealQmcResultButtons(app)
+            % M9 — flip Visible='on' and restore real column widths on
+            % the three QMC export buttons (Download Results / Download
+            % IBM Log / Generate Report) once a result exists. Idempotent
+            % — calling twice is safe. Note: Download IBM Log's Enable
+            % state is still governed by toggleIbmLogButton (off in
+            % statevector mode); this helper only controls visibility.
+            try
+                if isprop(app, 'QmcFooterGrid') && ~isempty(app.QmcFooterGrid) ...
+                        && isvalid(app.QmcFooterGrid)
+                    %  6-column footer:  spacer | Run | DL Results | DL Log | Report | Close
+                    app.QmcFooterGrid.ColumnWidth = ...
+                        {'1x', 120, 150, 150, 160, 100};
+                end
+            catch
+            end
+            for h = {app.QmcDownloadResultsBtn, ...
+                     app.QmcDownloadLogButton, ...
+                     app.QmcReportButton}
+                try
+                    if ~isempty(h{1}) && isvalid(h{1})
+                        h{1}.Visible = 'on';
+                    end
+                catch
+                end
+            end
+        end
+
+        function hideQmcResultButtons(app)
+            % M9 — counterpart of revealQmcResultButtons. Called from
+            % resetQmcUi at the start of each Run so the prior result's
+            % export buttons disappear while the new run is in flight;
+            % onQmcComplete re-reveals them once the new result lands.
+            for h = {app.QmcDownloadResultsBtn, ...
+                     app.QmcDownloadLogButton, ...
+                     app.QmcReportButton}
+                try
+                    if ~isempty(h{1}) && isvalid(h{1})
+                        h{1}.Visible = 'off';
+                    end
+                catch
+                end
+            end
+            try
+                if isprop(app, 'QmcFooterGrid') && ~isempty(app.QmcFooterGrid) ...
+                        && isvalid(app.QmcFooterGrid)
+                    app.QmcFooterGrid.ColumnWidth = ...
+                        {'1x', 120, 0, 0, 0, 100};
+                end
+            catch
+            end
+        end
+
         function parent = qmcAlertParent(app)
             % Pick the right uialert parent so the alert draws on top
             % of the Quantum Monte Carlo modal popup when it is open —
@@ -1903,6 +1989,10 @@ classdef AnalysisViewModel < handle
                 JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
                 JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
             app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
+            % M9 — reveal the export trio now that a fresh result
+            % exists. resetQmcUi has already hidden them at the start
+            % of this run, so this is the symmetric re-reveal.
+            AnalysisViewModel.revealQmcResultButtons(app);
         end
 
         function startQmcPoll(obj, app, jobId)
@@ -2172,6 +2262,10 @@ classdef AnalysisViewModel < handle
             end
             app.QmcLastResult = [];
             AnalysisViewModel.toggleIbmLogButton(app, []);
+            % M9 — also re-hide the export trio at the start of each
+            % new run. They re-reveal in onQmcComplete once a fresh
+            % result is in hand.
+            AnalysisViewModel.hideQmcResultButtons(app);
         end
 
         function renderQmcResult(~, app, data)

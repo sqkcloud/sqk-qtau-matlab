@@ -746,12 +746,23 @@ classdef DialogBuilder
             % + an explicit footer row height (36) pin these buttons to
             % the same footprint as other action bars in the app (e.g.
             % the Analysis screen's Next / Back / Visualize row).
-            footer = uigridlayout(cg, [1 5]);
+            % M9 — footer grid grows from 5 → 6 cols to fit a new
+            % "Download Results" button between Run QMC and Download
+            % IBM Log. The three export buttons (Download Results /
+            % Download IBM Log / Generate Report) start hidden — the
+            % column widths are set to 0 initially so there is no
+            % visual gap. AnalysisVm.revealQmcResultButtons flips
+            % Visible='on' AND restores the column widths after a
+            % successful Run QMC; resetQmcUi reverses both on re-run.
+            footer = uigridlayout(cg, [1 6]);
             footer.Layout.Row = 5; footer.Layout.Column = 1;
             footer.RowHeight = {36};
-            footer.ColumnWidth = {'1x', 120, 150, 160, 100};
+            footer.ColumnWidth = {'1x', 120, 0, 0, 0, 100};
             footer.Padding = [8 8 8 8]; footer.ColumnSpacing = 10;
             footer.BackgroundColor = cardBg;
+            % Stash the footer handle so the VM can resize columns
+            % when toggling visibility.
+            app.QmcFooterGrid = footer;
 
             uilabel(footer, 'Text', ...
                 'Statevector runs locally. Switch to IBM Runtime for real-hardware shots.', ...
@@ -764,26 +775,38 @@ classdef DialogBuilder
             app.styleBtn(app.QmcRunButton, 'primary');
             app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
 
+            app.QmcDownloadResultsBtn = uibutton(footer, ...
+                'Text', [char(8681) ' Download Results'], ...
+                'ButtonPushedFcn', @(~,~)app.AnalysisVm.onDownloadQmcResults());
+            app.QmcDownloadResultsBtn.Layout.Row = 1;
+            app.QmcDownloadResultsBtn.Layout.Column = 3;
+            app.styleBtn(app.QmcDownloadResultsBtn, 'ghost');
+            app.QmcDownloadResultsBtn.Visible = 'off';
+            app.QmcDownloadResultsBtn.Tooltip = ...
+                'Save the cached QMC result struct to a .json file.';
+
             app.QmcDownloadLogButton = uibutton(footer, ...
                 'Text', [char(8681) ' Download IBM Log'], ...
                 'ButtonPushedFcn', @(~,~)app.AnalysisVm.onDownloadIbmLog());
-            app.QmcDownloadLogButton.Layout.Row = 1; app.QmcDownloadLogButton.Layout.Column = 3;
+            app.QmcDownloadLogButton.Layout.Row = 1; app.QmcDownloadLogButton.Layout.Column = 4;
             app.styleBtn(app.QmcDownloadLogButton, 'ghost');
             app.QmcDownloadLogButton.Enable = 'off';
+            app.QmcDownloadLogButton.Visible = 'off';
             app.QmcDownloadLogButton.Tooltip = ...
                 'GET /api/circuits/{id}/qae/ibm-log — available after a successful IBM Runtime run';
 
             app.QmcReportButton = uibutton(footer, ...
                 'Text', [char(9636) ' Generate Report'], ...
                 'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateQmcReport());
-            app.QmcReportButton.Layout.Row = 1; app.QmcReportButton.Layout.Column = 4;
+            app.QmcReportButton.Layout.Row = 1; app.QmcReportButton.Layout.Column = 5;
             app.styleBtn(app.QmcReportButton, 'secondary');
+            app.QmcReportButton.Visible = 'off';
             app.QmcReportButton.Tooltip = 'Generate PDF (also available from Reports screen)';
 
             closeBtn = uibutton(footer, ...
                 'Text', [char(10005) ' Close'], ...
                 'ButtonPushedFcn', @(~,~) app.AnalysisVm.onCloseQmcDialog());
-            closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 5;
+            closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 6;
             app.styleBtn(closeBtn, 'ghost');
 
             % Clicking the window "X" also routes through the same

@@ -242,7 +242,9 @@ classdef QTAUWorkbenchApp < handle
         QmcEpsilonField
         QmcConfidenceField
         QmcRiskDropdown
+        QmcFooterGrid           % M9 — uigridlayout handle of the dialog footer; the VM resizes its columns to reveal/hide export buttons
         QmcRunButton
+        QmcDownloadResultsBtn   % M9 — exports app.QmcLastResult to .json; hidden until Run QMC succeeds
         QmcReportButton
         QmcDownloadLogButton    % Download IBM Runtime execution log (runtime mode only)
         QmcKpiLabels
