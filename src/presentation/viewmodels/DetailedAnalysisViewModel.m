@@ -424,6 +424,74 @@ classdef DetailedAnalysisViewModel < handle
             app.logEvent('API', 'Comparison plot updated from live data');
             app.State.logActivity('Detailed analysis — comparison plot', 'Success');
             app.hideLoading();
+            obj.populateDetailedKpis(app, data);
+        end
+
+        function populateDetailedKpis(obj, app, data)
+            % Populate the M3 KPI strip from a detailed-results payload.
+            % Each card pulls best-effort from the response and shows
+            % "—" when the field is absent. Called from the comparison /
+            % temporal / qubit plot completion handlers so the strip
+            % refreshes as the user explores different views.
+            try
+                fidVal = JsonHelper.pickNumeric(data, ...
+                    {'estimated_fidelity','measured_fidelity','fidelity'}, NaN);
+                if isfinite(fidVal)
+                    obj.setDetailedKpi(app.DetailedKpiFidelityVal, ...
+                        app.DetailedKpiFidelitySub, ...
+                        sprintf('%.4f', fidVal), 'measured');
+                end
+                drift = JsonHelper.pickNumeric(data, ...
+                    {'drift_total','drift_score','temporal_drift'}, NaN);
+                if isfinite(drift)
+                    obj.setDetailedKpi(app.DetailedKpiDriftVal, ...
+                        app.DetailedKpiDriftSub, ...
+                        sprintf('%.4f', drift), 'across runs');
+                end
+                nq = JsonHelper.pickNumeric(data, ...
+                    {'num_qubits','width','qubit_count'}, NaN);
+                if isfinite(nq) && nq > 0
+                    obj.setDetailedKpi(app.DetailedKpiQubitsVal, ...
+                        app.DetailedKpiQubitsSub, ...
+                        sprintf('%d', round(nq)), '');
+                end
+                rb = JsonHelper.pickNumeric(data, ...
+                    {'rb_decay','randomized_benchmark.decay'}, NaN);
+                if isfinite(rb)
+                    obj.setDetailedKpi(app.DetailedKpiRBVal, ...
+                        app.DetailedKpiRBSub, ...
+                        sprintf('%.4f', rb), 'avg gate fidelity');
+                end
+                outliers = JsonHelper.pickNumeric(data, ...
+                    {'outlier_count','outliers'}, NaN);
+                if isfinite(outliers)
+                    obj.setDetailedKpi(app.DetailedKpiOutliersVal, ...
+                        app.DetailedKpiOutliersSub, ...
+                        sprintf('%d', round(outliers)), 'states beyond 3σ');
+                end
+            catch ME
+                Logger.debug('DetailedAnalysisViewModel', ...
+                    'populateDetailedKpis: %s', ME.message);
+            end
+        end
+
+        function setDetailedKpi(~, valLbl, subLbl, valTxt, subTxt)
+            % Sibling of AnalysisViewModel.setAnalysisKpi — tilde first
+            % arg so callers can use obj.setDetailedKpi(...) without
+            % the helper itself touching obj.
+            try
+                if ~isempty(valLbl) && isvalid(valLbl)
+                    if isempty(strtrim(char(string(valTxt))))
+                        valLbl.Text = char(8212);
+                    else
+                        valLbl.Text = char(string(valTxt));
+                    end
+                end
+                if ~isempty(subLbl) && isvalid(subLbl)
+                    subLbl.Text = char(string(subTxt));
+                end
+            catch
+            end
         end
 
         function onPlotComparisonError(obj, app, ME)

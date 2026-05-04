@@ -208,6 +208,19 @@ classdef QTAUWorkbenchApp < handle
         % pre-fills the title for the active circuit.
         AnalysisDownloadJsonBtn
         AnalysisGeneratePdfBtn
+        % ── Tier C KPI row (M3) ─────────────────────────────────────
+        % 5 cards across the top of the Analysis screen showing key
+        % characterisation numbers from the analyze response.
+        AnalysisKpiQubitsVal
+        AnalysisKpiQubitsSub
+        AnalysisKpiDepthVal
+        AnalysisKpiDepthSub
+        AnalysisKpiGatesVal
+        AnalysisKpiGatesSub
+        AnalysisKpiTwoQVal
+        AnalysisKpiTwoQSub
+        AnalysisKpiParaVal
+        AnalysisKpiParaSub
         FeatureTree
         AnalysisFeatureArea
         SimilarityTable
@@ -416,6 +429,21 @@ classdef QTAUWorkbenchApp < handle
         % to Reports.
         DetailedDownloadJsonBtn
         DetailedGeneratePdfBtn
+        % ── Tier C KPI row (M3) ─────────────────────────────────────
+        % 5 cards across the top of the Detailed Analysis screen
+        % showing per-job characterisation numbers (fidelity / drift
+        % / qubit count / RB decay / outlier count) populated from
+        % whichever detail-fetch endpoint runs on screen entry.
+        DetailedKpiFidelityVal
+        DetailedKpiFidelitySub
+        DetailedKpiDriftVal
+        DetailedKpiDriftSub
+        DetailedKpiQubitsVal
+        DetailedKpiQubitsSub
+        DetailedKpiRBVal
+        DetailedKpiRBSub
+        DetailedKpiOutliersVal
+        DetailedKpiOutliersSub
     end
 
     % ── Benchmark Dashboard tab ──────────────────────────────────────────────

@@ -2503,9 +2503,56 @@ classdef AnalysisViewModel < handle
 
                 % Build Feature Summary text
                 obj.buildFeatureSummary(data, name, depth, width, sq, tq, meas, totalGates, tqRatio, tCount);
+
+                % M3 — populate the new top-of-screen KPI strip from
+                % the same analyze response. Defensive: each setKpi
+                % call is wrapped in a try so a missing widget never
+                % blocks the rest of the data flow.
+                try
+                    obj.setAnalysisKpi(app.AnalysisKpiQubitsVal, ...
+                        app.AnalysisKpiQubitsSub, width, '');
+                    obj.setAnalysisKpi(app.AnalysisKpiDepthVal, ...
+                        app.AnalysisKpiDepthSub, depth, '');
+                    if totalGates > 0
+                        obj.setAnalysisKpi(app.AnalysisKpiGatesVal, ...
+                            app.AnalysisKpiGatesSub, sprintf('%d', totalGates), ...
+                            sprintf('%d × 2Q', tq));
+                    end
+                    if ~isnan(tqRatio)
+                        obj.setAnalysisKpi(app.AnalysisKpiTwoQVal, ...
+                            app.AnalysisKpiTwoQSub, sprintf('%.1f%%', tqRatio * 100), ...
+                            'two-qubit fraction');
+                    end
+                    if ~isempty(par)
+                        obj.setAnalysisKpi(app.AnalysisKpiParaVal, ...
+                            app.AnalysisKpiParaSub, par, 'gates per layer');
+                    end
+                catch ME
+                    Logger.debug('AnalysisViewModel', ...
+                        'KPI populate failed: %s', ME.message);
+                end
             catch ME
                 Logger.warn('AnalysisViewModel', 'applyAnalysisData tree build failed: %s', ME.message);
                 uitreenode(app.FeatureTree, 'Text', JsonHelper.pretty(data));
+            end
+        end
+
+        function setAnalysisKpi(~, valLbl, subLbl, valTxt, subTxt)
+            % Tilde first arg so callers can use obj.setAnalysisKpi(...)
+            % from any instance method without the helper itself
+            % needing to touch obj.
+            try
+                if ~isempty(valLbl) && isvalid(valLbl)
+                    if isempty(strtrim(char(string(valTxt))))
+                        valLbl.Text = char(8212);
+                    else
+                        valLbl.Text = char(string(valTxt));
+                    end
+                end
+                if ~isempty(subLbl) && isvalid(subLbl)
+                    subLbl.Text = char(string(subTxt));
+                end
+            catch
             end
         end
 

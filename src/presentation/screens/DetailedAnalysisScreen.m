@@ -18,8 +18,11 @@ function DetailedAnalysisScreen(app)
     BG = Theme.COLOR_BG;       % page background
     PW = Theme.COLOR_CARD;     % panel white
 
-    g = uigridlayout(t, [3 3]);
-    g.RowHeight     = {42, '1x', '0.82x'};
+    g = uigridlayout(t, [4 3]);
+    %  M3 Tier C — KPI strip lives in row 2 between the toolbar and
+    %  the existing 2-row chart area. Mirrors the AnalysisScreen and
+    %  ResultsScreen visual language.
+    g.RowHeight     = {42, 96, '1x', '0.82x'};
     g.ColumnWidth   = {'1x', '1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = 10;
@@ -133,13 +136,35 @@ function DetailedAnalysisScreen(app)
     app.styleBtn(nextBtn, 'primary');
 
     % ═════════════════════════════════════════════════════════════════════════
-    %  ROW 2 — Three tall analysis charts
+    %  ROW 2 — KPI strip (M3, populated by DetailedAnalysisVm) ───────────────
+    %  5 cards: Fidelity / Drift / Qubits / RB Decay / Outliers.
+    %  Mirrors the Results + Analysis screen KPI rows for visual
+    %  consistency across the workflow.
+    % ═════════════════════════════════════════════════════════════════════════
+    kpis = uigridlayout(g, [1 5]);
+    kpis.Layout.Row = 2; kpis.Layout.Column = [1 3];
+    kpis.ColumnWidth = {'1x', '1x', '1x', '1x', '1x'};
+    kpis.ColumnSpacing = 10; kpis.Padding = [0 0 0 0];
+    kpis.BackgroundColor = BG;
+    [app.DetailedKpiFidelityVal, app.DetailedKpiFidelitySub] = ...
+        localDetailedKpiCard(kpis, 1, 'FIDELITY',  Theme.COLOR_PRIMARY);
+    [app.DetailedKpiDriftVal,    app.DetailedKpiDriftSub]    = ...
+        localDetailedKpiCard(kpis, 2, 'DRIFT',     Theme.COLOR_AMBER);
+    [app.DetailedKpiQubitsVal,   app.DetailedKpiQubitsSub]   = ...
+        localDetailedKpiCard(kpis, 3, 'QUBITS',    Theme.COLOR_PURPLE);
+    [app.DetailedKpiRBVal,       app.DetailedKpiRBSub]       = ...
+        localDetailedKpiCard(kpis, 4, 'RB DECAY',  Theme.COLOR_SUCCESS);
+    [app.DetailedKpiOutliersVal, app.DetailedKpiOutliersSub] = ...
+        localDetailedKpiCard(kpis, 5, 'OUTLIERS',  Theme.COLOR_DANGER);
+
+    % ═════════════════════════════════════════════════════════════════════════
+    %  ROW 3 — Three tall analysis charts
     % ═════════════════════════════════════════════════════════════════════════
 
     % ── Row 2, Col 1: Measured vs Ideal State Distribution (bar + errorbar) ──
     comparePanel = uipanel(g, 'Title', Labels.get('detailed_panel_compare'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    comparePanel.Layout.Row = 2; comparePanel.Layout.Column = 1;
+    comparePanel.Layout.Row = 3; comparePanel.Layout.Column = 1;
     comparePanel.BackgroundColor = PW;
     cpg = uigridlayout(comparePanel, [1 1]);
     cpg.Padding = Theme.KPI_INNER_PAD; cpg.BackgroundColor = PW;
@@ -149,7 +174,7 @@ function DetailedAnalysisScreen(app)
     % ── Row 2, Col 2: Cross-Qubit Error Rate Heatmap (imagesc) ───────────────
     heatmapPanel = uipanel(g, 'Title', Labels.get('detailed_panel_heatmap'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    heatmapPanel.Layout.Row = 2; heatmapPanel.Layout.Column = 2;
+    heatmapPanel.Layout.Row = 3; heatmapPanel.Layout.Column = 2;
     heatmapPanel.BackgroundColor = PW;
     hpg = uigridlayout(heatmapPanel, [1 1]);
     hpg.Padding = Theme.KPI_INNER_PAD; hpg.BackgroundColor = PW;
@@ -159,7 +184,7 @@ function DetailedAnalysisScreen(app)
     % ── Row 2, Col 3: Temporal Stability with ±1σ Confidence Band ────────────
     temporalPanel = uipanel(g, 'Title', Labels.get('detailed_panel_temporal'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    temporalPanel.Layout.Row = 2; temporalPanel.Layout.Column = 3;
+    temporalPanel.Layout.Row = 3; temporalPanel.Layout.Column = 3;
     temporalPanel.BackgroundColor = PW;
     tpg = uigridlayout(temporalPanel, [1 1]);
     tpg.Padding = Theme.KPI_INNER_PAD; tpg.BackgroundColor = PW;
@@ -173,7 +198,7 @@ function DetailedAnalysisScreen(app)
     % ── Row 3, Col 1: T1 vs T2 Coherence Scatter (colour = readout fidelity) ─
     qubitPanel = uipanel(g, 'Title', Labels.get('detailed_panel_qubit'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    qubitPanel.Layout.Row = 3; qubitPanel.Layout.Column = 1;
+    qubitPanel.Layout.Row = 4; qubitPanel.Layout.Column = 1;
     qubitPanel.BackgroundColor = PW;
     qpg = uigridlayout(qubitPanel, [1 1]);
     qpg.Padding = Theme.KPI_INNER_PAD; qpg.BackgroundColor = PW;
@@ -183,7 +208,7 @@ function DetailedAnalysisScreen(app)
     % ── Row 3, Col 2: Randomized Benchmarking Decay Curve ────────────────────
     rbPanel = uipanel(g, 'Title', Labels.get('detailed_panel_rb'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    rbPanel.Layout.Row = 3; rbPanel.Layout.Column = 2;
+    rbPanel.Layout.Row = 4; rbPanel.Layout.Column = 2;
     rbPanel.BackgroundColor = PW;
     rpg = uigridlayout(rbPanel, [1 1]);
     rpg.Padding = Theme.KPI_INNER_PAD; rpg.BackgroundColor = PW;
@@ -193,7 +218,7 @@ function DetailedAnalysisScreen(app)
     % ── Row 3, Col 3: Enhanced Interpretation & Diagnostics ──────────────────
     insightPanel = uipanel(g, 'Title', Labels.get('detailed_panel_insight'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    insightPanel.Layout.Row = 3; insightPanel.Layout.Column = 3;
+    insightPanel.Layout.Row = 4; insightPanel.Layout.Column = 3;
     insightPanel.BackgroundColor = PW;
     ipg = uigridlayout(insightPanel, [1 1]);
     ipg.Padding = [14 12 14 12]; ipg.BackgroundColor = PW;
@@ -214,4 +239,41 @@ function DetailedAnalysisScreen(app)
         'Heatmap:       white=0%  →  black=5% error'};
 
     Logger.info('DetailedAnalysisScreen', 'Detailed Analysis tab UI built successfully');
+end
+
+
+% ── Local helpers (file-private — not on the class) ────────────────────────
+function [valLbl, subLbl] = localDetailedKpiCard(parent, col, captionText, accent)
+    %  KPI tile mirroring the Results + Analysis screens. Returns the
+    %  value and sub-label uilabel handles so the VM can update them.
+    p = uipanel(parent, 'BorderType', 'line', ...
+        'BorderColor', Theme.COLOR_DIVIDER, ...
+        'BackgroundColor', Theme.COLOR_CARD, 'Title', '');
+    p.Layout.Row = 1; p.Layout.Column = col;
+
+    g = uigridlayout(p, [1 2]);
+    g.ColumnWidth = {6, '1x'};
+    g.Padding = [0 0 0 0]; g.ColumnSpacing = 0;
+    g.BackgroundColor = Theme.COLOR_CARD;
+
+    strip = uipanel(g, 'Title', '', 'BorderType', 'none');
+    strip.Layout.Column = 1;
+    strip.BackgroundColor = accent;
+
+    inner = uigridlayout(g, [3 1]);
+    inner.Layout.Column = 2;
+    inner.RowHeight = {16, '1x', 14};
+    inner.RowSpacing = 0; inner.Padding = [12 8 12 8];
+    inner.BackgroundColor = Theme.COLOR_CARD;
+
+    uilabel(inner, 'Text', captionText, ...
+        'FontSize', 10, 'FontWeight', 'bold', ...
+        'FontColor', Theme.COLOR_MUTED);
+    valLbl = uilabel(inner, 'Text', char(8212), ...
+        'FontWeight', 'bold', 'FontSize', 22, ...
+        'FontColor', Theme.COLOR_HEADING, ...
+        'VerticalAlignment', 'center');
+    subLbl = uilabel(inner, 'Text', '', ...
+        'FontSize', 10, 'FontColor', Theme.COLOR_MUTED, ...
+        'VerticalAlignment', 'top');
 end
