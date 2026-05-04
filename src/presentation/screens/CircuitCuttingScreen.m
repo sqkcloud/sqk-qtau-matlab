@@ -499,14 +499,17 @@ function CircuitCuttingScreen(app)
     %  window heights, and uipanel.Scrollable did not always show a
     %  scrollbar in that borderline case.
     rg = uigridlayout(resPanel, [3 1]);
-    rg.RowHeight = {'1x', 18, 44};
+    %  Content row pinned to 60 px (≈ 2 lines of body text + a few px
+    %  breathing room) so the empty-state placeholder occupies a
+    %  bounded, predictable region at the top of the panel. This lets
+    %  the action-bar row (44 px, fixed) appear immediately below the
+    %  state-header strip near the top border of the Reconstructed
+    %  Results panel rather than being pushed to the bottom by a flex
+    %  '1x' row. Any leftover panel height falls below the action bar
+    %  as empty space (uigridlayout top-anchors fixed-row stacks).
+    rg.RowHeight = {60, 18, 44};
     rg.RowSpacing = 8;
-    %  Bottom padding bumped from 10 → 45 (+35 px) so the action-bar
-    %  buttons sit ~35 px higher inside the panel — closer to the
-    %  state-header / placeholder text rather than flush against the
-    %  panel's bottom edge. The 'fit'/'1x' content row absorbs the
-    %  reduced available height.
-    rg.Padding = [18 10 18 45]; rg.BackgroundColor = Theme.COLOR_CARD;
+    rg.Padding = [18 10 18 10]; rg.BackgroundColor = Theme.COLOR_CARD;
 
     % Row 1: empty-state / results display. Uses an inner [2 1] sub-grid
     % so the placeholder + textarea overlap (one shown at a time) without
@@ -519,10 +522,14 @@ function CircuitCuttingScreen(app)
     contentGrid.BackgroundColor = Theme.COLOR_CARD;
 
     % Empty state (visible until renderResult writes real values).
+    %  Cell-array Text places each element on its own line — the
+    %  message reads as a clean two-line block instead of a single
+    %  very-wide line that would otherwise float in the constrained
+    %  60 px content row.
     app.CuttingResultsEmptyLabel = uilabel(contentGrid, ...
-        'Text', ['⚛  Reconstructed expectation values appear here once ' ...
-                 'the batch completes. Press Run Cutting to dispatch all ' ...
-                 'k subcircuits in parallel.'], ...
+        'Text', { ...
+            '⚛  Reconstructed expectation values appear here once the batch completes.', ...
+            'Press Run Cutting to dispatch all k subcircuits in parallel.'}, ...
         'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
         'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
         'WordWrap', 'on', 'Interpreter', 'none');
