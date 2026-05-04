@@ -501,7 +501,12 @@ function CircuitCuttingScreen(app)
     rg = uigridlayout(resPanel, [3 1]);
     rg.RowHeight = {'1x', 18, 44};
     rg.RowSpacing = 8;
-    rg.Padding = [18 10 18 10]; rg.BackgroundColor = Theme.COLOR_CARD;
+    %  Bottom padding bumped from 10 → 45 (+35 px) so the action-bar
+    %  buttons sit ~35 px higher inside the panel — closer to the
+    %  state-header / placeholder text rather than flush against the
+    %  panel's bottom edge. The 'fit'/'1x' content row absorbs the
+    %  reduced available height.
+    rg.Padding = [18 10 18 45]; rg.BackgroundColor = Theme.COLOR_CARD;
 
     % Row 1: empty-state / results display. Uses an inner [2 1] sub-grid
     % so the placeholder + textarea overlap (one shown at a time) without
