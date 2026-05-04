@@ -86,6 +86,70 @@ classdef AnalysisViewModel < handle
                 char(app.State.selectedCircuitName), circuitId));
         end
 
+        function onDownloadAnalysisJson(obj)
+            % Re-fetch GET /api/circuits/{id}/analysis and dump the
+            % response to a user-chosen .json file. GET (not POST
+            % /analyze) so re-fetching is cheap — no recompute.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Download JSON', 'Icon', 'warning');
+                return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(app.UIFigure, ...
+                    'Pick a circuit and click Analyze first.', ...
+                    'Download JSON', 'Icon', 'info');
+                return;
+            end
+            cid = char(app.State.selectedCircuitId);
+            app.logEvent('API', sprintf('GET /api/circuits/%s/analysis (export)', cid));
+            app.showLoading('Fetching analysis for export...');
+            circSvc = app.CircuitSvc;
+            token   = app.State.authToken;
+            AsyncRunner.run( ...
+                @() circSvc.getAnalysis(cid, token), ...
+                @(data) obj.onAnalysisJsonReady(app, data, cid), ...
+                @(ME)   obj.onAnalysisJsonError(app, ME));
+        end
+
+        function onAnalysisJsonReady(~, app, data, cid)
+            app.hideLoading();
+            cname = char(app.State.selectedCircuitName);
+            fname = Exporter.suggestFilename('Analysis', { ...
+                cname, cid, Exporter.todayStamp()});
+            ok = Exporter.toJsonFile(data, fname, app.UIFigure);
+            if ok
+                app.logEvent('FILE', sprintf('Analysis JSON saved (circuit %s)', cid));
+                app.State.logActivity( ...
+                    sprintf('Download Analysis JSON — %s', cname), 'Success');
+            end
+        end
+
+        function onAnalysisJsonError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Analysis JSON export FAILED: %s', ME.message));
+            app.showError('Download JSON', ME);
+        end
+
+        function onGenerateRunReport(obj)
+            % Bridge from the Analysis screen to Reports — pre-fills
+            % the title via Reports' own loadReportsList →
+            % seedReportTitle. Operator confirms format / sections; no
+            % retyping. Same handover pattern used by Results and
+            % Detailed Analysis for consistency.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            app.logEvent('NAV', 'Analysis → Reports');
+            app.onSelectSection('Reports');
+        end
+
         function onAnalyzeCircuit(obj)
             app = obj.App;
             if ~app.State.isAuthenticated()

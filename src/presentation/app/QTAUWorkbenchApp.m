@@ -202,6 +202,12 @@ classdef QTAUWorkbenchApp < handle
     properties
         AnalysisCircuitDropdown
         AnalyzeButton
+        % Tier B exports — Download JSON dumps the analyze response
+        % via Exporter.toJsonFile; Generate Report bridges to the
+        % Reports screen whose loadReportsList → seedReportTitle
+        % pre-fills the title for the active circuit.
+        AnalysisDownloadJsonBtn
+        AnalysisGeneratePdfBtn
         FeatureTree
         AnalysisFeatureArea
         SimilarityTable
@@ -359,6 +365,12 @@ classdef QTAUWorkbenchApp < handle
         ResultsRawToggleBtn          % right half
         CuttingBatchesTable    % Cutting Batches list on the Results screen
         SelectedBatchId = ""   % Most recently picked cutting batch row
+        % Tier B exports — Download JSON dumps /api/jobs/{id}/results
+        % via Exporter.toJsonFile; Generate Report bridges to the
+        % Reports screen whose loadReportsList → seedReportTitle
+        % pre-fills the title for the active job.
+        ResultsDownloadJsonBtn
+        ResultsGeneratePdfBtn
     end
 
     % ── Detailed Analysis tab ─────────────────────────────────────────────────
@@ -376,6 +388,11 @@ classdef QTAUWorkbenchApp < handle
         RefreshRBButton
         DetailedAnalysisCircuitDropdown   % Circuit selector on the Detailed Analysis toolbar
         DetailedAnalysisAnalyzeButton     % Analyze button: re-runs all 5 detailed charts for the selected circuit
+        % Tier B exports — Download JSON dumps the detailed-results
+        % response via Exporter.toJsonFile; Generate Report bridges
+        % to Reports.
+        DetailedDownloadJsonBtn
+        DetailedGeneratePdfBtn
     end
 
     % ── Benchmark Dashboard tab ──────────────────────────────────────────────

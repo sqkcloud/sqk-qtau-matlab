@@ -95,6 +95,63 @@ classdef ResultsViewModel < handle
                 @(ME)   obj.onReconstructionError(app, bid, ME));
         end
 
+        function onDownloadJsonResults(obj)
+            % Re-fetch /api/jobs/{id}/results and dump the response to a
+            % user-chosen .json file. Re-fetching (rather than caching)
+            % guarantees the saved JSON matches what the API returns
+            % right now and avoids accidentally exporting stale state.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Download JSON', 'Icon', 'warning');
+                return;
+            end
+            jid = char(app.State.selectedJobId);
+            if isempty(strtrim(jid))
+                uialert(app.UIFigure, ...
+                    'Wait for a completed job to load first, then try again.', ...
+                    'Download JSON', 'Icon', 'info');
+                return;
+            end
+            app.logEvent('API', sprintf('GET /api/jobs/%s/results (export)', jid));
+            app.showLoading('Fetching results for export...');
+            jobSvc = app.JobSvc;
+            token  = app.State.authToken;
+            AsyncRunner.run( ...
+                @() jobSvc.getJobResults(jid, token), ...
+                @(data) obj.onJsonExportReady(app, data, jid), ...
+                @(ME)   obj.onJsonExportError(app, ME));
+        end
+
+        function onJsonExportReady(~, app, data, jid)
+            app.hideLoading();
+            cname = char(app.State.selectedCircuitName);
+            fname = Exporter.suggestFilename('Results', { ...
+                cname, jid, Exporter.todayStamp()});
+            ok = Exporter.toJsonFile(data, fname, app.UIFigure);
+            if ok
+                app.logEvent('FILE', sprintf('Results JSON saved (job %s)', jid));
+                app.State.logActivity( ...
+                    sprintf('Download Results JSON — %s', cname), 'Success');
+            end
+        end
+
+        function onJsonExportError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('JSON export FAILED: %s', ME.message));
+            app.showError('Download JSON', ME);
+        end
+
+        function onGenerateRunReport(obj)
+            % Generate Report button on the Results toolbar — alias for
+            % onGenerateReportFromResults (kept for naming consistency
+            % with the same button on Analysis / Detailed Analysis,
+            % which all bridge to the Reports screen with a pre-filled
+            % title via Reports' own loadReportsList → seedReportTitle).
+            obj.onGenerateReportFromResults();
+        end
+
         function onGenerateReportFromResults(obj)
             % Bridge from the Results screen to Reports. Confirms a
             % job context exists, then navigates — the Reports screen's

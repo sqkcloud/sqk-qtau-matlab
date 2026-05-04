@@ -33,9 +33,9 @@ function DetailedAnalysisScreen(app)
     %   Circuit comes first so the user immediately sees which circuit
     %   the charts below relate to; the chart-refresh buttons sit beside
     %   it and Reports anchors the far right.
-    toolbar = uigridlayout(g, [1 9]);
+    toolbar = uigridlayout(g, [1 11]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
-    toolbar.ColumnWidth = {60, '1x', 150, 108, 126, 108, 96, 120, 120};
+    toolbar.ColumnWidth = {60, '1x', 150, 108, 126, 108, 96, 120, 150, 170, 120};
     toolbar.Padding = [0 0 0 0]; toolbar.ColumnSpacing = 6;
     toolbar.BackgroundColor = BG;
 
@@ -104,9 +104,32 @@ function DetailedAnalysisScreen(app)
     app.RefreshRBButton.FontSize = 13;
     app.RefreshRBButton.Tooltip = 'GET /jobs/{id}/rb-decay — randomized benchmarking';
 
+    % Tier B exports — Download JSON dumps the detailed-results
+    % response to disk; Generate Report bridges to Reports with the
+    % title pre-filled by Reports' loadReportsList → seedReportTitle.
+    app.DetailedDownloadJsonBtn = uibutton(toolbar, ...
+        'Text', [char(8681) ' Download JSON'], ...  % ⬇
+        'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onDownloadDetailedJson());
+    app.DetailedDownloadJsonBtn.Layout.Row = 1;
+    app.DetailedDownloadJsonBtn.Layout.Column = 9;
+    app.styleBtn(app.DetailedDownloadJsonBtn, 'ghost');
+    app.DetailedDownloadJsonBtn.FontSize = 13;
+    app.DetailedDownloadJsonBtn.Tooltip = ...
+        'Save /api/jobs/{id}/results/detailed to a .json file.';
+
+    app.DetailedGeneratePdfBtn = uibutton(toolbar, ...
+        'Text', [char(128196) ' Generate Report'], ...  % 📄
+        'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onGenerateRunReport());
+    app.DetailedGeneratePdfBtn.Layout.Row = 1;
+    app.DetailedGeneratePdfBtn.Layout.Column = 10;
+    app.styleBtn(app.DetailedGeneratePdfBtn, 'secondary');
+    app.DetailedGeneratePdfBtn.FontSize = 13;
+    app.DetailedGeneratePdfBtn.Tooltip = ...
+        'Open Reports with the title pre-filled for the active job.';
+
     nextBtn = uibutton(toolbar, 'Text', [char(9636) ' Reports'], ...  % Reports nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Reports'));
-    nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 9;
+    nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 11;
     app.styleBtn(nextBtn, 'primary');
 
     % ═════════════════════════════════════════════════════════════════════════

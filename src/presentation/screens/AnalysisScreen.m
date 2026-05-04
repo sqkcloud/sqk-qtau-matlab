@@ -27,9 +27,9 @@ function AnalysisScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Circuit selector + Analyze + QMC launcher + Error Mitigation launcher
-    topBar = uigridlayout(g, [1 5]);
+    topBar = uigridlayout(g, [1 7]);
     topBar.Layout.Row = 1; topBar.Layout.Column = [1 2];
-    topBar.ColumnWidth = {90, '1x', 110, 260, 220};
+    topBar.ColumnWidth = {90, '1x', 110, 260, 220, 150, 170};
     topBar.Padding = [0 0 0 0]; topBar.ColumnSpacing = 8;
     topBar.BackgroundColor = Theme.COLOR_BG;
 
@@ -75,6 +75,28 @@ function AnalysisScreen(app)
     app.EmOpenButton.FontSize = 14;
     app.EmOpenButton.Tooltip = ...
         'Open the Quantum Error Mitigation Analysis popup';
+
+    % Tier B exports — Download JSON dumps the analyze response to a
+    % user-chosen .json file; Generate Report bridges to the Reports
+    % screen with the title pre-filled by Reports' loadReportsList →
+    % seedReportTitle so the operator only confirms format / sections.
+    app.AnalysisDownloadJsonBtn = uibutton(topBar, ...
+        'Text', [char(8681) ' Download JSON'], ...  % ⬇
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onDownloadAnalysisJson());
+    app.AnalysisDownloadJsonBtn.Layout.Row = 1;
+    app.AnalysisDownloadJsonBtn.Layout.Column = 6;
+    app.styleBtn(app.AnalysisDownloadJsonBtn, 'ghost');
+    app.AnalysisDownloadJsonBtn.Tooltip = ...
+        'Save /api/circuits/{id}/analysis to a .json file.';
+
+    app.AnalysisGeneratePdfBtn = uibutton(topBar, ...
+        'Text', [char(128196) ' Generate Report'], ...  % 📄
+        'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateRunReport());
+    app.AnalysisGeneratePdfBtn.Layout.Row = 1;
+    app.AnalysisGeneratePdfBtn.Layout.Column = 7;
+    app.styleBtn(app.AnalysisGeneratePdfBtn, 'secondary');
+    app.AnalysisGeneratePdfBtn.Tooltip = ...
+        'Open Reports with the title pre-filled for the active circuit.';
 
     % ── Extracted Features (left) ─────────────────────────────────────────────
     p1 = uipanel(g, 'Title', Labels.get('analysis_panel_features'), ...

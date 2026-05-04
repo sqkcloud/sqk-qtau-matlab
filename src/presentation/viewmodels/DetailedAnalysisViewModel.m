@@ -26,6 +26,68 @@ classdef DetailedAnalysisViewModel < handle
             obj.App = app;
         end
 
+        function onDownloadDetailedJson(obj)
+            % Fetch /api/jobs/{id}/results/detailed and dump to a
+            % user-chosen .json file. Tier B export action.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Download JSON', 'Icon', 'warning');
+                return;
+            end
+            jid = char(app.State.selectedJobId);
+            if isempty(strtrim(jid))
+                uialert(app.UIFigure, ...
+                    'Open the Results screen first so a completed job is selected.', ...
+                    'Download JSON', 'Icon', 'info');
+                return;
+            end
+            app.logEvent('API', sprintf('GET /api/jobs/%s/results/detailed (export)', jid));
+            app.showLoading('Fetching detailed results for export...');
+            jobSvc = app.JobSvc;
+            token  = app.State.authToken;
+            AsyncRunner.run( ...
+                @() jobSvc.getDetailedResults(jid, token), ...
+                @(data) obj.onDetailedJsonReady(app, data, jid), ...
+                @(ME)   obj.onDetailedJsonError(app, ME));
+        end
+
+        function onDetailedJsonReady(~, app, data, jid)
+            app.hideLoading();
+            cname = char(app.State.selectedCircuitName);
+            fname = Exporter.suggestFilename('DetailedAnalysis', { ...
+                cname, jid, Exporter.todayStamp()});
+            ok = Exporter.toJsonFile(data, fname, app.UIFigure);
+            if ok
+                app.logEvent('FILE', sprintf('Detailed JSON saved (job %s)', jid));
+                app.State.logActivity( ...
+                    sprintf('Download Detailed JSON — %s', cname), 'Success');
+            end
+        end
+
+        function onDetailedJsonError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Detailed JSON export FAILED: %s', ME.message));
+            app.showError('Download JSON', ME);
+        end
+
+        function onGenerateRunReport(obj)
+            % Bridge from the Detailed Analysis screen to Reports —
+            % pre-fills the title via Reports' own loadReportsList →
+            % seedReportTitle. Same handover pattern used by Results
+            % and Analysis.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            app.logEvent('NAV', 'Detailed Analysis → Reports');
+            app.onSelectSection('Reports');
+        end
+
         function onPlotComparison(obj)
             app = obj.App;
             if ~obj.requireLiveJob('Compare'); obj.plotComparisonDemo(); return; end
