@@ -36,9 +36,13 @@ function DetailedAnalysisScreen(app)
     %   Circuit comes first so the user immediately sees which circuit
     %   the charts below relate to; the chart-refresh buttons sit beside
     %   it and Reports anchors the far right.
-    toolbar = uigridlayout(g, [1 11]);
+    toolbar = uigridlayout(g, [1 8]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
-    toolbar.ColumnWidth = {60, '1x', 150, 108, 126, 108, 96, 120, 150, 170, 120};
+    %  Trailing Download JSON / Generate Report / Reports buttons
+    %  removed per operator request — Detailed Analysis is a
+    %  diagnostic surface, not an export surface, and the same
+    %  destinations are reachable from the Results screen toolbar.
+    toolbar.ColumnWidth = {60, '1x', 150, 108, 126, 108, 96, 120};
     toolbar.Padding = [0 0 0 0]; toolbar.ColumnSpacing = 6;
     toolbar.BackgroundColor = BG;
 
@@ -107,33 +111,16 @@ function DetailedAnalysisScreen(app)
     app.RefreshRBButton.FontSize = 13;
     app.RefreshRBButton.Tooltip = 'GET /jobs/{id}/rb-decay — randomized benchmarking';
 
-    % Tier B exports — Download JSON dumps the detailed-results
-    % response to disk; Generate Report bridges to Reports with the
-    % title pre-filled by Reports' loadReportsList → seedReportTitle.
-    app.DetailedDownloadJsonBtn = uibutton(toolbar, ...
-        'Text', [char(8681) ' Download JSON'], ...  % ⬇
-        'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onDownloadDetailedJson());
-    app.DetailedDownloadJsonBtn.Layout.Row = 1;
-    app.DetailedDownloadJsonBtn.Layout.Column = 9;
-    app.styleBtn(app.DetailedDownloadJsonBtn, 'ghost');
-    app.DetailedDownloadJsonBtn.FontSize = 13;
-    app.DetailedDownloadJsonBtn.Tooltip = ...
-        'Save /api/jobs/{id}/results/detailed to a .json file.';
-
-    app.DetailedGeneratePdfBtn = uibutton(toolbar, ...
-        'Text', [char(9636) ' Generate Report'], ...    % ▤ (BMP — char(128196) renders tofu on macOS)
-        'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onGenerateRunReport());
-    app.DetailedGeneratePdfBtn.Layout.Row = 1;
-    app.DetailedGeneratePdfBtn.Layout.Column = 10;
-    app.styleBtn(app.DetailedGeneratePdfBtn, 'secondary');
-    app.DetailedGeneratePdfBtn.FontSize = 13;
-    app.DetailedGeneratePdfBtn.Tooltip = ...
-        'Open Reports with the title pre-filled for the active job.';
-
-    nextBtn = uibutton(toolbar, 'Text', [char(9636) ' Reports'], ...  % Reports nav icon
-        'ButtonPushedFcn', @(~,~)app.onSelectSection('Reports'));
-    nextBtn.Layout.Row = 1; nextBtn.Layout.Column = 11;
-    app.styleBtn(nextBtn, 'primary');
+    %  Download JSON / Generate Report / Reports navigation buttons
+    %  removed per operator request — Detailed Analysis is a
+    %  diagnostic surface, not an export surface. The matching
+    %  property declarations on QTAUWorkbenchApp
+    %  (DetailedDownloadJsonBtn, DetailedGeneratePdfBtn) and the
+    %  matching VM methods (onDownloadDetailedJson,
+    %  onGenerateRunReport) remain instantiated as harmless dead
+    %  code so removing them doesn't ripple into the rest of the
+    %  app — re-adding the buttons here is a one-block edit if the
+    %  preference flips later.
 
     % ═════════════════════════════════════════════════════════════════════════
     %  ROW 2 — KPI strip (M3, populated by DetailedAnalysisVm) ───────────────
