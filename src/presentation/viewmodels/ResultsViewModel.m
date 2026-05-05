@@ -306,6 +306,11 @@ classdef ResultsViewModel < handle
             app.State.logActivity(sprintf('View results — job: %s', char(jobId)), 'Success');
             obj.LastRefresh = tic;
             app.hideLoading();
+            % Force the overlay to clear before the Tier B/C paint
+            % work runs — applyHeroAndKpis + histogram paint can take
+            % 100–300 ms on wide circuits and would otherwise visually
+            % "stick" the loader.
+            drawnow;
             % Tier B/C visual layer — populate the new identity strip,
             % KPI row, mitigation/timing/context tiles, and histogram
             % chart from the same response. Defensive: each helper
@@ -977,8 +982,12 @@ classdef ResultsViewModel < handle
                     ideals(end+1) = NaN; %#ok<AGROW>
                 end
                 if numel(hd) > topN
+                    % Cap iteration to avoid freezing the UI thread on
+                    % wide circuits (22q+ runs can produce 4 k+ distinct
+                    % outcomes, each requiring a struct-field lookup).
+                    maxRest = min(numel(hd) - topN, 50);
                     rest = 0;
-                    for i = (topN + 1):numel(hd)
+                    for i = (topN + 1):(topN + maxRest)
                         p = JsonHelper.pickNumeric(hd{i}, 'probability', 0);
                         if isfinite(p); rest = rest + p; end
                     end

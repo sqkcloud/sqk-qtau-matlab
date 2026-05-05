@@ -44,12 +44,30 @@ function ResultsScreen(app)
     %  and applySiblingToggle can keep writing to them without
     %  crashing) but heroPanel itself is set Visible='off' so nothing
     %  paints.
-    g.RowHeight     = {0, 96, 260, 130, 210, 72};
+    %  Row 2 (KPI strip) is also collapsed to 0 per operator request —
+    %  Fidelity / Success / Dominant State / 2Q Error / Readout values
+    %  are already covered on the cover page of the generated PDF and
+    %  in the Distribution Review table on row 3, so the dedicated KPI
+    %  cards were duplicating information. The KPI widgets are still
+    %  instantiated below (so ResultsViewModel.applyHeroAndKpis can
+    %  keep writing to them without crashing) but the kpis grid itself
+    %  is set Visible='off' so nothing paints.
+    g.RowHeight     = {0, 0, 165, 130, 210, 72};
     g.ColumnWidth   = {'1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
+    %  All rows above use fixed pixel heights summing to ~770 px. At
+    %  default window size (and especially on shorter monitors) the
+    %  total exceeds the panel viewport, which would otherwise cause
+    %  MATLAB to squeeze rows and clip the action bar and Cutting
+    %  Batches table. Opting the grid into Scrollable='on' makes it
+    %  honour the fixed heights and surface a vertical scrollbar
+    %  instead. The hosting section panel is already Scrollable='on'
+    %  (NavigationManager.createSectionPage), so this is the inner
+    %  hand-off that engages it.
+    g.Scrollable = 'on';
 
     % ── Row 1: Identity strip ────────────────────────────────────────────────
     heroPanel = uipanel(g, 'Title', '', 'BorderType', 'line', ...
@@ -140,6 +158,11 @@ function ResultsScreen(app)
     kpis.ColumnWidth = {'1x', '1x', '1x', '1x', '1x'};
     kpis.ColumnSpacing = 10; kpis.Padding = [0 0 0 0];
     kpis.BackgroundColor = Theme.COLOR_BG;
+    %  Hidden per operator request — see the row-2 collapse comment
+    %  on g.RowHeight above. Visible='off' here is belt-and-braces on
+    %  top of RowHeight=0 to guarantee zero rendering even on MATLAB
+    %  versions where 0-height rows produce a 1-px sliver.
+    kpis.Visible = 'off';
 
     [app.ResultsKpiFidelityVal, app.ResultsKpiFidelitySub] = ...
         localKpiCard(kpis, 1, 'FIDELITY',       Theme.COLOR_PRIMARY);

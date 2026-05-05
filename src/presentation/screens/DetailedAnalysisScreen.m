@@ -22,7 +22,12 @@ function DetailedAnalysisScreen(app)
     %  M3 Tier C — KPI strip lives in row 2 between the toolbar and
     %  the existing 2-row chart area. Mirrors the AnalysisScreen and
     %  ResultsScreen visual language.
-    g.RowHeight     = {42, 96, '1x', '0.82x'};
+    %  Row 2 (KPI strip — Fidelity / Drift / Qubits / RB Decay /
+    %  Outliers) is collapsed to 0 per operator request. The KPI
+    %  widgets are still instantiated below (so DetailedAnalysisVm can
+    %  keep writing to them without crashing) but the kpis grid
+    %  itself is set Visible='off' so nothing paints.
+    g.RowHeight     = {42, 0, '1x', '0.82x'};
     g.ColumnWidth   = {'1x', '1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = 10;
@@ -133,6 +138,11 @@ function DetailedAnalysisScreen(app)
     kpis.ColumnWidth = {'1x', '1x', '1x', '1x', '1x'};
     kpis.ColumnSpacing = 10; kpis.Padding = [0 0 0 0];
     kpis.BackgroundColor = BG;
+    %  Hidden per operator request — see the row-2 collapse comment
+    %  on g.RowHeight above. Visible='off' here is belt-and-braces on
+    %  top of RowHeight=0 to guarantee zero rendering even on MATLAB
+    %  versions where 0-height rows produce a 1-px sliver.
+    kpis.Visible = 'off';
     [app.DetailedKpiFidelityVal, app.DetailedKpiFidelitySub] = ...
         localDetailedKpiCard(kpis, 1, 'FIDELITY',  Theme.COLOR_PRIMARY);
     [app.DetailedKpiDriftVal,    app.DetailedKpiDriftSub]    = ...
