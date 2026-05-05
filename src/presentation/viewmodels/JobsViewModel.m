@@ -378,12 +378,43 @@ classdef JobsViewModel < handle
             shotsTxt = '—';
             if ~isnan(shots); shotsTxt = sprintf('%d', shots); end
 
-            app.setStatus(app.JobStatusArea, { ...
+            % M11.2 — surface IBM Quantum's actual error reason in the
+            % Live Monitor Notes so a FAILED / CANCELLED job shows the
+            % root cause inline rather than a generic "Execution
+            % failed". Truncate to ~120 chars for the preview; the
+            % full text appears in the Detailed Job Logs textarea
+            % below via the server-enriched logs[] array.
+            statusLines = { ...
                 sprintf('Job ID: %s', jobId), ...
                 sprintf('Backend: %s', backendStr), ...
                 sprintf('Status: %s', statusStr), ...
                 sprintf('Progress: %s', progressTxt), ...
-                sprintf('Step: %s', curStep)});
+                sprintf('Step: %s', curStep)};
+            try
+                metaStruct = JsonHelper.safeField(job, 'result_metadata', struct());
+                if isstruct(metaStruct)
+                    errMsg = char(string(JsonHelper.pick(metaStruct, ...
+                        'error_message', '')));
+                else
+                    errMsg = '';
+                end
+                if ~isempty(strtrim(errMsg)) && ...
+                        any(strcmpi(statusStr, {'FAILED','CANCELLED','CANCELED','ERROR'}))
+                    % Collapse newlines + trim for the one-line preview.
+                    flat = regexprep(errMsg, '\s+', ' ');
+                    if numel(flat) > 120
+                        flat = [flat(1:117) '...'];
+                    end
+                    statusLines{end+1} = '';  %#ok<AGROW>
+                    statusLines{end+1} = sprintf('Error: %s', flat); %#ok<AGROW>
+                    statusLines{end+1} = ...
+                        '(scroll Detailed Job Logs below for full IBM error + log)'; %#ok<AGROW>
+                end
+            catch ME
+                Logger.debug('JobsViewModel', ...
+                    'error_message preview render failed: %s', ME.message);
+            end
+            app.setStatus(app.JobStatusArea, statusLines);
 
             % Bottom panel: Detailed Job Logs — header block + server logs[].
             lines = { ...

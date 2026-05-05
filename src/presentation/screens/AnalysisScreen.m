@@ -221,7 +221,7 @@ function AnalysisScreen(app)
         'Run Analyze first; this saves the response as a .json file.';
 
     app.AnalysisGeneratePdfBtn = uibutton(eg, ...
-        'Text', [char(128196) ' Generate Report'], ...  % 📄
+        'Text', [char(9636) ' Generate Report'], ...    % ▤ (BMP — char(128196) renders tofu on macOS)
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onGenerateRunReport());
     app.AnalysisGeneratePdfBtn.Layout.Row = 1;
     app.AnalysisGeneratePdfBtn.Layout.Column = 6;

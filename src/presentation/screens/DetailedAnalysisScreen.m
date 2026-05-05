@@ -121,7 +121,7 @@ function DetailedAnalysisScreen(app)
         'Save /api/jobs/{id}/results/detailed to a .json file.';
 
     app.DetailedGeneratePdfBtn = uibutton(toolbar, ...
-        'Text', [char(128196) ' Generate Report'], ...  % 📄
+        'Text', [char(9636) ' Generate Report'], ...    % ▤ (BMP — char(128196) renders tofu on macOS)
         'ButtonPushedFcn', @(~,~)app.DetailedAnalysisVm.onGenerateRunReport());
     app.DetailedGeneratePdfBtn.Layout.Row = 1;
     app.DetailedGeneratePdfBtn.Layout.Column = 10;
