@@ -1153,6 +1153,13 @@ classdef QTAUWorkbenchApp < handle
             drawnow();
             NavigationManager.forceInitialLayout(app);
 
+            % Pre-warm the parallel-pool worker so the user's first
+            % async action (login → fetch projects, or first nav with
+            % stale cache) doesn't pay the ~3–5 s worker spawn cost.
+            % Runs in the background; fire-and-forget. Idempotent so
+            % calling at boot is safe even if the pool is already up.
+            AsyncRunner.warmUp();
+
             if ~app.State.isAuthenticated()
                 app.showAuthOverlay();
             else

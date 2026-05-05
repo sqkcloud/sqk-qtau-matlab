@@ -21,6 +21,33 @@ classdef AsyncRunner
 
     methods (Static)
 
+        function warmUp()
+            % WARMUP  Pre-spawn the parallel-pool worker so the first
+            %         user-visible API call doesn't pay the worker
+            %         startup cost (~3–5 s on macOS).
+            %
+            %         Call once at app boot, after the UIFigure is
+            %         visible — the warm-up runs in the background
+            %         while the user reads the login screen, and the
+            %         next real run() lands on a hot worker.
+            %
+            %         Idempotent: subsequent calls just kick another
+            %         no-op into an already-warm pool. Failure is
+            %         silent (logged at debug) so a missing PCT
+            %         license never breaks boot.
+            try
+                pool = AsyncRunner.acquirePool();
+                if isempty(pool); return; end
+                % @() true is the smallest possible payload — its
+                % only purpose is to force the pool to materialise
+                % a worker process before the first real request.
+                parfeval(pool, @() true, 1);
+                Logger.info('AsyncRunner', 'Pool warm-up dispatched');
+            catch ME
+                Logger.debug('AsyncRunner', 'warmUp failed: %s', ME.message);
+            end
+        end
+
         function future = run(workFcn, onDone, onError, timeoutSec)
             % RUN  Execute workFcn asynchronously; call onDone(result) or
             %      onError(MException) on completion.
@@ -42,10 +69,13 @@ classdef AsyncRunner
                     future = parfeval(pool, @() AsyncRunner.safeCall(workFcn), 1);
 
                     % Poll the future via a fast timer.  afterEach does NOT
-                    % fire for errored futures, so we use a 50ms polling
+                    % fire for errored futures, so we use a 100ms polling
                     % timer that checks future.State and delivers the
-                    % result (or error) to the main thread.
-                    poller = timer('Period', 0.05, 'ExecutionMode', 'fixedRate', ...
+                    % result (or error) to the main thread. (Was 50ms;
+                    % 100ms halves timer overhead under concurrent load
+                    % and the added latency is imperceptible vs network
+                    % RTT, which dominates real-world response time.)
+                    poller = timer('Period', 0.1, 'ExecutionMode', 'fixedRate', ...
                         'TimerFcn', @(src,~) AsyncRunner.pollFuture(src, future, onDone, onError, timeoutSec), ...
                         'UserData', tic);
                     start(poller);

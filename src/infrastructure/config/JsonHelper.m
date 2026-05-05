@@ -76,6 +76,19 @@ classdef JsonHelper
         % pickOne  Navigate a single dotted path, return toStr result.
         function value = pickOne(data, path)
             value  = "";
+            % Fast path — single-segment field name (no dots). Avoids
+            % the string()/split() round-trip + numel-loop overhead,
+            % which adds up across 4–7 picks per row × N rows in the
+            % table renderers below. ~95% of callsites pass a simple
+            % field name here ('name', 'job_id', 'status', ...).
+            pathChar = char(path);
+            if ~any(pathChar == '.')
+                if isstruct(data) && isfield(data, pathChar)
+                    value = JsonHelper.toStr(data.(pathChar));
+                end
+                return;
+            end
+            % Dotted path — split-and-walk (existing behaviour).
             parts  = split(string(path), '.');
             cursor = data;
             for k = 1:numel(parts)
@@ -121,6 +134,20 @@ classdef JsonHelper
         function [found, value] = pickRawOne(data, path)
             found = false;
             value = [];
+            % Fast path — single-segment field name (no dots). Same
+            % rationale as pickOne above: skip the string()/split()
+            % cost on the common case used by every *toRows mapper.
+            pathChar = char(path);
+            if ~any(pathChar == '.')
+                if isstruct(data) && isfield(data, pathChar)
+                    raw = data.(pathChar);
+                    if isempty(raw); return; end
+                    found = true;
+                    value = raw;
+                end
+                return;
+            end
+            % Dotted path — split-and-walk (existing behaviour).
             parts  = split(string(path), '.');
             cursor = data;
             for k = 1:numel(parts)
