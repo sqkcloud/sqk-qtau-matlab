@@ -36,7 +36,15 @@ function ResultsScreen(app)
     t = app.createSectionPage('Results');
 
     g = uigridlayout(t, [6 1]);
-    g.RowHeight     = {66, 96, 260, 130, 210, 72};
+    %  Row 1 (identity strip "Quantum Run Report") is collapsed to 0
+    %  per operator request — the same identity info already shows on
+    %  the cover page of the generated PDF, so duplicating it on the
+    %  screen was wasted vertical real estate. The hero widgets are
+    %  still instantiated below (so ResultsViewModel.applyHeroAndKpis
+    %  and applySiblingToggle can keep writing to them without
+    %  crashing) but heroPanel itself is set Visible='off' so nothing
+    %  paints.
+    g.RowHeight     = {0, 96, 260, 130, 210, 72};
     g.ColumnWidth   = {'1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -48,6 +56,11 @@ function ResultsScreen(app)
         'BorderColor', Theme.COLOR_DIVIDER, ...
         'BackgroundColor', Theme.COLOR_CARD);
     heroPanel.Layout.Row = 1; heroPanel.Layout.Column = 1;
+    %  Hidden per operator request — see the row-1 collapse comment
+    %  at the outer grid above. Visible='off' here is belt-and-braces
+    %  on top of RowHeight=0 to guarantee zero rendering even on
+    %  MATLAB versions where 0-height rows produce a 1-px sliver.
+    heroPanel.Visible = 'off';
     %  3-col grid: title + subtitle stack (left) | status pill (mid) |
     %  Mitigated/Raw toggle (right, hidden until sibling exists).
     hg = uigridlayout(heroPanel, [1 3]);
