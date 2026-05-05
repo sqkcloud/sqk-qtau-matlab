@@ -187,13 +187,15 @@ classdef BenchmarkDashboardViewModel < handle
                     'Nothing to Export');
                 return;
             end
-            ts = datestr(now, 'yyyymmdd_HHMMSS'); %#ok<TNOW1,DATST>
             backend = '';
             try backend = char(app.BenchmarkBackendDropdown.Value); catch; end
-            defaultName = sprintf('benchmark_%s_%s.csv', ...
-                matlab.lang.makeValidName(backend), ts);
+            % Operator filename rule for data exports:
+            %   Results_Benchmark_<backend>_<YYYYMMDD_HHMM>.csv
+            defaultName = sprintf('Results_Benchmark_%s_%s.csv', ...
+                matlab.lang.makeValidName(backend), Exporter.minuteStamp());
+            % Default to the OS Downloads folder — see Exporter.defaultDir.
             [file, path] = uiputfile({'*.csv', 'CSV (comma-separated)'}, ...
-                'Export benchmark data', defaultName);
+                'Export benchmark data', Exporter.savePath(defaultName));
             if isequal(file, 0); return; end
             out = fullfile(path, file);
             try

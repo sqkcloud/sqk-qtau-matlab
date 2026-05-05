@@ -127,8 +127,9 @@ classdef ResultsViewModel < handle
         function onJsonExportReady(~, app, data, jid)
             app.hideLoading();
             cname = char(app.State.selectedCircuitName);
+            % Operator filename rule: Results_<circuit>_<jid>_<YYYYMMDD_HHMM>.json
             fname = Exporter.suggestFilename('Results', { ...
-                cname, jid, Exporter.todayStamp()});
+                cname, jid, Exporter.minuteStamp()});
             ok = Exporter.toJsonFile(data, fname, app.UIFigure);
             if ok
                 app.logEvent('FILE', sprintf('Results JSON saved (job %s)', jid));

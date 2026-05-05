@@ -273,11 +273,14 @@ classdef ReportsViewModel < handle
             if isempty(ext); ext = '.pdf'; end
             safeName = regexprep(char(title), '[^A-Za-z0-9_\-]', '_');
             if isempty(safeName); safeName = 'report'; end
-            stamp = char(datetime('now', 'Format', 'yyyyMMdd'));
-            defaultName = sprintf('Report_%s_%s%s', safeName, stamp, ext);
+            % Operator filename rule for generic PDF reports:
+            %   Report_<title>_<YYYYMMDD_HHMM>.pdf
+            defaultName = sprintf('Report_%s_%s%s', ...
+                safeName, Exporter.minuteStamp(), ext);
+            % Default to the OS Downloads folder — see Exporter.defaultDir.
             [fileName, pathName] = uiputfile( ...
                 {['*' ext], ['Report (' ext ')']; '*.*', 'All Files (*.*)'}, ...
-                'Save report', defaultName);
+                'Save report', Exporter.savePath(defaultName));
             if isequal(fileName, 0)
                 app.setStatus(app.ReportStatusArea, { ...
                     [char(9679) ' Cached'], ...

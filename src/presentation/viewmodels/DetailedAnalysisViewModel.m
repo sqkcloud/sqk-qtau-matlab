@@ -56,8 +56,9 @@ classdef DetailedAnalysisViewModel < handle
         function onDetailedJsonReady(~, app, data, jid)
             app.hideLoading();
             cname = char(app.State.selectedCircuitName);
-            fname = Exporter.suggestFilename('DetailedAnalysis', { ...
-                cname, jid, Exporter.todayStamp()});
+            % Operator filename rule: Results_Detailed_<circuit>_<jid>_<YYYYMMDD_HHMM>.json
+            fname = Exporter.suggestFilename('Results', { ...
+                'Detailed', cname, jid, Exporter.minuteStamp()});
             ok = Exporter.toJsonFile(data, fname, app.UIFigure);
             if ok
                 app.logEvent('FILE', sprintf('Detailed JSON saved (job %s)', jid));

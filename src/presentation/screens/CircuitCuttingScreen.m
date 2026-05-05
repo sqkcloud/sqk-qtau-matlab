@@ -85,7 +85,7 @@ function CircuitCuttingScreen(app)
     %  Reconstructed Results uses '1x' so it absorbs all leftover space —
     %  ~95 px at 870 figure (room for the 2-paragraph empty-state copy)
     %  and grows freely when the operator enlarges the window.
-    g.RowHeight     = {40, 22, 108, 210, 130, '1x'};
+    g.RowHeight     = {40, 22, 108, 200, 130, '1x'};
     g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = [12 12 12 12];
     g.RowSpacing    = 8;

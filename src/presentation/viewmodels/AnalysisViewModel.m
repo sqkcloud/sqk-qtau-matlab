@@ -123,8 +123,9 @@ classdef AnalysisViewModel < handle
         function onAnalysisJsonReady(~, app, data, cid)
             app.hideLoading();
             cname = char(app.State.selectedCircuitName);
-            fname = Exporter.suggestFilename('Analysis', { ...
-                cname, cid, Exporter.todayStamp()});
+            % Operator filename rule: Results_<descriptor>_<YYYYMMDD_HHMM>.json
+            fname = Exporter.suggestFilename('Results', { ...
+                'Analysis', cname, cid, Exporter.minuteStamp()});
             ok = Exporter.toJsonFile(data, fname, app.UIFigure);
             if ok
                 app.logEvent('FILE', sprintf('Analysis JSON saved (circuit %s)', cid));
@@ -506,8 +507,9 @@ classdef AnalysisViewModel < handle
             cname = char(app.State.selectedCircuitName);
             jid = char(JsonHelper.pick(data, {'runtime_job_id','job_id'}, ''));
             if isempty(jid); jid = Exporter.todayStamp(); end
-            fname = Exporter.suggestFilename('QMC', { ...
-                cname, jid, Exporter.todayStamp()});
+            % Operator filename rule: Results_Qmc_<circuit>_<jid>_<YYYYMMDD_HHMM>.json
+            fname = Exporter.suggestFilename('Results', { ...
+                'Qmc', cname, jid, Exporter.minuteStamp()});
             ok = Exporter.toJsonFile(data, fname, alertParent);
             if ok
                 app.logEvent('FILE', sprintf('QMC results JSON saved (job %s)', jid));
@@ -1032,11 +1034,14 @@ classdef AnalysisViewModel < handle
             end
             safeName = regexprep(char(app.State.selectedCircuitName), '[^A-Za-z0-9_\-]', '_');
             if isempty(safeName); safeName = 'circuit'; end
-            stamp = char(datetime('now', 'Format', 'yyyyMMdd_HHmm'));
-            defaultName = sprintf('EmAnalysis_%s_%s.json', safeName, stamp);
+            % Operator filename rule for QEM data: Results_Qem_<circuit>_<YYYYMMDD_HHMM>.json
+            defaultName = sprintf('Results_Qem_%s_%s.json', ...
+                safeName, Exporter.minuteStamp());
+            % Default to the OS Downloads folder — see Exporter.defaultDir.
             [fileName, pathName] = uiputfile( ...
                 {'*.json', 'JSON (*.json)'}, ...
-                'Export Error Mitigation Analysis', defaultName);
+                'Export Error Mitigation Analysis', ...
+                Exporter.savePath(defaultName));
             if isequal(fileName, 0); return; end
             target = fullfile(pathName, fileName);
             try
@@ -2096,13 +2101,15 @@ classdef AnalysisViewModel < handle
             end
             safeBackend = regexprep(char(backendName), '[^A-Za-z0-9_\-]', '_');
             if isempty(safeBackend); safeBackend = 'ibm_backend'; end
-            stamp = char(datetime('now', 'Format', 'yyyyMMdd'));
-            defaultName = sprintf('ExecLog_%s_%s_%s%s', safeBackend, safeName, stamp, ext);
+            % Operator filename rule: Results_IbmLog_<backend>_<circuit>_<YYYYMMDD_HHMM>.{jsonl,json}
+            defaultName = sprintf('Results_IbmLog_%s_%s_%s%s', ...
+                safeBackend, safeName, Exporter.minuteStamp(), ext);
+            % Default to the OS Downloads folder — see Exporter.defaultDir.
             [fileName, pathName] = uiputfile( ...
                 {'*.jsonl', 'JSON Lines (*.jsonl)'; ...
                  '*.json',  'JSON (*.json)'; ...
                  '*.*',     'All Files (*.*)'}, ...
-                'Save IBM Runtime log', defaultName);
+                'Save IBM Runtime log', Exporter.savePath(defaultName));
             if isequal(fileName, 0)
                 uialert(alertParent, ...
                     sprintf('IBM log downloaded to:\n%s', tmpPath), ...
@@ -2184,11 +2191,14 @@ classdef AnalysisViewModel < handle
                 if isempty(ext); ext = '.pdf'; end
                 safeName = regexprep(char(circName), '[^A-Za-z0-9_\-]', '_');
                 if isempty(safeName); safeName = 'report'; end
-                stamp = char(datetime('now', 'Format', 'yyyyMMdd'));
-                defaultName = sprintf('Report_%s_%s%s', safeName, stamp, ext);
+                % Operator filename rule for QMC PDF reports:
+                %   Report_Qmc_<circuit>_<YYYYMMDD_HHMM>.pdf
+                defaultName = sprintf('Report_Qmc_%s_%s%s', ...
+                    safeName, Exporter.minuteStamp(), ext);
+                % Default to the OS Downloads folder — see Exporter.defaultDir.
                 [fileName, pathName] = uiputfile( ...
                     {['*' ext], ['Report (' ext ')']; '*.*', 'All Files (*.*)'}, ...
-                    'Save QMC report', defaultName);
+                    'Save QMC report', Exporter.savePath(defaultName));
                 if isequal(fileName, 0)
                     Logger.info('AnalysisViewModel', 'Save cancelled; temp file: %s', tmpPath);
                     uialert(alertParent, ...
