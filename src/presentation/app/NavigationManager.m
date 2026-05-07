@@ -294,7 +294,16 @@ classdef NavigationManager
                     %  loadReportsList runs async via AsyncRunner; if
                     %  it fails it logs a warn and leaves the list
                     %  empty (Generate still works either way).
-                    if ~isempty(app.ReportsVm) && app.State.isAuthenticated()
+                    %
+                    %  The isScreenFresh gate matches every other case
+                    %  in this switch — without it, Reports re-issued
+                    %  GET /api/reports on every tab visit (200–800 ms
+                    %  cross-continent RTT each time, even after the
+                    %  user just navigated away and back). The VM now
+                    %  declares LastRefresh; onPageLoaded stamps it on
+                    %  success.
+                    if ~isempty(app.ReportsVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.ReportsVm, ttl)
                         NavigationManager.showNavLoading(app, 'Reports');
                         app.ReportsVm.loadReportsList();
                         asyncStarted = true;

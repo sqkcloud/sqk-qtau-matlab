@@ -13,6 +13,15 @@ classdef ReportsViewModel < handle
     %     - right-click popup  (Open / Download / Email / Print) via
     %                           PopupMenuManager.buildReportsPopup
 
+    properties
+        % Public so NavigationManager.isScreenFresh can read it. tic
+        % stamp set in onPageLoaded after a successful fetch; the
+        % auto-load path on the Reports tab uses it to skip redundant
+        % GET /api/reports calls within the screen_cache_ttl window
+        % (which every other screen has and Reports historically lacked).
+        LastRefresh = []
+    end
+
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
@@ -395,6 +404,13 @@ classdef ReportsViewModel < handle
         % ── List load continuation ────────────────────────────────────
         function onPageLoaded(obj, app, data, page, hideOverlay)
             if hideOverlay; app.hideLoading(); end
+            % Stamp the freshness clock so subsequent Reports navs
+            % within the screen_cache_ttl window can skip the fetch
+            % (NavigationManager.isScreenFresh reads obj.LastRefresh).
+            % Stamped only on successful response — the error handler
+            % onListLoadError leaves it [] so a transient failure
+            % doesn't suppress the next retry's fetch.
+            obj.LastRefresh = tic;
             if ~ReportsViewModel.tableValid(app); return; end
             items = JsonHelper.extractList(data, 'reports');
             if isempty(items); items = JsonHelper.asList(data); end

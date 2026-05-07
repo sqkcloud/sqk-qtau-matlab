@@ -292,11 +292,27 @@ classdef OverlayManager
                 app.EventLog = [{line}; app.EventLog(1:min(end, 999))];
             end
             fprintf('%s\n', line);
-            try
-                if ~isempty(app.EventLogArea) && isvalid(app.EventLogArea)
-                    app.EventLogArea.Value = app.EventLog(1:min(numel(app.EventLog), 200));
-                end
-            catch ME; fprintf('[QTAUWorkbenchApp] EventLogArea update: %s\n', ME.message); end
+            % Rate-limit the EventLogArea repaint to ~100 ms intervals.
+            % Setting `uitextarea.Value` to a 200-element cell marshals
+            % every line across the JS↔CEF bridge and schedules a paint
+            % (~10 ms each). A typical nav fires 5–8 logEvents (NAV +
+            % API request + API response + completion + activity-log)
+            % and would otherwise pay 50–80 ms of pure UI thread time
+            % per nav — which the user perceives as "loading" delay.
+            % The in-memory EventLog cell array above is updated
+            % unthrottled so no message is ever lost; the visible
+            % textarea catches up on the next non-throttled tick (any
+            % subsequent logEvent more than 100 ms later).
+            persistent lastUiUpdate;
+            doUpdate = isempty(lastUiUpdate) || toc(lastUiUpdate) >= 0.1;
+            if doUpdate
+                try
+                    if ~isempty(app.EventLogArea) && isvalid(app.EventLogArea)
+                        app.EventLogArea.Value = app.EventLog(1:min(numel(app.EventLog), 200));
+                        lastUiUpdate = tic;
+                    end
+                catch ME; fprintf('[QTAUWorkbenchApp] EventLogArea update: %s\n', ME.message); end
+            end
         end
 
         function setStatus(area, lines)

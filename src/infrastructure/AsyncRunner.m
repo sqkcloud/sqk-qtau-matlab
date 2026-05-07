@@ -68,14 +68,20 @@ classdef AsyncRunner
                     % parfeval expects 1 output but the function throws.
                     future = parfeval(pool, @() AsyncRunner.safeCall(workFcn), 1);
 
-                    % Poll the future via a fast timer.  afterEach does NOT
-                    % fire for errored futures, so we use a 100ms polling
+                    % Poll the future via a fast timer. afterEach does NOT
+                    % fire for errored futures, so we use a 50ms polling
                     % timer that checks future.State and delivers the
-                    % result (or error) to the main thread. (Was 50ms;
-                    % 100ms halves timer overhead under concurrent load
-                    % and the added latency is imperceptible vs network
-                    % RTT, which dominates real-world response time.)
-                    poller = timer('Period', 0.1, 'ExecutionMode', 'fixedRate', ...
+                    % result (or error) to the main thread.
+                    %
+                    % (Briefly bumped to 100ms in an earlier perf round
+                    % under the theory it would "halve timer overhead" —
+                    % the CPU savings turned out to be in the
+                    % microseconds per tick, while the added 25ms
+                    % average latency per request was a measurable
+                    % user-perceptible regression. 50ms is the right
+                    % balance: tick cost is still negligible and
+                    % completed futures land within ~25ms on average.)
+                    poller = timer('Period', 0.05, 'ExecutionMode', 'fixedRate', ...
                         'TimerFcn', @(src,~) AsyncRunner.pollFuture(src, future, onDone, onError, timeoutSec), ...
                         'UserData', tic);
                     start(poller);

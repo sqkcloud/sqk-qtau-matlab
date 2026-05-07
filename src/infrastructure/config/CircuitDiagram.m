@@ -125,15 +125,70 @@ classdef CircuitDiagram
         end
 
         function src = buildStatsHtml(infoLines, diagramHtml)
-            % buildStatsHtml  Wrap SVG or HTML diagram for uihtml display.
-            %   Uses a wrapper div for centering so that overflow scrolling
-            %   works correctly for large diagrams (many qubits / columns).
+            % buildStatsHtml  Wrap SVG or HTML diagram for uihtml display
+            %   with vertical AND horizontal scroll on overflow.
+            %
+            % Layout strategy: body uses CSS Grid + place-items:center so a
+            % small diagram is centered in the viewport, while large
+            % diagrams (many qubits / many gate columns) overflow the body
+            % and surface both-axis scrollbars via overflow:auto.
+            %
+            % Why grid and not flex: the previous `display:inline-flex` +
+            % `align-items:center` on `.wrap` had the classic flex-
+            % centering scroll-clip bug — when the wrapped child is wider
+            % than the viewport, flex centering pushes the child's left
+            % edge OUT of the document's scrollable area, so the user
+            % could see scrollbars but couldn't actually pan to the left
+            % portion of the circuit. CSS Grid does not have this bug:
+            % grid items can overflow their cell in both directions and
+            % remain reachable via the body's scrollbars.
+            %
+            % Why `.wrap svg{max-width:none}`: the Qiskit server-side
+            % preview (matplotlib drawer) emits `<svg width="100%" ...>`
+            % for some circuits, which would force the SVG to shrink to
+            % the viewport regardless of viewBox intrinsic size. Setting
+            % max-width:none lets the SVG render at its true width, so
+            % wide circuits actually trigger horizontal scrolling.
+            % Layered fix (round 2 — was still missing scrollbars on
+            % wide circuits even after the prior grid-centering CSS):
+            %
+            %   1. overflow:auto on <html> (not body) — html is the
+            %      conventional scroll container; some CEF builds get
+            %      quirky when overflow + display:grid live on the
+            %      same element. Putting them on different elements
+            %      is the safer pattern.
+            %
+            %   2. svg{width:auto;height:auto;max-width:none} — CSS
+            %      width:auto OVERRIDES inline width="100%" SVG
+            %      attributes that Qiskit's matplotlib drawer emits.
+            %      Without this, max-width:none alone is insufficient
+            %      because the SVG presentation attribute wins
+            %      against external stylesheet rules without an
+            %      explicit width declaration. With width:auto the
+            %      SVG renders at its viewBox-intrinsic size —
+            %      exactly the size needed to make horizontal
+            %      scrolling kick in for wide many-qubit circuits.
+            %
+            %   3. ::-webkit-scrollbar styling — macOS auto-hides
+            %      system scrollbars by default. The user can scroll
+            %      via trackpad gesture but has zero visual
+            %      indication that scrolling is even possible — which
+            %      is exactly what the user reported on a 110-qubit
+            %      circuit preview that already scrolled correctly
+            %      under the hood. Forcing always-visible WebKit
+            %      scrollbars makes the affordance discoverable.
             src = [ ...
                 '<html><head><style>' ...
-                'html,body{width:100%;height:100%;margin:0;padding:0;overflow:auto;' ...
-                'background:#111827;}' ...
-                '.wrap{display:inline-flex;flex-direction:column;align-items:center;' ...
-                'min-width:100%;min-height:100%;padding:12px;box-sizing:border-box;}' ...
+                'html,body{margin:0;padding:0;background:#111827;}' ...
+                'html{width:100%;height:100%;overflow:auto;}' ...
+                'body{min-width:100%;min-height:100%;display:grid;place-items:center;}' ...
+                '.wrap{padding:12px;box-sizing:border-box;}' ...
+                '.wrap svg{display:block;width:auto;height:auto;max-width:none;}' ...
+                '::-webkit-scrollbar{width:14px;height:14px;}' ...
+                '::-webkit-scrollbar-track{background:#1f2937;}' ...
+                '::-webkit-scrollbar-thumb{background:#4b5563;border-radius:7px;border:2px solid #1f2937;}' ...
+                '::-webkit-scrollbar-thumb:hover{background:#6b7280;}' ...
+                '::-webkit-scrollbar-corner{background:#1f2937;}' ...
                 '</style></head><body>' ...
                 '<div class="wrap">' char(diagramHtml) '</div>' ...
                 '</body></html>'];
