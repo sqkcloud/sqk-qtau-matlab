@@ -457,24 +457,31 @@ classdef DashboardViewModel < handle
                 circ   = char(JsonHelper.pick(data, {'circuit_name','circuit.name','circuit_version'}));
                 bknd   = char(JsonHelper.pick(data, {'backend_name','selected_backend','target_backend'}));
                 stage  = char(JsonHelper.pick(data, {'pipeline_stage','stage'}));
-                if ~isempty(app.DashKpiLabels) && numel(app.DashKpiLabels) >= 4
-                    vals = {proj, circ, bknd, stage};
-                    for i = 1:4
-                        if ~isempty(vals{i}) && isvalid(app.DashKpiLabels{i})
-                            app.DashKpiLabels{i}.Text = vals{i};
+                try
+                    if ~isempty(app.DashKpiLabels) && numel(app.DashKpiLabels) >= 4
+                        vals = {proj, circ, bknd, stage};
+                        for i = 1:4
+                            kpi = app.DashKpiLabels{i};
+                            if ~isempty(vals{i}) && ~isempty(kpi) ...
+                                    && isa(kpi, 'matlab.ui.control.Component') ...
+                                    && isvalid(kpi)
+                                kpi.Text = vals{i};
+                            end
                         end
                     end
+                catch ME
+                    Logger.warn('DashboardViewModel', 'KPI labels write: %s', ME.message);
                 end
                 % Phase 1 refactor: populate the workflow stepper, run
                 % readiness KPI grid, and activity trend chart instead
                 % of the legacy multi-line summary text + raw JSON tree.
-                obj.paintWorkflowStepper(stage);
-                obj.paintRunReadiness(data);
-                obj.paintActivityTrend();
-                obj.paintBackendHealth();
-                obj.paintNextStep(stage);
-                obj.paintEmptyState(data);
-                obj.paintGreeting(data);   % Phase 9
+                try; obj.paintWorkflowStepper(stage); catch ME; Logger.warn('DashboardViewModel','paintWorkflowStepper: %s', ME.message); end
+                try; obj.paintRunReadiness(data);    catch ME; Logger.warn('DashboardViewModel','paintRunReadiness: %s', ME.message); end
+                try; obj.paintActivityTrend();        catch ME; Logger.warn('DashboardViewModel','paintActivityTrend: %s', ME.message); end
+                try; obj.paintBackendHealth();        catch ME; Logger.warn('DashboardViewModel','paintBackendHealth: %s', ME.message); end
+                try; obj.paintNextStep(stage);        catch ME; Logger.warn('DashboardViewModel','paintNextStep: %s', ME.message); end
+                try; obj.paintEmptyState(data);       catch ME; Logger.warn('DashboardViewModel','paintEmptyState: %s', ME.message); end
+                try; obj.paintGreeting(data);         catch ME; Logger.warn('DashboardViewModel','paintGreeting: %s', ME.message); end
                 % Legacy summary text fallback — only updated if the
                 % screen still has the area (kept for back-compat with
                 % any future variant that re-introduces it).
@@ -486,7 +493,7 @@ classdef DashboardViewModel < handle
 
                 % Refresh activity table from local log (pagination-aware)
                 obj.ActivityPageSkip = 0;
-                obj.refreshActivityTable();
+                try; obj.refreshActivityTable(); catch ME; Logger.warn('DashboardViewModel','refreshActivityTable: %s', ME.message); end
             catch ME
                 Logger.warn('DashboardViewModel', 'applyDashboardData failed: %s', ME.message);
             end
@@ -573,17 +580,20 @@ classdef DashboardViewModel < handle
                 'Pick a backend'};
             for i = 1:4
                 lbl = app.DashReadinessLabels{i};
-                if ~isempty(lbl) && isvalid(lbl)
+                if ~isempty(lbl) && isa(lbl, 'matlab.ui.control.Component') ...
+                        && isvalid(lbl)
                     lbl.Text = vals{i};
                 end
-                if ~isempty(app.DashReadinessHints) ...
-                        && i <= numel(app.DashReadinessHints) ...
-                        && ~isempty(app.DashReadinessHints{i}) ...
-                        && isvalid(app.DashReadinessHints{i})
-                    if strcmp(vals{i}, emDash)
-                        app.DashReadinessHints{i}.Text = hints{i};
-                    else
-                        app.DashReadinessHints{i}.Text = '';
+                if iscell(app.DashReadinessHints) ...
+                        && i <= numel(app.DashReadinessHints)
+                    h = app.DashReadinessHints{i};
+                    if ~isempty(h) && isa(h, 'matlab.ui.control.Component') ...
+                            && isvalid(h)
+                        if strcmp(vals{i}, emDash)
+                            h.Text = hints{i};
+                        else
+                            h.Text = '';
+                        end
                     end
                 end
             end
