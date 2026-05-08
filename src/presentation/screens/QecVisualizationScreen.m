@@ -25,32 +25,60 @@ function QecVisualizationScreen(app)
     toolbar.Padding = [0 0 0 0];
     toolbar.BackgroundColor = Theme.COLOR_BG;
 
-    leftBtns = uigridlayout(toolbar, [1 3]);
+    %  Phase 1+2: extended from 3 → 5 columns to host the new
+    %  Circuit + Backend selectors. Backend selection drives the
+    %  surface-code lattice distance d (16q→3, 27q→5, 65q→7,
+    %  156q→11) so a 156-qubit backend draws the proper lattice
+    %  size instead of the d=3 demo.
+    leftBtns = uigridlayout(toolbar, [1 5]);
     leftBtns.Layout.Row = 1; leftBtns.Layout.Column = 1;
-    leftBtns.ColumnWidth = {120, 120, 120};
+    %  Order: Circuit dd | Backend dd | Refresh Bloch | Refresh Lattice | Animate Decay
+    leftBtns.ColumnWidth = {200, 220, 120, 120, 120};
     leftBtns.Padding = [0 0 0 0]; leftBtns.ColumnSpacing = 8;
     leftBtns.BackgroundColor = Theme.COLOR_BG;
 
     app.QecRefreshBlochButton = uibutton(leftBtns, 'Text', ...
         [char(8635) ' ' Labels.get('qec_viz_btn_refresh_bloch', 'Refresh Bloch')], ...
         'ButtonPushedFcn', @(~,~)app.QecVisualizationVm.onRefreshBloch());
-    app.QecRefreshBlochButton.Layout.Row = 1; app.QecRefreshBlochButton.Layout.Column = 1;
+    app.QecRefreshBlochButton.Layout.Row = 1; app.QecRefreshBlochButton.Layout.Column = 3;
     app.styleBtn(app.QecRefreshBlochButton, 'ghost');
     app.QecRefreshBlochButton.FontSize = 14;
 
     app.QecRefreshLatticeButton = uibutton(leftBtns, 'Text', ...
         [char(8635) ' ' Labels.get('qec_viz_btn_refresh_lattice', 'Refresh Lattice')], ...
         'ButtonPushedFcn', @(~,~)app.QecVisualizationVm.onRefreshLattice());
-    app.QecRefreshLatticeButton.Layout.Row = 1; app.QecRefreshLatticeButton.Layout.Column = 2;
+    app.QecRefreshLatticeButton.Layout.Row = 1; app.QecRefreshLatticeButton.Layout.Column = 4;
     app.styleBtn(app.QecRefreshLatticeButton, 'ghost');
     app.QecRefreshLatticeButton.FontSize = 14;
 
     app.QecAnimateButton = uibutton(leftBtns, 'Text', ...
         [char(9654) ' ' Labels.get('qec_viz_btn_animate', 'Animate Decay')], ...
         'ButtonPushedFcn', @(~,~)app.QecVisualizationVm.onAnimateDecay());
-    app.QecAnimateButton.Layout.Row = 1; app.QecAnimateButton.Layout.Column = 3;
+    app.QecAnimateButton.Layout.Row = 1; app.QecAnimateButton.Layout.Column = 5;
     app.styleBtn(app.QecAnimateButton, 'secondary');
     app.QecAnimateButton.FontSize = 14;
+
+    %  Phase 1+2 selectors. Backend dropdown's calibration drives
+    %  the auto-redraw of the surface-code lattice (distance d
+    %  scaled from backend qubit count) and the Bloch sphere /
+    %  fidelity-decay envelope. ItemsData carries circuit_id /
+    %  backend_name; Items carry friendly labels populated by the
+    %  VM after listCircuits / listBackends complete.
+    app.QecVizCircuitDropdown = uidropdown(leftBtns, ...
+        'Items', {'(loading circuits…)'}, ...
+        'ItemsData', {''}, ...
+        'Tooltip', 'Pick a circuit — its qubit count scopes the visualization', ...
+        'ValueChangedFcn', @(src,~) app.QecVisualizationVm.onCircuitChanged(src.Value));
+    app.QecVizCircuitDropdown.Layout.Row = 1; app.QecVizCircuitDropdown.Layout.Column = 1;
+    app.QecVizCircuitDropdown.FontSize = 12;
+
+    app.QecVizBackendDropdown = uidropdown(leftBtns, ...
+        'Items', {'(loading backends…)'}, ...
+        'ItemsData', {''}, ...
+        'Tooltip', 'Pick a backend — qubit count drives lattice distance d', ...
+        'ValueChangedFcn', @(src,~) app.QecVisualizationVm.onBackendChanged(src.Value));
+    app.QecVizBackendDropdown.Layout.Row = 1; app.QecVizBackendDropdown.Layout.Column = 2;
+    app.QecVizBackendDropdown.FontSize = 12;
 
     nextBtn = uibutton(toolbar, 'Text', [char(9636) ' Reports'], ...  % Reports nav icon
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Reports'));

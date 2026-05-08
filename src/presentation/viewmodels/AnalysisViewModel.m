@@ -669,6 +669,20 @@ classdef AnalysisViewModel < handle
                         'No Data', 'Icon', 'info');
                     return;
                 end
+                % Building the similarity visualization popup (3+ tabs,
+                % each with uiaxes + bar/plot calls) takes 1–3 s on the
+                % MATLAB UI thread for circuits with many similarity
+                % rows. Without an overlay the user clicks Visualize
+                % and thinks the click was ignored. Show the spinner,
+                % force a paint via drawnow + brief pause (matches the
+                % CEF render-race pattern in NavigationManager.
+                % ensureScreenBuilt), and pair with hideLoading on
+                % every exit path further down.
+                app.showLoading(Labels.get('loading_visualize_similarity', ...
+                    'Building similarity visualization...'));
+                drawnow;
+                pause(0.05);
+                drawnow;
                 n = size(tData, 1);
                 names = cell(n, 1);
                 sims  = zeros(n, 1);
@@ -915,7 +929,13 @@ classdef AnalysisViewModel < handle
                     'ButtonPushedFcn', @(~,~) delete(dlg));
                 closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 2;
                 app.State.logActivity('Visualize similarity', 'Success');
+                app.hideLoading();
             catch ME
+                % Belt-and-braces: clear the overlay even if the build
+                % above threw partway through. Wrapped in try/catch so
+                % a teardown-time exception (e.g. dialog already gone)
+                % never masks the real error reported by Logger.warn.
+                try; app.hideLoading(); catch; end
                 Logger.warn('AnalysisViewModel', 'onVisualizeSimilarity failed: %s', ME.message);
             end
         end

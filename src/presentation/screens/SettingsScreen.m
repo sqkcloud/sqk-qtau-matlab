@@ -124,6 +124,13 @@ function SettingsScreen(app)
     app.EventLogArea.FontName = 'Courier New'; app.EventLogArea.FontSize = 11;
     app.EventLogArea.BackgroundColor = Theme.CONSOLE_BG;
     app.EventLogArea.FontColor = Theme.CONSOLE_FG;
+    %  Disable word-wrap so long log lines (POST bodies, full-UUID
+    %  payload dumps) don't soft-wrap into a multi-line tangle that's
+    %  harder to scan. WordWrap='off' makes uitextarea show a
+    %  horizontal scrollbar for overflowing lines instead. Vertical
+    %  scrolling between log entries is native to uitextarea and
+    %  unaffected by this property.
+    app.EventLogArea.WordWrap = 'off';
     app.EventLogArea.Value = {'[HH:MM:SS.mmm] UI      QTAUWorkbenchApp started'};
 
     % ── Row 3: Action bar ─────────────────────────────────────────────────────

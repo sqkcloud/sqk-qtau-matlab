@@ -502,7 +502,7 @@ classdef DetailedAnalysisViewModel < handle
             obj.plotComparisonDemo();
         end
 
-        function onDetailedCircuitsLoaded(~, app, data)
+        function onDetailedCircuitsLoaded(obj, app, data)
             try; app.hideLoading(); catch; end
             if isempty(app.DetailedAnalysisCircuitDropdown) ...
                     || ~isvalid(app.DetailedAnalysisCircuitDropdown); return; end
@@ -534,6 +534,14 @@ classdef DetailedAnalysisViewModel < handle
                 app.State.selectedCircuitName = string(names{1});
             end
             app.logEvent('LOAD', sprintf('Loaded %d circuits into Detailed Analysis dropdown', n));
+            % Auto-fire the per-circuit refresh now that the dropdown
+            % has settled on a selection. Without this the initial
+            % screen entry would still show the stale demo charts
+            % until the user manually re-picked the dropdown — the
+            % exact UX the operator complained about. Calling on the
+            % VM (not the screen) so any future onCircuitSelected
+            % wiring still routes through the same code path.
+            obj.refreshAllForCircuit();
         end
 
         function onDetailedCircuitsError(~, app, ME)
@@ -603,6 +611,128 @@ classdef DetailedAnalysisViewModel < handle
             end
             app.logEvent('UI', sprintf('Detailed Analysis circuit selected: %s', ...
                 char(app.State.selectedCircuitName)));
+            % Trigger the per-circuit data refresh so each dropdown
+            % change repaints all 6 panels with that circuit's live
+            % data (or a clear empty-state if the circuit has no
+            % completed jobs yet). Without this, switching the
+            % dropdown silently kept the old demo charts in place,
+            % giving the operator the impression every circuit had
+            % the same data.
+            obj.refreshAllForCircuit();
+        end
+
+        % ── Auto-refresh orchestration ──────────────────────────────────
+        %   When the operator picks a circuit (or lands on the screen),
+        %   resolve the most recent COMPLETED job for that circuit and
+        %   fan out the 5 plot refreshes. If no completed job exists
+        %   yet, clear all panels and write an empty-state message
+        %   into the Insights panel so the user knows what action
+        %   unblocks the view.
+
+        function refreshAllForCircuit(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated() || ~app.State.hasProject(); return; end
+            cid = char(app.State.selectedCircuitId);
+            if isempty(cid); return; end
+            % Use the existing /api/jobs endpoint (server-side filter
+            % by circuit_id isn't supported today; we fetch a page and
+            % filter client-side, matching the pattern in
+            % ResultsViewModel.onJobsListedForResults). limit=100 is
+            % the server cap — covers typical projects; very busy
+            % projects may need pagination as a follow-up.
+            app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
+            jobSvc = app.JobSvc;
+            token  = app.State.authToken;
+            AsyncRunner.run( ...
+                @() jobSvc.listJobs(token, 0, 100), ...
+                @(data) obj.onJobsListedForCircuit(app, cid, data), ...
+                @(ME)   obj.onJobLookupError(app, ME));
+        end
+
+        function onJobsListedForCircuit(obj, app, cid, data)
+            items = JsonHelper.extractListSafe(data, 'jobs');
+            completedId = '';
+            for i = 1:numel(items)
+                if iscell(items); it = items{i}; else; it = items(i); end
+                ic = char(JsonHelper.pick(it, {'circuit_id'}, ''));
+                if ~strcmp(ic, cid); continue; end
+                st = lower(char(JsonHelper.pick(it, {'status'}, '')));
+                if any(strcmp(st, {'completed','done','success'}))
+                    completedId = char(JsonHelper.pick(it, ...
+                        {'job_record_id','job_id','id'}));
+                    if ~isempty(completedId); break; end
+                end
+            end
+            app.hideLoading();
+            if isempty(completedId)
+                % Empty state — circuit has no completed runs yet.
+                % Clear demos so the user isn't misled into thinking
+                % the placeholders are this circuit's data.
+                obj.clearAllAxes();
+                if ~isempty(app.DetailedInsightArea) && isvalid(app.DetailedInsightArea)
+                    app.DetailedInsightArea.Value = { ...
+                        sprintf('No completed jobs for "%s" yet.', ...
+                            char(app.State.selectedCircuitName)), ...
+                        '', ...
+                        'Run this circuit from the Analysis or Backends screen to populate Detailed Analysis.', ...
+                        '', ...
+                        'The 6 panels above will repaint automatically once at least one job completes.'};
+                end
+                return;
+            end
+            % Live job found — wire it as the active selection and fan
+            % out the 5 plot refreshes. Each handler shows/hides its
+            % own overlay; they run concurrently via AsyncRunner so
+            % the user sees results in roughly one RTT, not five.
+            app.State.selectedJobId = string(completedId);
+            if ~isempty(app.DetailedInsightArea) && isvalid(app.DetailedInsightArea)
+                app.DetailedInsightArea.Value = { ...
+                    sprintf('Live data for circuit: %s', ...
+                        char(app.State.selectedCircuitName)), ...
+                    sprintf('Job: %s', completedId), ...
+                    '', ...
+                    'Diagnostics auto-populate as each plot finishes.'};
+            end
+            obj.onPlotComparison();
+            obj.onPlotHeatmap();
+            obj.onPlotTemporal();
+            obj.onPlotQubit();
+            obj.onPlotRBDecay();
+        end
+
+        function onJobLookupError(obj, app, ME)
+            app.hideLoading();
+            Logger.warn('DetailedAnalysisViewModel', ...
+                'Job lookup failed: %s', ME.message);
+            obj.clearAllAxes();
+            if ~isempty(app.DetailedInsightArea) && isvalid(app.DetailedInsightArea)
+                app.DetailedInsightArea.Value = { ...
+                    'Could not look up jobs for this circuit.', ...
+                    sprintf('Error: %s', ME.message), ...
+                    '', ...
+                    'Check connectivity and try the Refresh buttons above.'};
+            end
+        end
+
+        function clearAllAxes(obj)
+            % Wipe every panel's content + title so the empty-state
+            % screen looks intentional rather than half-rendered.
+            app = obj.App;
+            axesList = {app.CompareAxes, app.ErrorHeatmapAxes, app.TemporalAxes, ...
+                        app.QubitAxes, app.RBDecayAxes};
+            for k = 1:numel(axesList)
+                a = axesList{k};
+                if isempty(a) || ~isvalid(a); continue; end
+                try
+                    cla(a);
+                    if isprop(a, 'Title') && ~isempty(a.Title)
+                        a.Title.String = '';
+                    end
+                catch ME
+                    Logger.debug('DetailedAnalysisViewModel', ...
+                        'clearAllAxes(%d): %s', k, ME.message);
+                end
+            end
         end
 
         function onAnalyze(obj)

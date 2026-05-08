@@ -557,7 +557,16 @@ classdef BackendsViewModel < handle
         end
     end
 
-    methods (Static, Access = private)
+    methods (Static)
+        % Static helpers — access widened from `private` to default
+        % (public) so QecSimulationViewModel and
+        % QecVisualizationViewModel can reuse `fetchBackends` to get
+        % the same circuit-enriched backend list (with qubit counts)
+        % that the Backends screen itself uses. The other helpers in
+        % this block become public too; they're still effectively
+        % internal to the Backends flow, but widening their
+        % visibility avoids a second copy of the fetch fallback
+        % logic in each consumer VM.
         function applyCalibrationAge(app, kpiIdx, detail)
             if isempty(app.BackendKpiLabels) || numel(app.BackendKpiLabels) < kpiIdx; return; end
             if ~isvalid(app.BackendKpiLabels{kpiIdx}); return; end

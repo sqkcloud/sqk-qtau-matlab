@@ -91,8 +91,8 @@ src/
 
 | Screen | ViewModel | Purpose | Sidebar |
 |--------|-----------|---------|:-------:|
-| WelcomeScreen | WelcomeViewModel | Login, project selection, recent projects | ✓ |
-| DashboardScreen | DashboardViewModel | Workflow summary and readiness storyboard | ✓ |
+| DashboardScreen | DashboardViewModel | **Default landing screen after login.** Google/IBM-style workflow dashboard: KPI strip · clickable workflow stepper · Run Readiness (4-cell layout) · Backend Health · Job Submissions trend · merged Activity feed (UI events + job records) with right-click context menu · Smart Next-Step CTA · Project switcher in toolbar · **30 s silent auto-refresh** (no overlay flicker) · empty-state hero card for fresh projects | ✓ (1st) |
+| WelcomeScreen | WelcomeViewModel | Login, project selection, recent projects. **Displayed as "Projects"** in the sidebar (routing key remains `'Welcome'` for back-compat). Auto-navigates to Dashboard on successful login. | ✓ (2nd, labelled "Projects") |
 | CircuitsScreen | CircuitsViewModel | Browse, search, manage project circuits | ✓ |
 | NotesScreen | NotesViewModel | Working notes and operator memos | — (hidden) |
 | UploadScreen | UploadViewModel | Circuit upload with format selection and preview | ✓ |
@@ -125,6 +125,8 @@ A modal `uifigure` (built by `DialogBuilder.buildQmcDialog`) launched from the A
 ## Navigation and Screen Switching
 
 `QTAUWorkbenchApp` manages screens via `NavigationManager`. Each screen calls `app.createSectionPage('ScreenName')` during `buildUI()` to register a hidden panel, then populates it with UI controls. Navigation is handled by `onSelectSection(key)`, which hides all panels and shows the matching one. The `autoLoadScreen(key)` method triggers ViewModel data-fetching when a screen becomes visible (e.g., Dashboard auto-refreshes on enter).
+
+**Routing keys vs display labels.** `NavigationManager` exposes three parallel arrays: `navNames` (routing keys used by `onSelectSection`), `navIcons` (sidebar glyphs), and `navLabels` (human-facing button text and the section title). They are decoupled — e.g., the routing key `'Welcome'` is shown as `'Projects'` via `navLabels`. The screen-title label is resolved through `NavigationManager.displayLabelFor(key)`. The default landing screen at boot and after login is `'Dashboard'` (set in `QTAUWorkbenchApp.buildUI` and `WelcomeViewModel.onLogin`).
 
 ## Adding a New Screen
 

@@ -148,15 +148,51 @@ classdef QTAUWorkbenchApp < handle
 
     % ── Dashboard tab ─────────────────────────────────────────────────────────
     properties
-        DashboardSummaryArea
-        DashboardStatusArea
+        DashboardSummaryArea         % legacy text area (kept for fallback path)
+        DashboardStatusArea          % legacy JSON tree (no longer painted; held for back-compat)
         DashboardRefreshButton
-        DashKpiLabels
+        DashKpiLabels                % {1×4} cell of uilabel handles for KPI hero strip
         DashActivityTable
         DashActivityPrevBtn
         DashActivityPageLabel
         DashActivityNextBtn
-        DashReadinessArea
+        DashReadinessArea            % legacy text area (kept for fallback path)
+        % ── Phase 1 dashboard refactor (Google/IBM-style) ────────────────
+        DashStepperDots              % {1×8} cell of uilabel handles for stage dots
+        DashStepperNames             % {1×8} cell of uibutton handles for stage names (Phase 2: clickable)
+        DashReadinessLabels          % {1×4} cell of uilabel handles for run-readiness KPIs
+        DashActivityAxes             % uiaxes for the 7-day jobs-per-day bar chart
+        % ── Phase 2 dashboard refactor (live system status) ──────────────
+        DashBackendHealthCards       % {1×N} cell of structs {nameLbl, dotLbl, qubitsLbl}
+                                     %   for the Backend Health panel; rendered from the
+                                     %   enriched listBackends response.
+        % ── Phase 3 dashboard refactor (project switcher + smart CTA) ────
+        DashProjectDropdown          % uidropdown in toolbar — switch active project
+        DashNextStepButton           % uibutton in KPI strip slot 4 — context-aware CTA
+                                     %   that adapts text + target per pipeline_stage
+        % ── Phase 4 dashboard refactor (live auto-refresh + stats today) ─
+        DashAutoRefreshTimer         % MATLAB timer — refreshes the dashboard every
+                                     %   30 s while visible; self-terminates on nav-away
+        DashStatsSubline             % uilabel inside Activity Trend panel showing
+                                     %   "Today: N jobs · M.M h compute · K failed"
+        % ── Phase 7 dashboard refactor (empty state + delta indicator) ───
+        DashOuterGrid                % handle to the dashboard's outer uigridlayout so
+                                     %   the VM can toggle RowHeight on the empty-state
+                                     %   row at runtime (show/hide cleanly)
+        DashEmptyStatePanel          % the welcome hero card shown for fresh projects
+                                     %   (zero circuits, zero recent jobs); hidden when
+                                     %   any meaningful data exists
+        % ── Phase 9 dashboard polish (greeting + readiness hints) ────────
+        DashGreetingLabel            % uilabel in toolbar — dynamic "Welcome back, X ·
+                                     %   Last refreshed HH:MM · N projects · M circuits"
+                                     %   replaces the meta-jargon "Storyboard landing
+                                     %   summary" subtitle
+        DashReadinessHints           % {1×4} cell of uilabel handles for empty-state
+                                     %   hints under each Run Readiness KPI value
+                                     %   ("Upload a circuit" / "Run prediction" / …)
+        DashActivityBars             % bar() handle for the Job Submissions chart so
+                                     %   per-bar CData (today accent vs muted others)
+                                     %   can be set from onJobsForTrend
     end
 
     % ── Notes tab ─────────────────────────────────────────────────────────────
@@ -564,6 +600,16 @@ classdef QTAUWorkbenchApp < handle
         QecSweepButton
         QecCompareButton
         QecClearButton
+        % ── Phase 1+2: backend/circuit selectors so QEC simulation
+        %    differs per hardware target and per circuit instead of
+        %    showing the same parametric output regardless of
+        %    selection. Calibration drives auto-seed of the Error
+        %    Probability slider AND a per-qubit error vector for
+        %    the Monte Carlo path.
+        QecCircuitDropdown
+        QecBackendDropdown
+        QecContextLabel              % single condensed line summarising
+                                     % selected backend cal + circuit profile
     end
 
     % ── QEC Visualization tab ─────────────────────────────────────────────────
@@ -575,6 +621,13 @@ classdef QTAUWorkbenchApp < handle
         QecRefreshBlochButton
         QecRefreshLatticeButton
         QecAnimateButton
+        % ── Phase 1+2: same selector pattern; lattice distance
+        %    auto-scales with backend qubit count (16→3, 27→5,
+        %    65→7, 156→11) so a 156-qubit backend draws a
+        %    representative d=11 lattice instead of the demo d=3.
+        QecVizCircuitDropdown
+        QecVizBackendDropdown
+        QecVizContextLabel
     end
 
     % ── Reports tab ───────────────────────────────────────────────────────────
@@ -1147,7 +1200,14 @@ classdef QTAUWorkbenchApp < handle
             LayoutBuilder.buildAuthOverlay(app);
             drawnow();
 
-            app.onSelectSection('Welcome');
+            % Phase 8: default landing screen is now Dashboard. The
+            % Projects (formerly Welcome) screen still hosts login +
+            % the project-picker; an unauthenticated boot will see the
+            % auth overlay regardless of which screen is selected, and
+            % onLogin auto-navigates back to Dashboard once login
+            % completes — so landing on Dashboard from boot is
+            % consistent with the post-login behavior.
+            app.onSelectSection('Dashboard');
             NavigationManager.fitAllSections(app);
             app.onResizeUI();
             drawnow();

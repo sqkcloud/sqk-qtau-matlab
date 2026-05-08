@@ -57,6 +57,17 @@ function JobsScreen(app)
     app.JobsTable = uitable(jg);
     app.JobsTable.Layout.Row = 1; app.JobsTable.Layout.Column = 1;
     app.JobsTable.ColumnName = Labels.cols('jobs_table_cols', {'Job ID','Circuit','Backend','Status','Progress','Created','Mitigation'});
+    %  Explicit pixel widths (instead of the default ColumnWidth='auto')
+    %  so the 7 columns total ~1260 px and overflow narrow windows. With
+    %  'auto' MATLAB tries to fit content into the container by squeezing
+    %  rightmost columns until they vanish — Status / Progress / Created
+    %  / Mitigation were being clipped off-screen entirely. Fixed widths
+    %  force the table to render at its intrinsic width and surface a
+    %  CEF horizontal scrollbar when it exceeds the panel. Vertical
+    %  scrolling between rows is automatic in uitable.
+    %    Job ID 280, Circuit 360, Backend 140, Status 110,
+    %    Progress 80, Created 180, Mitigation 110
+    app.JobsTable.ColumnWidth = {280, 360, 140, 110, 80, 180, 110};
     app.JobsTable.Data = {};
     app.JobsTable.SelectionChangedFcn = @(src,~)app.JobsVm.onJobTableSelect(src);
     app.styleTable(app.JobsTable);

@@ -12,7 +12,11 @@ function QecSimulationScreen(app)
     t = app.createSectionPage('QEC Simulation');
 
     g = uigridlayout(t, [4 2]);
-    g.RowHeight     = {34, 260, '1.4x', '0.8x'};
+    %  Row 2 (Code/Noise Configuration) trimmed 260 → 235 px per
+    %  operator request. Row 4 (Correction Success / Simulation
+    %  Results) flex weight bumped 0.8x → 1.0x so it gains ~25 px
+    %  of vertical space proportional to the freed area.
+    g.RowHeight     = {34, 235, '1.4x', '1.0x'};
     g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -26,33 +30,62 @@ function QecSimulationScreen(app)
     toolbar.Padding = [0 0 0 0];
     toolbar.BackgroundColor = Theme.COLOR_BG;
 
-    leftBtns = uigridlayout(toolbar, [1 4]);
+    %  Phase 1+2: extended from 4 → 6 columns to host the new
+    %  Circuit + Backend selectors alongside the existing Run /
+    %  Sweep / Compare / Clear buttons. Backend dropdown carries
+    %  its calibration summary in the visible item text (e.g.
+    %  "ibm_pittsburgh · 156q · err 0.012") so no separate
+    %  context label is needed in the toolbar.
+    leftBtns = uigridlayout(toolbar, [1 6]);
     leftBtns.Layout.Row = 1; leftBtns.Layout.Column = 1;
-    leftBtns.ColumnWidth = {130, 165, 130, 70};
+    %  Order: Circuit dd | Backend dd | Run | Sweep | Compare | Clear
+    leftBtns.ColumnWidth = {200, 220, 130, 165, 130, 70};
     leftBtns.Padding = [0 0 0 0]; leftBtns.ColumnSpacing = 8;
     leftBtns.BackgroundColor = Theme.COLOR_BG;
 
     app.QecRunButton = uibutton(leftBtns, 'Text', [char(9883) ' ' Labels.get('qec_sim_btn_run', 'Run Simulation')], ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onRunSimulation());
-    app.QecRunButton.Layout.Row = 1; app.QecRunButton.Layout.Column = 1;
+    app.QecRunButton.Layout.Row = 1; app.QecRunButton.Layout.Column = 3;
     app.styleBtn(app.QecRunButton, 'primary');
     app.QecRunButton.FontSize = 14;
 
     app.QecSweepButton = uibutton(leftBtns, 'Text', [char(8596) ' ' Labels.get('qec_sim_btn_sweep', 'Sweep Error Rates')], ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onSweepErrorRates());
-    app.QecSweepButton.Layout.Row = 1; app.QecSweepButton.Layout.Column = 2;
+    app.QecSweepButton.Layout.Row = 1; app.QecSweepButton.Layout.Column = 4;
     app.styleBtn(app.QecSweepButton, 'secondary');
     app.QecSweepButton.FontSize = 14;
 
     app.QecCompareButton = uibutton(leftBtns, 'Text', [char(8646) ' ' Labels.get('qec_sim_btn_compare', 'Compare Codes')], ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onCompareCodes());
-    app.QecCompareButton.Layout.Row = 1; app.QecCompareButton.Layout.Column = 3;
+    app.QecCompareButton.Layout.Row = 1; app.QecCompareButton.Layout.Column = 5;
     app.styleBtn(app.QecCompareButton, 'secondary');
     app.QecCompareButton.FontSize = 14;
 
+    %  Phase 1+2 selectors. ItemsData carries the circuit_id /
+    %  backend_name; Items carry the friendly display text the
+    %  VM populates after fetching listCircuits / listBackends
+    %  (and re-fetching calibration on backend change). The
+    %  ValueChangedFcn callbacks delegate to the VM so all
+    %  fetch/populate logic stays out of the screen builder.
+    app.QecCircuitDropdown = uidropdown(leftBtns, ...
+        'Items', {'(loading circuits…)'}, ...
+        'ItemsData', {''}, ...
+        'Tooltip', 'Pick a circuit — its qubit count slices the calibration vector', ...
+        'ValueChangedFcn', @(src,~) app.QecSimulationVm.onCircuitChanged(src.Value));
+    app.QecCircuitDropdown.Layout.Row = 1; app.QecCircuitDropdown.Layout.Column = 1;
+    app.QecCircuitDropdown.FontSize = 12;
+
+    app.QecBackendDropdown = uidropdown(leftBtns, ...
+        'Items', {'(loading backends…)'}, ...
+        'ItemsData', {''}, ...
+        'Tooltip', 'Pick a backend — calibration drives Error Probability and the per-qubit error vector', ...
+        'ValueChangedFcn', @(src,~) app.QecSimulationVm.onBackendChanged(src.Value));
+    app.QecBackendDropdown.Layout.Row = 1; app.QecBackendDropdown.Layout.Column = 2;
+    app.QecBackendDropdown.FontSize = 12;
+
     app.QecClearButton = uibutton(leftBtns, 'Text', [char(10005) ' ' Labels.get('qec_sim_btn_clear', 'Clear')], ...
         'ButtonPushedFcn', @(~,~)app.QecSimulationVm.onClear());
-    app.QecClearButton.Layout.Row = 1; app.QecClearButton.Layout.Column = 4;
+    app.QecClearButton.Layout.Row = 1; app.QecClearButton.Layout.Column = 6;
     app.styleBtn(app.QecClearButton, 'ghost');
     app.QecClearButton.FontSize = 14;
 
@@ -217,9 +250,22 @@ function QecSimulationScreen(app)
     resultsPanel.BackgroundColor = Theme.COLOR_CARD;
     rpg = uigridlayout(resultsPanel, [1 1]);
     rpg.Padding = [10 10 10 10]; rpg.BackgroundColor = Theme.COLOR_CARD;
+    %  Flex column widths (was fixed pixels {100,90,50,70,70,120}
+    %  totalling 500 px which left a black gap on the right of the
+    %  panel). Flex weights make the 6 columns fill the panel
+    %  proportionally; Code + Bloch get extra weight because their
+    %  cell content is widest. Total weight 33x = 100 % of the
+    %  panel width regardless of window size.
+    %
+    %  NOTE: uitable's ColumnWidth only accepts INTEGER 'Nx' tokens
+    %  ('1x', '2x', ...) — fractional values like '1.4x' raise
+    %  'ColumnWidth must be an array containing fit, auto, positive
+    %  numbers, or positive integers paired with x'. Using ×5 of the
+    %  intended ratios (1.4 / 1 / 0.6 / 1 / 1 / 1.6 → 7 / 5 / 3 /
+    %  5 / 5 / 8) preserves the exact proportions in legal form.
     app.QecResultsTable = uitable(rpg, ...
         'ColumnName', {'Code', 'Noise', 'p', 'Fidelity', 'Success%', 'Bloch [x,y,z]'}, ...
-        'ColumnWidth', {100, 90, 50, 70, 70, 120}, ...
+        'ColumnWidth', {'7x', '5x', '3x', '5x', '5x', '8x'}, ...
         'Data', {'Bit-Flip(3)', 'Bit-Flip', '0.05', '0.987', '97.0%', '[0.00, 0.00, 0.97]'});
 
     Logger.info('QecSimulationScreen', 'QEC Simulation tab UI built successfully');

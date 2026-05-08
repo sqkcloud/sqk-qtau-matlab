@@ -304,6 +304,17 @@ classdef WelcomeViewModel < handle
                 % ServerIbmConfig struct (which has_token=false until set).
                 obj.prefetchServerIbmConfig(app);
 
+                % Phase 8 (UX request): after login completes the user
+                % wants to land on the Dashboard, not the Projects/Welcome
+                % screen. The Projects tab is still reachable via the
+                % sidebar for switching projects later.
+                try
+                    app.onSelectSection('Dashboard');
+                catch ME
+                    Logger.debug('WelcomeViewModel', ...
+                        'auto-nav to Dashboard after login: %s', ME.message);
+                end
+
             catch ME
                 if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
                     app.LoginDlgStatusLabel.FontColor = Theme.COLOR_DANGER;

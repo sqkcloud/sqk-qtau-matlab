@@ -182,7 +182,7 @@ This is the canonical flow for a cutting submission with `mitigation_level=2 + a
 
 ```
   Cutting screen toolbar
-  ┌──────────────────────────────────────────────────────────────┐
+  ┌───────────────────────────────────────────────────────────────┐
   │ Circuit ▾  Mode ▾  Target k  (flex)  Mitigation: Aggressive ▾ │
   │                                       Preset ▾  Analyze  Run  │
   │                                                              │
@@ -313,10 +313,10 @@ Operator navigates to Results screen, clicks the cutting batch row, clicks **Vie
 ### Data-flow summary
 
 ```
-  ┌──────────┐    POST    ┌────────────┐   resolve   ┌────────────────┐
-  │ Operator │ ─────────► │ CuttingBatch │──────────►│ MitigationSvc  │
+  ┌──────────┐    POST    ┌────────────┐   resolve    ┌─────────────────┐
+  │ Operator │ ─────────► │ CuttingBatch │──────────► │ MitigationSvc  │
   │ (MATLAB) │            │ Service      │            │ → MitigationPlan│
-  └──────────┘            └─────┬────────┘            └────┬───────────┘
+  └──────────┘            └─────┬────────┘            └────┬────────────┘
         ▲                       │ persist                   │
         │                       ▼                           │ build_sampler_options
         │                ┌────────────────────┐             │

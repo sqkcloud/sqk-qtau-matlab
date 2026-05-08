@@ -93,7 +93,18 @@ classdef FastAPIClient < handle
                 data = FastAPIClient.normalizeJsonResponse(raw);
                 Logger.debug('FastAPIClient', 'GET %s → OK', endpoint);
             catch ME
-                Logger.error('FastAPIClient', 'GET %s FAILED: %s', endpoint, ME.message);
+                % HTTP 404 on a GET is the canonical "does this resource
+                % exist?" probe (e.g. GET .../qae/result → 404 means
+                % "no cached QMC result yet"). Logging at ERROR floods
+                % the event log with red lines for what callers already
+                % handle as routine control flow at DEBUG. Demote 404
+                % to DEBUG; everything else (5xx, 4xx other than 404,
+                % network/timeout failures) stays at ERROR.
+                if contains(ME.identifier, 'HTTP404')
+                    Logger.debug('FastAPIClient', 'GET %s → 404 Not Found', endpoint);
+                else
+                    Logger.error('FastAPIClient', 'GET %s FAILED: %s', endpoint, ME.message);
+                end
                 rethrow(ME);
             end
         end
@@ -109,7 +120,16 @@ classdef FastAPIClient < handle
                 data = FastAPIClient.normalizeJsonResponse(raw);
                 Logger.debug('FastAPIClient', 'GET %s → OK', endpoint);
             catch ME
-                Logger.error('FastAPIClient', 'GET %s FAILED: %s', endpoint, ME.message);
+                % See the matching note in get() above — 404 on GET is
+                % a routine "does this resource exist?" signal (e.g.
+                % the QMC cache probe at GET .../qae/result). Demote
+                % to DEBUG so the event log isn't noisy with red ERROR
+                % lines for what's actually expected control flow.
+                if contains(ME.identifier, 'HTTP404')
+                    Logger.debug('FastAPIClient', 'GET %s → 404 Not Found', endpoint);
+                else
+                    Logger.error('FastAPIClient', 'GET %s FAILED: %s', endpoint, ME.message);
+                end
                 rethrow(ME);
             end
         end

@@ -37,7 +37,12 @@ classdef NavigationManager
                     panel.Visible = 'on';
                 end
             end
-            app.SectionTitleLabel.Text    = key;
+            % Phase 8: resolve the displayed title via navLabels so
+            % the screen header shows "Projects" when the user picks
+            % the Welcome routing key (the routing key 'Welcome' is
+            % preserved for back-compat; only the displayed label
+            % changed).
+            app.SectionTitleLabel.Text    = NavigationManager.displayLabelFor(key);
             app.SectionSubtitleLabel.Text = NavigationManager.sectionSubtitleFor(key);
             if ~strcmp(app.NavList.Value, key)
                 app.NavList.Value = key;
@@ -249,17 +254,21 @@ classdef NavigationManager
                         asyncStarted = true;
                     end
                 case 'Detailed Analysis'
-                    % On first entry, paint seeded demo charts so the layout
-                    % isn't empty. Skipped on subsequent entries so any live
-                    % data from Refresh buttons is preserved.
-                    if ~isempty(app.DetailedAnalysisVm) ...
-                            && ~isempty(app.CompareAxes) && isvalid(app.CompareAxes) ...
-                            && isempty(app.CompareAxes.Children)
-                        app.DetailedAnalysisVm.plotAllDemos();
-                    end
-                    % Populate the Circuit dropdown whenever we enter the
-                    % screen — the user may have uploaded new circuits
-                    % elsewhere in the session.
+                    % First-entry demo paint REMOVED on purpose: the
+                    % hardcoded demos were identical for every circuit
+                    % and gave the operator the impression Detailed
+                    % Analysis didn't actually depend on the selected
+                    % circuit. The new flow paints either real per-
+                    % circuit data (resolved via the latest completed
+                    % job) or an explicit "no completed jobs yet"
+                    % empty-state — both wired through onEnter →
+                    % loadCircuits → onDetailedCircuitsLoaded →
+                    % refreshAllForCircuit on the VM. plotAllDemos
+                    % stays defined as a per-axis fallback inside
+                    % individual onPlotXxxComplete handlers when the
+                    % backend returns an empty list for that specific
+                    % metric — narrow safety net, not the screen-wide
+                    % misleader.
                     if ~isempty(app.DetailedAnalysisVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.DetailedAnalysisVm, ttl)
                         NavigationManager.showNavLoading(app, 'Detailed Analysis');
@@ -306,6 +315,24 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.ReportsVm, ttl)
                         NavigationManager.showNavLoading(app, 'Reports');
                         app.ReportsVm.loadReportsList();
+                        asyncStarted = true;
+                    end
+                case 'QEC Simulation'
+                    %  Phase 1+2: populate Circuit + Backend dropdowns
+                    %  on first nav so the operator can pick a target
+                    %  hardware/circuit pair and see calibration-driven
+                    %  results instead of generic parametric output.
+                    if ~isempty(app.QecSimulationVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.QecSimulationVm, ttl)
+                        NavigationManager.showNavLoading(app, 'QEC Simulation');
+                        app.QecSimulationVm.onEnter();
+                        asyncStarted = true;
+                    end
+                case 'QEC Visualization'
+                    if ~isempty(app.QecVisualizationVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.QecVisualizationVm, ttl)
+                        NavigationManager.showNavLoading(app, 'QEC Visualization');
+                        app.QecVisualizationVm.onEnter();
                         asyncStarted = true;
                     end
             end
@@ -546,11 +573,18 @@ classdef NavigationManager
         end
 
         function n = navNames()
-            % Notes intentionally omitted — hidden from the sidebar for
-            % now. The NotesScreen / NotesViewModel are still wired up
-            % in QTAUWorkbenchApp so the tab can be re-enabled later by
-            % adding 'Notes' back to navNames / navIcons / navLabels.
-            n = {'Welcome','Dashboard','Circuits','Upload','Analysis', ...
+            % Routing keys — these MUST match the case labels in
+            % screenBuilderFor / ensureVm / autoLoadScreen / etc. The
+            % displayed labels (navLabels) are decoupled, so we can
+            % display "Projects" while keeping the routing key 'Welcome'
+            % (Phase 8 rename: cosmetic only — file/class names stay as
+            % WelcomeScreen / WelcomeViewModel for back-compat with any
+            % out-of-tree caller).
+            %
+            % Phase 8 reorder: Dashboard moved to position 1 (first
+            % sidebar entry) — operators land on it after login by
+            % default; Projects (formerly Welcome) sits at position 2.
+            n = {'Dashboard','Welcome','Circuits','Upload','Analysis', ...
                  'Circuit Cutting','Backends', ...
                  'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
                  'Benchmark Dashboard', ...
@@ -560,9 +594,10 @@ classdef NavigationManager
         function ic = navIcons()
             % Icon characters — kept semantic (house, grid, pencil, etc.).
             % Sizing is handled by the CSS .icon container, not the glyph.
+            % Phase 8 reorder mirrors navNames (Dashboard before Welcome).
             ic = { ...
-                char(8962),  ... ⌂ Welcome
                 char(9707),  ... ◫ Dashboard
+                char(8962),  ... ⌂ Projects (was Welcome)
                 char(9776),  ... ☰ Circuits
                 char(8593),  ... ↑ Upload
                 char(8981),  ... ⌕ Analysis
@@ -582,11 +617,35 @@ classdef NavigationManager
 
         function lb = navLabels()
             % Text labels (no icon prefix — icon is rendered separately).
-            lb = {'Welcome','Dashboard','Circuits','Upload','Analysis', ...
+            % Phase 8 changes:
+            %   1. Dashboard is now position 1 (was position 2).
+            %   2. Position 2 displays "Projects" — the screen formerly
+            %      named "Welcome". Routing keys (navNames) stay 'Welcome'
+            %      so the underlying WelcomeScreen.m / WelcomeViewModel.m
+            %      classes don't need to be renamed.
+            lb = {'Dashboard','Projects','Circuits','Upload','Analysis', ...
                   'Circuit Cutting','Backends', ...
                   'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
                   'Benchmark Dashboard', ...
                   'QEC Simulation','QEC Visualization','Reports','Settings'};
+        end
+
+        function lbl = displayLabelFor(key)
+            % Phase 8 helper: resolve a routing-key (from navNames) to
+            % its display label (navLabels). Used by onSelectSection
+            % so the screen-header title reflects the user-facing name
+            % (e.g. "Projects") instead of the underlying routing key
+            % (e.g. "Welcome"). Falls back to the key itself when no
+            % match is found — preserves behaviour for any out-of-list
+            % routing keys.
+            names  = NavigationManager.navNames();
+            labels = NavigationManager.navLabels();
+            idx = find(strcmp(names, char(key)), 1);
+            if ~isempty(idx) && idx <= numel(labels)
+                lbl = char(labels{idx});
+            else
+                lbl = char(key);
+            end
         end
 
         function labels = navMenuLabels()

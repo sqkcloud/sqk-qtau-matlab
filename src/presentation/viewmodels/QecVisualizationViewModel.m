@@ -1,8 +1,19 @@
 classdef QecVisualizationViewModel < handle
     % QecVisualizationViewModel  Callback handlers for the QEC Visualization screen.
 
+    properties
+        % Public so NavigationManager.isScreenFresh can read it.
+        LastRefresh = []
+    end
+
     properties (Access = private)
         App  % QTAUWorkbenchApp
+        % Phase 1+2: same selector pattern as QecSimulationViewModel —
+        % independent state per the operator spec ("Circuit selector
+        % default: be independent" — does not sync with QEC Simulation
+        % or with app.State.selectedCircuitId).
+        SelectedCircuit = struct('id', '', 'name', '', 'num_qubits', 0);
+        SelectedBackend = struct('name', '', 'num_qubits', 0);
     end
 
     methods
@@ -10,6 +21,180 @@ classdef QecVisualizationViewModel < handle
             obj.App = app;
         end
 
+        % ── Phase 1+2: selectors + lattice scaling ─────────────────────
+        function onEnter(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            obj.loadCircuits();
+            obj.loadBackends();
+            obj.LastRefresh = tic;
+        end
+
+        function loadCircuits(obj)
+            app = obj.App;
+            token = app.State.authToken;
+            circSvc = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() circSvc.listCircuits(token), ...
+                @(data) obj.onCircuitsLoaded(app, data), ...
+                @(ME)   Logger.warn('QecVisualizationViewModel', ...
+                    'circuits load: %s', ME.message));
+        end
+
+        function loadBackends(obj)
+            % Use BackendsViewModel.fetchBackends so the dropdown
+            % carries real qubit counts. See identical comment in
+            % QecSimulationViewModel.loadBackends — bare listBackends
+            % returns only `name`+`username`; enrichment requires a
+            % circuit_id seed which fetchBackends supplies via its
+            % "any project circuit" fallback chain.
+            app = obj.App;
+            token      = app.State.authToken;
+            backendSvc = app.BackendSvc;
+            circuitSvc = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() BackendsViewModel.fetchBackends(backendSvc, circuitSvc, token, ''), ...
+                @(data) obj.onBackendsLoaded(app, data), ...
+                @(ME)   Logger.warn('QecVisualizationViewModel', ...
+                    'backends load: %s', ME.message));
+        end
+
+        function onCircuitsLoaded(obj, app, data)
+            if isempty(app.QecVizCircuitDropdown) || ~isvalid(app.QecVizCircuitDropdown)
+                return;
+            end
+            items = JsonHelper.extractListSafe(data, 'circuits');
+            n = numel(items);
+            if n == 0
+                app.QecVizCircuitDropdown.Items     = {'(no circuits)'};
+                app.QecVizCircuitDropdown.ItemsData = {''};
+                return;
+            end
+            names = cell(1, n); ids = cell(1, n);
+            for i = 1:n
+                if iscell(items); it = items{i}; else; it = items(i); end
+                ids{i}  = char(JsonHelper.pick(it, {'circuit_id','id'}));
+                nm      = char(JsonHelper.pick(it, {'name','circuit_name'}));
+                nq      = JsonHelper.toDouble(JsonHelper.pick(it, {'num_qubits','n_qubits'}));
+                if isnan(nq); nq = 0; end
+                if isempty(nm); nm = ids{i}; end
+                names{i} = sprintf('%s · %dq', nm, int32(nq));
+            end
+            app.QecVizCircuitDropdown.Items     = names;
+            app.QecVizCircuitDropdown.ItemsData = ids;
+        end
+
+        function onBackendsLoaded(obj, app, data)
+            if isempty(app.QecVizBackendDropdown) || ~isvalid(app.QecVizBackendDropdown)
+                return;
+            end
+            items = JsonHelper.extractListSafe(data, 'backends');
+            n = numel(items);
+            if n == 0
+                app.QecVizBackendDropdown.Items     = {'(no backends)'};
+                app.QecVizBackendDropdown.ItemsData = {''};
+                return;
+            end
+            names = cell(1, n); ids = cell(1, n);
+            for i = 1:n
+                if iscell(items); it = items{i}; else; it = items(i); end
+                bn   = char(JsonHelper.pick(it, {'name','backend_name'}));
+                nq   = JsonHelper.toDouble(JsonHelper.pick(it, {'num_qubits','qubits','n_qubits'}));
+                if isnan(nq); nq = 0; end
+                ids{i}   = bn;
+                names{i} = sprintf('%s · %dq', bn, int32(nq));
+            end
+            app.QecVizBackendDropdown.Items     = names;
+            app.QecVizBackendDropdown.ItemsData = ids;
+        end
+
+        function onCircuitChanged(obj, circuitId)
+            app = obj.App;
+            if isempty(circuitId); return; end
+            try
+                ids = app.QecVizCircuitDropdown.ItemsData;
+                k = find(strcmp(ids, char(circuitId)), 1);
+                if ~isempty(k)
+                    label = char(app.QecVizCircuitDropdown.Items{k});
+                else
+                    label = char(circuitId);
+                end
+            catch
+                label = char(circuitId);
+            end
+            tok = regexp(label, '·\s*(\d+)q', 'tokens', 'once');
+            nq = 0;
+            if ~isempty(tok); nq = str2double(tok{1}); end
+            obj.SelectedCircuit.id         = char(circuitId);
+            obj.SelectedCircuit.name       = strtrim(regexprep(label, '·\s*\d+q.*$', ''));
+            obj.SelectedCircuit.num_qubits = nq;
+            app.logEvent('QEC', sprintf('Viz circuit selected: %s (%dq)', ...
+                obj.SelectedCircuit.name, nq));
+        end
+
+        function onBackendChanged(obj, backendName)
+            app = obj.App;
+            if isempty(backendName); return; end
+            try
+                ids = app.QecVizBackendDropdown.ItemsData;
+                k = find(strcmp(ids, char(backendName)), 1);
+                if ~isempty(k)
+                    label = char(app.QecVizBackendDropdown.Items{k});
+                else
+                    label = char(backendName);
+                end
+            catch
+                label = char(backendName);
+            end
+            tok = regexp(label, '·\s*(\d+)q', 'tokens', 'once');
+            nq = 0;
+            if ~isempty(tok); nq = str2double(tok{1}); end
+            obj.SelectedBackend.name       = char(backendName);
+            obj.SelectedBackend.num_qubits = nq;
+            d = QecVisualizationViewModel.qubitCountToDistance(nq);
+            app.logEvent('QEC', sprintf('Viz backend selected: %s (%dq) → lattice d=%d', ...
+                char(backendName), nq, d));
+            % Auto-redraw the lattice with the scaled distance so the
+            % user sees immediate effect of the backend selection.
+            try
+                obj.onRefreshLattice();
+            catch ME
+                Logger.debug('QecVisualizationViewModel', ...
+                    'auto-redraw lattice on backend change: %s', ME.message);
+            end
+        end
+    end
+
+    methods (Static)
+        function d = qubitCountToDistance(nQubits)
+            % Map a backend's physical qubit count to a representative
+            % surface code distance d. Distances are odd to admit a
+            % unique majority decoder (d=2k+1 corrects k errors).
+            % A surface code at distance d uses ~2d²−1 physical qubits
+            % (d² data + (d²−1) measure). We pick the largest odd d
+            % that fits — matches the framing in real Qiskit / Cirq
+            % tooling ("what's the most this device could host?").
+            %     16 → 3   (uses ~17 qubits)
+            %     27 → 5   (uses ~49 qubits, fits with router ancillas)
+            %     65 → 7   (uses ~97 qubits — borderline)
+            %    127 → 9
+            %    156 → 11
+            %    433+ → 13 or larger
+            if isempty(nQubits) || ~isfinite(nQubits) || nQubits <= 0
+                d = 3; return;
+            end
+            n = double(nQubits);
+            if     n >= 433; d = 13;
+            elseif n >= 156; d = 11;
+            elseif n >= 127; d = 9;
+            elseif n >= 65;  d = 7;
+            elseif n >= 27;  d = 5;
+            else;            d = 3;
+            end
+        end
+    end
+
+    methods
         function onRefreshBloch(obj)
             app = obj.App;
             app.logEvent('QEC', 'Refreshing Bloch sphere visualization');
@@ -41,6 +226,15 @@ classdef QecVisualizationViewModel < handle
                 % Read distance from QEC Simulation screen if available
                 if ~isempty(app.QecDistanceSpinner) && isvalid(app.QecDistanceSpinner)
                     distance = round(app.QecDistanceSpinner.Value);
+                end
+                % Phase 1+2: backend selection on this screen overrides
+                % the distance so the lattice reflects the device's
+                % capacity (16q→3, 27q→5, 65q→7, 127q→9, 156q→11). The
+                % manual spinner from QEC Simulation still wins if the
+                % user explicitly picked a different d there.
+                if obj.SelectedBackend.num_qubits > 0
+                    distance = QecVisualizationViewModel.qubitCountToDistance( ...
+                        obj.SelectedBackend.num_qubits);
                 end
                 errorProb = AppConfig.getDouble('qec_viz_default_error_prob', 0.05);
                 if ~isempty(app.QecErrorProbSlider) && isvalid(app.QecErrorProbSlider)
