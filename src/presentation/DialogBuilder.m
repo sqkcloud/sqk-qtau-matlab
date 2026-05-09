@@ -757,7 +757,7 @@ classdef DialogBuilder
             footer = uigridlayout(cg, [1 6]);
             footer.Layout.Row = 5; footer.Layout.Column = 1;
             footer.RowHeight = {36};
-            footer.ColumnWidth = {'1x', 120, 0, 0, 0, 100};
+            footer.ColumnWidth = {'1x', 200, 0, 0, 0, 100};
             footer.Padding = [8 8 8 8]; footer.ColumnSpacing = 10;
             footer.BackgroundColor = cardBg;
             % Stash the footer handle so the VM can resize columns
@@ -2069,7 +2069,7 @@ classdef DialogBuilder
             card.Layout.Row = 2; card.Layout.Column = 2;
 
             cg = uigridlayout(card, [4 1]);
-            cg.RowHeight   = {32, 22, '1x', 44};
+            cg.RowHeight   = {32, 47, '1x', 44};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [16 12 16 12];
             cg.RowSpacing  = 8;

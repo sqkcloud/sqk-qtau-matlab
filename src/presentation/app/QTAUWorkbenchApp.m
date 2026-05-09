@@ -351,6 +351,12 @@ classdef QTAUWorkbenchApp < handle
                                     %   estimate sweep so renderEmKpis +
                                     %   renderEmGammaDepthCurve don't issue their
                                     %   own sync calibration GETs.
+        EmCalInFlightBackend = ''   % name of the backend whose calibration is
+                                    %   currently being fetched on a background
+                                    %   pool (set by AnalysisViewModel
+                                    %   .dispatchEmCalibrationFetch). Used as a
+                                    %   per-backend dedup so concurrent renders
+                                    %   don't fan out duplicate IBM round-trips.
     end
 
     % ── Backends tab ──────────────────────────────────────────────────────────

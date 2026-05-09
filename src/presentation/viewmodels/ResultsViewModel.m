@@ -667,33 +667,54 @@ classdef ResultsViewModel < handle
                     token = char(app.State.authToken);
                 catch; end
                 if isempty(token); return; end
-                try
-                    pair = app.CuttingSvc.getSiblingPair(groupId, token);
-                catch ME
-                    Logger.debug('ResultsViewModel', ...
-                        'getSiblingPair failed: %s', ME.message);
-                    app.ResultsMitigationToggleGrid.Visible = 'off';
-                    return;
-                end
-                obj.SiblingPair = struct( ...
-                    'group_id',    groupId, ...
-                    'primary_id',  char(string(JsonHelper.pick(pair, ...
-                                       'primary_batch_id', ''))), ...
-                    'raw_id',      char(string(JsonHelper.pick(pair, ...
-                                       'raw_batch_id', ''))), ...
-                    'active_role', role);
-            else
-                obj.SiblingPair.active_role = role;
+                % Async — was a brief one-time freeze on first toggle.
+                % The post-fetch visibility + style logic runs from
+                % onSiblingPairLoaded; both cached and just-fetched
+                % paths share finalizeMitigationToggle.
+                svc = app.CuttingSvc;
+                AsyncRunner.run( ...
+                    @() svc.getSiblingPair(groupId, token), ...
+                    @(pair) obj.onSiblingPairLoaded(app, groupId, role, pair), ...
+                    @(ME)   obj.onSiblingPairLoadError(app, ME));
+                return;  % continuation lives in the callback
             end
+            % Cached case: just update active_role and finalize.
+            obj.SiblingPair.active_role = role;
+            obj.finalizeMitigationToggle(app);
+        end
 
-            % Hide the toggle when only one sibling exists — there's
-            % nothing to toggle to.
+        function onSiblingPairLoaded(obj, app, groupId, role, pair)
+            obj.SiblingPair = struct( ...
+                'group_id',    groupId, ...
+                'primary_id',  char(string(JsonHelper.pick(pair, ...
+                                   'primary_batch_id', ''))), ...
+                'raw_id',      char(string(JsonHelper.pick(pair, ...
+                                   'raw_batch_id', ''))), ...
+                'active_role', role);
+            obj.finalizeMitigationToggle(app);
+        end
+
+        function onSiblingPairLoadError(~, app, ME)
+            Logger.debug('ResultsViewModel', ...
+                'getSiblingPair failed: %s', ME.message);
+            if ~isempty(app.ResultsMitigationToggleGrid) ...
+                    && isvalid(app.ResultsMitigationToggleGrid)
+                app.ResultsMitigationToggleGrid.Visible = 'off';
+            end
+        end
+
+        function finalizeMitigationToggle(obj, app)
+            % Shared post-fetch step: hide the toggle when only one
+            % sibling exists, otherwise reveal + repaint button styles.
+            if isempty(app.ResultsMitigationToggleGrid) ...
+                    || ~isvalid(app.ResultsMitigationToggleGrid)
+                return;
+            end
             if isempty(obj.SiblingPair.primary_id) || ...
                     isempty(obj.SiblingPair.raw_id)
                 app.ResultsMitigationToggleGrid.Visible = 'off';
                 return;
             end
-
             app.ResultsMitigationToggleGrid.Visible = 'on';
             obj.refreshToggleStyle();
         end

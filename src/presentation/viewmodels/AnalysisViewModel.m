@@ -198,22 +198,19 @@ classdef AnalysisViewModel < handle
             obj.loadQmcCircuitMeta();
             % Best-effort: pre-populate with the last cached result for
             % this circuit so returning users see data immediately.
-            try
-                if app.State.isAuthenticated() && app.State.hasCircuit()
-                    cid = app.State.selectedCircuitId;
-                    token = app.State.authToken;
-                    cached = app.QmcSvc.getLast(cid, token);
-                    app.QmcLastResult = cached;
-                    obj.renderQmcResult(app, cached);
-                    AnalysisViewModel.toggleIbmLogButton(app, cached);
-                    % M9 — cached result exists, so the export trio
-                    % (Download Results / Download IBM Log / Generate
-                    % Report) becomes meaningful immediately on dialog
-                    % open. Reveal the buttons.
-                    AnalysisViewModel.revealQmcResultButtons(app);
-                end
-            catch ME
-                Logger.debug('AnalysisViewModel', 'No cached QMC result: %s', ME.message);
+            % Async — the GET /api/circuits/{id}/qae/last round-trip was
+            % blocking the QMC dialog open for ~200-500 ms. Render +
+            % button-reveal moves to onQmcLastResultLoaded; missing-cache
+            % path stays silent (toggleIbmLogButton(app, []) only).
+            if app.State.isAuthenticated() && app.State.hasCircuit()
+                cid    = char(app.State.selectedCircuitId);
+                token  = app.State.authToken;
+                qaeSvc = app.QmcSvc;
+                AsyncRunner.run( ...
+                    @() qaeSvc.getLast(cid, token), ...
+                    @(cached) obj.onQmcLastResultLoaded(app, cached), ...
+                    @(ME)     obj.onQmcLastResultMissing(app, ME));
+            else
                 AnalysisViewModel.toggleIbmLogButton(app, []);
             end
             % Show the viability banner immediately based on circuit
@@ -225,6 +222,39 @@ classdef AnalysisViewModel < handle
             catch ME
                 Logger.debug('AnalysisViewModel', 'Initial QMC viability eval failed: %s', ME.message);
             end
+        end
+
+        function onQmcLastResultLoaded(obj, app, cached)
+            % MAIN-THREAD callback for the async QmcSvc.getLast dispatched
+            % at QMC dialog open. Hydrates the dialog with the previous
+            % run's cached result + reveals the export-button trio.
+            if isempty(app.QmcDialog) || ~isvalid(app.QmcDialog)
+                return;  % dialog closed before the prefill landed
+            end
+            if isempty(cached)
+                AnalysisViewModel.toggleIbmLogButton(app, []);
+                return;
+            end
+            app.QmcLastResult = cached;
+            try
+                obj.renderQmcResult(app, cached);
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'renderQmcResult (cached): %s', ME.message);
+            end
+            AnalysisViewModel.toggleIbmLogButton(app, cached);
+            % M9 — cached result exists, so the export trio (Download
+            % Results / Download IBM Log / Generate Report) becomes
+            % meaningful immediately on dialog open. Reveal the buttons.
+            AnalysisViewModel.revealQmcResultButtons(app);
+        end
+
+        function onQmcLastResultMissing(~, app, ME)
+            % No cached result for this circuit (404 / empty / network
+            % blip). Stay silent — the user can still run a fresh QMC.
+            Logger.debug('AnalysisViewModel', ...
+                'No cached QMC result: %s', ME.message);
+            AnalysisViewModel.toggleIbmLogButton(app, []);
         end
 
         % Populate app.QmcBackendField (uidropdown) using BackendService,
@@ -928,43 +958,23 @@ classdef AnalysisViewModel < handle
                 diagramHtml = uihtml(tab2Grid);
                 diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
 
-                % Fetch circuit diagram — prefer server-rendered SVG (Qiskit, all gates)
-                % with client-side renderSvg as fallback
+                % Async circuit-diagram fetch — was a chained sync
+                % round-trip (server SVG → fallback getCircuit) that
+                % froze the dialog while the placeholder text was up.
+                % The dispatcher walks the same fallback chain on the
+                % background pool; final HTMLSource lands from one of
+                % four main-thread callbacks (server-success, fallback-
+                % success, fallback-empty, fallback-failed).
                 svgContent = '<p style="color:#888;font-family:sans-serif">Loading circuit diagram...</p>';
                 diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
-                try
-                    if app.State.hasCircuit() && app.State.isAuthenticated()
-                        cid = app.State.selectedCircuitId;
-                        tok = app.State.authToken;
-                        % 1) Try server-side Qiskit preview (complete, all gates)
-                        serverOk = false;
-                        try
-                            prevData = app.CircuitSvc.previewCircuit(cid, tok);
-                            serverSvg = char(JsonHelper.pick(prevData, {'svg'}));
-                            if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
-                                svgContent = serverSvg;
-                                serverOk = true;
-                            end
-                        catch ME
-                            Logger.debug('AnalysisViewModel', 'loadDiagram serverPreview: %s', ME.message);
-                        end
-                        % 2) Fallback: client-side rendering (truncated for large circuits)
-                        if ~serverOk
-                            circData = app.CircuitSvc.getCircuit(cid, tok);
-                            qasmText = char(JsonHelper.pick(circData, {'content','raw_content','qasm_content','source'}));
-                            if ~isempty(qasmText)
-                                svgContent = CircuitDiagram.renderSvg(qasmText);
-                            else
-                                svgContent = '<p style="color:#888;font-family:sans-serif">No circuit content available.</p>';
-                            end
-                        end
-                    else
-                        svgContent = '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>';
-                    end
-                catch ME
-                    svgContent = sprintf('<p style="color:#DC2626;font-family:sans-serif">Failed to load diagram: %s</p>', CircuitDiagram.escapeHtml(ME.message));
+                if app.State.hasCircuit() && app.State.isAuthenticated()
+                    AnalysisViewModel.dispatchSimilarityDiagram( ...
+                        diagramHtml, app.CircuitSvc, ...
+                        char(app.State.selectedCircuitId), app.State.authToken);
+                else
+                    diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
+                        '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>');
                 end
-                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
 
                 % ── Separator line ─────────────────────────────────────────
                 sep = uipanel(rootGrid, 'Title', '', 'BorderType', 'none');
@@ -1251,6 +1261,158 @@ classdef AnalysisViewModel < handle
                 end
             catch
             end
+        end
+
+        function dispatchEmCalibrationFetch(app, backend)
+            % Dispatch GET /api/backends/{name}/calibration on the
+            % background pool. Idempotent — if a fetch is already in
+            % flight for the same backend, this is a no-op. Result lands
+            % in app.EmCachedCalibration via onEmCalibrationLoaded which
+            % then re-runs renderEmKpis + renderEmGammaDepthCurve.
+            if ~app.State.isAuthenticated(); return; end
+            backend = char(backend);
+            if isempty(backend); return; end
+            % Per-backend dedup so concurrent renders (KPI + gamma curve)
+            % don't fan out duplicate round-trips.
+            try
+                if isprop(app, 'EmCalInFlightBackend') && ...
+                        ~isempty(app.EmCalInFlightBackend) && ...
+                        strcmp(char(app.EmCalInFlightBackend), backend)
+                    return;
+                end
+            catch
+            end
+            try; app.EmCalInFlightBackend = string(backend); catch; end
+            backendSvc = app.BackendSvc;
+            token      = app.State.authToken;
+            AsyncRunner.run( ...
+                @() backendSvc.getCalibration(backend, token), ...
+                @(cal) AnalysisViewModel.onEmCalibrationLoaded(app, backend, cal), ...
+                @(ME)  AnalysisViewModel.onEmCalibrationFetchError(app, backend, ME));
+        end
+
+        function onEmCalibrationLoaded(app, backend, cal)
+            % MAIN-THREAD callback for dispatchEmCalibrationFetch. Caches
+            % the result and re-renders the EM advisory KPIs / gamma-depth
+            % curve so the placeholder cells flip to real values.
+            try
+                if isprop(app, 'EmCalInFlightBackend') && ...
+                        strcmp(char(app.EmCalInFlightBackend), char(backend))
+                    app.EmCalInFlightBackend = '';
+                end
+            catch
+            end
+            try
+                app.EmCachedCalibration = struct( ...
+                    'backend', char(backend), 'data', cal);
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'EM cal cache write: %s', ME.message);
+                return;
+            end
+            % Re-render only when the dialog is still up; the renderers
+            % already guard their UI handles, but this short-circuit
+            % avoids work if the user closed the EM dialog mid-flight.
+            % renderEmKpis / renderEmGammaDepthCurve are private
+            % instance methods, so dispatch through the live VM
+            % instance on the app object (we're in a static context).
+            try
+                if isprop(app, 'EmDialog') && ~isempty(app.EmDialog) ...
+                        && isvalid(app.EmDialog) ...
+                        && isprop(app, 'AnalysisVm') && ~isempty(app.AnalysisVm)
+                    app.AnalysisVm.renderEmKpis(app);
+                    app.AnalysisVm.renderEmGammaDepthCurve(app);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'EM re-render after cal: %s', ME.message);
+            end
+        end
+
+        function onEmCalibrationFetchError(app, backend, ME)
+            % Background fetch failed (network, 404, IBM offline). Clear
+            % the in-flight flag so a subsequent render can retry; leave
+            % the placeholder KPI cells unchanged.
+            try
+                if isprop(app, 'EmCalInFlightBackend') && ...
+                        strcmp(char(app.EmCalInFlightBackend), char(backend))
+                    app.EmCalInFlightBackend = '';
+                end
+            catch
+            end
+            Logger.debug('AnalysisViewModel', ...
+                'EM cal fetch (%s): %s', char(backend), ME.message);
+        end
+
+        function dispatchSimilarityDiagram(diagramHtml, svc, cid, tok)
+            % Async dispatcher for the Visualize Similarity dialog's
+            % circuit-diagram tab. Calls server-side previewCircuit
+            % first; on success-with-empty-SVG or error, chains to the
+            % client-side getCircuit fallback. All HTMLSource updates
+            % happen on the main thread via the success/error callbacks.
+            AsyncRunner.run( ...
+                @() svc.previewCircuit(cid, tok), ...
+                @(prevData) AnalysisViewModel.onSimilarityServerSvgReady( ...
+                    diagramHtml, prevData, svc, cid, tok), ...
+                @(ME) AnalysisViewModel.onSimilarityServerSvgFailed( ...
+                    diagramHtml, ME, svc, cid, tok));
+        end
+
+        function onSimilarityServerSvgReady(diagramHtml, prevData, svc, cid, tok)
+            if isempty(diagramHtml) || ~isvalid(diagramHtml); return; end
+            serverSvg = '';
+            try
+                serverSvg = char(JsonHelper.pick(prevData, {'svg'}));
+            catch
+            end
+            if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
+                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, serverSvg);
+                return;
+            end
+            % Server SVG empty — chain to client-side fallback render.
+            AnalysisViewModel.dispatchSimilarityFallback(diagramHtml, svc, cid, tok);
+        end
+
+        function onSimilarityServerSvgFailed(diagramHtml, ME, svc, cid, tok)
+            Logger.debug('AnalysisViewModel', ...
+                'loadDiagram serverPreview: %s', ME.message);
+            AnalysisViewModel.dispatchSimilarityFallback(diagramHtml, svc, cid, tok);
+        end
+
+        function dispatchSimilarityFallback(diagramHtml, svc, cid, tok)
+            if isempty(diagramHtml) || ~isvalid(diagramHtml); return; end
+            AsyncRunner.run( ...
+                @() svc.getCircuit(cid, tok), ...
+                @(circData) AnalysisViewModel.onSimilarityFallbackReady( ...
+                    diagramHtml, circData), ...
+                @(ME) AnalysisViewModel.onSimilarityFallbackFailed( ...
+                    diagramHtml, ME));
+        end
+
+        function onSimilarityFallbackReady(diagramHtml, circData)
+            if isempty(diagramHtml) || ~isvalid(diagramHtml); return; end
+            svgContent = '';
+            try
+                qasmText = char(JsonHelper.pick(circData, ...
+                    {'content','raw_content','qasm_content','source'}));
+                if ~isempty(qasmText)
+                    svgContent = CircuitDiagram.renderSvg(qasmText);
+                else
+                    svgContent = '<p style="color:#888;font-family:sans-serif">No circuit content available.</p>';
+                end
+            catch ME
+                svgContent = sprintf( ...
+                    '<p style="color:#DC2626;font-family:sans-serif">Failed to render: %s</p>', ...
+                    CircuitDiagram.escapeHtml(ME.message));
+            end
+            diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
+        end
+
+        function onSimilarityFallbackFailed(diagramHtml, ME)
+            if isempty(diagramHtml) || ~isvalid(diagramHtml); return; end
+            diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
+                sprintf('<p style="color:#DC2626;font-family:sans-serif">Failed to load diagram: %s</p>', ...
+                    CircuitDiagram.escapeHtml(ME.message)));
         end
 
         function snap = snapshotEmFormState(app)
@@ -1768,7 +1930,7 @@ classdef AnalysisViewModel < handle
                         && isvalid(app.QmcFooterGrid)
                     %  6-column footer:  spacer | Run | DL Results | DL Log | Report | Close
                     app.QmcFooterGrid.ColumnWidth = ...
-                        {'1x', 120, 150, 150, 160, 100};
+                        {'1x', 200, 150, 150, 160, 100};
                 end
             catch
             end
@@ -1803,7 +1965,7 @@ classdef AnalysisViewModel < handle
                 if isprop(app, 'QmcFooterGrid') && ~isempty(app.QmcFooterGrid) ...
                         && isvalid(app.QmcFooterGrid)
                     app.QmcFooterGrid.ColumnWidth = ...
-                        {'1x', 120, 0, 0, 0, 100};
+                        {'1x', 200, 0, 0, 0, 100};
                 end
             catch
             end
@@ -3405,13 +3567,18 @@ classdef AnalysisViewModel < handle
             gammaTxt = '-';
             advTxt   = Labels.get('em_advantage_unknown', '-');
             advColor = Theme.COLOR_MUTED;
+            calLoading = false;
             try
                 backend = char(app.EmBackendDropdown.Value);
                 if ~isempty(backend)
                     cal = AnalysisViewModel.lookupCachedCalibration(app, backend);
                     if isempty(cal) && app.State.isAuthenticated()
-                        cal = app.BackendSvc.getCalibration( ...
-                            backend, app.State.authToken);
+                        % Async — was a 5-15 s freeze on cold IBM cache.
+                        % Render with cal=[] (placeholder cells) for now;
+                        % onEmCalibrationLoaded re-runs this function once
+                        % the IBM round-trip completes.
+                        AnalysisViewModel.dispatchEmCalibrationFetch(app, backend);
+                        calLoading = true;
                     end
                     eplg = AnalysisViewModel.extractEplg(cal);
                     if ~isnan(eplg) && eplg > 0
@@ -3429,6 +3596,15 @@ classdef AnalysisViewModel < handle
                                 end
                             end
                         end
+                    elseif calLoading
+                        % Calibration round-trip is in flight — surface
+                        % an explicit "loading" hint instead of the
+                        % generic "-" so the operator knows why the
+                        % advisory cells are empty. Cells flip to the
+                        % real values from onEmCalibrationLoaded.
+                        gammaTxt = char(8230);  % horizontal ellipsis
+                        advTxt   = Labels.get('em_advantage_loading', 'loading...');
+                        advColor = Theme.COLOR_MUTED;
                     end
                 end
             catch ME
@@ -3495,13 +3671,18 @@ classdef AnalysisViewModel < handle
             ax.XGrid = 'on'; ax.YGrid = 'on';
             ax.XScale = 'log'; ax.YScale = 'log';
             eplg = NaN;
+            calLoading = false;
             try
                 backend = char(app.EmBackendDropdown.Value);
                 if ~isempty(backend)
                     cal = AnalysisViewModel.lookupCachedCalibration(app, backend);
                     if isempty(cal) && app.State.isAuthenticated()
-                        cal = app.BackendSvc.getCalibration( ...
-                            backend, app.State.authToken);
+                        % Async — was a 5-15 s freeze on cold IBM cache.
+                        % Render the empty-curve placeholder; the curve
+                        % is re-drawn from onEmCalibrationLoaded once
+                        % the calibration arrives.
+                        AnalysisViewModel.dispatchEmCalibrationFetch(app, backend);
+                        calLoading = true;
                     end
                     eplg = AnalysisViewModel.extractEplg(cal);
                 end
@@ -3510,8 +3691,13 @@ classdef AnalysisViewModel < handle
                     'EM gamma curve calibration miss: %s', ME.message);
             end
             if isnan(eplg) || eplg <= 0
-                text(ax, 0.5, 0.5, ...
-                    'EPLG / 2Q error not available for this backend', ...
+                if calLoading
+                    msg = Labels.get('em_gamma_loading_calibration', ...
+                        'Loading calibration...');
+                else
+                    msg = 'EPLG / 2Q error not available for this backend';
+                end
+                text(ax, 0.5, 0.5, msg, ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center', ...
                     'Color', Theme.COLOR_MUTED, 'Interpreter', 'none');
                 return;

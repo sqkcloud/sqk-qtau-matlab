@@ -293,23 +293,19 @@ classdef PredictionViewModel < handle
 
             % Oversize-circuit nudge — data has landed, check whether the
             % selected circuit is wider than any backend in the pool.
-            try
-                selCid = char(app.State.selectedCircuitId);
-                if ~isempty(selCid)
-                    circList = app.CircuitSvc.listCircuits(app.State.authToken);
-                    circs = JsonHelper.extractList(circList, 'circuits');
-                    for i = 1:numel(circs)
-                        c = circs(i);
-                        if iscell(circs); c = circs{i}; end
-                        if strcmp(char(JsonHelper.pick(c, {'circuit_id','id'})), selCid)
-                            OversizeDetector.check(app, c, data);
-                            break;
-                        end
-                    end
-                end
-            catch ME
-                Logger.debug('PredictionViewModel', ...
-                    'OversizeDetector: %s', ME.message);
+            % Async dispatch — the listCircuits round-trip ran on the
+            % main thread before, adding a second blocking GET to the
+            % backends-loaded callback.
+            selCid = char(app.State.selectedCircuitId);
+            if ~isempty(selCid)
+                svc   = app.CircuitSvc;
+                token = app.State.authToken;
+                AsyncRunner.run( ...
+                    @() svc.listCircuits(token), ...
+                    @(circList) PredictionViewModel.onCircuitsForOversize( ...
+                        app, data, selCid, circList), ...
+                    @(ME) Logger.debug('PredictionViewModel', ...
+                        'OversizeDetector listCircuits: %s', ME.message));
             end
         end
 
@@ -334,6 +330,26 @@ classdef PredictionViewModel < handle
     end
 
     methods (Static, Access = private)
+        function onCircuitsForOversize(app, backendsData, selCid, circList)
+            % MAIN-THREAD callback for the async listCircuits dispatched
+            % from onBackendsLoaded. Finds the selected circuit and
+            % invokes OversizeDetector with the original backends payload.
+            try
+                circs = JsonHelper.extractList(circList, 'circuits');
+                for i = 1:numel(circs)
+                    c = circs(i);
+                    if iscell(circs); c = circs{i}; end
+                    if strcmp(char(JsonHelper.pick(c, {'circuit_id','id'})), selCid)
+                        OversizeDetector.check(app, c, backendsData);
+                        break;
+                    end
+                end
+            catch ME
+                Logger.debug('PredictionViewModel', ...
+                    'OversizeDetector: %s', ME.message);
+            end
+        end
+
         function data = fetchBackendList(backendSvc, circSvc, cid, token)
             % 3-tier fallback: circuit-scoped list → first circuit → unscoped.
             if ~isempty(cid) && strlength(string(cid)) > 0
