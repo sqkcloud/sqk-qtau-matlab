@@ -426,94 +426,86 @@ classdef BenchmarkViewModel < handle
 
         function loadCircuits(obj)
             app = obj.App;
-            try
-                data = app.CircuitSvc.listCircuits(app.State.authToken);
-                items = JsonHelper.extractList(data, 'circuits');
-                if isempty(items); items = JsonHelper.asList(data); end
-                n = numel(items);
-                if n == 0
-                    app.BenchmarkCircuitDropdown.Items     = {'(no circuits)'};
-                    app.BenchmarkCircuitDropdown.ItemsData = {''};
-                    app.BenchmarkCircuitDropdown.Value     = '';
-                    return;
-                end
-                names = cell(1, n);
-                ids   = cell(1, n);
-                for i = 1:n
-                    ids{i}   = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
-                    names{i} = char(JsonHelper.pick(items(i), {'name','circuit_name','filename'}));
-                    if isempty(names{i}) || strlength(names{i}) == 0
-                        names{i} = ids{i};
-                    end
-                end
-                app.BenchmarkCircuitDropdown.Items     = names;
-                app.BenchmarkCircuitDropdown.ItemsData = ids;
+            % Async — listing the project's circuits hits the API and
+            % was previously freezing the Benchmark tab on entry. The
+            % populate-dropdown work runs on the main thread inside the
+            % onLoadCircuitsComplete callback.
+            circuitSvc = app.CircuitSvc;
+            token      = app.State.authToken;
+            AsyncRunner.run( ...
+                @() circuitSvc.listCircuits(token), ...
+                @(data) obj.onLoadCircuitsComplete(app, data), ...
+                @(ME)   app.logEvent('DEBUG', sprintf('Failed to load circuits for benchmark: %s', ME.message)));
+        end
 
-                % Pre-select if AppState already has a circuit
-                if app.State.hasCircuit()
-                    obj.selectDropdownValue(app.BenchmarkCircuitDropdown, char(app.State.selectedCircuitId));
-                end
-                app.logEvent('LOAD', sprintf('Loaded %d circuits into benchmark dropdown', n));
-            catch ME
-                app.logEvent('DEBUG', sprintf('Failed to load circuits for benchmark: %s', ME.message));
+        function onLoadCircuitsComplete(obj, app, data)
+            items = JsonHelper.extractList(data, 'circuits');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.BenchmarkCircuitDropdown.Items     = {'(no circuits)'};
+                app.BenchmarkCircuitDropdown.ItemsData = {''};
+                app.BenchmarkCircuitDropdown.Value     = '';
+                return;
             end
+            names = cell(1, n);
+            ids   = cell(1, n);
+            for i = 1:n
+                ids{i}   = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
+                names{i} = char(JsonHelper.pick(items(i), {'name','circuit_name','filename'}));
+                if isempty(names{i}) || strlength(names{i}) == 0
+                    names{i} = ids{i};
+                end
+            end
+            app.BenchmarkCircuitDropdown.Items     = names;
+            app.BenchmarkCircuitDropdown.ItemsData = ids;
+            % Pre-select if AppState already has a circuit
+            if app.State.hasCircuit()
+                obj.selectDropdownValue(app.BenchmarkCircuitDropdown, char(app.State.selectedCircuitId));
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d circuits into benchmark dropdown', n));
         end
 
         % ── Populate backend dropdown ────────────────────────────────────
 
         function loadBackends(obj)
             % loadBackends  Populate the backend dropdown.
-            %   GET /api/backends?circuit_id=X returns the full enriched list.
-            %   Without circuit_id it returns only project-registered backends (often empty).
-            %   Mirrors the fallback logic from BackendsViewModel.fetchBackends().
+            %   The 3-tier resolution (enriched-with-cid → fallback-cid →
+            %   bare list) lives in BackendsViewModel.fetchBackends and
+            %   is shared with DashboardViewModel.paintBackendHealth.
+            %   Async dispatch — the entire chain runs on backgroundPool
+            %   so the Benchmark tab stays responsive on entry.
             app = obj.App;
-            data = struct('backends', {{}});
-
-            % Attempt 1: enriched list with selected circuit
             cid = '';
             if app.State.hasCircuit()
                 cid = char(app.State.selectedCircuitId);
             end
-            if ~isempty(cid) && strlength(cid) > 0
-                try
-                    data = app.BackendSvc.listBackends(app.State.authToken, cid);
-                    if obj.hasBackendData(data)
-                        obj.populateBackendDropdown(data);
-                        return;
-                    end
-                catch ME; Logger.debug('BenchmarkViewModel', 'loadBackends enriched list: %s', ME.message); end
+            backendSvc = app.BackendSvc;
+            circuitSvc = app.CircuitSvc;
+            token      = app.State.authToken;
+            AsyncRunner.run( ...
+                @() BackendsViewModel.fetchBackends(backendSvc, circuitSvc, token, cid), ...
+                @(data) obj.onLoadBackendsComplete(app, data), ...
+                @(ME)   obj.onLoadBackendsError(app, ME));
+        end
+
+        function onLoadBackendsComplete(obj, app, data)
+            if obj.hasBackendData(data)
+                obj.populateBackendDropdown(data);
+                return;
             end
-
-            % Attempt 2: use any circuit from the project as fallback
-            try
-                circList = app.CircuitSvc.listCircuits(app.State.authToken);
-                items = JsonHelper.extractList(circList, 'circuits');
-                if ~isempty(items)
-                    fallbackCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
-                    if ~isempty(fallbackCid) && strlength(fallbackCid) > 0
-                        data = app.BackendSvc.listBackends(app.State.authToken, fallbackCid);
-                        if obj.hasBackendData(data)
-                            obj.populateBackendDropdown(data);
-                            return;
-                        end
-                    end
-                end
-            catch ME; Logger.debug('BenchmarkViewModel', 'loadBackends fallback circuit: %s', ME.message); end
-
-            % Attempt 3: basic list without circuit_id (last resort)
-            try
-                data = app.BackendSvc.listBackends(app.State.authToken, '');
-                if obj.hasBackendData(data)
-                    obj.populateBackendDropdown(data);
-                    return;
-                end
-            catch ME; Logger.debug('BenchmarkViewModel', 'loadBackends basic list: %s', ME.message); end
-
-            % All attempts failed
+            % All resolution tiers came back empty.
             app.BenchmarkBackendSelect.Items     = {'(no backends)'};
             app.BenchmarkBackendSelect.ItemsData = {''};
             app.BenchmarkBackendSelect.Value     = '';
             app.logEvent('WARN', 'No backends found for benchmark dropdown');
+        end
+
+        function onLoadBackendsError(~, app, ME)
+            Logger.debug('BenchmarkViewModel', 'loadBackends async chain failed: %s', ME.message);
+            app.BenchmarkBackendSelect.Items     = {'(no backends)'};
+            app.BenchmarkBackendSelect.ItemsData = {''};
+            app.BenchmarkBackendSelect.Value     = '';
         end
 
         function tf = hasBackendData(~, data)

@@ -80,59 +80,38 @@ classdef BenchmarkDashboardViewModel < handle
 
         % ── Backend dropdown population ──────────────────────────────────
         function loadBackends(obj)
-            % Populate BenchmarkBackendDropdown via BackendService with a
-            % 3-tier fallback, mirroring BenchmarkViewModel.loadBackends:
-            %   1. list scoped to the currently-selected circuit
-            %   2. list for the first circuit in the project
-            %   3. basic list without circuit filter
-            app = obj.App;
+            % Populate BenchmarkBackendDropdown via the shared 3-tier
+            % resolver in BackendsViewModel.fetchBackends. Async dispatch —
+            % the entire fallback chain runs on backgroundPool so the
+            % BenchmarkDashboard tab stays responsive on entry.
+            app   = obj.App;
             token = app.State.authToken;
-
-            cid = '';
+            cid   = '';
             if app.State.hasCircuit(); cid = char(app.State.selectedCircuitId); end
-            if ~isempty(cid) && strlength(cid) > 0
-                try
-                    data = app.BackendSvc.listBackends(token, cid);
-                    if obj.hasBackendData(data)
-                        obj.populateBackendDropdown(data);
-                        return;
-                    end
-                catch ME
-                    Logger.debug('BenchmarkDashboardViewModel', 'loadBackends circuit: %s', ME.message);
-                end
-            end
+            backendSvc = app.BackendSvc;
+            circuitSvc = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() BackendsViewModel.fetchBackends(backendSvc, circuitSvc, token, cid), ...
+                @(data) obj.onLoadBackendsComplete(app, data), ...
+                @(ME)   obj.onLoadBackendsError(app, ME));
+        end
 
-            try
-                circList = app.CircuitSvc.listCircuits(token);
-                items = JsonHelper.extractList(circList, 'circuits');
-                if ~isempty(items)
-                    fallbackCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
-                    if ~isempty(fallbackCid) && strlength(fallbackCid) > 0
-                        data = app.BackendSvc.listBackends(token, fallbackCid);
-                        if obj.hasBackendData(data)
-                            obj.populateBackendDropdown(data);
-                            return;
-                        end
-                    end
-                end
-            catch ME
-                Logger.debug('BenchmarkDashboardViewModel', 'loadBackends fallback circuit: %s', ME.message);
+        function onLoadBackendsComplete(obj, app, data)
+            if obj.hasBackendData(data)
+                obj.populateBackendDropdown(data);
+                return;
             end
-
-            try
-                data = app.BackendSvc.listBackends(token, '');
-                if obj.hasBackendData(data)
-                    obj.populateBackendDropdown(data);
-                    return;
-                end
-            catch ME
-                Logger.debug('BenchmarkDashboardViewModel', 'loadBackends basic list: %s', ME.message);
-            end
-
             app.BenchmarkBackendDropdown.Items     = {'(no backends)'};
             app.BenchmarkBackendDropdown.ItemsData = {''};
             app.BenchmarkBackendDropdown.Value     = '';
             app.logEvent('WARN', 'No backends found for benchmark dashboard dropdown');
+        end
+
+        function onLoadBackendsError(~, app, ME)
+            Logger.debug('BenchmarkDashboardViewModel', 'loadBackends async chain failed: %s', ME.message);
+            app.BenchmarkBackendDropdown.Items     = {'(no backends)'};
+            app.BenchmarkBackendDropdown.ItemsData = {''};
+            app.BenchmarkBackendDropdown.Value     = '';
         end
 
         function tf = hasBackendData(~, data)
