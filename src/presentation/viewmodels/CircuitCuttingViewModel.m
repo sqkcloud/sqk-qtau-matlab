@@ -82,6 +82,9 @@ classdef CircuitCuttingViewModel < handle
             % The cache is invalidated when the AppState is destroyed
             % (logout / app close) or by writing [] to BackendPoolCache.
             app = obj.App;
+            % Synchronous cache fast-path: when the session-level cache
+            % is fresh, populate the local pool and return immediately.
+            % This avoids burning a parfeval dispatch on a memory hit.
             try
                 cached   = app.State.BackendPoolCache;
                 cachedAt = app.State.BackendPoolCacheAt;
@@ -93,42 +96,56 @@ classdef CircuitCuttingViewModel < handle
                         'Backend pool: %d entries (cached)', numel(cached));
                     return;
                 end
-                data = app.BackendSvc.listBackends(app.State.authToken, '');
-                items = JsonHelper.pick(data, 'backends', {});
-                pool = {};
-                if iscell(items)
-                    arr = items;
-                elseif isstruct(items)
-                    arr = num2cell(items);
-                else
-                    arr = {};
-                end
-                for i = 1:numel(arr)
-                    e = arr{i};
-                    name = char(string(JsonHelper.pick(e, 'name', '')));
-                    if isempty(strtrim(name)); continue; end
-                    nq = JsonHelper.pick(e, 'num_qubits', NaN);
-                    if ~isnumeric(nq) || isnan(nq); nq = []; end
-                    sim = JsonHelper.pick(e, 'simulator', false);
-                    pool{end+1} = struct( ...
-                        'name', name, ...
-                        'num_qubits', nq, ...
-                        'simulator', logical(sim)); %#ok<AGROW>
-                end
-                obj.BackendPool = pool;
-                % Write through to the session-level cache so other
-                % screens (Backends, Benchmark Dashboard, Prediction)
-                % can reuse this pool without their own /api/backends
-                % round-trip when they wire the cache in turn.
-                app.State.BackendPoolCache   = pool;
-                app.State.BackendPoolCacheAt = datetime('now');
-                Logger.info('CircuitCuttingViewModel', ...
-                    'Backend pool loaded: %d entries', numel(pool));
             catch ME
-                Logger.warn('CircuitCuttingViewModel', ...
-                    'loadBackendPool failed: %s', ME.message);
-                obj.BackendPool = {};
+                Logger.debug('CircuitCuttingViewModel', ...
+                    'Backend pool cache check: %s', ME.message);
             end
+            % Cache miss → dispatch listBackends asynchronously so the
+            % CircuitCutting tab stays responsive on entry.
+            backendSvc = app.BackendSvc;
+            token      = app.State.authToken;
+            AsyncRunner.run( ...
+                @() backendSvc.listBackends(token, ''), ...
+                @(data) obj.onBackendPoolLoaded(app, data), ...
+                @(ME)   obj.onBackendPoolLoadError(app, ME));
+        end
+
+        function onBackendPoolLoaded(obj, app, data)
+            items = JsonHelper.pick(data, 'backends', {});
+            pool = {};
+            if iscell(items)
+                arr = items;
+            elseif isstruct(items)
+                arr = num2cell(items);
+            else
+                arr = {};
+            end
+            for i = 1:numel(arr)
+                e = arr{i};
+                name = char(string(JsonHelper.pick(e, 'name', '')));
+                if isempty(strtrim(name)); continue; end
+                nq = JsonHelper.pick(e, 'num_qubits', NaN);
+                if ~isnumeric(nq) || isnan(nq); nq = []; end
+                sim = JsonHelper.pick(e, 'simulator', false);
+                pool{end+1} = struct( ...
+                    'name', name, ...
+                    'num_qubits', nq, ...
+                    'simulator', logical(sim)); %#ok<AGROW>
+            end
+            obj.BackendPool = pool;
+            % Write through to the session-level cache so other screens
+            % (Backends, Benchmark Dashboard, Prediction) can reuse the
+            % pool without their own /api/backends round-trip.
+            app.State.BackendPoolCache   = pool;
+            app.State.BackendPoolCacheAt = datetime('now');
+            Logger.info('CircuitCuttingViewModel', ...
+                'Backend pool loaded: %d entries', numel(pool));
+        end
+
+        function onBackendPoolLoadError(obj, ~, ME)
+            Logger.warn('CircuitCuttingViewModel', ...
+                'loadBackendPool failed: %s', ME.message);
+            obj.BackendPool = {};
         end
 
         % ── Circuit dropdown ─────────────────────────────────────────────
@@ -377,17 +394,19 @@ classdef CircuitCuttingViewModel < handle
             end
             app.logEvent('API', sprintf( ...
                 'GET /api/cutting/batches/%s/result', bid));
+            % Async — this fetch was a 0.5-2 s freeze when the operator
+            % clicked "View Reconstruction" to open the Reconstruction
+            % Summary popup. Dialog construction now happens in the
+            % success callback once the batch result lands.
             svc   = app.CuttingSvc;
             token = app.State.authToken;
-            try
-                data = svc.getBatchResult(bid, token);
-            catch ME
-                Logger.warn('CircuitCuttingViewModel', ...
-                    'getBatchResult: %s', ME.message);
-                uialert(app.UIFigure, ME.message, ...
-                    'View Reconstruction', 'Icon', 'error');
-                return;
-            end
+            AsyncRunner.run( ...
+                @() svc.getBatchResult(bid, token), ...
+                @(data) obj.onBatchReconstructionLoaded(app, bid, data), ...
+                @(ME)   obj.onBatchReconstructionLoadError(app, ME));
+        end
+
+        function onBatchReconstructionLoaded(obj, app, bid, data)
             status = char(JsonHelper.pick(data, 'status', obj.LastBatchStatus));
             try
                 DialogBuilder.buildReconstructionDialog(app, bid, status, data);
@@ -397,6 +416,13 @@ classdef CircuitCuttingViewModel < handle
                 uialert(app.UIFigure, ME.message, ...
                     'View Reconstruction', 'Icon', 'error');
             end
+        end
+
+        function onBatchReconstructionLoadError(~, app, ME)
+            Logger.warn('CircuitCuttingViewModel', ...
+                'getBatchResult: %s', ME.message);
+            uialert(app.UIFigure, ME.message, ...
+                'View Reconstruction', 'Icon', 'error');
         end
 
         function onJumpToDetailedAnalysis(obj)
@@ -419,83 +445,98 @@ classdef CircuitCuttingViewModel < handle
         % ── Circuits ─────────────────────────────────────────────────────
         function loadCircuits(obj)
             % Populate the Circuit dropdown with the current project's
-            % circuits. Matches the pattern used by BenchmarkViewModel /
-            % PredictionViewModel. Pulls selected circuit id from AppState
-            % if one is already set, so navigating over from another
-            % screen preserves the user's selection.
-            app = obj.App;
-            try
-                data = app.CircuitSvc.listCircuits(app.State.authToken);
-                items = JsonHelper.extractList(data, 'circuits');
-                n = numel(items);
-                if n == 0
-                    if ~isempty(app.CuttingCircuitDropdown)
-                        app.CuttingCircuitDropdown.Items     = {'(no circuits)'};
-                        app.CuttingCircuitDropdown.ItemsData = {''};
-                        app.CuttingCircuitDropdown.Value     = '';
-                    end
-                    return;
-                end
-                ids   = cell(1, n);
-                names = cell(1, n);
-                for i = 1:n
-                    it = items(i);
-                    if iscell(items); it = items{i}; end
-                    ids{i}   = char(JsonHelper.pick(it, {'circuit_id','id'}));
-                    nm = char(JsonHelper.pick(it, {'name','circuit_id','id'}));
-                    if isempty(nm); nm = ids{i}; end
-                    names{i} = nm;
-                end
+            % circuits. Async dispatch — the listCircuits round-trip ran
+            % on the UI thread before, freezing the CircuitCutting tab
+            % on entry.
+            app   = obj.App;
+            svc   = app.CircuitSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.listCircuits(token), ...
+                @(data) obj.onCircuitsListLoaded(app, data), ...
+                @(ME)   obj.onCircuitsListLoadError(app, ME));
+        end
+
+        function onCircuitsListLoaded(~, app, data)
+            items = JsonHelper.extractList(data, 'circuits');
+            n = numel(items);
+            if n == 0
                 if ~isempty(app.CuttingCircuitDropdown)
-                    app.CuttingCircuitDropdown.Items     = names;
-                    app.CuttingCircuitDropdown.ItemsData = ids;
-                    sel = char(app.State.selectedCircuitId);
-                    match = find(strcmp(ids, sel), 1);
-                    if ~isempty(match)
-                        app.CuttingCircuitDropdown.Value = ids{match};
-                    else
-                        app.CuttingCircuitDropdown.Value = ids{1};
-                        app.State.selectedCircuitId = string(ids{1});
-                    end
-                end
-                app.logEvent('LOAD', sprintf('Loaded %d circuits into Circuit Cutting dropdown', n));
-            catch ME
-                Logger.warn('CircuitCuttingViewModel', ...
-                    'loadCircuits failed: %s', ME.message);
-                if ~isempty(app.CuttingCircuitDropdown)
-                    app.CuttingCircuitDropdown.Items     = {'(load failed)'};
+                    app.CuttingCircuitDropdown.Items     = {'(no circuits)'};
                     app.CuttingCircuitDropdown.ItemsData = {''};
                     app.CuttingCircuitDropdown.Value     = '';
                 end
+                return;
+            end
+            ids   = cell(1, n);
+            names = cell(1, n);
+            for i = 1:n
+                it = items(i);
+                if iscell(items); it = items{i}; end
+                ids{i}   = char(JsonHelper.pick(it, {'circuit_id','id'}));
+                nm = char(JsonHelper.pick(it, {'name','circuit_id','id'}));
+                if isempty(nm); nm = ids{i}; end
+                names{i} = nm;
+            end
+            if ~isempty(app.CuttingCircuitDropdown)
+                app.CuttingCircuitDropdown.Items     = names;
+                app.CuttingCircuitDropdown.ItemsData = ids;
+                sel = char(app.State.selectedCircuitId);
+                match = find(strcmp(ids, sel), 1);
+                if ~isempty(match)
+                    app.CuttingCircuitDropdown.Value = ids{match};
+                else
+                    app.CuttingCircuitDropdown.Value = ids{1};
+                    app.State.selectedCircuitId = string(ids{1});
+                end
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d circuits into Circuit Cutting dropdown', n));
+        end
+
+        function onCircuitsListLoadError(~, app, ME)
+            Logger.warn('CircuitCuttingViewModel', ...
+                'loadCircuits failed: %s', ME.message);
+            if ~isempty(app.CuttingCircuitDropdown)
+                app.CuttingCircuitDropdown.Items     = {'(load failed)'};
+                app.CuttingCircuitDropdown.ItemsData = {''};
+                app.CuttingCircuitDropdown.Value     = '';
             end
         end
 
         % ── Presets ──────────────────────────────────────────────────────
         function loadPresets(obj)
-            app = obj.App;
-            try
-                data = app.CuttingSvc.listPresets(app.State.authToken);
-                items = JsonHelper.extractList(data, 'presets');
-                n = numel(items);
-                names = cell(1, n);
-                ids   = cell(1, n);
-                for i = 1:n
-                    it = items(i);
-                    if iscell(items); it = items{i}; end
-                    ids{i}   = char(JsonHelper.pick(it, 'id', 'generic'));
-                    names{i} = char(JsonHelper.pick(it, 'name', 'Generic'));
-                end
-                if ~isempty(app.CuttingPresetDropdown)
-                    app.CuttingPresetDropdown.Items     = names;
-                    app.CuttingPresetDropdown.ItemsData = ids;
-                end
-            catch ME
-                Logger.warn('CircuitCuttingViewModel', ...
-                    'loadPresets failed: %s', ME.message);
-                if ~isempty(app.CuttingPresetDropdown)
-                    app.CuttingPresetDropdown.Items     = {'Generic'};
-                    app.CuttingPresetDropdown.ItemsData = {'generic'};
-                end
+            app   = obj.App;
+            svc   = app.CuttingSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.listPresets(token), ...
+                @(data) obj.onPresetsLoaded(app, data), ...
+                @(ME)   obj.onPresetsLoadError(app, ME));
+        end
+
+        function onPresetsLoaded(~, app, data)
+            items = JsonHelper.extractList(data, 'presets');
+            n = numel(items);
+            names = cell(1, n);
+            ids   = cell(1, n);
+            for i = 1:n
+                it = items(i);
+                if iscell(items); it = items{i}; end
+                ids{i}   = char(JsonHelper.pick(it, 'id', 'generic'));
+                names{i} = char(JsonHelper.pick(it, 'name', 'Generic'));
+            end
+            if ~isempty(app.CuttingPresetDropdown)
+                app.CuttingPresetDropdown.Items     = names;
+                app.CuttingPresetDropdown.ItemsData = ids;
+            end
+        end
+
+        function onPresetsLoadError(~, app, ME)
+            Logger.warn('CircuitCuttingViewModel', ...
+                'loadPresets failed: %s', ME.message);
+            if ~isempty(app.CuttingPresetDropdown)
+                app.CuttingPresetDropdown.Items     = {'Generic'};
+                app.CuttingPresetDropdown.ItemsData = {'generic'};
             end
         end
     end
@@ -826,15 +867,21 @@ classdef CircuitCuttingViewModel < handle
                 body.mitigation_level = int32(mitigLevel);
             end
 
-            try
-                resp = svc.estimate(body, token);
-            catch ME
-                Logger.debug('CircuitCuttingViewModel', ...
-                    'applyMitigationPreview: estimate failed: %s', ...
-                    ME.message);
-                return;
-            end
+            % Async — was a ~500 ms freeze on the toolbar mitigation
+            % dropdown change. The summary label updates from
+            % onMitigationPreviewReady once the estimate POST returns.
+            AsyncRunner.run( ...
+                @() svc.estimate(body, token), ...
+                @(resp) obj.onMitigationPreviewReady(app, resp), ...
+                @(ME) Logger.debug('CircuitCuttingViewModel', ...
+                    'applyMitigationPreview: estimate failed: %s', ME.message));
+        end
 
+        function onMitigationPreviewReady(~, app, resp)
+            if isempty(app.CuttingMitigationLabel) || ...
+                    ~isvalid(app.CuttingMitigationLabel)
+                return;  % toolbar torn down before the response landed
+            end
             summary = char(JsonHelper.pick(resp, 'summary', ''));
             if ~isempty(summary)
                 app.CuttingMitigationLabel.Text = summary;

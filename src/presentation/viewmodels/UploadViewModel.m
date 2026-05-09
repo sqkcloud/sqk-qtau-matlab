@@ -111,11 +111,14 @@ classdef UploadViewModel < handle
         end
 
         function onGoToAnalyze(obj)
-            % Upload the circuit synchronously if not yet saved, then
-            % navigate to Analysis and auto-analyze.
+            % Upload the circuit asynchronously if not yet saved, then
+            % navigate to Analysis and auto-analyze. The upload runs on
+            % backgroundPool so a large QASM file doesn't freeze the
+            % whole UI; the navigate-and-trigger chain is invoked from
+            % the success callback OR directly when no upload is needed.
             app = obj.App;
 
-            % Upload synchronously if needed (file selected but no circuit ID yet)
+            % Path A: upload required (file selected but no circuit ID yet).
             if strlength(app.State.selectedCircuitId) == 0
                 filePath = char(app.State.selectedFile);
                 if ~isempty(filePath) && isfile(filePath)
@@ -137,39 +140,52 @@ classdef UploadViewModel < handle
                         sizeStr = sprintf('%d B', fInfo.bytes);
                     end
                     app.showLoading(sprintf('Uploading %s (%s) ...', name, sizeStr), fInfo.bytes > 102400);
-                    try
-                        data = app.CircuitSvc.uploadCircuit(filePath, name, format, category, ...
-                            obj.ParsedQubits, obj.ParsedDepth, app.State.authToken);
-                        app.State.selectedCircuitId   = string(JsonHelper.pick(data, {'circuit_id','id'}));
-                        app.State.selectedCircuitName = string(name);
-                        app.logEvent('API', sprintf('Circuit uploaded (for analyze) — id: %s', app.State.selectedCircuitId));
-                        app.hideLoading();
-                    catch ME
-                        app.hideLoading();
-                        app.logEvent('ERROR', sprintf('Upload for analyze FAILED: %s', ME.message));
-                        app.showError('Upload Circuit', ME);
-                        return;
-                    end
+
+                    svc     = app.CircuitSvc;
+                    token   = app.State.authToken;
+                    parsedQ = obj.ParsedQubits;
+                    parsedD = obj.ParsedDepth;
+                    AsyncRunner.run( ...
+                        @() svc.uploadCircuit(filePath, name, format, category, parsedQ, parsedD, token), ...
+                        @(data) obj.onGoToAnalyzeUploadComplete(app, data, name), ...
+                        @(ME)   obj.onGoToAnalyzeUploadError(app, filePath, ME));
+                    return;  % continuation lives in the success callback
                 end
             end
 
-            % Bail if still no circuit after upload attempt
+            % Path B: no upload needed — navigate + trigger immediately.
+            obj.gotoAnalyzeAndTrigger(app);
+        end
+
+        function onGoToAnalyzeUploadComplete(obj, app, data, name)
+            app.State.selectedCircuitId   = string(JsonHelper.pick(data, {'circuit_id','id'}));
+            app.State.selectedCircuitName = string(name);
+            app.logEvent('API', sprintf('Circuit uploaded (for analyze) — id: %s', app.State.selectedCircuitId));
+            app.hideLoading();
+            obj.gotoAnalyzeAndTrigger(app);
+        end
+
+        function onGoToAnalyzeUploadError(~, app, filePath, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Upload for analyze FAILED (%s): %s', filePath, ME.message));
+            app.showError('Upload Circuit', ME);
+        end
+
+        function gotoAnalyzeAndTrigger(~, app)
+            % Shared navigation + auto-analyze step. Used by both the
+            % no-upload path and the post-upload success callback.
             if ~app.State.hasCircuit()
                 uialert(app.UIFigure, ...
                     Labels.get('error_save_circuit_first', 'Please save the circuit first before analyzing.'), ...
                     'No Circuit', 'Icon', 'warning');
                 return;
             end
-
-            % Store the circuit ID to analyze before navigating
             targetCid = char(app.State.selectedCircuitId);
-
             % Navigate to Analysis — onEnter reloads dropdown and selects
-            % the circuit matching app.State.selectedCircuitId
+            % the circuit matching app.State.selectedCircuitId.
             app.onSelectSection('Analysis');
             drawnow;  % ensure UI updates and onEnter completes
-
-            % Force-select the target circuit and trigger analysis
+            % Force-select the target circuit and trigger analysis.
             if ~isempty(app.AnalysisVm)
                 items = app.AnalysisCircuitDropdown.ItemsData;
                 idx = find(strcmp(items, targetCid), 1);
@@ -193,13 +209,23 @@ classdef UploadViewModel < handle
                 return;
             end
             app.logEvent('API', sprintf('GET /api/circuits — project: %s', char(app.State.currentProjectId)));
+            % Async — populating the Circuits table is a tab-enter
+            % path (and the post-delete refresh target). Sync was
+            % freezing the Upload tab on each refresh.
+            svc   = app.CircuitSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.listCircuits(token), ...
+                @(data) obj.onCircuitsLoaded(app, data), ...
+                @(ME)   obj.onCircuitsLoadError(app, ME));
+        end
+
+        function onCircuitsLoaded(obj, app, data)
             try
-                data = app.CircuitSvc.listCircuits(app.State.authToken);
                 circuits = JsonHelper.extractList(data, 'circuits');
                 if isempty(circuits)
                     app.UploadCircuitsTable.Data = {};
                     app.logEvent('API', 'listCircuits → 0 circuits in project');
-                    try; app.hideLoading(); catch; end
                     return;
                 end
                 if isstruct(circuits)
@@ -230,8 +256,13 @@ classdef UploadViewModel < handle
                 app.logEvent('API', sprintf('listCircuits → %d circuits loaded for project %s', n, char(app.State.currentProjectId)));
                 obj.LastRefresh = tic;
             catch ME
-                app.logEvent('ERROR', sprintf('listCircuits FAILED: %s', ME.message));
+                app.logEvent('ERROR', sprintf('onCircuitsLoaded render: %s', ME.message));
             end
+            try; app.hideLoading(); catch; end
+        end
+
+        function onCircuitsLoadError(~, app, ME)
+            app.logEvent('ERROR', sprintf('listCircuits FAILED: %s', ME.message));
             try; app.hideLoading(); catch; end
         end
 
@@ -246,7 +277,7 @@ classdef UploadViewModel < handle
             end
             row = sel(1);
             tData = app.UploadCircuitsTable.Data;
-            circuitId = tData{row, 1};
+            circuitId   = tData{row, 1};
             circuitName = tData{row, 2};
             answer = uiconfirm(app.UIFigure, ...
                 sprintf('Delete circuit "%s" (%s)?', circuitName, circuitId), ...
@@ -255,15 +286,26 @@ classdef UploadViewModel < handle
                 return;
             end
             app.logEvent('API', sprintf('DELETE /api/circuits/%s', circuitId));
-            try
-                app.CircuitSvc.deleteCircuit(circuitId, app.State.authToken);
-                app.logEvent('API', sprintf('Circuit deleted: %s', circuitId));
-                app.State.logActivity(sprintf('Delete circuit — %s', circuitName), 'Success');
-                obj.onRefreshCircuits();
-            catch ME
-                app.logEvent('ERROR', sprintf('deleteCircuit FAILED: %s', ME.message));
-                app.showError('Delete Circuit', ME);
-            end
+            % Async — delete on backgroundPool, refresh the table from
+            % the success callback so the user sees an instant UI
+            % response instead of a frozen window.
+            svc   = app.CircuitSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.deleteCircuit(circuitId, token), ...
+                @(~)  obj.onDeleteCircuitComplete(app, circuitId, circuitName), ...
+                @(ME) obj.onDeleteCircuitError(app, ME));
+        end
+
+        function onDeleteCircuitComplete(obj, app, circuitId, circuitName)
+            app.logEvent('API', sprintf('Circuit deleted: %s', circuitId));
+            app.State.logActivity(sprintf('Delete circuit — %s', circuitName), 'Success');
+            obj.onRefreshCircuits();  % itself dispatches async listCircuits
+        end
+
+        function onDeleteCircuitError(~, app, ME)
+            app.logEvent('ERROR', sprintf('deleteCircuit FAILED: %s', ME.message));
+            app.showError('Delete Circuit', ME);
         end
     end
 
@@ -274,23 +316,44 @@ classdef UploadViewModel < handle
             app.logEvent('API', sprintf('Circuit uploaded successfully — id: %s  name: %s  format: %s  project: %s', ...
                 app.State.selectedCircuitId, name, format, char(app.State.currentProjectId)));
             app.State.logActivity(sprintf('Upload circuit — %s', name), 'Success');
-            % Prefer server-rendered SVG (complete, all gates) after upload
+
+            % Async preview fetch — the server-rendered SVG GET was a
+            % 200-1000 ms freeze on top of the already-async upload.
+            % The diagram-render + success-alert continuation runs from
+            % onUploadCompleteAfterPreview on the main thread once the
+            % preview round-trip lands.
+            svc   = app.CircuitSvc;
+            cid   = char(app.State.selectedCircuitId);
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.previewCircuit(cid, token), ...
+                @(prevData) obj.onUploadCompleteAfterPreview(app, prevData, name, format, category, silent), ...
+                @(ME) obj.onUploadCompletePreviewFailed(app, name, format, category, silent, ME));
+        end
+
+        function onUploadCompleteAfterPreview(obj, app, prevData, name, format, category, silent)
             diagramHtml = '';
             try
-                prevData = app.CircuitSvc.previewCircuit( ...
-                    app.State.selectedCircuitId, app.State.authToken);
-                serverSvg = char(JsonHelper.pick(prevData, {'svg'}));
-                if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
-                    diagramHtml = serverSvg;
+                if ~isempty(prevData)
+                    serverSvg = char(JsonHelper.pick(prevData, {'svg'}));
+                    if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
+                        diagramHtml = serverSvg;
+                    end
                 end
-            catch ME; Logger.debug('UploadViewModel', 'onUploadComplete previewCircuit: %s', ME.message); end
-            % Fallback: client-side rendering
+            catch ME
+                Logger.debug('UploadViewModel', ...
+                    'onUploadComplete previewCircuit parse: %s', ME.message);
+            end
+            % Fallback: client-side rendering of the local QASM.
             if isempty(diagramHtml)
                 filePath2 = char(app.State.selectedFile);
                 if ~isempty(filePath2) && isfile(filePath2)
                     try
                         diagramHtml = CircuitDiagram.renderSvg(fileread(filePath2));
-                    catch ME; Logger.debug('UploadViewModel', 'onUploadComplete fallback renderSvg: %s', ME.message); end
+                    catch ME
+                        Logger.debug('UploadViewModel', ...
+                            'onUploadComplete fallback renderSvg: %s', ME.message);
+                    end
                 end
             end
             app.CircuitStatsArea.HTMLSource = CircuitDiagram.buildStatsHtml({}, diagramHtml);
@@ -302,6 +365,14 @@ classdef UploadViewModel < handle
             end
             app.hideLoading();
             obj.onRefreshCircuits();
+        end
+
+        function onUploadCompletePreviewFailed(obj, app, name, format, category, silent, ME)
+            % Preview GET failed — proceed with empty server SVG so the
+            % continuation falls back to client-side renderSvg.
+            Logger.debug('UploadViewModel', ...
+                'onUploadComplete previewCircuit: %s', ME.message);
+            obj.onUploadCompleteAfterPreview(app, [], name, format, category, silent);
         end
 
         function onUploadError(~, app, filePath, ME)

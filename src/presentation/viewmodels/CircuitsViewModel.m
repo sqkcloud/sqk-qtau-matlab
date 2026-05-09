@@ -164,14 +164,12 @@ classdef CircuitsViewModel < handle
             curDp   = JsonHelper.safeField(c, 'depth', '');
             if isnumeric(curDp); curDp = num2str(curDp); else; curDp = char(string(curDp)); end
 
-            % Fetch full circuit record (includes raw_content)
-            curContent = '';
-            try
-                full = app.CircuitSvc.getCircuit(cid, app.State.authToken);
-                curContent = char(string(JsonHelper.safeField(full, 'raw_content', '')));
-            catch
-                % raw_content not available — leave empty
-            end
+            % Open the dialog immediately with a placeholder so the user
+            % gets instant feedback on the click. The full circuit record
+            % (raw_content) is fetched asynchronously below and back-filled
+            % into contentField once it lands. Was a synchronous GET that
+            % froze the parent window for ~0.3-1.5 s on every Edit click.
+            curContent = Labels.get('circuits_edit_loading_content', '(Loading content...)');
 
             % ── Build modal dialog ───────────────────────────────────
             figPos = app.UIFigure.Position;
@@ -328,6 +326,18 @@ classdef CircuitsViewModel < handle
                 'FontSize', 11, 'FontColor', Theme.COLOR_DANGER, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
             statusLbl.Layout.Row = 14;
+
+            % Async raw_content fetch — dialog is fully built, so the
+            % contentField handle is safe to capture. The success
+            % callback only updates the textarea if the dialog is still
+            % open (user might cancel mid-flight).
+            svc   = app.CircuitSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.getCircuit(cid, token), ...
+                @(full) obj.onEditDialogContentLoaded(contentField, full), ...
+                @(ME) Logger.debug('CircuitsViewModel', ...
+                    'Edit dialog raw_content fetch: %s', ME.message));
         end
 
         function onDeleteCircuit(obj, row)
@@ -385,18 +395,50 @@ classdef CircuitsViewModel < handle
                 return;
             end
 
-            try
-                statusLbl.Text = Labels.get('circuits_status_saving', 'Saving...');
-                statusLbl.FontColor = Theme.COLOR_MUTED;
-                drawnow;
-                app.CircuitSvc.updateCircuit(cid, patch, app.State.authToken);
-                app.logEvent('API', sprintf('Circuit updated: %s', cid));
+            statusLbl.Text = Labels.get('circuits_status_saving', 'Saving...');
+            statusLbl.FontColor = Theme.COLOR_MUTED;
+            drawnow;
+
+            % Async — the PATCH /api/circuits/{id} round-trip was
+            % freezing the Edit dialog (and the parent window) for the
+            % duration of the request. Success/error callbacks run on
+            % the main thread and have direct access to dlg/statusLbl
+            % via the closure.
+            svc   = app.CircuitSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.updateCircuit(cid, patch, token), ...
+                @(~)  obj.onSaveCircuitComplete(app, dlg, cid), ...
+                @(ME) obj.onSaveCircuitError(app, statusLbl, ME));
+        end
+
+        function onSaveCircuitComplete(obj, app, dlg, cid)
+            app.logEvent('API', sprintf('Circuit updated: %s', cid));
+            if ~isempty(dlg) && isvalid(dlg)
                 delete(dlg);
-                obj.onLoadCircuits();
-            catch ME
+            end
+            obj.onLoadCircuits();
+        end
+
+        function onSaveCircuitError(~, app, statusLbl, ME)
+            if ~isempty(statusLbl) && isvalid(statusLbl)
                 statusLbl.Text = sprintf('%s %s', Labels.get('circuits_error_save_failed', 'Save failed:'), ME.message);
                 statusLbl.FontColor = Theme.COLOR_DANGER;
-                app.logEvent('ERROR', sprintf('updateCircuit FAILED: %s', ME.message));
+            end
+            app.logEvent('ERROR', sprintf('updateCircuit FAILED: %s', ME.message));
+        end
+
+        function onEditDialogContentLoaded(~, contentField, full)
+            % Back-fill the Edit dialog's QASM textarea once the
+            % async getCircuit lands. The user may have closed the
+            % dialog in the meantime, so guard the handle.
+            if isempty(contentField) || ~isvalid(contentField); return; end
+            try
+                content = char(string(JsonHelper.safeField(full, 'raw_content', '')));
+                contentField.Value = content;
+            catch ME
+                Logger.debug('CircuitsViewModel', ...
+                    'Edit dialog content set: %s', ME.message);
             end
         end
 
