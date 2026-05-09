@@ -2014,5 +2014,218 @@ classdef DialogBuilder
                 if strcmp(st, target); flag = true; return; end
             end
         end
+
+        function buildCompatibleCircuitPicker(app, qubitCeiling, onPickFcn)
+            % QMC oracle picker. Opens a modal listing the current
+            %   project's circuits filtered to qubits <= qubitCeiling
+            %   (the wider of statevector=30 / max IBM Runtime backend
+            %   qubit count). Used by AnalysisViewModel when the active
+            %   circuit can't run QMC in any mode — gives the operator
+            %   a one-click way to swap to a compatible amplitude
+            %   oracle without leaving the dialog flow.
+            %
+            % Arguments
+            %   app           — QTAUWorkbenchApp host (theme + services)
+            %   qubitCeiling  — int; max qubit count to allow
+            %   onPickFcn     — @(circuit) ... fired with the picked
+            %                   struct {id, name, qubits, gates, depth}
+            %                   when "Use Selected" is clicked
+            if nargin < 2 || isempty(qubitCeiling); qubitCeiling = 30; end
+            if nargin < 3 || isempty(onPickFcn);    onPickFcn = @(~) []; end
+
+            figPos = app.UIFigure.Position;
+            dlgW = 720;
+            dlgH = 520;
+            dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
+            dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
+
+            bgColor    = Theme.COLOR_BG;
+            cardBg     = Theme.COLOR_CARD;
+            cardBorder = Theme.COLOR_DIVIDER;
+            titleColor = Theme.COLOR_HEADING;
+            mutedColor = Theme.COLOR_MUTED;
+            labelColor = Theme.COLOR_LABEL;
+
+            pick = uifigure( ...
+                'Name', 'Choose Compatible Circuit', ...
+                'Position', [dlgX dlgY dlgW dlgH], ...
+                'WindowStyle', 'modal', ...
+                'Resize', 'on', ...
+                'Color', bgColor);
+            Theme.applyFigureMode(pick, Theme.activeName());
+
+            outer = uigridlayout(pick, [3 3]);
+            outer.RowHeight     = {16, '1x', 16};
+            outer.ColumnWidth   = {16, '1x', 16};
+            outer.Padding       = [0 0 0 0];
+            outer.RowSpacing    = 0;
+            outer.ColumnSpacing = 0;
+            outer.BackgroundColor = bgColor;
+
+            card = uipanel(outer, 'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', cardBg, ...
+                'HighlightColor', cardBorder, ...
+                'BorderColor', cardBorder);
+            card.Layout.Row = 2; card.Layout.Column = 2;
+
+            cg = uigridlayout(card, [4 1]);
+            cg.RowHeight   = {32, 22, '1x', 44};
+            cg.ColumnWidth = {'1x'};
+            cg.Padding     = [16 12 16 12];
+            cg.RowSpacing  = 8;
+            cg.BackgroundColor = cardBg;
+
+            titleLbl = uilabel(cg, ...
+                'Text', sprintf('Choose a circuit compatible with QMC  ·  ≤ %dq', ...
+                    round(qubitCeiling)), ...
+                'FontSize', 16, 'FontWeight', 'bold', 'FontColor', titleColor);
+            titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
+
+            subLbl = uilabel(cg, ...
+                'Text', sprintf(['Pick a circuit that fits the widest available execution mode. ' ...
+                                 'Bundled QMC oracles live under samples/aqs-qmc/ ' ...
+                                 '(e.g. aqs_qmc_var_7q_*.qasm).']), ...
+                'FontSize', 11, 'FontColor', mutedColor, 'WordWrap', 'on');
+            subLbl.Layout.Row = 2; subLbl.Layout.Column = 1;
+
+            tbl = uitable(cg, ...
+                'ColumnName',  {'Name', 'Qubits', 'Gates', 'Depth'}, ...
+                'ColumnWidth', {'4x', '1x', '1x', '1x'}, ...
+                'RowName',     {}, ...
+                'Data',        cell(0, 4), ...
+                'SelectionType', 'row', ...
+                'Multiselect',   'off');
+            tbl.Layout.Row = 3; tbl.Layout.Column = 1;
+            app.styleTable(tbl);
+
+            footer = uigridlayout(cg, [1 4]);
+            footer.Layout.Row = 4; footer.Layout.Column = 1;
+            footer.ColumnWidth = {'1x', 16, 100, 160};
+            footer.RowHeight = {36};
+            footer.Padding = [0 4 0 4]; footer.ColumnSpacing = 8;
+            footer.BackgroundColor = cardBg;
+
+            statusLbl = uilabel(footer, ...
+                'Text', 'Loading project circuits…', ...
+                'FontSize', 11, 'FontColor', mutedColor, ...
+                'VerticalAlignment', 'center');
+            statusLbl.Layout.Row = 1; statusLbl.Layout.Column = 1;
+
+            cancelBtn = uibutton(footer, ...
+                'Text', [char(10005) ' Cancel'], ...
+                'ButtonPushedFcn', @(~,~) delete(pick));
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 3;
+            app.styleBtn(cancelBtn, 'ghost');
+
+            useBtn = uibutton(footer, ...
+                'Text', [char(10003) ' Use Selected'], ...
+                'Enable', 'off');
+            useBtn.Layout.Row = 1; useBtn.Layout.Column = 4;
+            app.styleBtn(useBtn, 'primary');
+
+            %  Stash the row→circuit mapping on the table's UserData
+            %  so the Use button reads the picked struct via the
+            %  current row Selection. Cleaner than maintaining a
+            %  parallel cell array in scope.
+            tbl.UserData = struct('rows', {{}});
+
+            tbl.SelectionChangedFcn = @(src,~) localOnRowSelected(src, useBtn);
+            useBtn.ButtonPushedFcn = @(~,~) localOnUseClicked(tbl, pick, onPickFcn);
+
+            %  Async fetch — fill table on completion. The async path
+            %  matches the pattern used elsewhere (no UI blocking).
+            try
+                token = app.State.authToken;
+                circuitSvc = app.CircuitSvc;
+                AsyncRunner.run( ...
+                    @() circuitSvc.listCircuits(token), ...
+                    @(data) localOnCircuitsLoaded(tbl, statusLbl, useBtn, ...
+                        data, qubitCeiling, labelColor, mutedColor), ...
+                    @(ME)   localOnCircuitsError(statusLbl, ME, labelColor));
+            catch ME
+                localOnCircuitsError(statusLbl, ME, labelColor);
+            end
+
+            Logger.info('DialogBuilder', ...
+                'Compatible Circuit Picker shown (ceiling = %dq)', round(qubitCeiling));
+        end
+    end
+end
+
+% ── Local helpers for buildCompatibleCircuitPicker ─────────────────────
+function localOnCircuitsLoaded(tbl, statusLbl, useBtn, data, ceiling, labelColor, mutedColor) %#ok<INUSD>
+    if ~isvalid(tbl); return; end
+    items = JsonHelper.extractListSafe(data, 'circuits');
+    n = numel(items);
+    rows  = {};
+    metas = {};
+    for i = 1:n
+        if iscell(items); it = items{i}; else; it = items(i); end
+        nq = JsonHelper.toDouble(JsonHelper.pick(it, ...
+            {'num_qubits','qubits','n_qubits'}));
+        if isnan(nq); nq = 0; end
+        if nq <= 0 || nq > ceiling; continue; end
+        nm = char(JsonHelper.pick(it, {'name','circuit_name'}, ''));
+        cid = char(JsonHelper.pick(it, {'circuit_id','id'}, ''));
+        ng = JsonHelper.toDouble(JsonHelper.pick(it, ...
+            {'gate_count','num_gates','total_gates'}));
+        if isnan(ng); ng = 0; end
+        nd = JsonHelper.toDouble(JsonHelper.pick(it, {'depth'}));
+        if isnan(nd); nd = 0; end
+        rows(end+1, :) = {nm, int32(nq), int32(ng), int32(nd)}; %#ok<AGROW>
+        metas{end+1}   = struct('id', cid, 'name', nm, ...
+            'qubits', nq, 'gates', ng, 'depth', nd); %#ok<AGROW>
+    end
+    if isempty(rows)
+        if isvalid(statusLbl)
+            statusLbl.Text = sprintf(['No project circuits ≤ %dq. Upload a smaller ' ...
+                'amplitude-oracle (samples/aqs-qmc/aqs_qmc_var_7q_*.qasm).'], ...
+                round(ceiling));
+            statusLbl.FontColor = [0.95 0.78 0.40];   % amber hint
+        end
+        return;
+    end
+    %  Sort qubits desc — the largest fitting circuit is usually the
+    %  most interesting QAE oracle (closer to hardware ceiling).
+    qcol = cell2mat(rows(:, 2));
+    [~, ord] = sort(qcol, 'descend');
+    rows  = rows(ord, :);
+    metas = metas(ord);
+    tbl.Data = rows;
+    tbl.UserData = struct('rows', {metas});
+    if isvalid(statusLbl)
+        statusLbl.Text = sprintf('%d circuit%s available', ...
+            size(rows, 1), repmat('s', 1, size(rows,1) ~= 1));
+    end
+    if isvalid(useBtn); useBtn.Enable = 'off'; end   % until row picked
+end
+
+function localOnCircuitsError(statusLbl, ME, labelColor) %#ok<INUSD>
+    if ~isvalid(statusLbl); return; end
+    statusLbl.Text = sprintf('Failed to load circuits: %s', ME.message);
+    statusLbl.FontColor = [0.95 0.40 0.40];
+end
+
+function localOnRowSelected(tbl, useBtn)
+    sel = tbl.Selection;
+    if ~isempty(sel) && isvalid(useBtn)
+        useBtn.Enable = 'on';
+    end
+end
+
+function localOnUseClicked(tbl, pick, onPickFcn)
+    sel = tbl.Selection;
+    if isempty(sel); return; end
+    rowIdx = sel(1);
+    metas = {};
+    try; metas = tbl.UserData.rows; catch; end
+    if rowIdx < 1 || rowIdx > numel(metas); return; end
+    chosen = metas{rowIdx};
+    delete(pick);
+    try
+        onPickFcn(chosen);
+    catch ME
+        Logger.warn('DialogBuilder', ...
+            'Compatible-circuit pick callback failed: %s', ME.message);
     end
 end

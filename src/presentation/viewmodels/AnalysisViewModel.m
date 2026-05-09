@@ -489,6 +489,58 @@ classdef AnalysisViewModel < handle
             end
         end
 
+        function onChooseCompatibleCircuit(obj)
+            % Wired to the QMC Run-button when the active circuit is too
+            % wide for both Statevector (≤30q) and the widest IBM Runtime
+            % backend. Opens the modal picker filtered to circuits the
+            % user can actually run QMC on; the picker invokes
+            % onCompatibleCircuitPicked when the operator commits.
+            app = obj.App;
+            v = AnalysisViewModel.evaluateQmcViability(app);
+            % Ceiling = the wider of the two modes' limits so the picker
+            % offers every circuit that has a chance of running. If the
+            % chosen circuit only fits Runtime, applyQmcViability re-marks
+            % Statevector as unavailable on reload — but Runtime is
+            % already the default mode, so nothing breaks.
+            ceiling = max(30, double(v.max_runtime_qubits));
+            DialogBuilder.buildCompatibleCircuitPicker(app, ceiling, ...
+                @(c) obj.onCompatibleCircuitPicked(c));
+        end
+
+        function onCompatibleCircuitPicked(obj, circuit)
+            % Picker callback — circuit is a struct
+            %   {id, name, qubits, gates, depth}.
+            % Updates the global session state so every screen sees the
+            % new active circuit, then closes + reopens the QMC dialog
+            % so applyQmcViability re-evaluates with the new qubit width.
+            app = obj.App;
+            if ~isstruct(circuit) || ~isfield(circuit, 'id') || isempty(circuit.id)
+                Logger.warn('AnalysisViewModel', ...
+                    'onCompatibleCircuitPicked: missing circuit id, ignoring');
+                return;
+            end
+            try
+                app.State.selectedCircuitId     = string(circuit.id);
+                app.State.selectedCircuitName   = string(circuit.name);
+                app.State.selectedCircuitQubits = double(circuit.qubits);
+            catch ME
+                Logger.warn('AnalysisViewModel', ...
+                    'onCompatibleCircuitPicked state swap: %s', ME.message);
+            end
+            app.logEvent('UI', sprintf( ...
+                'QMC oracle swapped to compatible circuit: %s (%dq)', ...
+                char(circuit.name), round(double(circuit.qubits))));
+            % Close the existing QMC dialog (cancels poll, deletes the
+            % uifigure) and reopen — full rebuild ensures the banner
+            % clears, viability re-evaluates, and the Run button reverts
+            % from "Choose Compatible Circuit" back to "Run QMC".
+            try; obj.onCloseQmcDialog(); catch; end
+            try; obj.onOpenQmcDialog();  catch ME
+                Logger.warn('AnalysisViewModel', ...
+                    'onCompatibleCircuitPicked reopen: %s', ME.message);
+            end
+        end
+
         function onDownloadQmcResults(obj)
             % M9 — export the cached QMC result struct (app.QmcLastResult)
             % to a user-chosen .json file via the Exporter utility. The
@@ -1632,15 +1684,31 @@ classdef AnalysisViewModel < handle
             catch
             end
 
-            % Run QMC button — disabled if neither mode can run.
+            % Run QMC button — when the circuit can't run in either
+            % mode, the button transforms into a "Choose Compatible
+            % Circuit" CTA that opens a picker filtered to circuits
+            % within the qubit ceiling. Same position, primary style,
+            % different action — gives the operator a one-click path
+            % out instead of a dead-end disabled state. Reverts to
+            % "Run QMC" the moment a compatible circuit is selected.
             try
                 if ~isempty(app.QmcRunButton) && isvalid(app.QmcRunButton)
                     if ~v.ok
-                        app.QmcRunButton.Enable = 'off';
-                        app.QmcRunButton.Tooltip = char(v.reason);
+                        app.QmcRunButton.Text = ...
+                            [char(8644) ' Choose Compatible Circuit'];
+                        app.QmcRunButton.Enable = 'on';
+                        app.QmcRunButton.Tooltip = ...
+                            ['This circuit is too wide for both Statevector ' ...
+                             'and IBM Runtime. Click to pick a smaller ' ...
+                             'amplitude-oracle circuit from the project.'];
+                        app.QmcRunButton.ButtonPushedFcn = ...
+                            @(~,~) app.AnalysisVm.onChooseCompatibleCircuit();
                     else
+                        app.QmcRunButton.Text   = [char(9883) ' Run QMC'];
                         app.QmcRunButton.Enable = 'on';
                         app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
+                        app.QmcRunButton.ButtonPushedFcn = ...
+                            @(~,~) app.AnalysisVm.onRunQmcAnalysis();
                     end
                 end
             catch
