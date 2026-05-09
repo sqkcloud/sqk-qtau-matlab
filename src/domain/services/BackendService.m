@@ -59,6 +59,31 @@ classdef BackendService < handle
             end
         end
 
+        % Time-sorted (newest first) per-qubit calibration samples within
+        % the last `days` (1..30, default 7) for the named backend. Each
+        % record is written through by a successful getCalibration call
+        % on the server side and evicted by a 7-day Mongo TTL. Pass
+        % `qubitIndex=[]` for all qubits, or a 0-based int to filter.
+        function data = getCalibrationHistory(obj, backendName, days, token, qubitIndex)
+            if nargin < 3 || isempty(days); days = 7; end
+            if nargin < 5; qubitIndex = []; end
+            qs = sprintf('?days=%d', round(double(days)));
+            if ~isempty(qubitIndex)
+                qs = sprintf('%s&qubit_index=%d', qs, round(double(qubitIndex)));
+            end
+            ep = sprintf('/api/backends/%s/calibration_history%s', ...
+                FastAPIClient.encodePathSegment(backendName), qs);
+            Logger.info('BackendService', 'getCalibrationHistory → GET %s', ep);
+            try
+                data = obj.Client.getAuth(ep, token);
+            catch ME
+                Logger.error('BackendService', ...
+                    'getCalibrationHistory FAILED (backend: %s): %s', ...
+                    char(backendName), ME.message);
+                rethrow(ME);
+            end
+        end
+
         % Fetch the hardware connectivity topology.
         function data = getTopology(obj, backendName, token)
             ep = sprintf('/api/backends/%s/topology', FastAPIClient.encodePathSegment(backendName));

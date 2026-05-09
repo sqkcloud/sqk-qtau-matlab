@@ -150,8 +150,45 @@ function BackendsScreen(app)
 
     dg2 = uigridlayout(detailPanel, [1 1]);
     dg2.Padding = [12 10 12 10]; dg2.BackgroundColor = Theme.COLOR_CARD;
-    app.BackendStatusArea = uitextarea(dg2, 'Editable', 'off'); app.BackendStatusArea.FontSize = 12;
+
+    % C2.B1 — Telemetry tab strip: Overview | Per-Qubit | History.
+    % Overview hosts the legacy BackendStatusArea uitextarea (kept for
+    % app.setStatus back-compat). Per-Qubit hosts a color-coded heat
+    % grid; History hosts three sparkline uiaxes (T1/T2/2Q error).
+    telemetryTg = uitabgroup(dg2);
+    telemetryTg.Layout.Row = 1; telemetryTg.Layout.Column = 1;
+
+    tabOverview = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_overview', 'Overview'));
+    tabOverview.BackgroundColor = Theme.COLOR_CARD;
+    overviewGrid = uigridlayout(tabOverview, [1 1]);
+    overviewGrid.Padding = [12 8 12 8]; overviewGrid.BackgroundColor = Theme.COLOR_CARD;
+    app.BackendStatusArea = uitextarea(overviewGrid, 'Editable', 'off');
+    app.BackendStatusArea.FontSize = 12;
     app.BackendStatusArea.Value = {Labels.get('backends_status_initial')};
+
+    tabPerQubit = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_perqubit', 'Per-Qubit'));
+    tabPerQubit.BackgroundColor = Theme.COLOR_CARD;
+    app.TelemetryPerQubitGrid = uigridlayout(tabPerQubit, [6 16]);
+    app.TelemetryPerQubitGrid.Padding = [12 8 12 8];
+    app.TelemetryPerQubitGrid.RowSpacing = 2;
+    app.TelemetryPerQubitGrid.ColumnSpacing = 2;
+    app.TelemetryPerQubitGrid.BackgroundColor = Theme.COLOR_CARD;
+
+    tabHistory = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_history', 'History'));
+    tabHistory.BackgroundColor = Theme.COLOR_CARD;
+    historyGrid = uigridlayout(tabHistory, [3 1]);
+    historyGrid.Padding = [12 8 12 8]; historyGrid.BackgroundColor = Theme.COLOR_CARD;
+    app.TelemetryHistoryAxes = cell(1, 3);
+    for k = 1:3
+        app.TelemetryHistoryAxes{k} = uiaxes(historyGrid);
+        app.TelemetryHistoryAxes{k}.Layout.Row = k;
+        app.TelemetryHistoryAxes{k}.Layout.Column = 1;
+    end
+
+    % Wire row selection so clicking a backend drills into its
+    % Telemetry tabs. CellSelectionChangedFcn fires on every click;
+    % onTableRowSelected is idempotent.
+    app.BackendTable.CellSelectionChangedFcn = @(~,~) app.BackendsVm.onTableRowSelected();
 
     % ── Action bar ────────────────────────────────────────────────────────────
     nextPanel = uipanel(g, 'Title', Labels.get('backends_panel_action'), ...

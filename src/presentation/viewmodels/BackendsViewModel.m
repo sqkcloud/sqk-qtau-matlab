@@ -61,6 +61,172 @@ classdef BackendsViewModel < handle
             app.logEvent('API', sprintf('Backends loaded — %d rows', size(rows,1)));
             obj.LastRefresh = tic;
             app.hideLoading();
+
+            % C2.B1 — Pre-fetch calibration history for every backend so
+            % the Telemetry tab strip lights up instantly on row select.
+            % Each fetch is fire-and-forget; the heat-grid + history
+            % charts paint on row select after onCalibrationHistoryLoaded
+            % populates app.CalibrationHistoryCache.
+            for r = 1:size(rows, 1)
+                bn = char(string(rows{r, 2}));
+                if ~isempty(bn)
+                    obj.fetchCalibrationHistory(bn, 7);
+                end
+            end
+        end
+
+        % ── C2.B1 — Calibration history + Telemetry panel ─────────────────
+
+        function fetchCalibrationHistory(obj, backendName, days)
+            % Async dispatch of GET /api/backends/{name}/calibration_history.
+            % Result lands in onCalibrationHistoryLoaded which caches
+            % the response on app.CalibrationHistoryCache for fast
+            % paints when the Telemetry tab strip needs to render.
+            app   = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            if isempty(backendName); return; end
+            if nargin < 3 || isempty(days); days = 7; end
+            svc   = app.BackendSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.getCalibrationHistory(backendName, days, token), ...
+                @(data) obj.onCalibrationHistoryLoaded(app, backendName, data), ...
+                @(ME)   Logger.debug('BackendsViewModel', ...
+                            'getCalibrationHistory(%s): %s', char(backendName), ME.message));
+        end
+
+        function onCalibrationHistoryLoaded(obj, app, backendName, data)
+            % Cache the response keyed by backend name. If the user
+            % already has this backend selected when the response
+            % lands, paint the Telemetry panel immediately.
+            if isempty(app.CalibrationHistoryCache)
+                app.CalibrationHistoryCache = struct();
+            end
+            safeKey = matlab.lang.makeValidName(char(backendName));
+            app.CalibrationHistoryCache.(safeKey) = data;
+            % If this is the currently-selected backend, repaint now.
+            try
+                row = obj.getSelectedRow();
+                if row > 0
+                    selName = char(string(app.BackendTable.Data{row, 2}));
+                    if strcmp(selName, char(backendName))
+                        obj.populateTelemetryPanel(app, backendName);
+                    end
+                end
+            catch ME
+                Logger.debug('BackendsViewModel', ...
+                    'history-arrival paint skipped: %s', ME.message);
+            end
+        end
+
+        function onTableRowSelected(obj)
+            % Wired to BackendTable.CellSelectionChangedFcn so the
+            % Telemetry tab strip drills into the clicked row.
+            app = obj.App;
+            row = obj.getSelectedRow();
+            if row == 0; return; end
+            selName = char(string(app.BackendTable.Data{row, 2}));
+            if isempty(selName); return; end
+            safeKey = matlab.lang.makeValidName(selName);
+            if isstruct(app.CalibrationHistoryCache) && ...
+                    isfield(app.CalibrationHistoryCache, safeKey)
+                obj.populateTelemetryPanel(app, selName);
+            else
+                % Cache miss — dispatch; onCalibrationHistoryLoaded
+                % will paint once the response lands.
+                obj.fetchCalibrationHistory(selName, 7);
+            end
+        end
+
+        function populateTelemetryPanel(obj, app, backendName)
+            safeKey = matlab.lang.makeValidName(char(backendName));
+            if isempty(app.CalibrationHistoryCache); return; end
+            if ~isfield(app.CalibrationHistoryCache, safeKey); return; end
+            data = app.CalibrationHistoryCache.(safeKey);
+            obj.paintTelemetryPerQubitHeatGrid(app, data);
+            obj.paintTelemetryHistoryCharts(app, data);
+        end
+
+        function paintTelemetryPerQubitHeatGrid(~, app, data)
+            if isempty(app.TelemetryPerQubitGrid) || ...
+                    ~isvalid(app.TelemetryPerQubitGrid)
+                return;
+            end
+            parent = app.TelemetryPerQubitGrid;
+            delete(parent.Children);
+            parent.RowHeight   = repmat({22}, 1, 6);
+            parent.ColumnWidth = repmat({60}, 1, 16);
+            metrics = {'qubit', 'T1', 'T2', 'gate_err', 'rd_err', '2Q_err'};
+            recs = data.records;
+            if iscell(recs); n = numel(recs); else; n = numel(recs); end
+            per_qubit = containers.Map('KeyType', 'int32', 'ValueType', 'any');
+            for i = 1:n
+                if iscell(recs); r = recs{i}; else; r = recs(i); end
+                qi = int32(JsonHelper.pickNumeric(r, 'qubit_index', -1));
+                if qi < 0; continue; end
+                if ~isKey(per_qubit, qi)
+                    per_qubit(qi) = r;  % first wins (DESC sorted = newest)
+                end
+            end
+            qubits = sort(cell2mat(keys(per_qubit)));
+            % Header row
+            for c = 1:min(numel(qubits), 16)
+                lbl = uilabel(parent, 'Text', sprintf('q[%d]', qubits(c)), ...
+                              'FontSize', 10, 'FontWeight', 'bold');
+                lbl.Layout.Row = 1; lbl.Layout.Column = c;
+            end
+            % Metric rows
+            for m = 2:numel(metrics)
+                for c = 1:min(numel(qubits), 16)
+                    r = per_qubit(qubits(c));
+                    switch metrics{m}
+                        case 'T1';        v = JsonHelper.pickNumeric(r, 'T1', NaN);
+                        case 'T2';        v = JsonHelper.pickNumeric(r, 'T2', NaN);
+                        case 'gate_err';  v = JsonHelper.pickNumeric(r, 'gate_error', NaN);
+                        case 'rd_err';    v = JsonHelper.pickNumeric(r, 'readout_error', NaN);
+                        case '2Q_err';    v = JsonHelper.pickNumeric(r, 'two_q_error', NaN);
+                    end
+                    color = BackendsViewModel.healthColor(metrics{m}, v);
+                    lbl = uilabel(parent, ...
+                        'Text', BackendsViewModel.fmtMetric(metrics{m}, v), ...
+                        'FontSize', 10, 'BackgroundColor', color);
+                    lbl.Layout.Row = m; lbl.Layout.Column = c;
+                end
+            end
+        end
+
+        function paintTelemetryHistoryCharts(~, app, data)
+            if isempty(app.TelemetryHistoryAxes) || ...
+                    numel(app.TelemetryHistoryAxes) < 3
+                return;
+            end
+            fields = {'T1', 'T2', 'two_q_error'};
+            titles = {'T1 (s)', 'T2 (s)', '2Q gate error'};
+            recs   = data.records;
+            if iscell(recs); n = numel(recs); else; n = numel(recs); end
+            for k = 1:3
+                ax = app.TelemetryHistoryAxes{k};
+                if isempty(ax) || ~isvalid(ax); continue; end
+                cla(ax); ax.Title.String = titles{k};
+                ts = NaT(1, n); vals = nan(1, n);
+                for i = 1:n
+                    if iscell(recs); r = recs{i}; else; r = recs(i); end
+                    try
+                        ts(i) = datetime(strrep(char(r.sampled_at), 'Z', '+00:00'), ...
+                                         'InputFormat', 'yyyy-MM-dd''T''HH:mm:ssXXX', ...
+                                         'TimeZone', 'UTC');
+                    catch; continue; end
+                    vals(i) = JsonHelper.pickNumeric(r, fields{k}, NaN);
+                end
+                valid = ~isnat(ts) & ~isnan(vals);
+                if any(valid)
+                    [tsS, idx] = sort(ts(valid));
+                    vS = vals(valid); vS = vS(idx);
+                    plot(ax, tsS, vS, '-', 'Color', Theme.COLOR_PRIMARY, ...
+                         'LineWidth', 1.4);
+                    ax.XGrid = 'on'; ax.YGrid = 'on';
+                end
+            end
         end
 
         function onRefreshBackendsError(~, app, ME)
@@ -632,6 +798,45 @@ classdef BackendsViewModel < handle
             tf = false;
             if isstruct(data) && isfield(data, 'backends')
                 tf = ~isempty(data.backends);
+            end
+        end
+
+        % C2.B1 — health-graded background color for the Per-Qubit
+        % heat-grid cells. Thresholds match the Quantum-Insider 2026
+        % dashboard study (>95% Optimal/green, 70-95% Watch/amber,
+        % <70% Critical/red), with metric-appropriate cutoffs.
+        function c = healthColor(metric, v)
+            c = Theme.COLOR_CARD;
+            if isnan(v); return; end
+            switch metric
+                case {'gate_err','rd_err','2Q_err'}
+                    if v < 5e-3;       c = [0.85 0.95 0.85];
+                    elseif v < 2e-2;   c = [1.00 0.95 0.80];
+                    else;              c = [0.99 0.83 0.83];
+                    end
+                case 'T1'
+                    if v > 1e-4;       c = [0.85 0.95 0.85];
+                    elseif v > 5e-5;   c = [1.00 0.95 0.80];
+                    else;              c = [0.99 0.83 0.83];
+                    end
+                case 'T2'
+                    if v > 7e-5;       c = [0.85 0.95 0.85];
+                    elseif v > 3e-5;   c = [1.00 0.95 0.80];
+                    else;              c = [0.99 0.83 0.83];
+                    end
+            end
+        end
+
+        % C2.B1 — metric-aware cell text formatting for the heat-grid.
+        function s = fmtMetric(metric, v)
+            if isnan(v); s = char(8212); return; end
+            switch metric
+                case 'T1';        s = sprintf('%.0f us', v * 1e6);
+                case 'T2';        s = sprintf('%.0f us', v * 1e6);
+                case 'gate_err';  s = sprintf('%.1e', v);
+                case 'rd_err';    s = sprintf('%.1e', v);
+                case '2Q_err';    s = sprintf('%.1e', v);
+                otherwise;        s = sprintf('%g', v);
             end
         end
     end

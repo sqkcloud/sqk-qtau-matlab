@@ -372,6 +372,12 @@ classdef QTAUWorkbenchApp < handle
         BackendsNextBtn
         BackendsPageLabel
         BackendsPopupPanel
+        % C2.B1 — calibration sparkline column + Telemetry tab strip.
+        CalibrationHistoryCache = []  % struct keyed by makeValidName(backend) → response
+        BackendSparklineGrid          % overlay uigridlayout that mirrors the BackendTable rows
+        BackendSparklineAxes          % struct keyed by makeValidName(backend) → uiaxes per row
+        TelemetryPerQubitGrid         % uigridlayout for the Per-Qubit heat grid (8x16)
+        TelemetryHistoryAxes          % {1×3} cell of uiaxes for History sparklines (T1/T2/2Q)
     end
 
     % ── Benchmark tab ─────────────────────────────────────────────────────────
