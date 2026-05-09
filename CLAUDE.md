@@ -98,7 +98,7 @@ src/
 | UploadScreen | UploadViewModel | Circuit upload with format selection and preview | ✓ |
 | AnalysisScreen | AnalysisViewModel | Circuit feature extraction, QTAUBench similarity, **Quantum Monte Carlo popup** | ✓ |
 | DetailedAnalysisScreen | DetailedAnalysisViewModel | Heatmaps, drift, qubit metrics, cross-run comparisons — toolbar has Circuit selector + **Analyze bridge** to the Analysis screen | ✓ |
-| BackendsScreen | BackendsViewModel | Backend explorer with primary/backup selection | ✓ |
+| BackendsScreen | BackendsViewModel | Backend explorer with primary/backup selection. Right panel hosts a **Telemetry tab strip** (`Overview / Per-Qubit / History`) — Per-Qubit shows a color-coded health heat-grid (T1/T2/gate_err/readout_err/2Q_err per qubit), History shows three 7-day sparklines (T1, T2, 2Q error). Click any backend row to drill in; histories are pre-fetched on tab refresh. | ✓ |
 | BenchmarkScreen | BenchmarkViewModel | Execution parameters, mitigation strategy, cost | ✓ |
 | BenchmarkDashboardScreen | BenchmarkDashboardViewModel | Benchmark configuration summary and recommendations | ✓ |
 | CircuitCuttingScreen | CircuitCuttingViewModel | Circuit cutting + distributed reconstruction (Automatic / Assisted / Manual modes, preset-driven for domain workflows in Phase 2) | ✓ |
@@ -154,6 +154,7 @@ FastAPIClient talks to a FastAPI server (default `http://34.42.87.190:5715`). Au
 Notable flows:
 
 - **QAE async jobs** — `POST /api/circuits/{id}/qae/analyze` → `202 {job_id}`, then poll `GET /api/qae/jobs/{job_id}`; `DELETE` cancels. The legacy synchronous call is gone — every caller must poll.
+- **Calibration history** — every successful `GET /api/backends/{name}/calibration` writes through one row per qubit into the `calibration_history` Mongo collection (Bunnet `CalibrationHistoryDocument`, sync). `GET /api/backends/{name}/calibration_history?days=7&qubit_index=N` returns time-sorted (DESC) per-qubit samples within the lookback window (1-30 days). Mongo TTL index evicts records >7 days old. Consumed by the Backends screen's Telemetry tab strip (Per-Qubit heat-grid + History sparklines) — pre-fetched for every visible backend on tab refresh and cached on `app.CalibrationHistoryCache`.
 - **IBM execution log** — `GET /api/circuits/{id}/qae/ibm-log?fmt=json|jsonl` pulls counts + metadata from `QiskitRuntimeService.job(runtime_job_id)` for the cached QAE result; schema matches the hybrid-QMC notebook's `JSONLLogger`.
 - **Sort-by-submitted_at** — `GET /api/jobs` now returns newest first (backend `.sort("-submitted_at")` using the existing compound index); MATLAB re-sorts defensively in `JsonHelper.jobsToRows` as a second layer.
 - **Self-healing job list** — `list_jobs` lazy-refreshes up to 10 in-flight jobs per call from IBM Quantum so progress advances even when the Celery beat sweeper isn't deployed.
