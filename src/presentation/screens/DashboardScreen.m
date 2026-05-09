@@ -194,23 +194,22 @@ function DashboardScreen(app)
         'BackgroundColor', Theme.COLOR_CARD);
     stepperPanel.Layout.Row = 4; stepperPanel.Layout.Column = [1 2];   % Phase 7: shifted +1
 
-    %  Phase 9: tightened the row heights so the stepper feels lighter.
-    %  Was 28+18 with a 22-pt dot; the 22-pt unicode glyphs read as
-    %  giant green check-marks — fine for a CI dashboard, wrong for a
-    %  workflow stepper. Down to 22 + 18 with a 14-pt dot puts the
-    %  visual weight on the stage label, not the indicator (matches IBM
-    %  Quantum / Material Stepper proportions).
+    %  Phase 10: dot row bumped 22→28 so the bigger 18-pt current-step
+    %  glyph (●) doesn't clip; smaller completed/upcoming glyphs (12 pt)
+    %  still fit comfortably. Visual weight stays on the active dot
+    %  while the others recede — IBM Quantum / Material Stepper
+    %  proportions.
     sgrid = uigridlayout(stepperPanel, [2 8]);
-    sgrid.RowHeight = {22, 18};
+    sgrid.RowHeight = {28, 18};
     sgrid.ColumnWidth = repmat({'1x'}, 1, 8);
-    sgrid.Padding = [12 8 12 6];
-    sgrid.RowSpacing = 4;
+    sgrid.Padding = [12 6 12 6];
+    sgrid.RowSpacing = 2;
     sgrid.ColumnSpacing = 0;
     sgrid.BackgroundColor = Theme.COLOR_CARD;
 
     stageNames = { ...
-        Labels.get('dashboard_stepper_welcome',   'Welcome'), ...
-        Labels.get('dashboard_stepper_upload',    'Upload'), ...
+        Labels.get('dashboard_stepper_welcome',   'Projects'), ...
+        Labels.get('dashboard_stepper_upload',    'Circuit'), ...
         Labels.get('dashboard_stepper_analysis',  'Analysis'), ...
         Labels.get('dashboard_stepper_backend',   'Backend'), ...
         Labels.get('dashboard_stepper_benchmark', 'Benchmark'), ...
@@ -228,26 +227,33 @@ function DashboardScreen(app)
     app.DashStepperDots  = cell(1, 8);
     app.DashStepperNames = cell(1, 8);
     for i = 1:8
-        % Top row: dot/glyph (default to upcoming ◯ until VM updates).
-        % Phase 9: dropped 22→14 pt and switched default to bullet (●)
-        % so the upcoming indicator reads as a quiet step marker, not
-        % an empty circle competing for attention with the completed ✓.
+        % Top row: dot/glyph (default to upcoming ○ until VM updates).
+        % Phase 10: state-graded glyphs — paintWorkflowStepper sizes
+        % each dot per state. Default here is upcoming = small ○ at
+        % 12 pt in muted (faint future); completed becomes • at 12 pt
+        % in success (quiet done); current becomes ● at 18 pt bold in
+        % primary (emphatic HERE). Size + fill encode state, not just
+        % colour — readable for colour-blind operators too.
         dotLbl = uilabel(sgrid, ...
-            'Text', char(9675), ...   % ◯ (white circle, upcoming)
-            'FontSize', 14, 'FontWeight', 'bold', ...
+            'Text', char(9675), ...   % ○ (outlined circle, upcoming)
+            'FontSize', 12, ...
             'FontColor', Theme.COLOR_MUTED, ...
             'HorizontalAlignment', 'center', ...
             'VerticalAlignment',   'center');
         dotLbl.Layout.Row = 1; dotLbl.Layout.Column = i;
         app.DashStepperDots{i} = dotLbl;
 
-        % Bottom row: clickable stage name. uibutton styled as ghost
-        % so it visually reads as a label but accepts the click.
+        % Bottom row: clickable stage name. Phase 10: explicit
+        % BackgroundColor matches the stepper panel so the uibutton's
+        % default outline blends in — chip reads as a clickable label,
+        % not a tab-button. paintWorkflowStepper inverts FontWeight
+        % (bold for current, normal for others) and FontColor so the
+        % active stage stands out without 8 outlined boxes competing.
         targetScreen = stageScreens{i};
         nmBtn = uibutton(sgrid, ...
             'Text', stageNames{i}, ...
             'FontSize', 11, ...
-            'FontColor', Theme.COLOR_LABEL, ...
+            'FontColor', Theme.COLOR_MUTED, ...
             'BackgroundColor', Theme.COLOR_CARD, ...
             'HorizontalAlignment', 'center', ...
             'Tooltip', sprintf('Jump to %s', stageNames{i}), ...

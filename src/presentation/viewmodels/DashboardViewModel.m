@@ -517,15 +517,25 @@ classdef DashboardViewModel < handle
             for i = 1:8
                 dot = app.DashStepperDots{i};
                 if isempty(dot) || ~isvalid(dot); continue; end
+                % Phase 10: state-graded fill + size, not just colour.
+                %   completed → small bullet  •  12 pt success
+                %   current   → big filled    ●  18 pt primary bold
+                %   upcoming  → outlined ring ○  12 pt muted
                 if i < curIdx
-                    dot.Text      = char(10003);   % ✓ completed
-                    dot.FontColor = Theme.COLOR_SUCCESS;
+                    dot.Text       = char(8226);    % • bullet (completed)
+                    dot.FontSize   = 12;
+                    dot.FontWeight = 'normal';
+                    dot.FontColor  = Theme.COLOR_SUCCESS;
                 elseif i == curIdx
-                    dot.Text      = char(9679);    % ● active
-                    dot.FontColor = Theme.COLOR_PRIMARY;
+                    dot.Text       = char(9679);    % ● filled (current)
+                    dot.FontSize   = 18;
+                    dot.FontWeight = 'bold';
+                    dot.FontColor  = Theme.COLOR_PRIMARY;
                 else
-                    dot.Text      = char(9675);    % ◯ upcoming
-                    dot.FontColor = Theme.COLOR_MUTED;
+                    dot.Text       = char(9675);    % ○ outlined (upcoming)
+                    dot.FontSize   = 12;
+                    dot.FontWeight = 'normal';
+                    dot.FontColor  = Theme.COLOR_MUTED;
                 end
                 if ~isempty(app.DashStepperNames) && i <= numel(app.DashStepperNames)
                     nm = app.DashStepperNames{i};
@@ -533,8 +543,15 @@ classdef DashboardViewModel < handle
                         if i == curIdx
                             nm.FontColor  = Theme.COLOR_HEADING;
                             nm.FontWeight = 'bold';
-                        else
+                        elseif i < curIdx
+                            % Phase 10: completed stages a touch
+                            % brighter than upcoming (LABEL > MUTED)
+                            % so the path-travelled-so-far is visible
+                            % without competing with the current step.
                             nm.FontColor  = Theme.COLOR_LABEL;
+                            nm.FontWeight = 'normal';
+                        else
+                            nm.FontColor  = Theme.COLOR_MUTED;
                             nm.FontWeight = 'normal';
                         end
                     end
