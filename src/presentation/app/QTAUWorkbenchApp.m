@@ -83,6 +83,7 @@ classdef QTAUWorkbenchApp < handle
     properties
         WelcomeVm           % WelcomeViewModel
         DashboardVm         % DashboardViewModel
+        ComposerVm          % ComposerViewModel — lazy-initialized via NavigationManager.ensureVm
         CircuitsVm          % CircuitsViewModel
         NotesVm             % NotesViewModel
         UploadVm            % UploadViewModel

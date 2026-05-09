@@ -118,6 +118,7 @@ classdef NavigationManager
                 case 'Welcome';              fcn = @WelcomeScreen;
                 case 'Dashboard';            fcn = @DashboardScreen;
                 case 'Circuits';             fcn = @CircuitsScreen;
+                case 'Composer';             fcn = @ComposerScreen;
                 case 'Notes';                fcn = @NotesScreen;
                 case 'Upload';               fcn = @UploadScreen;
                 case 'Analysis';             fcn = @AnalysisScreen;
@@ -413,6 +414,8 @@ classdef NavigationManager
                     if isempty(app.DashboardVm); app.DashboardVm = DashboardViewModel(app); end
                 case 'Circuits'
                     if isempty(app.CircuitsVm); app.CircuitsVm = CircuitsViewModel(app); end
+                case 'Composer'
+                    if isempty(app.ComposerVm); app.ComposerVm = ComposerViewModel(app); end
                 case 'Notes'
                     if isempty(app.NotesVm); app.NotesVm = NotesViewModel(app); end
                 case 'Upload'
@@ -584,7 +587,7 @@ classdef NavigationManager
             % Phase 8 reorder: Dashboard moved to position 1 (first
             % sidebar entry) — operators land on it after login by
             % default; Projects (formerly Welcome) sits at position 2.
-            n = {'Dashboard','Welcome','Circuits','Upload','Analysis', ...
+            n = {'Dashboard','Welcome','Circuits','Composer','Upload','Analysis', ...
                  'Circuit Cutting','Backends', ...
                  'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
                  'Benchmark Dashboard', ...
@@ -599,6 +602,7 @@ classdef NavigationManager
                 char(9707),  ... ◫ Dashboard
                 char(8962),  ... ⌂ Projects (was Welcome)
                 char(9776),  ... ☰ Circuits
+                char(9998),  ... ✎ Composer
                 char(8593),  ... ↑ Upload
                 char(8981),  ... ⌕ Analysis
                 char(9986),  ... ✂ Circuit Cutting
@@ -623,7 +627,7 @@ classdef NavigationManager
             %      named "Welcome". Routing keys (navNames) stay 'Welcome'
             %      so the underlying WelcomeScreen.m / WelcomeViewModel.m
             %      classes don't need to be renamed.
-            lb = {'Dashboard','Projects','Circuits','Upload','Analysis', ...
+            lb = {'Dashboard','Projects','Circuits','Composer','Upload','Analysis', ...
                   'Circuit Cutting','Backends', ...
                   'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
                   'Benchmark Dashboard', ...
