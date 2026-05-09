@@ -204,7 +204,7 @@ function DashboardScreen(app)
     sgrid.ColumnWidth = repmat({'1x'}, 1, 8);
     sgrid.Padding = [12 6 12 6];
     sgrid.RowSpacing = 2;
-    sgrid.ColumnSpacing = 0;
+    sgrid.ColumnSpacing = 6;
     sgrid.BackgroundColor = Theme.COLOR_CARD;
 
     stageNames = { ...

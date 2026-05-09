@@ -2,7 +2,7 @@
 % Single-command launcher for QDash Workbench.
 %
 %   This script is used in two ways:
-%
+%Can
 %   1. Automatically — the Project Manager runs it when you open the .prj file.
 %   2. Manually     — run it directly from the MATL
 %         >> run('QTAUWorkbenchLauncher.m')
