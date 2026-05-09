@@ -28,7 +28,7 @@ function DashboardScreen(app)
     %  so the row is invisible until the VM detects a fresh project
     %  (no circuits, no recent jobs) and bumps RowHeight{2} to 110.
     g = uigridlayout(t, [7 2]);
-    g.RowHeight     = {Theme.BTN_ROW_HEIGHT, 0, 104, 88, 200, 140, '1x'};
+    g.RowHeight     = {Theme.BTN_ROW_HEIGHT, 0, 104, 98, 200, 140, '1x'};
     app.DashOuterGrid = g;   % stash so the VM can toggle empty-state row
     g.ColumnWidth   = {'1.4x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
@@ -200,7 +200,7 @@ function DashboardScreen(app)
     %  while the others recede — IBM Quantum / Material Stepper
     %  proportions.
     sgrid = uigridlayout(stepperPanel, [2 8]);
-    sgrid.RowHeight = {28, 18};
+    sgrid.RowHeight = {28, 28};
     sgrid.ColumnWidth = repmat({'1x'}, 1, 8);
     sgrid.Padding = [12 6 12 6];
     sgrid.RowSpacing = 2;
