@@ -484,11 +484,20 @@ classdef DashboardViewModel < handle
                 try; obj.paintGreeting(data);         catch ME; Logger.warn('DashboardViewModel','paintGreeting: %s', ME.message); end
                 % Legacy summary text fallback — only updated if the
                 % screen still has the area (kept for back-compat with
-                % any future variant that re-introduces it).
-                summary = char(JsonHelper.pick(data, {'summary','executive_summary'}));
-                if ~isempty(summary) && ~isempty(app.DashboardSummaryArea) ...
-                        && isvalid(app.DashboardSummaryArea)
-                    app.setStatus(app.DashboardSummaryArea, {summary});
+                % any future variant that re-introduces it). isa()
+                % guards isvalid() against non-handle values: isvalid
+                % throws on struct/double/etc., so the prior guard
+                % could leak past short-circuit if anything ever
+                % populated the legacy property with a non-Component.
+                try
+                    summary = char(JsonHelper.pick(data, {'summary','executive_summary'}));
+                    if ~isempty(summary) && ~isempty(app.DashboardSummaryArea) ...
+                            && isa(app.DashboardSummaryArea, 'matlab.ui.control.Component') ...
+                            && isvalid(app.DashboardSummaryArea)
+                        app.setStatus(app.DashboardSummaryArea, {summary});
+                    end
+                catch ME
+                    Logger.warn('DashboardViewModel', 'summary fallback: %s', ME.message);
                 end
 
                 % Refresh activity table from local log (pagination-aware)
