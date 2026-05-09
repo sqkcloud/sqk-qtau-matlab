@@ -899,7 +899,15 @@ classdef DialogBuilder
 
             left = uigridlayout(body, [3 1]);
             left.Layout.Row = 1; left.Layout.Column = 1;
-            left.RowHeight = {'1x', 'fit', 'fit'};
+            % Each child sized to fit its natural content so the parent
+            % can detect overflow and scroll. Was {'1x', 'fit', 'fit'} —
+            % '1x' compresses the form into the available cell so the
+            % outer Scrollable never engages; the bottom of the form
+            % (Estimated Cost) gets clipped on shorter screens. Switched
+            % to all-'fit' so total content height = sum of children, and
+            % left.Scrollable = 'on' below activates a vertical scrollbar
+            % whenever the dialog is shorter than that.
+            left.RowHeight = {'fit', 'fit', 'fit'};
             left.Padding = [0 0 0 0]; left.RowSpacing = 10;
             left.BackgroundColor = cardBg;
 
