@@ -959,10 +959,14 @@ classdef ResultsViewModel < handle
 
         function s = timingDelta(startIso, endIso)
             try
-                if isempty(startIso) || isempty(endIso); s = char(8212); return; end
-                t0 = datetime(string(startIso), 'InputFormat', ...
+                startStr = ResultsViewModel.normalizeIso(startIso);
+                endStr   = ResultsViewModel.normalizeIso(endIso);
+                if isempty(startStr) || isempty(endStr)
+                    s = char(8212); return;
+                end
+                t0 = datetime(startStr, 'InputFormat', ...
                     'yyyy-MM-dd''T''HH:mm:ss', 'TimeZone', 'UTC');
-                t1 = datetime(string(endIso),   'InputFormat', ...
+                t1 = datetime(endStr,   'InputFormat', ...
                     'yyyy-MM-dd''T''HH:mm:ss', 'TimeZone', 'UTC');
                 d = seconds(t1 - t0);
                 if ~isfinite(d) || d < 0; s = char(8212); return; end
@@ -975,6 +979,28 @@ classdef ResultsViewModel < handle
                 end
             catch
                 s = char(8212);
+            end
+        end
+
+        function s = normalizeIso(raw)
+            % Coerce ANY input shape into a single ISO-8601 char vector
+            % matching the strict 'yyyy-MM-dd''T''HH:mm:ss' format the
+            % parser expects. Strips trailing 'Z', explicit offsets
+            % (+00:00 / -05:00 / +0000), and fractional seconds — all
+            % shapes the server emits but the rigid format rejects with
+            % the "Element N of the text contains M matches" warning
+            % that bubbles up to applyHeroAndKpis's catch.
+            s = '';
+            if isempty(raw); return; end
+            try
+                v = string(raw);
+                if numel(v) > 1; v = v(1); end
+                s = char(strtrim(v));
+                s = regexprep(s, 'Z$', '');
+                s = regexprep(s, '([+-]\d{2}:?\d{2})$', '');
+                s = regexprep(s, '\.\d+$', '');
+            catch
+                s = '';
             end
         end
 

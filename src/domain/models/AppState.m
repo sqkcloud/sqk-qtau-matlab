@@ -87,14 +87,32 @@ classdef AppState < handle
 
         % ── Session-level response caches ────────────────────────────────────
         % Several screens (Backends, Circuit Cutting, Benchmark Dashboard,
-        % Prediction) all hit /api/backends and /api/circuits on entry —
-        % both rarely change inside a session, so caching them here saves
-        % 0.3–1.5 s per nav. Caches are checked by callers before they
-        % issue a fetch; set CacheAt to [] to invalidate.
-        CircuitListCache    = []
-        CircuitListCacheAt  = []
-        BackendPoolCache    = []
-        BackendPoolCacheAt  = []
+        % Prediction, Mitigation Compare, Run Planner, Resource Estimator)
+        % all hit /api/circuits, /api/backends, and /api/mitigation/levels
+        % on entry — those rarely change inside a session, so caching them
+        % here saves 0.3–1.5 s per nav. Caches are checked by callers
+        % before they issue a fetch; helper methods below provide a
+        % uniform fresh/set/invalidate interface.
+        %
+        % CircuitListCache       — raw /api/circuits response envelope.
+        %                          Wrapped by JsonHelper.extractListSafe at
+        %                          read-time by the consuming VM.
+        % BackendPoolCache       — normalized {name,num_qubits,simulator}
+        %                          struct array used by Circuit Cutting's
+        %                          per-row pickers. DIFFERENT shape than
+        %                          BackendListCache — kept separate to
+        %                          preserve the existing CircuitCutting
+        %                          call site. Uses datetime('now') stamps.
+        % BackendListCache       — raw /api/backends response envelope.
+        % MitigationLevelsCache  — raw /api/mitigation/levels response.
+        CircuitListCache         = []
+        CircuitListCacheAt       = []
+        BackendPoolCache         = []
+        BackendPoolCacheAt       = []
+        BackendListCache         = []
+        BackendListCacheAt       = []
+        MitigationLevelsCache    = []
+        MitigationLevelsCacheAt  = []
     end
 
     methods
@@ -138,6 +156,53 @@ classdef AppState < handle
             if size(obj.ActivityLog, 1) > 500
                 obj.ActivityLog = obj.ActivityLog(1:500, :);
             end
+        end
+
+        % ── Session cache helpers ────────────────────────────────────────────
+        % Uniform fresh/set/invalidate for the shared lookup caches above.
+        % Uses datetime('now') + seconds(...) to match the legacy
+        % BackendPoolCache convention in CircuitCuttingViewModel.
+
+        function tf = isCircuitsListCacheFresh(obj, ttlSec)
+            tf = ~isempty(obj.CircuitListCache) ...
+                && ~isempty(obj.CircuitListCacheAt) ...
+                && seconds(datetime('now') - obj.CircuitListCacheAt) < ttlSec;
+        end
+        function setCircuitsListCache(obj, val)
+            obj.CircuitListCache   = val;
+            obj.CircuitListCacheAt = datetime('now');
+        end
+        function invalidateCircuitsListCache(obj)
+            obj.CircuitListCache   = [];
+            obj.CircuitListCacheAt = [];
+        end
+
+        function tf = isBackendsListCacheFresh(obj, ttlSec)
+            tf = ~isempty(obj.BackendListCache) ...
+                && ~isempty(obj.BackendListCacheAt) ...
+                && seconds(datetime('now') - obj.BackendListCacheAt) < ttlSec;
+        end
+        function setBackendsListCache(obj, val)
+            obj.BackendListCache   = val;
+            obj.BackendListCacheAt = datetime('now');
+        end
+        function invalidateBackendsListCache(obj)
+            obj.BackendListCache   = [];
+            obj.BackendListCacheAt = [];
+        end
+
+        function tf = isMitigationLevelsCacheFresh(obj, ttlSec)
+            tf = ~isempty(obj.MitigationLevelsCache) ...
+                && ~isempty(obj.MitigationLevelsCacheAt) ...
+                && seconds(datetime('now') - obj.MitigationLevelsCacheAt) < ttlSec;
+        end
+        function setMitigationLevelsCache(obj, val)
+            obj.MitigationLevelsCache   = val;
+            obj.MitigationLevelsCacheAt = datetime('now');
+        end
+        function invalidateMitigationLevelsCache(obj)
+            obj.MitigationLevelsCache   = [];
+            obj.MitigationLevelsCacheAt = [];
         end
 
         % Resets all pipeline IDs without touching auth so the user can start a

@@ -185,10 +185,57 @@ function BackendsScreen(app)
         app.TelemetryHistoryAxes{k}.Layout.Column = 1;
     end
 
+    % ── Topology tab — coupling-map graph view ───────────────────────────────
+    % Lazy-loaded: when the user activates this tab, BackendsVm dispatches
+    % BackendService.getTopology(...) and paints the graph. Force-directed
+    % layout via MATLAB's native graph plot. Click a qubit → side panel
+    % renders that qubit's calibration.
+    tabTopology = uitab(telemetryTg, 'Title', Labels.get('backends_topology_tab_title'));
+    tabTopology.BackgroundColor = Theme.COLOR_CARD;
+    topoGrid = uigridlayout(tabTopology, [1 2]);
+    topoGrid.ColumnWidth = {'1x', 240};
+    topoGrid.Padding = [12 8 12 8];
+    topoGrid.ColumnSpacing = 10;
+    topoGrid.BackgroundColor = Theme.COLOR_CARD;
+
+    app.TopologyAxes = uiaxes(topoGrid);
+    app.TopologyAxes.Layout.Row = 1; app.TopologyAxes.Layout.Column = 1;
+    app.TopologyAxes.Toolbar.Visible = 'off';
+    app.TopologyAxes.Color   = Theme.COLOR_CARD;
+    app.TopologyAxes.XColor  = Theme.COLOR_MUTED;
+    app.TopologyAxes.YColor  = Theme.COLOR_MUTED;
+    app.TopologyAxes.XTick = []; app.TopologyAxes.YTick = [];
+    app.TopologyAxes.Box     = 'off';
+    try; disableDefaultInteractivity(app.TopologyAxes); catch; end
+
+    sideGrid = uigridlayout(topoGrid, [3 1]);
+    sideGrid.Layout.Row = 1; sideGrid.Layout.Column = 2;
+    sideGrid.RowHeight = {'fit', 'fit', '1x'};
+    sideGrid.Padding = [0 0 0 0]; sideGrid.RowSpacing = 8;
+    sideGrid.BackgroundColor = Theme.COLOR_CARD;
+
+    legendLbl = uilabel(sideGrid, ...
+        'Text', Labels.get('backends_topology_legend'), ...
+        'FontSize', 10, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    legendLbl.Layout.Row = 1;
+
+    metaLbl = uilabel(sideGrid, 'Text', '', ...
+        'FontSize', 11, 'FontWeight', 'bold', ...
+        'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
+    metaLbl.Layout.Row = 2;
+
+    app.TopologyInfoLbl = uilabel(sideGrid, ...
+        'Text', Labels.get('backends_topology_no_selection'), ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
+    app.TopologyInfoLbl.Layout.Row = 3;
+    app.TopologyInfoLbl.UserData = metaLbl;  % stash so VM can update meta line
+
     % Wire row selection so clicking a backend drills into its
-    % Telemetry tabs. CellSelectionChangedFcn fires on every click;
-    % onTableRowSelected is idempotent.
-    app.BackendTable.CellSelectionChangedFcn = @(~,~) app.BackendsVm.onTableRowSelected();
+    % Telemetry tabs. SelectionChangedFcn (NOT the legacy
+    % CellSelectionChangedFcn — removed for uifigure-hosted uitable in
+    % R2025b) fires on every click; onTableRowSelected is idempotent.
+    app.BackendTable.SelectionChangedFcn = @(~,~) app.BackendsVm.onTableRowSelected();
+    telemetryTg.SelectionChangedFcn = @(s,e) app.BackendsVm.onTelemetryTabChanged(e);
 
     % ── Action bar ────────────────────────────────────────────────────────────
     nextPanel = uipanel(g, 'Title', Labels.get('backends_panel_action'), ...

@@ -287,21 +287,49 @@ classdef WelcomeViewModel < handle
                 app.LoginDlgPasswordField.Data = struct('a', 'clear');
             end
 
-            % Detach DataChangedFcn on uihtml fields and flush the event
-            % queue before deleting the dialog. MATLAB can otherwise
-            % dispatch a trailing HTML event against a deleted handle,
-            % producing "Value must be a handle" in
-            % HTML/processButtonEventFromClient. Use full drawnow (not
-            % limitrate) so the queue is actually drained.
+            % Teardown order matters: under load (slow /api/projects +
+            % dashboard fetch) the prior 50 ms pause was not enough to
+            % drain the uihtml peer-event queue. A trailing JS->MATLAB
+            % event then fires sendFlushEventToClient against an already-
+            % deleted viewmodel and surfaces as
+            %   "Attempt to call a method on an empty value"
+            % inside viewmodel.internal.ViewModel/dispatchEvent
+            % (HTMLController/handleClientEvent -> sendFlushEventToClient
+            % -> DialogHelper.dispatchWhenPeerNodeViewIsReady).
+            %
+            % Robust shutdown sequence:
+            %   1. Hide the dialog so the browser stops dispatching new
+            %      DOM events from the uihtml fields.
+            %   2. Unmount each uihtml: clear DataChangedFcn AND
+            %      HTMLSource so the JS peer disconnects.
+            %   3. Drain the event queue with drawnow + pause + drawnow.
+            %   4. Delete the uihtml children individually.
+            %   5. drawnow, then delete the figure.
             htmlFields = {'LoginDlgBaseUrlField', 'LoginDlgUsernameField', 'LoginDlgPasswordField'};
+
+            if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                try app.LoginDialog.Visible = 'off'; catch; end
+            end
+            drawnow;
+
             for i = 1:numel(htmlFields)
                 h = app.(htmlFields{i});
                 if ~isempty(h) && isvalid(h)
-                    h.DataChangedFcn = '';
+                    try h.DataChangedFcn = ''; catch; end
+                    try h.HTMLSource    = ''; catch; end
                 end
             end
             drawnow;
-            pause(0.05);
+            pause(0.15);
+            drawnow;
+
+            for i = 1:numel(htmlFields)
+                h = app.(htmlFields{i});
+                if ~isempty(h) && isvalid(h)
+                    try delete(h); catch; end
+                end
+                app.(htmlFields{i}) = [];
+            end
             drawnow;
 
             % Close the login dialog
@@ -309,6 +337,7 @@ classdef WelcomeViewModel < handle
                 delete(app.LoginDialog);
                 app.LoginDialog = [];
             end
+            drawnow;
 
             % Update Welcome screen and hide auth overlay
             app.updateWelcomeAuthButtons();
@@ -324,6 +353,12 @@ classdef WelcomeViewModel < handle
             % can gate on the real server state instead of the default
             % ServerIbmConfig struct (which has_token=false until set).
             obj.prefetchServerIbmConfig(app);
+
+            % Warm shared lookup caches (circuits / backends / mitigation
+            % levels) so Mitigation Compare / Run Planner / Resource
+            % Estimator render their dropdowns from cache on first visit.
+            % Fire-and-forget; failures log at debug.
+            try; app.eagerPrefetchSharedLookups(); catch; end
 
             % Phase 8 (UX request): after login completes the user
             % wants to land on the Dashboard, not the Projects/Welcome

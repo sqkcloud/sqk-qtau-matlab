@@ -17,12 +17,20 @@ figures = findall(0, 'Type', 'figure');
 for k = 1:numel(figures)
     try; delete(figures(k)); catch; end
 end
-% Suppress warnings that fire when handle objects still have live references.
-% NOTE: clear classes also clears all workspace variables, so warning state
-% cannot be saved/restored across this call — suppress before, re-enable after.
-warning('off', 'all');
-clear classes %#ok<CLSCR>
-warning('on', 'all');
+
+% `clear classes` wipes the JIT cache, m-file location cache, AND the
+% `persistent cachedProps` in Labels.m / AppConfig.m — forcing a full
+% 600-line labels.properties re-parse on every launch and dropping all
+% in-memory class metadata. On a 200+ .m file project that costs 1-3 s
+% on every cold start. The default (production) path skips it. Devs
+% iterating on classdef changes (added/removed properties) set
+% QTAU_DEV=1 in their env to force the clear.
+isDevLaunch = strcmp(getenv('QTAU_DEV'), '1');
+if isDevLaunch
+    warning('off', 'all');
+    clear classes %#ok<CLSCR>
+    warning('on', 'all');
+end
 
 projectRoot = fileparts(mfilename('fullpath'));
 
@@ -50,16 +58,29 @@ foldersToAdd = { ...
     fullfile('src', 'infrastructure') ...
 };
 
+% Batch-add all valid folders in ONE addpath call instead of N sequential
+% ones. addpath accepts varargs and runs path-normalization + duplicate
+% detection + cache update once instead of per-folder.
+existingFolders = cell(1, numel(foldersToAdd));
+keepIdx = false(1, numel(foldersToAdd));
 for k = 1:numel(foldersToAdd)
     p = fullfile(projectRoot, foldersToAdd{k});
     if isfolder(p)
-        addpath(p);
+        existingFolders{k} = p;
+        keepIdx(k) = true;
     end
 end
+existingFolders = existingFolders(keepIdx);
+if ~isempty(existingFolders)
+    addpath(existingFolders{:});
+end
 
-% Flush MATLAB's internal function/class location cache so it does not
-% serve stale file-path mappings left over from previous path layouts.
-rehash;
+% rehash flushes MATLAB's function/class location cache. Only needed
+% when `clear classes` ran above (dev path); a normal launch hits the
+% already-warm cache and rehash is 50-200 ms of pure waste.
+if isDevLaunch
+    rehash;
+end
 
 fprintf('\n');clear
 fprintf('  ╔══════════════════════════════════════════════════╗\n');

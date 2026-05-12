@@ -44,7 +44,14 @@ classdef NavigationManager
             % changed).
             app.SectionTitleLabel.Text    = NavigationManager.displayLabelFor(key);
             app.SectionSubtitleLabel.Text = NavigationManager.sectionSubtitleFor(key);
-            if ~strcmp(app.NavList.Value, key)
+            % NavList.Items mirrors navNames (visible sidebar entries
+             % only). When a cross-screen bridge routes to a hidden key
+             % (Composer / Detailed Analysis / Benchmark Dashboard /
+             % Upload / Notes) the listbox would reject the value and
+             % throw validateValuePresentInItems. Skip the assignment in
+             % that case — the hidden listbox is invisible UI plumbing
+             % from a pre-uihtml era and not user-facing.
+            if any(strcmp(app.NavList.Items, key)) && ~strcmp(app.NavList.Value, key)
                 app.NavList.Value = key;
             end
             NavigationManager.updateNavStyles(app, key);
@@ -85,9 +92,22 @@ classdef NavigationManager
                 % render naked first (1-2 s for slow screens) and then
                 % the overlay only appears AFTER the builder returns,
                 % which is the inverse of what makes sense to a user.
+                %
+                % 30 ms covers one CEF vsync frame (~16 ms); the prior
+                % 100 ms was conservative and added a flat tax to every
+                % first-visit of every screen (~70 ms × 22 screens =
+                % ~1.5 s wasted across the session).
                 drawnow;
-                pause(0.1);
+                pause(0.03);
                 drawnow;
+                % Fire the data fetch IN PARALLEL with the screen build.
+                % Builder + first-paint of widget-heavy screens (uitable,
+                % uihtml) blocks the main thread ~1-1.5 s; the AsyncRunner
+                % polling timer cannot fire its callback while the main
+                % thread is busy, so the fetch and the build now overlap
+                % instead of serializing. autoLoadScreen reads each VM's
+                % PrefetchInFlight flag to avoid a redundant second fetch.
+                NavigationManager.kickPrefetch(app, key);
                 builder(app);
                 app.BuiltScreens(key) = true;
                 Logger.info('NavigationManager', ...
@@ -112,6 +132,31 @@ classdef NavigationManager
             end
         end
 
+        function kickPrefetch(app, key)
+            % Pre-fire the data fetch for screens whose initial widget
+            % paint blocks the main thread for ~500 ms+. Called from
+            % ensureScreenBuilt BEFORE the builder runs, so the HTTP
+            % request flies to the backgroundPool worker in parallel
+            % with widget construction + first paint. Each VM sets a
+            % PrefetchInFlight flag that autoLoadScreen reads to skip
+            % the otherwise-redundant second fetch.
+            %
+            % Add new cases here when profiling shows another screen
+            % paying a noticeable build/paint gap before its first
+            % onLoad* call. Keep this list narrow — every entry costs
+            % one HTTP call on every first nav.
+            try
+                switch char(key)
+                    case 'Circuits'
+                        if ~isempty(app.CircuitsVm)
+                            app.CircuitsVm.prefetchCircuits();
+                        end
+                end
+            catch ME
+                Logger.debug('NavigationManager', 'kickPrefetch(%s): %s', char(key), ME.message);
+            end
+        end
+
         function fcn = screenBuilderFor(key)
             % Map sidebar key → screen-builder function handle.
             switch key
@@ -125,6 +170,9 @@ classdef NavigationManager
                 case 'Backends';             fcn = @BackendsScreen;
                 case 'Benchmark';            fcn = @BenchmarkScreen;
                 case 'Prediction';           fcn = @PredictionScreen;
+                case 'Mitigation Compare';   fcn = @MitigationCompareScreen;
+                case 'Resource Estimator';   fcn = @ResourceEstimatorScreen;
+                case 'Run Planner';          fcn = @RunPlannerScreen;
                 case 'Jobs';                 fcn = @JobsScreen;
                 case 'Results';              fcn = @ResultsScreen;
                 case 'Detailed Analysis';    fcn = @DetailedAnalysisScreen;
@@ -185,7 +233,12 @@ classdef NavigationManager
                     if ~isempty(app.CircuitsVm) && app.State.hasProject() ...
                             && ~NavigationManager.isScreenFresh(app.CircuitsVm, ttl)
                         NavigationManager.showNavLoading(app, 'Circuits');
-                        app.CircuitsVm.onLoadCircuits();
+                        % If kickPrefetch already dispatched the call,
+                        % the overlay is already up and the worker is
+                        % busy — no need to fire a second listCircuits.
+                        if ~app.CircuitsVm.PrefetchInFlight
+                            app.CircuitsVm.onLoadCircuits();
+                        end
                         asyncStarted = true;
                     end
                 case 'Dashboard'
@@ -222,6 +275,27 @@ classdef NavigationManager
                             && ~NavigationManager.isScreenFresh(app.PredictionVm, ttl)
                         NavigationManager.showNavLoading(app, 'Prediction');
                         app.PredictionVm.onEnter();
+                        asyncStarted = true;
+                    end
+                case 'Mitigation Compare'
+                    if ~isempty(app.MitigationCompareVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.MitigationCompareVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Mitigation Compare');
+                        app.MitigationCompareVm.onEnter();
+                        asyncStarted = true;
+                    end
+                case 'Resource Estimator'
+                    if ~isempty(app.ResourceEstimatorVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.ResourceEstimatorVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Resource Estimator');
+                        app.ResourceEstimatorVm.onEnter();
+                        asyncStarted = true;
+                    end
+                case 'Run Planner'
+                    if ~isempty(app.RunPlannerVm) && app.State.isAuthenticated() ...
+                            && ~NavigationManager.isScreenFresh(app.RunPlannerVm, ttl)
+                        NavigationManager.showNavLoading(app, 'Run Planner');
+                        app.RunPlannerVm.onEnter();
                         asyncStarted = true;
                     end
                 case 'Jobs'
@@ -428,6 +502,12 @@ classdef NavigationManager
                     if isempty(app.BenchmarkVm); app.BenchmarkVm = BenchmarkViewModel(app); end
                 case 'Prediction'
                     if isempty(app.PredictionVm); app.PredictionVm = PredictionViewModel(app); end
+                case 'Mitigation Compare'
+                    if isempty(app.MitigationCompareVm); app.MitigationCompareVm = MitigationCompareViewModel(app); end
+                case 'Resource Estimator'
+                    if isempty(app.ResourceEstimatorVm); app.ResourceEstimatorVm = ResourceEstimatorViewModel(app); end
+                case 'Run Planner'
+                    if isempty(app.RunPlannerVm); app.RunPlannerVm = RunPlannerViewModel(app); end
                 case 'Jobs'
                     if isempty(app.JobsVm); app.JobsVm = JobsViewModel(app); end
                 case 'Results'
@@ -587,10 +667,14 @@ classdef NavigationManager
             % Phase 8 reorder: Dashboard moved to position 1 (first
             % sidebar entry) — operators land on it after login by
             % default; Projects (formerly Welcome) sits at position 2.
-            n = {'Dashboard','Welcome','Circuits','Composer','Upload','Analysis', ...
+            % Upload is hidden from the sidebar — the Composer + Circuits
+            % toolbars host the upload entry-points instead. UploadScreen /
+            % UploadViewModel / app.UploadVm stay so any cross-screen call
+            % (`app.onSelectSection('Upload')`) still routes correctly.
+            n = {'Dashboard','Welcome','Circuits','Analysis', ...
                  'Circuit Cutting','Backends', ...
-                 'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
-                 'Benchmark Dashboard', ...
+                 'Benchmark','Prediction','Mitigation Compare','Resource Estimator','Run Planner', ...
+                 'Jobs','Results', ...
                  'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
 
@@ -602,17 +686,16 @@ classdef NavigationManager
                 char(9707),  ... ◫ Dashboard
                 char(8962),  ... ⌂ Projects (was Welcome)
                 char(9776),  ... ☰ Circuits
-                char(9998),  ... ✎ Composer
-                char(8593),  ... ↑ Upload
                 char(8981),  ... ⌕ Analysis
                 char(9986),  ... ✂ Circuit Cutting
                 char(9004),  ... ⌬ Backends
                 char(9678),  ... ◎ Benchmark
                 char(9671),  ... ◇ Prediction
+                char(9878),  ... ⚖ Mitigation Compare
+                char(9580),  ... ╌ Resource Estimator
+                char(9881),  ... ⚙ Run Planner
                 char(9635),  ... ▣ Jobs
                 char(9633),  ... □ Results
-                char(9651),  ... △ Detailed Analysis
-                char(9670),  ... ◆ Benchmark Dashboard
                 char(9673),  ... ◉ QEC Simulation
                 char(9672),  ... ◈ QEC Visualization
                 char(9636),  ... ▤ Reports
@@ -627,10 +710,10 @@ classdef NavigationManager
             %      named "Welcome". Routing keys (navNames) stay 'Welcome'
             %      so the underlying WelcomeScreen.m / WelcomeViewModel.m
             %      classes don't need to be renamed.
-            lb = {'Dashboard','Projects','Circuits','Composer','Upload','Analysis', ...
+            lb = {'Dashboard','Projects','Circuits','Analysis', ...
                   'Circuit Cutting','Backends', ...
-                  'Benchmark','Prediction','Jobs','Results','Detailed Analysis', ...
-                  'Benchmark Dashboard', ...
+                  'Benchmark','Prediction','Mitigation Compare','Resource Estimator','Run Planner', ...
+                  'Jobs','Results', ...
                   'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
 
@@ -668,23 +751,27 @@ classdef NavigationManager
 
         function subtitle = sectionSubtitleFor(key)
             keyMap = struct( ...
-                'Welcome',         'subtitle_welcome', ...
-                'Dashboard',       'subtitle_dashboard', ...
-                'Circuits',        'subtitle_circuits', ...
-                'Notes',           'subtitle_notes', ...
-                'Upload',          'subtitle_upload', ...
-                'Analysis',        'subtitle_analysis', ...
-                'Backends',        'subtitle_backends', ...
-                'Benchmark',       'subtitle_benchmark', ...
-                'Prediction',      'subtitle_prediction', ...
-                'Jobs',            'subtitle_jobs', ...
-                'Results',         'subtitle_results', ...
-                'DetailedAnalysis',  'subtitle_detailed_analysis', ...
+                'Welcome',          'subtitle_welcome', ...
+                'Dashboard',        'subtitle_dashboard', ...
+                'Circuits',         'subtitle_circuits', ...
+                'Composer',         'subtitle_composer', ...
+                'Notes',            'subtitle_notes', ...
+                'Upload',           'subtitle_upload', ...
+                'Analysis',         'subtitle_analysis', ...
+                'Backends',         'subtitle_backends', ...
+                'Benchmark',        'subtitle_benchmark', ...
+                'Prediction',       'subtitle_prediction', ...
+                'MitigationCompare','subtitle_mitigation_compare', ...
+                'ResourceEstimator','subtitle_resource_estimator', ...
+                'RunPlanner',       'subtitle_run_planner', ...
+                'Jobs',             'subtitle_jobs', ...
+                'Results',          'subtitle_results', ...
+                'DetailedAnalysis', 'subtitle_detailed_analysis', ...
                 'QECSimulation',    'subtitle_qec_simulation', ...
                 'QECVisualization', 'subtitle_qec_visualization', ...
-                'Reports',         'subtitle_reports', ...
-                'Settings',        'subtitle_settings', ...
-                'CircuitCutting',  'subtitle_circuit_cutting');
+                'Reports',          'subtitle_reports', ...
+                'Settings',         'subtitle_settings', ...
+                'CircuitCutting',   'subtitle_circuit_cutting');
             safeKey = matlab.lang.makeValidName(char(key));
             if isfield(keyMap, safeKey)
                 subtitle = Labels.get(keyMap.(safeKey), char(key));

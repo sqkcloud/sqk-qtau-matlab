@@ -300,6 +300,9 @@ classdef UploadViewModel < handle
         function onDeleteCircuitComplete(obj, app, circuitId, circuitName)
             app.logEvent('API', sprintf('Circuit deleted: %s', circuitId));
             app.State.logActivity(sprintf('Delete circuit — %s', circuitName), 'Success');
+            % Circuit list shrank — invalidate shared cache so the
+            % deletion propagates to Mitigation/RunPlanner/ResourceEst.
+            try; app.State.invalidateCircuitsListCache(); catch; end
             obj.onRefreshCircuits();  % itself dispatches async listCircuits
         end
 
@@ -316,6 +319,9 @@ classdef UploadViewModel < handle
             app.logEvent('API', sprintf('Circuit uploaded successfully — id: %s  name: %s  format: %s  project: %s', ...
                 app.State.selectedCircuitId, name, format, char(app.State.currentProjectId)));
             app.State.logActivity(sprintf('Upload circuit — %s', name), 'Success');
+            % Circuit list just grew — invalidate shared cache so the
+            % new circuit appears on Mitigation/RunPlanner/ResourceEst.
+            try; app.State.invalidateCircuitsListCache(); catch; end
 
             % Async preview fetch — the server-rendered SVG GET was a
             % 200-1000 ms freeze on top of the already-async upload.

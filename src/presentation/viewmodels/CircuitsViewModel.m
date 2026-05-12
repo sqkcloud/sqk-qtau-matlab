@@ -7,6 +7,11 @@ classdef CircuitsViewModel < handle
 
     properties
         LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+        % Set by prefetchCircuits while a parallel-fetch dispatched by
+        % NavigationManager.kickPrefetch is awaiting its callback.
+        % autoLoadScreen reads this and SKIPS the redundant
+        % onLoadCircuits call so we never double-fetch.
+        PrefetchInFlight (1,1) logical = false
     end
 
     properties (Access = private)
@@ -51,6 +56,34 @@ classdef CircuitsViewModel < handle
             % Clear the banner before fetching — a stale message from a
             % previous open shouldn't linger while the new load is in flight.
             obj.setEmptyStateMessage('');
+            obj.dispatchCircuitsFetch();
+        end
+
+        function prefetchCircuits(obj)
+            % Called by NavigationManager.kickPrefetch BEFORE the screen
+            % builder runs. Dispatches the listCircuits HTTP call in
+            % parallel with the synchronous widget construction + first
+            % paint of the new panel — which together take ~1-1.5 s on
+            % first nav and otherwise serialize ahead of the fetch.
+            %
+            % The AsyncRunner polling timer cannot fire its callback
+            % until the main thread is idle (after ensureScreenBuilt +
+            % autoLoadScreen finish), so CircuitsTable /
+            % CircuitsEmptyStateLabel are guaranteed to exist by the
+            % time onLoadCircuitsComplete runs.
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            if ~app.State.hasProject();      return; end
+            obj.PrefetchInFlight = true;
+            obj.dispatchCircuitsFetch();
+        end
+
+        function dispatchCircuitsFetch(obj)
+            % Internal: fires the AsyncRunner.run with no UI writes.
+            % Shared by onLoadCircuits (UI exists, precondition writes
+            % already done) and prefetchCircuits (UI does not exist yet
+            % — must NOT touch CircuitsTable / EmptyStateLabel).
+            app = obj.App;
             app.logEvent('API', sprintf('GET /api/circuits?skip=%d&limit=%d — project: %s', ...
                 obj.PageSkip, obj.PageLimit, char(app.State.currentProjectId)));
             skip  = obj.PageSkip;
@@ -414,6 +447,9 @@ classdef CircuitsViewModel < handle
 
         function onSaveCircuitComplete(obj, app, dlg, cid)
             app.logEvent('API', sprintf('Circuit updated: %s', cid));
+            % Circuit metadata changed — invalidate shared cache so
+            % dropdowns elsewhere pick up the rename/format/category.
+            try; app.State.invalidateCircuitsListCache(); catch; end
             if ~isempty(dlg) && isvalid(dlg)
                 delete(dlg);
             end
@@ -454,6 +490,7 @@ classdef CircuitsViewModel < handle
         end
 
         function onLoadCircuitsComplete(obj, app, data)
+            obj.PrefetchInFlight = false;
             app.hideLoading();
             circuits = JsonHelper.extractList(data, 'circuits');
             if isempty(circuits)
@@ -522,6 +559,7 @@ classdef CircuitsViewModel < handle
         end
 
         function onLoadCircuitsError(obj, app, ME)
+            obj.PrefetchInFlight = false;
             app.hideLoading();
             app.logEvent('ERROR', sprintf('listCircuitsPaged FAILED: %s', ME.message));
             obj.updatePageLabel();
@@ -530,6 +568,8 @@ classdef CircuitsViewModel < handle
         function onDeleteComplete(obj, app, cid)
             app.logEvent('API', sprintf('Circuit deleted: %s', cid));
             app.State.logActivity(sprintf('Delete circuit — %s', char(cid)), 'Success');
+            % Circuit list shrank — invalidate shared cache.
+            try; app.State.invalidateCircuitsListCache(); catch; end
             app.hideLoading();
             obj.onLoadCircuits();
         end

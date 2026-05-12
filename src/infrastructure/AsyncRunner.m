@@ -106,6 +106,77 @@ classdef AsyncRunner
                 future = [];
             end
         end
+
+        function futures = runMany(workFcns, onAllDone, onError, timeoutSec)
+            % RUNMANY  Execute N workFcns concurrently; deliver all results
+            %          to onAllDone in input order via a SINGLE polling
+            %          timer (vs. N independent timers when callers spam
+            %          AsyncRunner.run).
+            %
+            %   workFcns   — cell array of @() expressions, each returning 1 output
+            %   onAllDone  — @(results) callback with a 1×N cell array of
+            %                results in the same order as workFcns
+            %   onError    — @(ME) called once if ANY future errors (other
+            %                futures finish but their results are discarded).
+            %                Optional.
+            %   timeoutSec — total wall-clock timeout for the whole batch
+            %                (default 120 s). On timeout all in-flight
+            %                futures are cancelled.
+            %
+            % Use this when 2+ independent HTTP/disk calls would otherwise
+            % serialize on the worker (e.g. listJobs + listCircuits,
+            % listCircuits + getBenchmarkConfig). backgroundPool() has
+            % NumWorkers = maxNumCompThreads, so multiple parfeval
+            % dispatches actually run concurrently.
+            if nargin < 3; onError = []; end
+            if nargin < 4; timeoutSec = 120; end
+
+            n = numel(workFcns);
+            if n == 0
+                if ~isempty(onAllDone); onAllDone({}); end
+                futures = {};
+                return;
+            end
+
+            pool = AsyncRunner.acquirePool();
+
+            if ~isempty(pool)
+                try
+                    futures = cell(1, n);
+                    for i = 1:n
+                        wf = workFcns{i};
+                        futures{i} = parfeval(pool, ...
+                            @() AsyncRunner.safeCall(wf), 1);
+                    end
+
+                    poller = timer('Period', 0.05, 'ExecutionMode', 'fixedRate', ...
+                        'TimerFcn', @(src,~) AsyncRunner.pollFutures( ...
+                            src, futures, onAllDone, onError, timeoutSec), ...
+                        'UserData', tic);
+                    start(poller);
+                    return;
+                catch ME
+                    Logger.warn('AsyncRunner', 'runMany dispatch failed: %s', ME.message);
+                end
+            end
+
+            % Synchronous fallback — runs sequentially on the UI thread.
+            results = cell(1, n);
+            try
+                for i = 1:n
+                    results{i} = workFcns{i}();
+                end
+                if ~isempty(onAllDone); onAllDone(results); end
+                futures = {};
+            catch ME
+                if ~isempty(onError)
+                    onError(ME);
+                else
+                    rethrow(ME);
+                end
+                futures = {};
+            end
+        end
     end
 
     methods (Static, Hidden)
@@ -207,6 +278,90 @@ classdef AsyncRunner
         end
 
         % ── Future polling (runs on main thread via timer) ────────────────
+
+        function pollFutures(timerObj, futures, onAllDone, onError, timeoutSec)
+            % pollFutures  Called every 50 ms to check if ALL parfeval
+            %   futures in the batch have finished.  Delivers results
+            %   (or first error) on the main thread, then stops and
+            %   deletes the polling timer.
+            try
+                n = numel(futures);
+                allDone = true;
+                firstError = [];
+                for i = 1:n
+                    f = futures{i};
+                    s = f.State;
+                    if strcmp(s, 'running') || strcmp(s, 'queued')
+                        allDone = false;
+                        break;
+                    elseif ~isempty(f.Error) && isempty(firstError)
+                        firstError = f.Error;
+                    end
+                end
+
+                if ~allDone
+                    % Check batch timeout
+                    if timeoutSec > 0
+                        elapsed = toc(timerObj.UserData);
+                        if elapsed > timeoutSec
+                            for j = 1:n
+                                try; cancel(futures{j}); catch; end
+                            end
+                            stop(timerObj); delete(timerObj);
+                            Logger.warn('AsyncRunner', 'runMany batch timed out');
+                            ME = MException('AsyncRunner:Timeout', ...
+                                'Operation timed out. The server may be busy — please try again.');
+                            if ~isempty(onError); onError(ME); end
+                            return;
+                        end
+                    end
+                    return; % still pending — re-check on next tick
+                end
+
+                % All futures finished — stop polling
+                stop(timerObj); delete(timerObj);
+
+                % Surface the first error if any future errored before
+                % its safeCall wrapper could run (closure serialization,
+                % path issue, etc.).
+                if ~isempty(firstError)
+                    err = firstError;
+                    try; if ~isempty(err.remotecause); err = err.remotecause{1}; end; catch; end
+                    try; if ~isempty(err.cause); err = err.cause{1}; end; catch; end
+                    Logger.error('AsyncRunner', 'runMany task error: %s', err.message);
+                    if ~isempty(onError); onError(err); else
+                        Logger.error('AsyncRunner', 'runMany failed (no handler): %s', err.message);
+                    end
+                    return;
+                end
+
+                % Collect results from safeCall wrappers.  If any
+                % individual workFcn errored inside its safeCall, surface
+                % that error via onError and abort delivery.
+                results = cell(1, n);
+                for i = 1:n
+                    out = fetchOutputs(futures{i});
+                    if isstruct(out) && isfield(out, 'ok')
+                        if out.ok
+                            results{i} = out.value;
+                        else
+                            Logger.error('AsyncRunner', ...
+                                'runMany task #%d failed: %s', i, out.error.message);
+                            if ~isempty(onError); onError(out.error); return; end
+                            results{i} = [];
+                        end
+                    else
+                        results{i} = out;
+                    end
+                end
+
+                if ~isempty(onAllDone); onAllDone(results); end
+            catch ME
+                try stop(timerObj); delete(timerObj); catch; end
+                Logger.error('AsyncRunner', 'pollFutures error: %s', ME.message);
+                if ~isempty(onError); onError(ME); end
+            end
+        end
 
         function pollFuture(timerObj, future, onDone, onError, timeoutSec)
             % pollFuture  Called every 50ms to check if the parfeval future

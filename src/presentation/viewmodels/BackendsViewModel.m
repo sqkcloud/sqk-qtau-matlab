@@ -33,6 +33,14 @@ classdef BackendsViewModel < handle
             if ~app.State.isAuthenticated()
                 uialert(app.UIFigure, Labels.get('error_not_authenticated'), 'Backends', 'Icon', 'warning'); return;
             end
+            % User explicitly asked for fresh backend data — drop the
+            % shared caches so Mitigation/RunPlanner and the legacy
+            % CircuitCutting pool cache also pick up the refresh.
+            try
+                app.State.invalidateBackendsListCache();
+                app.State.BackendPoolCache   = [];
+                app.State.BackendPoolCacheAt = [];
+            catch; end
             % Always try to get enriched backend list with circuit_id.
             % If no circuit selected, fetch one from the project.
             cid = '';
@@ -456,6 +464,213 @@ classdef BackendsViewModel < handle
             app.hideLoading();
             app.setStatus(app.BackendStatusArea, {sprintf('Failed to load details: %s', ME.message)});
         end
+
+        % ── Topology tab — coupling-map graph ────────────────────────────
+        function onTelemetryTabChanged(obj, evt)
+            % Dispatched by the telemetry uitabgroup's SelectionChangedFcn.
+            % Only the Topology tab needs eager paint — the other three
+            % are populated by populateTelemetryPanel on row select.
+            try
+                titleStr = char(string(evt.NewValue.Title));
+            catch
+                return;
+            end
+            if ~strcmp(titleStr, Labels.get('backends_topology_tab_title'))
+                return;
+            end
+            app = obj.App;
+            row = obj.getSelectedRow();
+            if row == 0
+                obj.paintTopologyPlaceholder(Labels.get('backends_topology_no_selection'));
+                return;
+            end
+            backendName = char(string(app.BackendTable.Data{row, 2}));
+            if isempty(backendName); return; end
+            safeKey = matlab.lang.makeValidName(backendName);
+            if isstruct(app.TopologyCache) && isfield(app.TopologyCache, safeKey)
+                obj.paintTopology(backendName);
+            else
+                obj.fetchTopology(backendName);
+            end
+        end
+
+        function fetchTopology(obj, backendName)
+            % Dispatch GET /api/backends/{name}/topology asynchronously.
+            obj.paintTopologyPlaceholder(Labels.get('backends_topology_loading'));
+            app = obj.App;
+            svc = app.Services.backendService;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.getTopology(backendName, token), ...
+                @(data) obj.onTopologyLoaded(backendName, data), ...
+                @(ME)   obj.onTopologyError(backendName, ME));
+        end
+
+        function onTopologyLoaded(obj, backendName, data)
+            app = obj.App;
+            if isempty(app.TopologyCache); app.TopologyCache = struct(); end
+            safeKey = matlab.lang.makeValidName(char(backendName));
+            app.TopologyCache.(safeKey) = data;
+            % Repaint only if user is still on the Topology tab AND on
+            % this backend (don't fight a stale fetch).
+            try
+                row = obj.getSelectedRow();
+                if row == 0; return; end
+                selName = char(string(app.BackendTable.Data{row, 2}));
+                if strcmp(selName, char(backendName))
+                    obj.paintTopology(backendName);
+                end
+            catch ME
+                Logger.debug('BackendsViewModel', ...
+                    'topology arrival paint skipped: %s', ME.message);
+            end
+        end
+
+        function onTopologyError(obj, backendName, ME)
+            obj.paintTopologyPlaceholder(sprintf( ...
+                Labels.get('backends_topology_fetch_err'), ME.message));
+            Logger.warn('BackendsViewModel', ...
+                'getTopology failed for %s: %s', char(backendName), ME.message);
+        end
+
+        function paintTopology(obj, backendName)
+            app = obj.App;
+            if isempty(app.TopologyAxes) || ~isvalid(app.TopologyAxes); return; end
+            ax = app.TopologyAxes;
+            cla(ax);
+            ax.XLim = [-1.1 1.1]; ax.YLim = [-1.1 1.1];
+
+            safeKey = matlab.lang.makeValidName(char(backendName));
+            data = app.TopologyCache.(safeKey);
+            cm = JsonHelper.pick(data, {'coupling_map', 'couplingMap'}, []);
+            n  = JsonHelper.pickNumeric(data, 'num_qubits', NaN);
+            if ~isfinite(n)
+                n = JsonHelper.pickNumeric(data, 'n_qubits', NaN);
+            end
+
+            if isempty(cm)
+                obj.paintTopologyPlaceholder(Labels.get('backends_topology_unavailable'));
+                return;
+            end
+
+            edges = BackendsViewModel.normalizeCouplingMap(cm);
+            if isempty(edges)
+                obj.paintTopologyPlaceholder(Labels.get('backends_topology_unavailable'));
+                return;
+            end
+
+            % Cap node count: include any qubit referenced in coupling_map
+            % even if num_qubits is missing.
+            maxIdx = max(edges(:));
+            if ~isfinite(n); n = maxIdx; end
+            n = max(double(n), maxIdx);
+
+            s = edges(:, 1); t = edges(:, 2);
+            G = graph(s, t, [], double(n));
+
+            try
+                gp = plot(ax, G, 'Layout', 'force', ...
+                    'NodeFontSize', 7, ...
+                    'NodeFontColor', Theme.COLOR_HEADING, ...
+                    'EdgeColor', Theme.COLOR_DIVIDER, ...
+                    'EdgeAlpha', 0.6, ...
+                    'LineWidth', 0.8, ...
+                    'MarkerSize', 6);
+            catch ME
+                obj.paintTopologyPlaceholder(sprintf( ...
+                    'Graph render failed: %s', ME.message));
+                return;
+            end
+
+            healthRgb = obj.computeQubitColors(backendName, double(n));
+            gp.NodeColor = healthRgb;
+
+            if n <= 64
+                gp.NodeLabel = arrayfun(@(q) sprintf('%d', q-1), ...
+                    1:double(n), 'UniformOutput', false);
+            else
+                gp.NodeLabel = repmat({''}, 1, double(n));
+            end
+
+            gp.ButtonDownFcn = @(src,evt) obj.onTopologyNodeClicked(src, evt, backendName);
+
+            metaLbl = app.TopologyInfoLbl.UserData;
+            if ~isempty(metaLbl) && isvalid(metaLbl)
+                metaLbl.Text = sprintf( ...
+                    Labels.get('backends_topology_meta_fmt'), ...
+                    char(backendName), double(n), size(edges, 1));
+            end
+            app.TopologyInfoLbl.Text = Labels.get('backends_topology_no_selection');
+        end
+
+        function onTopologyNodeClicked(obj, gp, evt, backendName)
+            try
+                ip = evt.IntersectionPoint;
+                xs = gp.XData; ys = gp.YData;
+            catch
+                return;
+            end
+            d = (xs - ip(1)).^2 + (ys - ip(2)).^2;
+            [~, idx] = min(d);
+            if isempty(idx); return; end
+            qubit = idx - 1;
+            app = obj.App;
+            safeKey = matlab.lang.makeValidName(char(backendName));
+            calRecord = [];
+            if isstruct(app.CalibrationHistoryCache) && ...
+                    isfield(app.CalibrationHistoryCache, safeKey)
+                calData = app.CalibrationHistoryCache.(safeKey);
+                calRecord = BackendsViewModel.findLatestCalForQubit(calData, qubit);
+            end
+            topoData = app.TopologyCache.(safeKey);
+            cm = JsonHelper.pick(topoData, {'coupling_map', 'couplingMap'}, []);
+            edges = BackendsViewModel.normalizeCouplingMap(cm);
+            if isempty(edges)
+                neighbours = [];
+            else
+                lhs = edges(edges(:,1) == qubit+1, 2) - 1;
+                rhs = edges(edges(:,2) == qubit+1, 1) - 1;
+                neighbours = unique([lhs; rhs]);
+            end
+            basisGates = JsonHelper.pick(topoData, {'basis_gates', 'basisGates'}, {});
+            txt = BackendsViewModel.formatTopologyDetail(qubit, calRecord, neighbours, basisGates);
+            app.TopologyInfoLbl.Text = txt;
+        end
+
+        function paintTopologyPlaceholder(obj, msg)
+            app = obj.App;
+            if isempty(app.TopologyAxes) || ~isvalid(app.TopologyAxes); return; end
+            ax = app.TopologyAxes;
+            cla(ax);
+            ax.XLim = [-1 1]; ax.YLim = [-1 1];
+            text(ax, 0, 0, char(msg), ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+                'FontSize', 12, 'Color', Theme.COLOR_MUTED);
+            metaLbl = app.TopologyInfoLbl.UserData;
+            if ~isempty(metaLbl) && isvalid(metaLbl)
+                metaLbl.Text = '';
+            end
+            app.TopologyInfoLbl.Text = '';
+        end
+
+        function rgb = computeQubitColors(obj, backendName, n)
+            % Returns n×3 RGB matrix. If calibration data is missing, use
+            % a neutral grey so the graph still renders.
+            rgb = repmat([0.55 0.58 0.62], n, 1);
+            app = obj.App;
+            safeKey = matlab.lang.makeValidName(char(backendName));
+            if ~isstruct(app.CalibrationHistoryCache) || ...
+                    ~isfield(app.CalibrationHistoryCache, safeKey)
+                return;
+            end
+            calData = app.CalibrationHistoryCache.(safeKey);
+            for q = 0:n-1
+                rec = BackendsViewModel.findLatestCalForQubit(calData, q);
+                if ~isempty(rec)
+                    rgb(q+1, :) = BackendsViewModel.qubitHealthScore(rec);
+                end
+            end
+        end
     end
 
     % ── Private helpers ───────────────────────────────────────────────────
@@ -585,7 +800,13 @@ classdef BackendsViewModel < handle
             if isempty(tData); row = 0; return; end
             sel = app.BackendTable.Selection;
             if isempty(sel)
-                uialert(app.UIFigure, Labels.get('error_select_backend_row', 'Select a backend row first.'), 'Select Backend', 'Icon', 'warning');
+                % Silent return — every caller already checks `row == 0`.
+                % A modal uialert here was firing spuriously on every
+                % SelectionChangedFcn callback (the modern uitable
+                % triggers SelectionChangedFcn on deselect too) and was
+                % awkward to dismiss. Action buttons that genuinely need
+                % to warn the user about an empty selection can call
+                % app.setStatus(app.BackendStatusArea, ...) directly.
                 row = 0; return;
             end
             row = sel(1);
@@ -838,6 +1059,118 @@ classdef BackendsViewModel < handle
                 case '2Q_err';    s = sprintf('%.1e', v);
                 otherwise;        s = sprintf('%g', v);
             end
+        end
+
+        % ── Topology helpers ─────────────────────────────────────────────
+        function edges = normalizeCouplingMap(cm)
+            % Accepts cell-of-pairs ({{0,1},{1,2},...}), N×2 numeric, or
+            % cell-of-2-element-arrays. Returns a deduplicated 1-based
+            % undirected edge list (M×2 numeric, src < dst per row).
+            edges = [];
+            if isempty(cm); return; end
+            if isnumeric(cm) && size(cm, 2) == 2
+                pairs = double(cm);
+            elseif iscell(cm)
+                pairs = zeros(numel(cm), 2);
+                for i = 1:numel(cm)
+                    p = cm{i};
+                    if iscell(p) && numel(p) == 2
+                        pairs(i, :) = [double(p{1}), double(p{2})];
+                    elseif isnumeric(p) && numel(p) == 2
+                        pairs(i, :) = double(p(:))';
+                    else
+                        return;  % unparseable shape
+                    end
+                end
+            else
+                return;
+            end
+            % Convert to 1-based, undirected (sort each row), dedupe.
+            pairs = pairs + 1;
+            pairs = unique(sort(pairs, 2), 'rows');
+            % Drop self-loops just in case.
+            pairs(pairs(:,1) == pairs(:,2), :) = [];
+            edges = pairs;
+        end
+
+        function rec = findLatestCalForQubit(calData, qubit)
+            rec = [];
+            if isempty(calData); return; end
+            recs = JsonHelper.pick(calData, {'records'}, []);
+            if isempty(recs); return; end
+            n = numel(recs);
+            for i = 1:n
+                if iscell(recs); r = recs{i}; else; r = recs(i); end
+                qi = JsonHelper.pickNumeric(r, 'qubit_index', NaN);
+                if isfinite(qi) && qi == qubit
+                    rec = r;  % first wins (DESC sorted = newest)
+                    return;
+                end
+            end
+        end
+
+        function rgb = qubitHealthScore(rec)
+            % Composite green→amber→red based on T1, T2, and gate error.
+            % Worst metric drives the colour so a single bad axis pulls
+            % the qubit toward the red end.
+            rgb = [0.85 0.95 0.85];
+            t1 = JsonHelper.pickNumeric(rec, 'T1', NaN);
+            t2 = JsonHelper.pickNumeric(rec, 'T2', NaN);
+            ge = JsonHelper.pickNumeric(rec, 'gate_error', NaN);
+            grades = zeros(1, 3);  % 0 = good, 1 = watch, 2 = critical
+            if isfinite(t1)
+                if t1 > 1e-4;     grades(1) = 0;
+                elseif t1 > 5e-5; grades(1) = 1;
+                else;             grades(1) = 2; end
+            end
+            if isfinite(t2)
+                if t2 > 7e-5;     grades(2) = 0;
+                elseif t2 > 3e-5; grades(2) = 1;
+                else;             grades(2) = 2; end
+            end
+            if isfinite(ge)
+                if ge < 5e-3;     grades(3) = 0;
+                elseif ge < 2e-2; grades(3) = 1;
+                else;             grades(3) = 2; end
+            end
+            worst = max(grades);
+            switch worst
+                case 0; rgb = [0.30 0.70 0.40];   % healthy green
+                case 1; rgb = [0.95 0.70 0.30];   % watch amber
+                case 2; rgb = [0.85 0.30 0.30];   % critical red
+            end
+        end
+
+        function txt = formatTopologyDetail(qubit, rec, neighbours, basisGates)
+            lines = {sprintf(Labels.get('backends_topology_qubit_fmt'), qubit)};
+            if ~isempty(rec)
+                t1 = JsonHelper.pickNumeric(rec, 'T1', NaN);
+                t2 = JsonHelper.pickNumeric(rec, 'T2', NaN);
+                ge = JsonHelper.pickNumeric(rec, 'gate_error', NaN);
+                re = JsonHelper.pickNumeric(rec, 'readout_error', NaN);
+                lines{end+1} = sprintf('T1: %s', BackendsViewModel.fmtMetric('T1', t1));
+                lines{end+1} = sprintf('T2: %s', BackendsViewModel.fmtMetric('T2', t2));
+                lines{end+1} = sprintf('Gate err: %s', BackendsViewModel.fmtMetric('gate_err', ge));
+                lines{end+1} = sprintf('Readout err: %s', BackendsViewModel.fmtMetric('rd_err', re));
+            else
+                lines{end+1} = '(no calibration data)';
+            end
+            if ~isempty(neighbours)
+                lines{end+1} = sprintf('%s: %s', ...
+                    Labels.get('backends_topology_neighbors'), ...
+                    strjoin(arrayfun(@(q) sprintf('q[%d]', q), neighbours, ...
+                        'UniformOutput', false), ', '));
+            end
+            if ~isempty(basisGates)
+                if iscell(basisGates)
+                    bg = strjoin(cellfun(@char, basisGates, 'UniformOutput', false), ', ');
+                else
+                    bg = char(string(basisGates));
+                end
+                lines{end+1} = sprintf('%s: %s', ...
+                    Labels.get('backends_topology_basis_gates'), bg);
+            end
+            txt = strjoin(lines, sprintf('\n'));
         end
     end
 end

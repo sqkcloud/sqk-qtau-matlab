@@ -504,6 +504,10 @@ classdef DetailedAnalysisViewModel < handle
 
         function onDetailedCircuitsLoaded(obj, app, data)
             try; app.hideLoading(); catch; end
+            % Write-through to the shared session cache so Mitigation
+            % Compare / Run Planner / Resource Estimator pick up the
+            % same circuits without their own /api/circuits fetch.
+            try; app.State.setCircuitsListCache(data); catch; end
             if isempty(app.DetailedAnalysisCircuitDropdown) ...
                     || ~isvalid(app.DetailedAnalysisCircuitDropdown); return; end
             items = JsonHelper.extractList(data, 'circuits');
@@ -587,8 +591,15 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function loadCircuits(obj)
-            app = obj.App;
-            token   = app.State.authToken;
+            app   = obj.App;
+            state = app.State;
+            ttl   = AppConfig.getDouble('shared_cache_ttl', 120);
+            % Cache hit — populate the dropdown synchronously, no HTTP.
+            if state.isCircuitsListCacheFresh(ttl)
+                obj.onDetailedCircuitsLoaded(app, state.CircuitListCache);
+                return;
+            end
+            token   = state.authToken;
             circSvc = app.CircuitSvc;
             AsyncRunner.run( ...
                 @() circSvc.listCircuits(token), ...

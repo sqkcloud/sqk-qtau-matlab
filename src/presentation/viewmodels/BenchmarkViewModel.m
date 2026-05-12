@@ -300,10 +300,61 @@ classdef BenchmarkViewModel < handle
             projSvc   = app.ProjectSvc;
             backSvc   = app.BackendSvc;
 
-            % Run all data fetching off the UI thread
+            % Two-stage parallel fetch (was 3 serial calls inside one
+            % worker — ~3-5 s on initial Benchmark nav).
+            %
+            % Stage 1 (runMany, runs in parallel on backgroundPool):
+            %   - listCircuits(token)
+            %   - getBenchmarkConfig(pid, token)  (skipped if no project)
+            % Stage 2 (AsyncRunner.run, after stage 1):
+            %   - listBackends with resolved circuit id + fallback chain
+            %     (needs circuits list to resolve the fallback cid AND
+            %     needs benchConfig to detect a configured-circuit
+            %     override — so cannot start until stage 1 is complete).
+            %
+            % Saves one HTTP round-trip (stage 1 is max(circuits, config)
+            % instead of sum). Full 3-way parallelism would require
+            % optimistic backends-with-selCid dispatch + re-fetch on
+            % override — deferred to a follow-up.
+            if isempty(pid)
+                AsyncRunner.runMany( ...
+                    { @() BenchmarkViewModel.safeFetch( ...
+                          @() circSvc.listCircuits(token)) }, ...
+                    @(s1) obj.onCircuitsAndConfigReady(app, backSvc, ...
+                          token, selCid, s1{1}, [], ''), ...
+                    @(ME) obj.onLoadBenchmarkError(app, ME));
+            else
+                AsyncRunner.runMany( ...
+                    { @() BenchmarkViewModel.safeFetch( ...
+                          @() circSvc.listCircuits(token)), ...
+                      @() BenchmarkViewModel.safeFetch( ...
+                          @() projSvc.getBenchmarkConfig(pid, token)) }, ...
+                    @(s1) obj.onCircuitsAndConfigReady(app, backSvc, ...
+                          token, selCid, s1{1}, s1{2}, ...
+                          char(JsonHelper.pick(s1{2}, {'status'}))), ...
+                    @(ME) obj.onLoadBenchmarkError(app, ME));
+            end
+        end
+
+        function onCircuitsAndConfigReady(obj, app, backSvc, token, ...
+                selCid, circuits, benchConfig, benchStatus)
+            % Stage-1 completion: a saved 'configured' benchConfig may
+            % override the UI-tracked selCid. Resolve the effective
+            % circuit id, then kick the stage-2 backends fetch.
+            if strcmp(benchStatus, 'configured') && ~isempty(benchConfig)
+                cfgCid = char(JsonHelper.pick(benchConfig, {'circuit_id'}));
+                if ~isempty(cfgCid) && strlength(cfgCid) > 0
+                    selCid = cfgCid;
+                end
+            end
             AsyncRunner.run( ...
-                @() BenchmarkViewModel.fetchEntryData(circSvc, projSvc, backSvc, token, pid, selCid), ...
-                @(R) obj.applyEntryData(app, R), ...
+                @() BenchmarkViewModel.fetchBackendsWithFallback( ...
+                    backSvc, token, selCid, circuits), ...
+                @(backends) obj.applyEntryData(app, struct( ...
+                    'circuits',    circuits, ...
+                    'benchConfig', benchConfig, ...
+                    'benchStatus', benchStatus, ...
+                    'backends',    backends)), ...
                 @(ME) obj.onLoadBenchmarkError(app, ME));
         end
     end
@@ -638,56 +689,45 @@ classdef BenchmarkViewModel < handle
 
     methods (Static, Access = private)
 
-        function R = fetchEntryData(circSvc, projSvc, backSvc, token, pid, selCid)
-            % fetchEntryData  Fetch circuits, benchmark config, and backends
-            %   in one background task. Returns a struct with all results.
-            R = struct('circuits', [], 'benchConfig', [], 'benchStatus', '', 'backends', struct('backends', {{}}));
-
-            % 1. List circuits
+        function out = safeFetch(fn)
+            % safeFetch  Run a 0-arg work function and silence any error
+            %   so a single failing call cannot poison a parallel batch.
+            %   Used for the circuits + benchConfig stage-1 fetches:
+            %   either one failing should still let the other deliver
+            %   its result and the screen render with whatever it has.
             try
-                R.circuits = circSvc.listCircuits(token);
+                out = fn();
             catch ME
-                Logger.debug('BenchmarkViewModel', 'fetchEntryData circuits: %s', ME.message);
+                Logger.debug('BenchmarkViewModel', 'safeFetch: %s', ME.message);
+                out = [];
             end
+        end
 
-            % 2. Load benchmark config (may update selected circuit)
-            if ~isempty(pid)
-                try
-                    R.benchConfig = projSvc.getBenchmarkConfig(pid, token);
-                    R.benchStatus = char(JsonHelper.pick(R.benchConfig, {'status'}));
-                    % If config has a circuit_id, use it for backend fetch
-                    if strcmp(R.benchStatus, 'configured')
-                        cfgCid = char(JsonHelper.pick(R.benchConfig, {'circuit_id'}));
-                        if ~isempty(cfgCid) && strlength(cfgCid) > 0
-                            selCid = cfgCid;
-                        end
-                    end
-                catch ME
-                    Logger.debug('BenchmarkViewModel', 'fetchEntryData benchConfig: %s', ME.message);
-                end
-            end
-
-            % 3. Load backends (same fallback chain as loadBackends)
+        function backends = fetchBackendsWithFallback(backSvc, token, selCid, circuits)
+            % fetchBackendsWithFallback  Stage-2 backends fetch with the
+            %   same 3-level fallback as the previous in-worker logic:
+            %     1. Use selCid if it produces items.
+            %     2. Else use the first circuit from the project list.
+            %     3. Else basic list (selCid='').
+            backends = struct('backends', {{}});
             if ~isempty(selCid) && strlength(selCid) > 0
                 try
-                    R.backends = backSvc.listBackends(token, selCid);
-                    if BenchmarkViewModel.hasBackendItems(R.backends); return; end
+                    backends = backSvc.listBackends(token, selCid);
+                    if BenchmarkViewModel.hasBackendItems(backends); return; end
                 catch; end
             end
-            % Fallback: use any circuit from the project
             try
-                items = JsonHelper.extractList(R.circuits, 'circuits');
+                items = JsonHelper.extractList(circuits, 'circuits');
                 if ~isempty(items)
                     fallCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
                     if ~isempty(fallCid) && strlength(fallCid) > 0
-                        R.backends = backSvc.listBackends(token, fallCid);
-                        if BenchmarkViewModel.hasBackendItems(R.backends); return; end
+                        backends = backSvc.listBackends(token, fallCid);
+                        if BenchmarkViewModel.hasBackendItems(backends); return; end
                     end
                 end
             catch; end
-            % Last resort: basic list
             try
-                R.backends = backSvc.listBackends(token, '');
+                backends = backSvc.listBackends(token, '');
             catch; end
         end
 

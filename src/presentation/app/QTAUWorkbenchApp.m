@@ -91,6 +91,9 @@ classdef QTAUWorkbenchApp < handle
         BackendsVm          % BackendsViewModel
         BenchmarkVm         % BenchmarkViewModel
         PredictionVm        % PredictionViewModel
+        MitigationCompareVm % MitigationCompareViewModel — pre-submit strategy planner
+        ResourceEstimatorVm % ResourceEstimatorViewModel — fault-tolerant overhead planner
+        RunPlannerVm        % RunPlannerViewModel — cost-aware run optimisation
         JobsVm              % JobsViewModel
         ResultsVm           % ResultsViewModel
         DetailedAnalysisVm       % DetailedAnalysisViewModel
@@ -212,6 +215,7 @@ classdef QTAUWorkbenchApp < handle
         CircuitsPageLabel
         CircuitsPrevBtn
         CircuitsNextBtn
+        CircuitsComposerBtn
         CircuitsUploadBtn
         CircuitsPopupPanel
         CircuitsPopupEditBtn
@@ -379,6 +383,9 @@ classdef QTAUWorkbenchApp < handle
         BackendSparklineAxes          % struct keyed by makeValidName(backend) → uiaxes per row
         TelemetryPerQubitGrid         % uigridlayout for the Per-Qubit heat grid (8x16)
         TelemetryHistoryAxes          % {1×3} cell of uiaxes for History sparklines (T1/T2/2Q)
+        TopologyAxes                  % uiaxes hosting the coupling-map graph plot
+        TopologyInfoLbl               % side-panel uilabel for clicked-qubit detail
+        TopologyCache         = []    % struct keyed by makeValidName(backend) → topology response
     end
 
     % ── Benchmark tab ─────────────────────────────────────────────────────────
@@ -1164,6 +1171,44 @@ classdef QTAUWorkbenchApp < handle
             end
         end
 
+        % -- Shared-lookup eager prefetch -----------------------------------
+        %   Warms the AppState session caches for /api/circuits,
+        %   /api/backends, and /api/mitigation/levels in the background so
+        %   Mitigation Compare / Run Planner / Resource Estimator can
+        %   render their dropdowns from cache on first visit. Idempotent:
+        %   skips any cache that is already fresh per shared_cache_ttl.
+        %   Fire-and-forget — failures log at debug and never surface to UI.
+        function eagerPrefetchSharedLookups(app)
+            try
+                if isempty(app.State) || ~app.State.isAuthenticated(); return; end
+                ttl   = AppConfig.getDouble('shared_cache_ttl', 120);
+                state = app.State;
+                token = state.authToken;
+                svcs  = app.Services;
+
+                if ~state.isCircuitsListCacheFresh(ttl)
+                    AsyncRunner.run( ...
+                        @() svcs.CircuitSvc.listCircuits(token), ...
+                        @(r) state.setCircuitsListCache(r), ...
+                        @(ME) Logger.debug('QTAUWorkbenchApp', 'eagerPrefetch circuits: %s', ME.message));
+                end
+                if ~state.isBackendsListCacheFresh(ttl)
+                    AsyncRunner.run( ...
+                        @() svcs.BackendSvc.listBackends(token, ''), ...
+                        @(r) state.setBackendsListCache(r), ...
+                        @(ME) Logger.debug('QTAUWorkbenchApp', 'eagerPrefetch backends: %s', ME.message));
+                end
+                if ~state.isMitigationLevelsCacheFresh(ttl)
+                    AsyncRunner.run( ...
+                        @() svcs.MitigationSvc.listLevels(token), ...
+                        @(r) state.setMitigationLevelsCache(r), ...
+                        @(ME) Logger.debug('QTAUWorkbenchApp', 'eagerPrefetch levels: %s', ME.message));
+                end
+            catch ME
+                Logger.debug('QTAUWorkbenchApp', 'eagerPrefetchSharedLookups: %s', ME.message);
+            end
+        end
+
     end
 
     % ── Private: UI construction (delegates to LayoutBuilder) ─────────────────
@@ -1237,6 +1282,10 @@ classdef QTAUWorkbenchApp < handle
                 app.showAuthOverlay();
             else
                 app.hideAuthOverlay();
+                % Warm shared lookup caches so Mitigation Compare /
+                % Run Planner / Resource Estimator can render dropdowns
+                % from cache on their first visit this session.
+                app.eagerPrefetchSharedLookups();
             end
 
             try

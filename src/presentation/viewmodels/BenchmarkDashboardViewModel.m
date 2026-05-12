@@ -85,7 +85,17 @@ classdef BenchmarkDashboardViewModel < handle
             % the entire fallback chain runs on backgroundPool so the
             % BenchmarkDashboard tab stays responsive on entry.
             app   = obj.App;
-            token = app.State.authToken;
+            state = app.State;
+            ttl   = AppConfig.getDouble('shared_cache_ttl', 120);
+            % Cache hit — paint the dropdown synchronously, no HTTP.
+            % Only used in the bare-pool case (no circuit selected) since
+            % the enriched per-circuit backend list differs from the
+            % shared pool's shape.
+            if ~app.State.hasCircuit() && state.isBackendsListCacheFresh(ttl)
+                obj.onLoadBackendsComplete(app, state.BackendListCache);
+                return;
+            end
+            token = state.authToken;
             cid   = '';
             if app.State.hasCircuit(); cid = char(app.State.selectedCircuitId); end
             backendSvc = app.BackendSvc;
@@ -97,6 +107,16 @@ classdef BenchmarkDashboardViewModel < handle
         end
 
         function onLoadBackendsComplete(obj, app, data)
+            % Write-through to the shared session cache so Mitigation
+            % Compare / Run Planner pick up the same backends without a
+            % duplicate /api/backends round-trip. Only cache the bare
+            % pool — enriched per-circuit responses have a different
+            % shape and would mislead the other consumers.
+            try
+                if ~app.State.hasCircuit() && obj.hasBackendData(data)
+                    app.State.setBackendsListCache(data);
+                end
+            catch; end
             if obj.hasBackendData(data)
                 obj.populateBackendDropdown(data);
                 return;

@@ -56,10 +56,26 @@ classdef JobsViewModel < handle
             end
             skip  = max(0, (obj.CurrentPage - 1) * obj.PageSize);
             limit = obj.PageSize;
-            AsyncRunner.run( ...
-                @() JobsViewModel.fetchJobsAndCircuits(svc, circSvc, token, skip, limit), ...
-                @(result) obj.onRefreshJobsComplete(app, result), ...
-                @(ME)     obj.onRefreshJobsError(app, ME));
+            % Parallel dispatch via runMany: listJobs and listCircuits
+            % are independent — running them concurrently on
+            % backgroundPool saves one full HTTP round-trip vs. the prior
+            % serial worker (~300-800 ms on the initial Jobs nav). When
+            % circuits cache is fresh (circSvc == []) we dispatch
+            % listJobs alone.
+            if isempty(circSvc)
+                AsyncRunner.runMany( ...
+                    {@() svc.listJobs(token, skip, limit)}, ...
+                    @(results) obj.onRefreshJobsComplete(app, ...
+                        struct('jobs', results{1}, 'circuits', [])), ...
+                    @(ME) obj.onRefreshJobsError(app, ME));
+            else
+                AsyncRunner.runMany( ...
+                    { @() svc.listJobs(token, skip, limit), ...
+                      @() JobsViewModel.safeListCircuits(circSvc, token) }, ...
+                    @(results) obj.onRefreshJobsComplete(app, ...
+                        struct('jobs', results{1}, 'circuits', results{2})), ...
+                    @(ME) obj.onRefreshJobsError(app, ME));
+            end
         end
 
         function onNextPage(obj)
@@ -232,7 +248,8 @@ classdef JobsViewModel < handle
         end
 
         function onRefreshJobsComplete(obj, app, result)
-            % `result` is the struct produced by fetchJobsAndCircuits:
+            % `result` is the struct assembled in onRefreshJobs from the
+            % parallel runMany batch:
             %   result.jobs     — /api/jobs response
             %   result.circuits — /api/circuits response (may be empty)
             if isstruct(result) && isfield(result, 'jobs')
@@ -505,25 +522,19 @@ classdef JobsViewModel < handle
     end
 
     methods (Static, Access = private)
-        function result = fetchJobsAndCircuits(jobSvc, circSvc, token, skip, limit)
-            % Pull jobs (required) and circuits (best-effort) so the
-            % ViewModel can join circuit_id → name. If the circuits call
-            % fails we still return the jobs so the dashboard renders
-            % with raw IDs in the Circuit column.
-            %
-            % circSvc=[] means "skip the circuits fetch — caller has a
-            % fresh cached copy". Saves one API call per auto-refresh
-            % tick (12/min while on the Jobs screen).
-            if nargin < 4 || isempty(skip);  skip  = 0;  end
-            if nargin < 5 || isempty(limit); limit = 10; end
-            result = struct('jobs', [], 'circuits', []);
-            result.jobs = jobSvc.listJobs(token, skip, limit);
-            if isempty(circSvc); return; end
+        function out = safeListCircuits(circSvc, token)
+            % Wraps circSvc.listCircuits in try/catch so a circuits-API
+            % failure does NOT poison the parallel batch. The job list
+            % is the required result; circuits are only used for the
+            % circuit_id → name display lookup, so silencing the error
+            % and returning [] preserves the prior best-effort semantic
+            % (the table renders with raw circuit_id in that column).
             try
-                result.circuits = circSvc.listCircuits(token);
+                out = circSvc.listCircuits(token);
             catch ME
                 Logger.warn('JobsViewModel', ...
                     'Circuit list fetch failed (jobs still shown): %s', ME.message);
+                out = [];
             end
         end
 

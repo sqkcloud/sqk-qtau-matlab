@@ -1,0 +1,500 @@
+classdef CircuitModel < handle
+    % CircuitModel  In-memory representation of a quantum circuit edited
+    %               by the Composer screen.
+    %
+    %   Stores gates as a struct array (kind / qubits / params) and the
+    %   total qubit count. Supports round-tripping to/from a strict
+    %   subset of OpenQASM 2.0 — only the gates emitted by the palette:
+    %     1-qubit:  h x y z s t sdg tdg rx ry rz reset
+    %     2-qubit:  cx cz swap
+    %     3-qubit:  ccx
+    %     control:  barrier  measure
+    %
+    %   The parser is intentionally strict: anything outside this subset
+    %   throws an MException so the Composer mirror can show a clear
+    %   error. CircuitModel is a `handle` class so callbacks see live
+    %   updates without copy-back ceremony.
+
+    properties (Constant)
+        MAX_QUBITS = 16
+        % Single source of truth for what the palette / parser supports.
+        SUPPORTED_KINDS = { ...
+            'h','x','y','z','s','t','sdg','tdg', ...
+            'rx','ry','rz', ...
+            'cx','cz','swap','ccx', ...
+            'measure','barrier','reset'};
+        ONE_Q_KINDS  = {'h','x','y','z','s','t','sdg','tdg','reset'};
+        ROT_KINDS    = {'rx','ry','rz'};
+        TWO_Q_KINDS  = {'cx','cz','swap'};
+        THREE_Q_KINDS = {'ccx'};
+    end
+
+    properties
+        Gates     = struct('kind', {}, 'qubits', {}, 'params', {})
+        NumQubits = 1
+    end
+
+    methods
+        function obj = CircuitModel(numQubits)
+            if nargin < 1; numQubits = 1; end
+            obj.NumQubits = max(1, min(CircuitModel.MAX_QUBITS, round(numQubits)));
+        end
+
+        % ── Gate manipulation ────────────────────────────────────────────
+        function addGate(obj, kind, qubits, params)
+            if nargin < 4; params = []; end
+            kind = char(lower(kind));
+            if ~any(strcmp(CircuitModel.SUPPORTED_KINDS, kind))
+                error('CircuitModel:UnsupportedGate', ...
+                    'Gate kind not supported: %s', kind);
+            end
+            qubits = qubits(:)';
+            for q = qubits
+                if q < 0 || q >= obj.NumQubits
+                    error('CircuitModel:QubitOutOfRange', ...
+                        'Qubit q[%d] out of range (n=%d)', q, obj.NumQubits);
+                end
+            end
+            obj.Gates(end+1) = struct( ...
+                'kind',   kind, ...
+                'qubits', qubits, ...
+                'params', params(:)');
+        end
+
+        function removeGate(obj, idx)
+            if idx < 1 || idx > numel(obj.Gates); return; end
+            obj.Gates(idx) = [];
+        end
+
+        function clear(obj)
+            obj.Gates = struct('kind', {}, 'qubits', {}, 'params', {});
+        end
+
+        function d = depth(obj)
+            d = numel(obj.Gates);
+        end
+
+        function ensureQubit(obj, q)
+            obj.NumQubits = max(obj.NumQubits, q + 1);
+            obj.NumQubits = min(obj.NumQubits, CircuitModel.MAX_QUBITS);
+        end
+
+        function setNumQubits(obj, n)
+            n = max(1, min(CircuitModel.MAX_QUBITS, round(n)));
+            % Drop any gate that uses a qubit outside the new range.
+            keep = true(1, numel(obj.Gates));
+            for i = 1:numel(obj.Gates)
+                if any(obj.Gates(i).qubits >= n); keep(i) = false; end
+            end
+            obj.Gates = obj.Gates(keep);
+            obj.NumQubits = n;
+        end
+
+        function c = copy(obj)
+            c = CircuitModel(obj.NumQubits);
+            c.Gates = obj.Gates;
+        end
+
+        function tf = isEmpty(obj)
+            tf = isempty(obj.Gates);
+        end
+
+        % ── QASM serialization ──────────────────────────────────────────
+        function txt = toQasm(obj)
+            n = max(1, obj.NumQubits);
+            lines = {
+                'OPENQASM 2.0;'
+                'include "qelib1.inc";'
+                sprintf('qreg q[%d];', n)
+                sprintf('creg c[%d];', n)
+            };
+            for i = 1:numel(obj.Gates)
+                g = obj.Gates(i);
+                lines{end+1} = CircuitModel.gateToQasmLine(g); %#ok<AGROW>
+            end
+            txt = strjoin(lines, sprintf('\n'));
+        end
+
+        % ── OpenQASM 3.0 ────────────────────────────────────────────────
+        function txt = toQasm3(obj)
+            n = max(1, obj.NumQubits);
+            lines = {
+                'OPENQASM 3.0;'
+                'include "stdgates.inc";'
+                sprintf('qubit[%d] q;', n)
+                sprintf('bit[%d] c;', n)
+            };
+            for i = 1:numel(obj.Gates)
+                lines{end+1} = CircuitModel.gateToQasm3Line(obj.Gates(i)); %#ok<AGROW>
+            end
+            txt = strjoin(lines, sprintf('\n'));
+        end
+
+        % ── Qiskit (Python) ─────────────────────────────────────────────
+        function txt = toQiskitPython(obj)
+            n = max(1, obj.NumQubits);
+            lines = {
+                '# Generated by QTAU Connector Workspace'
+                'from qiskit import QuantumCircuit'
+                'import numpy as np'
+                ''
+                sprintf('qc = QuantumCircuit(%d, %d)', n, n)
+            };
+            for i = 1:numel(obj.Gates)
+                lines{end+1} = CircuitModel.gateToQiskitLine(obj.Gates(i)); %#ok<AGROW>
+            end
+            txt = strjoin(lines, sprintf('\n'));
+        end
+
+        % ── Cirq (Python) ───────────────────────────────────────────────
+        function txt = toCirqPython(obj)
+            n = max(1, obj.NumQubits);
+            lines = {
+                '# Generated by QTAU Connector Workspace'
+                'import cirq'
+                'import numpy as np'
+                ''
+                sprintf('q = cirq.LineQubit.range(%d)', n)
+                'circuit = cirq.Circuit(['
+            };
+            opLines = {};
+            for i = 1:numel(obj.Gates)
+                line = CircuitModel.gateToCirqLine(obj.Gates(i));
+                if ~isempty(line)
+                    opLines{end+1} = sprintf('    %s,', line); %#ok<AGROW>
+                end
+            end
+            lines = [lines, opLines, {'])'}];
+            txt = strjoin(lines, sprintf('\n'));
+        end
+
+        % ── Braket (Python) ─────────────────────────────────────────────
+        function txt = toBraketPython(obj)
+            lines = {
+                '# Generated by QTAU Connector Workspace'
+                'from braket.circuits import Circuit'
+                'import numpy as np'
+                ''
+                'circuit = Circuit()'
+            };
+            for i = 1:numel(obj.Gates)
+                line = CircuitModel.gateToBraketLine(obj.Gates(i));
+                if ~isempty(line)
+                    lines{end+1} = line; %#ok<AGROW>
+                end
+            end
+            txt = strjoin(lines, sprintf('\n'));
+        end
+    end
+
+    methods (Static)
+        function model = fromQasm(text)
+            % Strict subset parser. Returns a CircuitModel; throws an
+            % MException with line number on any unsupported token.
+            if isempty(text); model = CircuitModel(1); return; end
+            text = char(text);
+            rawLines = regexp(text, '\r\n|\r|\n', 'split');
+            n = 0;
+            gates = struct('kind', {}, 'qubits', {}, 'params', {});
+            for ln = 1:numel(rawLines)
+                line = strtrim(rawLines{ln});
+                if isempty(line); continue; end
+                % Strip trailing comment.
+                cidx = strfind(line, '//');
+                if ~isempty(cidx); line = strtrim(line(1:cidx(1)-1)); end
+                if isempty(line); continue; end
+                % Split on ; to support multiple statements per line.
+                parts = strsplit(line, ';');
+                for p = 1:numel(parts)
+                    stmt = strtrim(parts{p});
+                    if isempty(stmt); continue; end
+                    [n, gates] = CircuitModel.consumeStmt(stmt, n, gates, ln);
+                end
+            end
+            model = CircuitModel(max(1, n));
+            model.Gates = gates;
+        end
+
+        function s = formatTheta(theta)
+            % Best-effort symbolic formatter for common multiples of pi —
+            % keeps the QASM mirror readable without sacrificing
+            % round-trip correctness for arbitrary doubles.
+            if ~isfinite(theta); s = '0'; return; end
+            if abs(theta) < 1e-9; s = '0'; return; end
+            ratio = theta / pi;
+            % small-rational hits within tolerance
+            for q = 1:8
+                for p = -16:16
+                    if p == 0; continue; end
+                    target = p / q;
+                    if abs(ratio - target) < 1e-6
+                        s = CircuitModel.piRationalString(p, q);
+                        return;
+                    end
+                end
+            end
+            s = sprintf('%.8g', theta);
+        end
+    end
+
+    methods (Static, Access = private)
+        function line = gateToQasmLine(g)
+            switch lower(g.kind)
+                case {'h','x','y','z','s','t','sdg','tdg','reset'}
+                    line = sprintf('%s q[%d];', g.kind, g.qubits(1));
+                case {'rx','ry','rz'}
+                    line = sprintf('%s(%s) q[%d];', g.kind, ...
+                        CircuitModel.formatTheta(g.params(1)), g.qubits(1));
+                case 'cx'
+                    line = sprintf('cx q[%d],q[%d];', g.qubits(1), g.qubits(2));
+                case 'cz'
+                    line = sprintf('cz q[%d],q[%d];', g.qubits(1), g.qubits(2));
+                case 'swap'
+                    line = sprintf('swap q[%d],q[%d];', g.qubits(1), g.qubits(2));
+                case 'ccx'
+                    line = sprintf('ccx q[%d],q[%d],q[%d];', ...
+                        g.qubits(1), g.qubits(2), g.qubits(3));
+                case 'measure'
+                    line = sprintf('measure q[%d] -> c[%d];', ...
+                        g.qubits(1), g.qubits(1));
+                case 'barrier'
+                    line = 'barrier q;';
+                otherwise
+                    line = sprintf('// unknown gate kind: %s', g.kind);
+            end
+        end
+
+        function line = gateToQasm3Line(g)
+            % OpenQASM 3.0 differs from 2.0 mostly at the register-decl
+            % header (already handled in toQasm3) and measurement syntax.
+            switch lower(g.kind)
+                case 'measure'
+                    line = sprintf('c[%d] = measure q[%d];', g.qubits(1), g.qubits(1));
+                otherwise
+                    line = CircuitModel.gateToQasmLine(g);
+            end
+        end
+
+        function line = gateToQiskitLine(g)
+            switch lower(g.kind)
+                case 'h';      line = sprintf('qc.h(%d)',   g.qubits(1));
+                case 'x';      line = sprintf('qc.x(%d)',   g.qubits(1));
+                case 'y';      line = sprintf('qc.y(%d)',   g.qubits(1));
+                case 'z';      line = sprintf('qc.z(%d)',   g.qubits(1));
+                case 's';      line = sprintf('qc.s(%d)',   g.qubits(1));
+                case 't';      line = sprintf('qc.t(%d)',   g.qubits(1));
+                case 'sdg';    line = sprintf('qc.sdg(%d)', g.qubits(1));
+                case 'tdg';    line = sprintf('qc.tdg(%d)', g.qubits(1));
+                case 'reset';  line = sprintf('qc.reset(%d)', g.qubits(1));
+                case {'rx','ry','rz'}
+                    line = sprintf('qc.%s(%s, %d)', g.kind, ...
+                        CircuitModel.formatThetaPython(g.params(1)), g.qubits(1));
+                case 'cx';     line = sprintf('qc.cx(%d, %d)',   g.qubits(1), g.qubits(2));
+                case 'cz';     line = sprintf('qc.cz(%d, %d)',   g.qubits(1), g.qubits(2));
+                case 'swap';   line = sprintf('qc.swap(%d, %d)', g.qubits(1), g.qubits(2));
+                case 'ccx';    line = sprintf('qc.ccx(%d, %d, %d)', ...
+                                   g.qubits(1), g.qubits(2), g.qubits(3));
+                case 'measure'; line = sprintf('qc.measure(%d, %d)', ...
+                                   g.qubits(1), g.qubits(1));
+                case 'barrier'; line = 'qc.barrier()';
+                otherwise; line = sprintf('# unsupported gate: %s', g.kind);
+            end
+        end
+
+        function line = gateToCirqLine(g)
+            switch lower(g.kind)
+                case 'h';      line = sprintf('cirq.H(q[%d])',     g.qubits(1));
+                case 'x';      line = sprintf('cirq.X(q[%d])',     g.qubits(1));
+                case 'y';      line = sprintf('cirq.Y(q[%d])',     g.qubits(1));
+                case 'z';      line = sprintf('cirq.Z(q[%d])',     g.qubits(1));
+                case 's';      line = sprintf('cirq.S(q[%d])',     g.qubits(1));
+                case 't';      line = sprintf('cirq.T(q[%d])',     g.qubits(1));
+                case 'sdg';    line = sprintf('cirq.S(q[%d])**-1', g.qubits(1));
+                case 'tdg';    line = sprintf('cirq.T(q[%d])**-1', g.qubits(1));
+                case 'reset';  line = sprintf('cirq.reset(q[%d])', g.qubits(1));
+                case {'rx','ry','rz'}
+                    line = sprintf('cirq.%s(%s)(q[%d])', g.kind, ...
+                        CircuitModel.formatThetaPython(g.params(1)), g.qubits(1));
+                case 'cx';     line = sprintf('cirq.CNOT(q[%d], q[%d])', g.qubits(1), g.qubits(2));
+                case 'cz';     line = sprintf('cirq.CZ(q[%d], q[%d])',   g.qubits(1), g.qubits(2));
+                case 'swap';   line = sprintf('cirq.SWAP(q[%d], q[%d])', g.qubits(1), g.qubits(2));
+                case 'ccx';    line = sprintf('cirq.TOFFOLI(q[%d], q[%d], q[%d])', ...
+                                   g.qubits(1), g.qubits(2), g.qubits(3));
+                case 'measure'; line = sprintf("cirq.measure(q[%d], key='c%d')", ...
+                                   g.qubits(1), g.qubits(1));
+                case 'barrier'; line = '# barrier (Cirq has no native barrier)';
+                otherwise; line = sprintf('# unsupported gate: %s', g.kind);
+            end
+        end
+
+        function line = gateToBraketLine(g)
+            switch lower(g.kind)
+                case 'h';      line = sprintf('circuit.h(%d)',   g.qubits(1));
+                case 'x';      line = sprintf('circuit.x(%d)',   g.qubits(1));
+                case 'y';      line = sprintf('circuit.y(%d)',   g.qubits(1));
+                case 'z';      line = sprintf('circuit.z(%d)',   g.qubits(1));
+                case 's';      line = sprintf('circuit.s(%d)',   g.qubits(1));
+                case 't';      line = sprintf('circuit.t(%d)',   g.qubits(1));
+                case 'sdg';    line = sprintf('circuit.si(%d)',  g.qubits(1));
+                case 'tdg';    line = sprintf('circuit.ti(%d)',  g.qubits(1));
+                case 'reset';  line = sprintf('# reset q[%d] (Braket: classically reinit)', g.qubits(1));
+                case {'rx','ry','rz'}
+                    line = sprintf('circuit.%s(%d, %s)', g.kind, ...
+                        g.qubits(1), CircuitModel.formatThetaPython(g.params(1)));
+                case 'cx';     line = sprintf('circuit.cnot(%d, %d)',  g.qubits(1), g.qubits(2));
+                case 'cz';     line = sprintf('circuit.cz(%d, %d)',    g.qubits(1), g.qubits(2));
+                case 'swap';   line = sprintf('circuit.swap(%d, %d)',  g.qubits(1), g.qubits(2));
+                case 'ccx';    line = sprintf('circuit.ccnot(%d, %d, %d)', ...
+                                   g.qubits(1), g.qubits(2), g.qubits(3));
+                case 'measure'; line = sprintf('# measure q[%d] (Braket measures all on submit)', ...
+                                   g.qubits(1));
+                case 'barrier'; line = '# barrier (Braket has no native barrier)';
+                otherwise; line = sprintf('# unsupported gate: %s', g.kind);
+            end
+        end
+
+        function s = formatThetaPython(theta)
+            % Like formatTheta, but emits np.pi instead of bare pi for
+            % Python-target ecosystems. Reuses the symbolic-rational
+            % detection so common multiples of pi stay readable.
+            s = CircuitModel.formatTheta(theta);
+            s = regexprep(s, '\bpi\b', 'np.pi');
+        end
+
+        function s = piRationalString(p, q)
+            if q == 1
+                if p == 1;       s = 'pi';
+                elseif p == -1;  s = '-pi';
+                else;            s = sprintf('%d*pi', p);
+                end
+            else
+                if p == 1;       s = sprintf('pi/%d', q);
+                elseif p == -1;  s = sprintf('-pi/%d', q);
+                else;            s = sprintf('%d*pi/%d', p, q);
+                end
+            end
+        end
+
+        function [n, gates] = consumeStmt(stmt, n, gates, ln)
+            % Header lines we silently accept.
+            if strncmpi(stmt, 'OPENQASM', 8); return; end
+            if strncmpi(stmt, 'include', 7); return; end
+            % Register declarations.
+            tok = regexp(stmt, '^qreg\s+\w+\s*\[\s*(\d+)\s*\]$', 'tokens', 'once');
+            if ~isempty(tok)
+                n = max(n, str2double(tok{1}));
+                if n > CircuitModel.MAX_QUBITS
+                    error('CircuitModel:Parse', ...
+                        'Line %d: qreg declares %d qubits (max %d)', ...
+                        ln, n, CircuitModel.MAX_QUBITS);
+                end
+                return;
+            end
+            tok = regexp(stmt, '^creg\s+\w+\s*\[\s*(\d+)\s*\]$', 'tokens', 'once');
+            if ~isempty(tok); return; end
+            % barrier (with or without arg list).
+            if regexp(stmt, '^barrier(\s+|$)')
+                gates(end+1) = struct('kind','barrier','qubits',[],'params',[]);
+                return;
+            end
+            % measure q[a] -> c[b];
+            tok = regexp(stmt, '^measure\s+\w+\s*\[\s*(\d+)\s*\]\s*->\s*\w+\s*\[\s*(\d+)\s*\]$', ...
+                'tokens', 'once');
+            if ~isempty(tok)
+                q = str2double(tok{1});
+                gates(end+1) = struct('kind','measure','qubits',q,'params',[]);
+                n = max(n, q+1);
+                return;
+            end
+            % reset q[a];
+            tok = regexp(stmt, '^reset\s+\w+\s*\[\s*(\d+)\s*\]$', 'tokens', 'once');
+            if ~isempty(tok)
+                q = str2double(tok{1});
+                gates(end+1) = struct('kind','reset','qubits',q,'params',[]);
+                n = max(n, q+1);
+                return;
+            end
+            % rx(theta) q[a]; ry(...) rz(...)
+            tok = regexp(stmt, '^(rx|ry|rz)\s*\(([^)]+)\)\s+\w+\s*\[\s*(\d+)\s*\]$', ...
+                'tokens', 'once');
+            if ~isempty(tok)
+                kind  = lower(tok{1});
+                theta = CircuitModel.evalScalar(tok{2}, ln);
+                q     = str2double(tok{3});
+                gates(end+1) = struct('kind',kind,'qubits',q,'params',theta);
+                n = max(n, q+1);
+                return;
+            end
+            % 1-qubit, no-param: h q[a]; etc.
+            tok = regexp(stmt, '^(h|x|y|z|s|t|sdg|tdg)\s+\w+\s*\[\s*(\d+)\s*\]$', ...
+                'tokens', 'once');
+            if ~isempty(tok)
+                kind = lower(tok{1});
+                q    = str2double(tok{2});
+                gates(end+1) = struct('kind',kind,'qubits',q,'params',[]);
+                n = max(n, q+1);
+                return;
+            end
+            % 2-qubit: cx / cz / swap q[a],q[b];
+            tok = regexp(stmt, ...
+                '^(cx|cz|swap)\s+\w+\s*\[\s*(\d+)\s*\]\s*,\s*\w+\s*\[\s*(\d+)\s*\]$', ...
+                'tokens', 'once');
+            if ~isempty(tok)
+                kind = lower(tok{1});
+                q1   = str2double(tok{2});
+                q2   = str2double(tok{3});
+                if q1 == q2
+                    error('CircuitModel:Parse', ...
+                        'Line %d: %s on identical qubits', ln, kind);
+                end
+                gates(end+1) = struct('kind',kind,'qubits',[q1 q2],'params',[]);
+                n = max(n, max(q1,q2)+1);
+                return;
+            end
+            % 3-qubit: ccx q[a],q[b],q[c];
+            tok = regexp(stmt, ...
+                '^ccx\s+\w+\s*\[\s*(\d+)\s*\]\s*,\s*\w+\s*\[\s*(\d+)\s*\]\s*,\s*\w+\s*\[\s*(\d+)\s*\]$', ...
+                'tokens', 'once');
+            if ~isempty(tok)
+                q1 = str2double(tok{1});
+                q2 = str2double(tok{2});
+                q3 = str2double(tok{3});
+                if numel(unique([q1 q2 q3])) ~= 3
+                    error('CircuitModel:Parse', 'Line %d: ccx with duplicate qubits', ln);
+                end
+                gates(end+1) = struct('kind','ccx','qubits',[q1 q2 q3],'params',[]);
+                n = max(n, max([q1 q2 q3])+1);
+                return;
+            end
+            error('CircuitModel:Parse', ...
+                'Line %d: unsupported statement: %s', ln, stmt);
+        end
+
+        function v = evalScalar(expr, ln)
+            % Evaluate a scalar parameter expression using only `pi`,
+            % digits, +/-/*/(/) and `/`. Whitelist guarantees no arbitrary
+            % execution.
+            s = strtrim(expr);
+            if isempty(s)
+                error('CircuitModel:Parse', 'Line %d: empty parameter', ln);
+            end
+            if isempty(regexp(s, '^[\s\d\+\-\*\/\(\)\.piPI]+$', 'once'))
+                error('CircuitModel:Parse', ...
+                    'Line %d: illegal parameter expression: %s', ln, expr);
+            end
+            % Replace pi/PI with the actual value (eval-free for the literal).
+            s = regexprep(s, '\bpi\b|\bPI\b', sprintf('(%.17g)', pi));
+            try
+                v = eval(s);
+            catch ME
+                error('CircuitModel:Parse', ...
+                    'Line %d: cannot evaluate "%s" — %s', ln, expr, ME.message);
+            end
+            if ~isnumeric(v) || ~isscalar(v) || ~isfinite(v)
+                error('CircuitModel:Parse', ...
+                    'Line %d: parameter "%s" did not evaluate to a finite scalar', ln, expr);
+            end
+            v = double(v);
+        end
+    end
+end
