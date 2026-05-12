@@ -64,22 +64,99 @@ classdef BackendsViewModel < handle
             obj.applyPage();
             if ~isempty(rows)
                 obj.populateKpiCards(app, rows);
+                obj.populateOverviewKpis(app, rows);
             end
             app.setStatus(app.BackendStatusArea, {sprintf('Loaded %d backend(s).', size(rows,1))});
             app.logEvent('API', sprintf('Backends loaded — %d rows', size(rows,1)));
             obj.LastRefresh = tic;
             app.hideLoading();
 
+            % Auto-select the first backend row so the Telemetry sub-tabs
+            % (Per-Qubit / History / Topology) paint with data immediately
+            % on screen entry. Before this, the three tabs sat empty until
+            % the user clicked a table row — which made the whole panel
+            % look broken on first nav. SelectionChangedFcn may not fire
+            % on a programmatic Selection write across MATLAB releases,
+            % so we invoke onTableRowSelected explicitly.
+            try
+                if size(rows, 1) > 0 && ~isempty(app.BackendTable) ...
+                        && isvalid(app.BackendTable)
+                    app.BackendTable.Selection = 1;
+                    obj.onTableRowSelected();
+                end
+            catch ME
+                Logger.debug('BackendsViewModel', ...
+                    'auto-select row 1: %s', ME.message);
+            end
+
             % C2.B1 — Pre-fetch calibration history for every backend so
             % the Telemetry tab strip lights up instantly on row select.
-            % Each fetch is fire-and-forget; the heat-grid + history
-            % charts paint on row select after onCalibrationHistoryLoaded
-            % populates app.CalibrationHistoryCache.
-            for r = 1:size(rows, 1)
+            % Batched via AsyncRunner.runMany: a single shared poller
+            % covers all N fetches instead of one 50 ms timer per
+            % backend. The pre-batch path looped AsyncRunner.run per
+            % row, which spawned N concurrent futures + N independent
+            % polling timers — for ~20 IBM backends that flooded the
+            % background pool and kept the UI thread ticking at
+            % 400 Hz of timer overhead for ~30 s after every visit,
+            % which the user perceived as app-wide sluggishness.
+            obj.kickCalibrationHistoryBatch(app, rows);
+        end
+
+        function kickCalibrationHistoryBatch(obj, app, rows)
+            % Fire all per-backend /calibration_history fetches as ONE
+            % AsyncRunner.runMany batch. Per-row failures are swallowed
+            % via safeCalibrationFetch so one backend returning 4xx
+            % cannot poison the entire batch (runMany surfaces only
+            % the first error to onError and discards every other
+            % result, so we wrap each work fn defensively).
+            if ~app.State.isAuthenticated(); return; end
+            n = size(rows, 1);
+            if n == 0; return; end
+            names = cell(1, n);
+            works = cell(1, n);
+            k = 0;
+            svc   = app.BackendSvc;
+            token = app.State.authToken;
+            for r = 1:n
                 bn = char(string(rows{r, 2}));
-                if ~isempty(bn)
-                    obj.fetchCalibrationHistory(bn, 7);
+                if isempty(bn); continue; end
+                k = k + 1;
+                names{k} = bn;
+                works{k} = @() BackendsViewModel.safeCalibrationFetch(svc, bn, 7, token);
+            end
+            if k == 0; return; end
+            names = names(1:k); works = works(1:k);
+            AsyncRunner.runMany(works, ...
+                @(results) obj.onCalibrationHistoryBatchLoaded(app, names, results), ...
+                @(ME) Logger.debug('BackendsViewModel', ...
+                    'calibration-history batch: %s', ME.message));
+        end
+
+        function onCalibrationHistoryBatchLoaded(obj, app, names, results)
+            % Land every per-backend response into the cache in a
+            % single pass, then repaint the active row (if any). One
+            % paint at the end of the batch instead of N incremental
+            % paints — same data, no flicker.
+            if isempty(app.CalibrationHistoryCache)
+                app.CalibrationHistoryCache = struct();
+            end
+            for i = 1:numel(names)
+                if isempty(results{i}); continue; end
+                safeKey = matlab.lang.makeValidName(char(names{i}));
+                app.CalibrationHistoryCache.(safeKey) = results{i};
+            end
+            try
+                row = obj.getSelectedRow();
+                if row > 0
+                    selName = char(string(app.BackendTable.Data{row, 2}));
+                    safeKey = matlab.lang.makeValidName(selName);
+                    if isfield(app.CalibrationHistoryCache, safeKey)
+                        obj.populateTelemetryPanel(app, selName);
+                    end
                 end
+            catch ME
+                Logger.debug('BackendsViewModel', ...
+                    'batch-arrival paint skipped: %s', ME.message);
             end
         end
 
@@ -135,6 +212,22 @@ classdef BackendsViewModel < handle
             if row == 0; return; end
             selName = char(string(app.BackendTable.Data{row, 2}));
             if isempty(selName); return; end
+            % Reflect the selected backend in the Overview KPI strip's
+            % 4th card so the user can always see which one is being
+            % drilled into across all four tabs.
+            try
+                if isprop(app, 'OverviewKpiLabels') && ...
+                        ~isempty(app.OverviewKpiLabels) && ...
+                        numel(app.OverviewKpiLabels) >= 4 && ...
+                        ~isempty(app.OverviewKpiLabels{4}) && ...
+                        isvalid(app.OverviewKpiLabels{4})
+                    app.OverviewKpiLabels{4}.Text = selName;
+                    app.OverviewKpiLabels{4}.FontSize = 12;  % name strings are longer than numbers
+                end
+            catch ME
+                Logger.debug('BackendsViewModel', ...
+                    'overview KPI selected-name update: %s', ME.message);
+            end
             safeKey = matlab.lang.makeValidName(selName);
             if isstruct(app.CalibrationHistoryCache) && ...
                     isfield(app.CalibrationHistoryCache, safeKey)
@@ -143,6 +236,94 @@ classdef BackendsViewModel < handle
                 % Cache miss — dispatch; onCalibrationHistoryLoaded
                 % will paint once the response lands.
                 obj.fetchCalibrationHistory(selName, 7);
+            end
+        end
+
+        function populateOverviewKpis(~, app, rows)
+            % Fill the Telemetry > Overview KPI strip cards: total
+            % backends, operational count, max qubit width, and the
+            % currently-selected backend (last card is repopulated by
+            % onTableRowSelected when the user picks a row). Defensive
+            % against missing handles and unparseable cell contents so a
+            % single bad row never blanks the whole strip.
+            if ~isprop(app, 'OverviewKpiLabels'); return; end
+            if isempty(app.OverviewKpiLabels) || numel(app.OverviewKpiLabels) < 4
+                return;
+            end
+            n = size(rows, 1);
+            operational = 0;
+            maxQubits = 0;
+            for r = 1:n
+                try
+                    qb = rows{r, 3};   % col 3 = num_qubits per JsonHelper.backendsToRows
+                    if isnumeric(qb) && isfinite(qb) && qb > maxQubits
+                        maxQubits = qb;
+                    elseif ischar(qb) || isstring(qb)
+                        qbn = str2double(char(string(qb)));
+                        if ~isnan(qbn) && qbn > maxQubits; maxQubits = qbn; end
+                    end
+                    st = lower(char(string(rows{r, 4})));
+                    if contains(st, 'operat') || contains(st, 'online') || ...
+                            contains(st, 'active') || contains(st, 'available') || ...
+                            contains(st, char(9989)) || strcmp(st, 'ok')
+                        operational = operational + 1;
+                    end
+                catch
+                end
+            end
+            try; app.OverviewKpiLabels{1}.Text = sprintf('%d', n); catch; end
+            try; app.OverviewKpiLabels{2}.Text = sprintf('%d / %d', operational, n); catch; end
+            try; app.OverviewKpiLabels{3}.Text = sprintf('%d', round(maxQubits)); catch; end
+            % Card 4 is repopulated by onTableRowSelected with the
+            % currently-selected backend name. Reset to em-dash here so
+            % a refresh-without-selection shows a clean placeholder.
+            try
+                app.OverviewKpiLabels{4}.Text = char(8212);
+                app.OverviewKpiLabels{4}.FontSize = 16;
+            catch
+            end
+        end
+
+        function updateLatestCalibrationKpi(~, app)
+            % Optional helper to surface "most recent calibration" if a
+            % future revision wants to expose it in the Overview strip.
+            % Currently unused because KPI 4 holds the selected backend
+            % name (more interactive). Kept as a single-source helper
+            % so toggling the KPI's role is a one-line wire change.
+            if ~isprop(app, 'OverviewKpiLabels'); return; end
+            if isempty(app.OverviewKpiLabels) || numel(app.OverviewKpiLabels) < 4
+                return;
+            end
+            cache = app.CalibrationHistoryCache;
+            if ~isstruct(cache); return; end
+            names = fieldnames(cache);
+            latest = NaT('TimeZone', 'UTC');
+            for i = 1:numel(names)
+                try
+                    recs = JsonHelper.pick(cache.(names{i}), {'records'}, []);
+                    for j = 1:numel(recs)
+                        if iscell(recs); r = recs{j}; else; r = recs(j); end
+                        t = datetime( ...
+                            strrep(char(r.sampled_at), 'Z', '+00:00'), ...
+                            'InputFormat', 'yyyy-MM-dd''T''HH:mm:ssXXX', ...
+                            'TimeZone', 'UTC');
+                        if isnat(latest) || t > latest; latest = t; end
+                    end
+                catch
+                end
+            end
+            if isnat(latest); return; end
+            try
+                ageHours = hours(datetime('now', 'TimeZone', 'UTC') - latest);
+                if ageHours < 1
+                    txt = '< 1 hr ago';
+                elseif ageHours < 24
+                    txt = sprintf('%.0f hr ago', ageHours);
+                else
+                    txt = sprintf('%.1f day ago', ageHours / 24);
+                end
+                app.OverviewKpiLabels{4}.Text = txt;
+            catch
             end
         end
 
@@ -162,10 +343,36 @@ classdef BackendsViewModel < handle
             end
             parent = app.TelemetryPerQubitGrid;
             delete(parent.Children);
+
+            % Empty-state: no data yet → centered messaging across the
+            % whole grid instead of a wall of blank cells. Distinguishes
+            % "still loading" from "no row selected" via the message.
+            recs = [];
+            try; recs = data.records; catch; end
+            if isempty(recs)
+                parent.RowHeight   = {'1x'};
+                parent.ColumnWidth = {'1x'};
+                empty = uilabel(parent, ...
+                    'Text', Labels.get('backends_perqubit_empty', ...
+                        'No per-qubit calibration data available for this backend.'), ...
+                    'FontSize', 11, ...
+                    'FontColor', Theme.COLOR_MUTED, ...
+                    'HorizontalAlignment', 'center', ...
+                    'VerticalAlignment', 'center', ...
+                    'WordWrap', 'on');
+                empty.Layout.Row = 1; empty.Layout.Column = 1;
+                return;
+            end
+
+            % Data-layout: 6 rows × 17 cols (col 1 = metric row labels,
+            % cols 2-17 = up to 16 qubits). Wider col 1 so labels like
+            % "Readout err" / "Gate err" fit without truncation.
             parent.RowHeight   = repmat({22}, 1, 6);
-            parent.ColumnWidth = repmat({60}, 1, 16);
-            metrics = {'qubit', 'T1', 'T2', 'gate_err', 'rd_err', '2Q_err'};
-            recs = data.records;
+            parent.ColumnWidth = [{90}, repmat({60}, 1, 16)];
+
+            metrics      = {'qubit', 'T1', 'T2', 'gate_err', 'rd_err', '2Q_err'};
+            rowLabels    = {'',      'T1', 'T2', 'Gate err', 'Readout err', '2Q err'};
+
             if iscell(recs); n = numel(recs); else; n = numel(recs); end
             per_qubit = containers.Map('KeyType', 'int32', 'ValueType', 'any');
             for i = 1:n
@@ -177,15 +384,27 @@ classdef BackendsViewModel < handle
                 end
             end
             qubits = sort(cell2mat(keys(per_qubit)));
-            % Header row
-            for c = 1:min(numel(qubits), 16)
-                lbl = uilabel(parent, 'Text', sprintf('q[%d]', qubits(c)), ...
-                              'FontSize', 10, 'FontWeight', 'bold');
-                lbl.Layout.Row = 1; lbl.Layout.Column = c;
-            end
-            % Metric rows
+
+            % Column 1 — metric row labels. Right-aligned so the value
+            % cells immediately to the right read as the "value of this
+            % metric" without ambiguity.
             for m = 2:numel(metrics)
-                for c = 1:min(numel(qubits), 16)
+                rl = uilabel(parent, 'Text', rowLabels{m}, ...
+                    'FontSize', 10, 'FontWeight', 'bold', ...
+                    'FontColor', Theme.COLOR_MUTED, ...
+                    'HorizontalAlignment', 'right', ...
+                    'VerticalAlignment', 'center');
+                rl.Layout.Row = m; rl.Layout.Column = 1;
+            end
+
+            % Columns 2-17 — per-qubit data. Row 1 is the qubit header.
+            for c = 1:min(numel(qubits), 16)
+                hdr = uilabel(parent, 'Text', sprintf('q[%d]', qubits(c)), ...
+                              'FontSize', 10, 'FontWeight', 'bold', ...
+                              'FontColor', Theme.COLOR_LABEL, ...
+                              'HorizontalAlignment', 'center');
+                hdr.Layout.Row = 1; hdr.Layout.Column = c + 1;
+                for m = 2:numel(metrics)
                     r = per_qubit(qubits(c));
                     switch metrics{m}
                         case 'T1';        v = JsonHelper.pickNumeric(r, 'T1', NaN);
@@ -197,8 +416,10 @@ classdef BackendsViewModel < handle
                     color = BackendsViewModel.healthColor(metrics{m}, v);
                     lbl = uilabel(parent, ...
                         'Text', BackendsViewModel.fmtMetric(metrics{m}, v), ...
-                        'FontSize', 10, 'BackgroundColor', color);
-                    lbl.Layout.Row = m; lbl.Layout.Column = c;
+                        'FontSize', 10, 'BackgroundColor', color, ...
+                        'HorizontalAlignment', 'center', ...
+                        'VerticalAlignment', 'center');
+                    lbl.Layout.Row = m; lbl.Layout.Column = c + 1;
                 end
             end
         end
@@ -208,14 +429,44 @@ classdef BackendsViewModel < handle
                     numel(app.TelemetryHistoryAxes) < 3
                 return;
             end
-            fields = {'T1', 'T2', 'two_q_error'};
-            titles = {'T1 (s)', 'T2 (s)', '2Q gate error'};
-            recs   = data.records;
+            fields   = {'T1', 'T2', 'two_q_error'};
+            titles   = {'T1 coherence (µs)', 'T2 coherence (µs)', '2Q gate error'};
+            % Scale factor per field — T1/T2 are in seconds in the
+            % backend payload but the chart title advertises microseconds,
+            % so multiply for display.
+            scales   = [1e6, 1e6, 1.0];
+
+            recs = [];
+            try; recs = data.records; catch; end
+
+            % Empty-state: paint a centered "no data" annotation in
+            % each of the 3 axes instead of leaving them showing the
+            % pre-styled grid with no curve. Keeps the panel from
+            % looking broken on a backend that has no recorded history.
+            if isempty(recs)
+                for k = 1:3
+                    ax = app.TelemetryHistoryAxes{k};
+                    if isempty(ax) || ~isvalid(ax); continue; end
+                    cla(ax);
+                    ax.Title.String = titles{k};
+                    ax.XLim = [0 1]; ax.YLim = [0 1];
+                    text(ax, 0.5, 0.5, Labels.get('backends_history_empty', ...
+                        'No calibration history available for this backend.'), ...
+                        'HorizontalAlignment', 'center', ...
+                        'VerticalAlignment', 'middle', ...
+                        'FontSize', 10, ...
+                        'Color', Theme.COLOR_MUTED, ...
+                        'HitTest', 'off', 'PickableParts', 'none');
+                end
+                return;
+            end
+
             if iscell(recs); n = numel(recs); else; n = numel(recs); end
             for k = 1:3
                 ax = app.TelemetryHistoryAxes{k};
                 if isempty(ax) || ~isvalid(ax); continue; end
-                cla(ax); ax.Title.String = titles{k};
+                cla(ax);
+                ax.Title.String = titles{k};
                 ts = NaT(1, n); vals = nan(1, n);
                 for i = 1:n
                     if iscell(recs); r = recs{i}; else; r = recs(i); end
@@ -224,15 +475,33 @@ classdef BackendsViewModel < handle
                                          'InputFormat', 'yyyy-MM-dd''T''HH:mm:ssXXX', ...
                                          'TimeZone', 'UTC');
                     catch; continue; end
-                    vals(i) = JsonHelper.pickNumeric(r, fields{k}, NaN);
+                    vals(i) = JsonHelper.pickNumeric(r, fields{k}, NaN) * scales(k);
                 end
                 valid = ~isnat(ts) & ~isnan(vals);
                 if any(valid)
                     [tsS, idx] = sort(ts(valid));
                     vS = vals(valid); vS = vS(idx);
-                    plot(ax, tsS, vS, '-', 'Color', Theme.COLOR_PRIMARY, ...
-                         'LineWidth', 1.4);
+                    plot(ax, tsS, vS, '-o', ...
+                        'Color', Theme.COLOR_PRIMARY, ...
+                        'MarkerFaceColor', Theme.COLOR_PRIMARY, ...
+                        'MarkerEdgeColor', Theme.COLOR_PRIMARY, ...
+                        'MarkerSize', 3.5, ...
+                        'LineWidth', 1.4);
                     ax.XGrid = 'on'; ax.YGrid = 'on';
+                    try
+                        ax.XAxis.TickLabelFormat = 'MMM d';
+                    catch
+                    end
+                else
+                    % Records exist but none parsed cleanly for this
+                    % field — annotate so the panel doesn't look broken.
+                    ax.XLim = [0 1]; ax.YLim = [0 1];
+                    text(ax, 0.5, 0.5, Labels.get('backends_history_empty', ...
+                        'No calibration history available for this backend.'), ...
+                        'HorizontalAlignment', 'center', ...
+                        'VerticalAlignment', 'middle', ...
+                        'FontSize', 10, 'Color', Theme.COLOR_MUTED, ...
+                        'HitTest', 'off', 'PickableParts', 'none');
                 end
             end
         end
@@ -1045,6 +1314,21 @@ classdef BackendsViewModel < handle
                     elseif v > 3e-5;   c = [1.00 0.95 0.80];
                     else;              c = [0.99 0.83 0.83];
                     end
+            end
+        end
+
+        function out = safeCalibrationFetch(svc, backendName, days, token)
+            % Try/catch wrapper for AsyncRunner.runMany batch members
+            % — one backend's HTTP failure (404 / 5xx / network blip)
+            % must NOT discard every other result via runMany's
+            % first-error-wins semantics. Empty out signals "skip" to
+            % onCalibrationHistoryBatchLoaded.
+            try
+                out = svc.getCalibrationHistory(backendName, days, token);
+            catch ME
+                Logger.debug('BackendsViewModel', ...
+                    'calibration-history skip (%s): %s', char(backendName), ME.message);
+                out = [];
             end
         end
 

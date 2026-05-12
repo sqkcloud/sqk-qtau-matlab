@@ -20,23 +20,44 @@ classdef NavigationManager
             % no-op and snap instantly. See QTAUWorkbenchApp.buildUI for
             % the rationale (eager build cost ~32s of startup).
             NavigationManager.ensureScreenBuilt(app, key);
-            names = fieldnames(app.SectionPanels);
-            for i = 1:numel(names)
-                panel = app.SectionPanels.(names{i});
-                if isempty(panel) || ~isvalid(panel)
-                    Logger.debug('NavigationManager', ...
-                        'skipping invalid panel: %s', names{i});
-                    continue;
+
+            % Hide the previously-visible panel only. The pre-perf-pass
+            % loop iterated every entry in app.SectionPanels and set
+            % Visible='off' on each — but uipanel.Visible writes
+            % trigger a layout pass even when the value is already
+            % 'off', so the loop paid ~10 ms × 22 panels (≈200 ms)
+            % per nav for no benefit.
+            prevKey = '';
+            try
+                if isprop(app, 'LastSectionKey'); prevKey = char(app.LastSectionKey); end
+            catch; end
+            if ~isempty(prevKey) && ~strcmp(prevKey, char(key))
+                prevSafe = matlab.lang.makeValidName(prevKey);
+                if isfield(app.SectionPanels, prevSafe)
+                    prevPanel = app.SectionPanels.(prevSafe);
+                    if ~isempty(prevPanel) && isvalid(prevPanel)
+                        prevPanel.Visible = 'off';
+                    end
                 end
-                panel.Visible = 'off';
             end
+
             safeKey = matlab.lang.makeValidName(char(key));
             if isfield(app.SectionPanels, safeKey)
                 panel = app.SectionPanels.(safeKey);
                 if ~isempty(panel) && isvalid(panel)
+                    % Fit BEFORE Visible='on' so the first paint uses
+                    % the correct size — prevents the resize-flash
+                    % that happened when the window had been resized
+                    % while this panel was hidden. Other panels are
+                    % re-fitted on demand the next time they become
+                    % visible (instead of every nav, as the old
+                    % fitAllSections loop did).
+                    NavigationManager.fitSectionPanel(panel);
                     panel.Visible = 'on';
                 end
             end
+            try; app.LastSectionKey = string(key); catch; end
+
             % Phase 8: resolve the displayed title via navLabels so
             % the screen header shows "Projects" when the user picks
             % the Welcome routing key (the routing key 'Welcome' is
@@ -55,7 +76,12 @@ classdef NavigationManager
                 app.NavList.Value = key;
             end
             NavigationManager.updateNavStyles(app, key);
-            NavigationManager.onResizeUI(app);
+            % Auth overlay sits on top of every section and must follow
+            % the new visible panel's size. The pre-perf-pass
+            % onResizeUI() call also looped every panel via
+            % fitAllSections — we've already resized the active panel
+            % above, so call only the auth-overlay helper directly.
+            OverlayManager.fitAuthOverlay(app);
             NavigationManager.autoLoadScreen(app, key);
         end
 
@@ -567,8 +593,39 @@ classdef NavigationManager
             % HTML/sendFlushEventToClient. The JS listener installed by
             % renderNavHtml reads {a:'setActive', name:...} and toggles
             % the .active class in place, keeping the DOM intact.
+            %
+            % Hidden routing keys (Detailed Analysis / Benchmark
+            % Dashboard / Upload / Composer) don't appear in the
+            % sidebar HTML, so passing them straight through would
+            % leave nothing highlighted — disorienting for the user.
+            % parentNavKey maps each hidden key to the visible parent
+            % section it logically belongs to so the sidebar shows
+            % which workflow the user is in.
             if isempty(app.NavHtml) || ~isvalid(app.NavHtml); return; end
-            app.NavHtml.Data = struct('a', 'setActive', 'name', activeKey);
+            highlightKey = NavigationManager.parentNavKey(activeKey);
+            app.NavHtml.Data = struct('a', 'setActive', 'name', highlightKey);
+        end
+
+        function key = parentNavKey(key)
+            % Map a routing key to the sidebar item that should be
+            % highlighted while it's the active screen. Visible
+            % sidebar keys pass through unchanged; hidden child
+            % screens resolve to their parent workflow:
+            %   Detailed Analysis    -> Analysis
+            %   Benchmark Dashboard  -> Benchmark
+            %   Upload / Composer    -> Circuits   (both extend the
+            %                                       Circuits workflow:
+            %                                       Composer authors a
+            %                                       circuit, Upload
+            %                                       imports one)
+            switch char(key)
+                case 'Detailed Analysis'
+                    key = 'Analysis';
+                case 'Benchmark Dashboard'
+                    key = 'Benchmark';
+                case {'Upload', 'Composer'}
+                    key = 'Circuits';
+            end
         end
 
         function onNavHtmlClick(app, src)
@@ -806,25 +863,45 @@ classdef NavigationManager
         end
 
         function fitAllSections(app)
-            try
-                names = fieldnames(app.SectionPanels);
-                for i = 1:numel(names)
-                    NavigationManager.fitSectionPanel(app.SectionPanels.(names{i}));
-                end
-            catch ME; Logger.debug('NavigationManager', 'fitAllSections: %s', ME.message); end
+            % Kept for back-compat — now resizes only the currently-
+            % active panel via onResizeUI. The pre-perf-pass loop
+            % iterated every entry in app.SectionPanels, paying a
+            % uipanel.Position-triggered layout recompute per panel
+            % on every nav and every window resize. Inactive panels
+            % are re-fitted on demand the next time onSelectSection
+            % flips their Visible='on'.
+            NavigationManager.onResizeUI(app);
         end
 
         function onResizeUI(app)
-            NavigationManager.fitAllSections(app);
+            % Resize only the currently-visible section panel + the
+            % auth overlay. Replaces the pre-perf-pass behavior that
+            % looped every panel via fitAllSections (~22 layout passes
+            % per resize / per nav).
+            try
+                if isprop(app, 'LastSectionKey')
+                    key = char(app.LastSectionKey);
+                    if ~isempty(key)
+                        safeKey = matlab.lang.makeValidName(key);
+                        if isfield(app.SectionPanels, safeKey)
+                            NavigationManager.fitSectionPanel(app.SectionPanels.(safeKey));
+                        end
+                    end
+                end
+            catch ME; Logger.debug('NavigationManager', 'onResizeUI: %s', ME.message); end
             OverlayManager.fitAuthOverlay(app);
         end
 
         function forceInitialLayout(app)
+            % Dropped the pre-perf-pass pause(0.05) / pause(0.02)
+            % taxes — they were anti-flicker measures from an earlier
+            % MATLAB release. On R2025b a single drawnow() flush is
+            % sufficient, and the prior double-fitAllSections call
+            % is redundant now that onResizeUI fits the active panel.
             try
-                drawnow(); pause(0.05);
-                NavigationManager.fitAllSections(app); NavigationManager.onResizeUI(app);
-                drawnow(); pause(0.02);
-                NavigationManager.fitAllSections(app);
+                drawnow();
+                NavigationManager.onResizeUI(app);
+                drawnow();
             catch ME; Logger.debug('NavigationManager', 'forceInitialLayout: %s', ME.message); end
         end
 

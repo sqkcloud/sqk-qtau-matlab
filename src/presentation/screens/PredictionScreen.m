@@ -141,7 +141,7 @@ function PredictionScreen(app)
     sg.ColumnWidth = {'1x', 170, 110, 130, 140};
     sg.Padding = [14 8 14 8]; sg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(sg, 'Text', Labels.get('prediction_action_msg'));
-    desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
+    desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
 
     % POST /api/jobs/submit with the current circuit + backend + shots/opt.

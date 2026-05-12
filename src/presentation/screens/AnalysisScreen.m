@@ -187,7 +187,7 @@ function AnalysisScreen(app)
     eg.ColumnWidth = {'1x', 150, 170, 170, 150, 170};
     eg.Padding = [14 8 14 8]; eg.BackgroundColor = Theme.COLOR_ACCENT_BG;
     desc = uilabel(eg, 'Text', Labels.get('analysis_action_msg'));
-    desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
+    desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
     tmp = uibutton(eg, 'Text', [char(9638) ' Visualize'], ...
         'ButtonPushedFcn', @(~,~)app.AnalysisVm.onVisualizeSimilarity());

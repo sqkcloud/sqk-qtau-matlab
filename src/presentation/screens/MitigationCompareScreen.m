@@ -1,13 +1,20 @@
 function MitigationCompareScreen(app)
     % MitigationCompareScreen  Builds the Mitigation Compare tab UI.
     %
-    %   Layout (vertical):
-    %     Row 1 — Hero banner (purpose + subtitle)
-    %     Row 2 — Toolbar (Circuit / Backend / Shots dropdowns + Estimate)
-    %     Row 3 — Strategy chip strip
-    %     Row 4 — Comparison card grid (one card per selected strategy)
-    %     Row 5 — Ranking bar chart
-    %     Row 6 — Recommendation strip
+    %   Layout (vertical, 5 rows):
+    %     Row 1 — Toolbar (Circuit / Backend / Shots dropdowns + Estimate)
+    %     Row 2 — Strategy chip strip
+    %     Row 3 — Comparison card grid (one card per selected strategy)
+    %     Row 4 — Ranking bar chart
+    %     Row 5 — Recommendation strip
+    %
+    %   The inner hero banner was removed in the layout polish pass —
+    %   the outer section header (rendered by NavigationManager) already
+    %   shows the title + subtitle ("Mitigation Compare / Strategy
+    %   planner · parallel cost preview · …") so an inner hero just
+    %   duplicated the same information and consumed ~84 px of
+    %   vertical space, while also clipping its own subtitle when its
+    %   fixed 72-px row wasn't tall enough for a 2-line wrap.
     %
     %   UI handles flow into the MitigationCompareViewModel so callbacks
     %   own their state without polluting QTAUWorkbenchApp.
@@ -21,18 +28,22 @@ function MitigationCompareScreen(app)
         app.MitigationCompareVm = vm;
     end
 
-    % Tightened row heights + uniform 12-px spacing so the screen reads
-    % as evenly-rhythmed even before Estimate runs. Card / chart rows
-    % include explicit empty-state placeholders (built below) instead of
-    % leaving gaping voids.
-    g = uigridlayout(t, [6 1]);
-    g.RowHeight    = {72, 56, 56, 200, 180, 'fit'};
+    % Row heights tuned per role:
+    %   Toolbar 56  — header label row (18) + input row (30) + 6 inner pad
+    %   Chips   56  — same density as Toolbar; chips are 1 row of buttons
+    %   Cards   160 — empty state placeholder fits in ~60 px; sized to host
+    %                 a single row of strategy cards comfortably. CardPanel
+    %                 is Scrollable for the rare 6-strategy case.
+    %   Ranking 200 — chart needs vertical room for bars + axis labels
+    %   Recco   72  — guaranteed minimum so the strip never collapses to
+    %                 a sliver when the body is empty.
+    g = uigridlayout(t, [5 1]);
+    g.RowHeight    = {56, 56, 160, 200, 72};
     g.Padding      = Theme.GRID_PADDING;
     g.RowSpacing   = 12;
     g.BackgroundColor = Theme.COLOR_BG;
     g.Scrollable   = 'on';
 
-    buildHero(g, vm);
     buildToolbar(g, vm);
     buildChipStrip(g, vm);
     buildCardArea(g, vm);
@@ -45,35 +56,16 @@ function MitigationCompareScreen(app)
     app.logEvent('UI', 'Mitigation Compare screen mounted');
 end
 
-% ── Hero banner ──────────────────────────────────────────────────────────
-function buildHero(parent, vm) %#ok<INUSD>
-    panel = uipanel(parent, 'Title', '', 'BorderType', 'line', ...
-        'BorderColor', Theme.COLOR_DIVIDER, 'BackgroundColor', Theme.COLOR_CARD);
-    panel.Layout.Row = 1; panel.Layout.Column = 1;
-    g = uigridlayout(panel, [2 1]);
-    g.RowHeight  = {28, 'fit'};
-    g.Padding    = [18 12 18 12]; g.RowSpacing = 4;
-    g.BackgroundColor = Theme.COLOR_CARD;
-
-    titleLbl = uilabel(g, 'Text', Labels.get('mitigation_compare_hero_title'), ...
-        'FontSize', 17, 'FontWeight', 'bold', 'FontColor', Theme.COLOR_HEADING);
-    titleLbl.Layout.Row = 1;
-
-    subLbl = uilabel(g, 'Text', Labels.get('mitigation_compare_hero_subtitle'), ...
-        'FontSize', 12, 'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
-    subLbl.Layout.Row = 2;
-end
-
 % ── Toolbar ──────────────────────────────────────────────────────────────
 function buildToolbar(parent, vm)
     bar = uipanel(parent, 'Title', '', 'BorderType', 'line', ...
         'BorderColor', Theme.COLOR_DIVIDER, 'BackgroundColor', Theme.COLOR_CARD);
-    bar.Layout.Row = 2; bar.Layout.Column = 1;
+    bar.Layout.Row = 1; bar.Layout.Column = 1;
 
     g = uigridlayout(bar, [2 8]);
     g.RowHeight    = {18, 30};
     g.ColumnWidth  = {'fit', 220, 'fit', 180, 'fit', 100, 110, '1x'};
-    g.Padding      = [12 6 12 6];
+    g.Padding      = [16 10 16 10];
     g.RowSpacing   = 2; g.ColumnSpacing = 8;
     g.BackgroundColor = Theme.COLOR_CARD;
 
@@ -111,7 +103,8 @@ function buildToolbar(parent, vm)
 
     vm.StatusLbl = uilabel(g, 'Text', '', ...
         'FontSize', 12, 'FontColor', Theme.COLOR_LABEL, ...
-        'WordWrap', 'on', 'HorizontalAlignment', 'left');
+        'WordWrap', 'on', 'HorizontalAlignment', 'left', ...
+        'VerticalAlignment', 'center');
     vm.StatusLbl.Layout.Row = 2; vm.StatusLbl.Layout.Column = 8;
 end
 
@@ -119,11 +112,11 @@ end
 function buildChipStrip(parent, vm)
     panel = uipanel(parent, 'Title', '', 'BorderType', 'line', ...
         'BorderColor', Theme.COLOR_DIVIDER, 'BackgroundColor', Theme.COLOR_CARD);
-    panel.Layout.Row = 3; panel.Layout.Column = 1;
+    panel.Layout.Row = 2; panel.Layout.Column = 1;
 
     g = uigridlayout(panel, [2 1]);
     g.RowHeight = {16, '1x'};
-    g.Padding   = [12 6 12 6]; g.RowSpacing = 2;
+    g.Padding   = [16 10 16 10]; g.RowSpacing = 2;
     g.BackgroundColor = Theme.COLOR_CARD;
 
     titleLbl = uilabel(g, 'Text', Labels.get('mitigation_compare_chip_title'), ...
@@ -140,7 +133,7 @@ end
 function buildCardArea(parent, vm)
     panel = uipanel(parent, 'Title', '', 'BorderType', 'none', ...
         'BackgroundColor', Theme.COLOR_BG, 'Scrollable', 'on');
-    panel.Layout.Row = 4; panel.Layout.Column = 1;
+    panel.Layout.Row = 3; panel.Layout.Column = 1;
     vm.CardPanel = panel;
 
     % Empty-state placeholder — replaced by paintCardsLoading via
@@ -160,10 +153,10 @@ function buildRanking(parent, vm)
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'BackgroundColor', Theme.COLOR_CARD, ...
         'ForegroundColor', Theme.COLOR_HEADING, 'FontWeight', 'bold');
-    panel.Layout.Row = 5; panel.Layout.Column = 1;
+    panel.Layout.Row = 4; panel.Layout.Column = 1;
 
     g = uigridlayout(panel, [1 1]);
-    g.Padding = [12 8 12 8];
+    g.Padding = [16 10 16 10];
     g.BackgroundColor = Theme.COLOR_CARD;
 
     ax = uiaxes(g);
@@ -193,10 +186,10 @@ function buildRecommendation(parent, vm)
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
         'BackgroundColor', Theme.COLOR_CARD, ...
         'ForegroundColor', Theme.COLOR_HEADING, 'FontWeight', 'bold');
-    panel.Layout.Row = 6; panel.Layout.Column = 1;
+    panel.Layout.Row = 5; panel.Layout.Column = 1;
 
     g = uigridlayout(panel, [1 1]);
-    g.Padding = [16 12 16 12];
+    g.Padding = [16 10 16 10];
     g.BackgroundColor = Theme.COLOR_CARD;
 
     lbl = uilabel(g, 'Text', '', ...

@@ -531,22 +531,40 @@ classdef CircuitDiagram
             %   and per-qubit measurement probabilities.
             if nargin < 3, stateVec = []; end
 
-            % Layout constants
-            gateW   = 38;   % gate box width
-            gateH   = 32;   % gate box height
-            colW    = 52;   % column spacing
-            rowH    = 54;   % row spacing (qubit wire spacing)
-            labelW  = 80;   % left margin for qubit labels
-            padR    = 24;   % right padding
-            padT    = 16;   % top padding
-            padB    = 16;   % bottom padding
+            % Layout constants — matched to ComposerViewModel.repaintCanvas
+            % so a circuit looks identical in the Composer's interactive
+            % canvas and in this SVG preview. Composer renders at 25 px
+            % per qubit unit with gate boxes filling ~0.55 of the row;
+            % these SVG sizes scale that proportion up just enough to
+            % keep the gate-symbol text legible after uihtml's container
+            % scaling.
+            gateW   = 24;   % gate box width   (was 38)
+            gateH   = 20;   % gate box height  (was 32)
+            colW    = 32;   % column spacing   (was 52)
+            rowH    = 32;   % row spacing — qubit wire pitch (was 54)
+            labelW  = 80;   % left margin for qubit labels (kept; "q[N] |0>" still fits)
+            padR    = 18;   % right padding   (was 24)
+            padT    = 12;   % top padding     (was 16)
+            padB    = 12;   % bottom padding  (was 16)
             maxCols = 10000; % max gate columns to display
             probW   = 110;  % width reserved for probability labels on the right
 
-            % Dark theme colors
-            bgColor     = '#111827';  % dark charcoal background
-            wireColor   = '#4B5563';  % subtle gray wires
-            labelColor  = '#D1D5DB';  % light gray labels
+            % Structural colors → drawn from the active Theme palette so
+            % the SVG inherits the same look as the Composer canvas
+            % (panel cards, wires, labels) and follows theme changes.
+            % Each lookup is guarded so a stub Theme (during isolated
+            % unit tests) falls back to the prior hardcoded dark hex.
+            try; bgColor       = Theme.toHex(Theme.COLOR_CARD);    catch; bgColor       = '#111827'; end
+            try; wireColor     = Theme.toHex(Theme.COLOR_DIVIDER); catch; wireColor     = '#4B5563'; end
+            try; labelColor    = Theme.toHex(Theme.COLOR_LABEL);   catch; labelColor    = '#D1D5DB'; end
+            try; truncColor    = Theme.toHex(Theme.COLOR_MUTED);   catch; truncColor    = '#6B7280'; end
+            try; gateTextColor = Theme.toHex(Theme.COLOR_HEADING); catch; gateTextColor = '#FFFFFF'; end
+
+            % Decorative element colors — kept as-is so per-family gate
+            % differentiation, the amber SWAP, the blue CNOT target, the
+            % light-blue control dot, the measurement meter ornament,
+            % and the green probability bar all stay visually distinct
+            % the way they are today (user requested no element drops).
             ctrlDot     = '#93C5FD';  % light blue control dot
             ctrlLine    = '#60A5FA';  % blue connector lines
             cnotFill    = '#2563EB';  % blue CNOT target
@@ -554,7 +572,6 @@ classdef CircuitDiagram
             swapColor   = '#F59E0B';  % amber SWAP
             measFill    = '#1E293B';  % dark slate measurement box
             measStroke  = '#475569';
-            truncColor  = '#6B7280';  % muted text
             probColor   = '#34D399';  % emerald green for probability text
             probBarBg   = '#1F2937';  % dark bar background
             probBarFill = '#10B981';  % emerald bar fill
@@ -673,11 +690,15 @@ classdef CircuitDiagram
                         bx = cx - gateW/2; by = cy - gateH/2;
                         parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="5" fill="%s" stroke="%s" stroke-width="1.2"/>', ...
                             bx, by, gateW, gateH, clr.bg, clr.border);
-                        fs = 13;
-                        if length(sym) > 2; fs = 10; end
-                        if length(sym) > 3; fs = 9; end
-                        parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">%s</text>', ...
-                            cx, cy, fs, sym);
+                        % Font-size ladder scaled down to fit the smaller
+                        % gateH=20 box (was 32). Keeps the same ~0.55
+                        % text-to-box ratio the Composer canvas uses
+                        % (FontSize 11 inside an axes-units 0.55-tall box).
+                        fs = 11;
+                        if length(sym) > 2; fs = 9; end
+                        if length(sym) > 3; fs = 8; end
+                        parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" font-weight="bold" fill="%s" text-anchor="middle" dominant-baseline="central">%s</text>', ...
+                            cx, cy, fs, gateTextColor, sym);
                     end
                 end
 

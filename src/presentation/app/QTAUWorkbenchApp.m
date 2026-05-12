@@ -35,6 +35,11 @@ classdef QTAUWorkbenchApp < handle
         NavHtml                     % uihtml nav menu with consistent icon sizing
         NavToggleButton
         NavCollapsed = false
+        % Routing key of the currently-visible section panel. Read by
+        % NavigationManager.onSelectSection / onResizeUI to hide and
+        % resize only the active panel instead of looping all 22
+        % entries in SectionPanels on every nav (≈200 ms saved/nav).
+        LastSectionKey = ""
 
         ContentShell
         ShellGrid                    % uigridlayout inside ContentShell
@@ -372,6 +377,10 @@ classdef QTAUWorkbenchApp < handle
         SelectBackendButton
         SubmitPoolButton        % Fan-out submit to every backend in IBM_BACKENDS
         BackendKpiLabels
+        OverviewKpiLabels = {}        % {1×4} cell of uilabel value handles
+                                      % for the Telemetry > Overview tab's
+                                      % KPI strip: Total backends, Operational,
+                                      % Top width (qubits), Latest calibration.
         BackendsSearchField
         BackendsPrevBtn
         BackendsNextBtn
@@ -716,6 +725,16 @@ classdef QTAUWorkbenchApp < handle
             % panel, label, and overlay picks up the correct palette on
             % first render (no initial flash-of-light-theme for Dark users).
             Theme.setActive(Theme.loadPersisted());
+
+            % Apply log_level from app.properties (INFO by default in
+            % the shipped config). Done before AppState/Services come
+            % up so the boot-time and steady-state HTTP request
+            % logging respects the configured threshold — the prior
+            % DEBUG default fprintf'd a line per HTTP request, which
+            % on data-heavy screens (Backends fan-out) flooded the
+            % console with ~80 lines per visit and contributed to
+            % the perceived sluggishness.
+            try; Logger.reload(); catch; end
 
             app.State         = AppState();
             Logger.info('QTAUWorkbenchApp', 'AppState created — baseUrl: %s', char(app.State.baseUrl));
@@ -1266,8 +1285,11 @@ classdef QTAUWorkbenchApp < handle
             % completes — so landing on Dashboard from boot is
             % consistent with the post-login behavior.
             app.onSelectSection('Dashboard');
-            NavigationManager.fitAllSections(app);
-            app.onResizeUI();
+            % onSelectSection already fits the active panel and calls
+            % fitAuthOverlay, so the pre-perf-pass fitAllSections +
+            % onResizeUI calls here were redundant — they fanned out
+            % to every panel needlessly. forceInitialLayout below
+            % gives a final flush for the figure as a whole.
             drawnow();
             NavigationManager.forceInitialLayout(app);
 
@@ -1296,12 +1318,14 @@ classdef QTAUWorkbenchApp < handle
             catch ME; Logger.debug('QTAUWorkbenchApp', 'Overlay cleanup: %s', ME.message); end
             drawnow();
 
-            try
-                t = timer('ExecutionMode','singleShot','StartDelay',0.15, ...
-                    'TimerFcn', @(~,~)NavigationManager.forceInitialLayout(app), ...
-                    'StopFcn', @(tObj,~)delete(tObj));
-                start(t);
-            catch ME; Logger.debug('QTAUWorkbenchApp', 'Layout timer init: %s', ME.message); end
+            % Pre-perf-pass this fired a singleShot 150 ms timer to
+            % run forceInitialLayout once more — belt-and-suspenders
+            % against the old eager all-panel resize that sometimes
+            % didn't settle in time. With NavigationManager now
+            % resizing only the active panel and forceInitialLayout
+            % running synchronously above (pause()-free), the deferred
+            % re-layout is redundant and produces a visible flash
+            % after the user already sees the UI.
 
             if ~app.State.isAuthenticated()
                 app.showLoginDialog();
