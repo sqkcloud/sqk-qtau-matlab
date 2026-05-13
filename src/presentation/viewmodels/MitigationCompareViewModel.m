@@ -34,6 +34,8 @@ classdef MitigationCompareViewModel < handle
         CardGrid
         CardHandles
 
+        RankGrid          % parent for the lazy uiaxes (built on first repaintRanking)
+        RankPlaceholder   % uilabel shown until the uiaxes materialises
         RankAxes
         ReccoLbl
     end
@@ -242,7 +244,15 @@ classdef MitigationCompareViewModel < handle
                     obj.StatusLbl.Text = 'Loading circuits / backends / strategies…';
                     obj.StatusLbl.FontColor = Theme.COLOR_LABEL;
                 case 'ready'
-                    obj.StatusLbl.Text = Labels.get('mitigation_compare_status_idle');
+                    nSel = numel(obj.SelectedChips);
+                    if nSel == 1
+                        obj.StatusLbl.Text = Labels.get('mitigation_compare_status_ready_picked_one');
+                    elseif nSel > 1
+                        obj.StatusLbl.Text = sprintf( ...
+                            Labels.get('mitigation_compare_status_ready_picked'), nSel);
+                    else
+                        obj.StatusLbl.Text = Labels.get('mitigation_compare_status_idle');
+                    end
                     obj.StatusLbl.FontColor = Theme.COLOR_LABEL;
                 case 'estimating'
                     obj.StatusLbl.Text = sprintf( ...
@@ -284,7 +294,13 @@ classdef MitigationCompareViewModel < handle
             if isempty(obj.CircuitDropdown) || ~isvalid(obj.CircuitDropdown); return; end
             cItems = arrayfun(@(c) MitigationCompareViewModel.circLabel(c), ...
                 obj.Circuits, 'UniformOutput', false);
-            cIds   = arrayfun(@(c) MitigationCompareViewModel.safeField(c, 'id', ''), ...
+            % The server's CircuitDocument primary key is `circuit_id`, not
+            % `id`. Reading the wrong field left every ItemsData entry as ''
+            % which broke canEstimate (Value-emptiness check) and also made
+            % find(strcmp(ItemsData,Value)) collapse to row 1 regardless of
+            % the user's actual pick. `id` stays as a fallback so stub
+            % tests / future schema variants still resolve.
+            cIds   = arrayfun(@(c) MitigationCompareViewModel.pickCircuitId(c), ...
                 obj.Circuits, 'UniformOutput', false);
             obj.CircuitDropdown.Items     = cItems;
             obj.CircuitDropdown.ItemsData = cIds;
@@ -400,6 +416,15 @@ classdef MitigationCompareViewModel < handle
             cg.ColumnWidth = {130, '1x'};
             cg.Padding     = [12 10 12 10]; cg.RowSpacing = 4;
             cg.BackgroundColor = Theme.COLOR_CARD;
+            % Per-card vertical scroll: the body's natural height (~210 px —
+            % 5 metric rows × ~24 px + summary + status + padding) exceeds
+            % the row height allotted by the parent CardGrid. Scrollable on
+            % the *uigridlayout* is the documented way to scroll a grid in
+            % R2025b — Scrollable on the wrapping uipanel does nothing for
+            % a uigridlayout child (the grid resizes to fit instead of
+            % overflowing). At least one fixed-pixel row is required to
+            % unlock scrolling; the five 24-28 px metric rows satisfy that.
+            cg.Scrollable = 'on';
 
             lvl = obj.findLevel(levelId);
             titleLbl = uilabel(cg, 'Text', MitigationCompareViewModel.levelLabel(lvl), ...
@@ -464,10 +489,15 @@ classdef MitigationCompareViewModel < handle
                     continue;
                 end
                 cost = e.cost;
+                % Field names mirror CostEstimate.to_dict() in
+                % qdash/api/services/mitigation_service.py — earlier names
+                % (total_shots / estimated_runtime_seconds / estimated_cost_iqp)
+                % never existed on the wire and rendered every card cell as the
+                % unavail glyph.
                 shotMult = MitigationCompareViewModel.safeField(cost, 'shot_multiplier', 1.0);
-                total    = MitigationCompareViewModel.safeField(cost, 'total_shots', NaN);
-                runtime  = MitigationCompareViewModel.safeField(cost, 'estimated_runtime_seconds', NaN);
-                iqp      = MitigationCompareViewModel.safeField(cost, 'estimated_cost_iqp', NaN);
+                total    = MitigationCompareViewModel.safeField(cost, 'effective_shots', NaN);
+                runtime  = MitigationCompareViewModel.safeField(cost, 'est_wall_seconds', NaN);
+                iqp      = MitigationCompareViewModel.safeField(cost, 'est_iqp_units', NaN);
                 h.shotMult.Text   = sprintf('%.2f×', shotMult);
                 h.totalShots.Text = MitigationCompareViewModel.fmtInt(total);
                 h.runtime.Text    = MitigationCompareViewModel.fmtSeconds(runtime);
@@ -479,7 +509,28 @@ classdef MitigationCompareViewModel < handle
 
         function repaintRanking(obj)
             ax = obj.RankAxes;
-            if isempty(ax) || ~isvalid(ax); return; end
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — buildRanking deliberately ships a uilabel
+                % placeholder to keep screen-mount under ~1 s. We pay the
+                % uiaxes construction cost here, inside the spinner that
+                % the user is already watching while the parallel estimate
+                % requests complete.
+                if isempty(obj.RankGrid) || ~isvalid(obj.RankGrid); return; end
+                if ~isempty(obj.RankPlaceholder) && isvalid(obj.RankPlaceholder)
+                    delete(obj.RankPlaceholder);
+                    obj.RankPlaceholder = [];
+                end
+                ax = uiaxes(obj.RankGrid);
+                ax.Toolbar.Visible = 'off';
+                ax.Color  = Theme.COLOR_CARD;
+                ax.XColor = Theme.COLOR_MUTED;
+                ax.YColor = Theme.COLOR_MUTED;
+                ax.FontSize = 10;
+                ax.Box   = 'off';
+                ax.XTick = []; ax.YTick = [];
+                try; disableDefaultInteractivity(ax); catch; end
+                obj.RankAxes = ax;
+            end
             cla(ax);
             keys = obj.Estimates.keys;
             mults = []; labels = {};
@@ -642,9 +693,18 @@ classdef MitigationCompareViewModel < handle
             n  = MitigationCompareViewModel.safeField(c, 'name', '');
             q  = MitigationCompareViewModel.safeField(c, 'num_qubits', 0);
             if isempty(n)
-                n = MitigationCompareViewModel.safeField(c, 'id', '?');
+                n = MitigationCompareViewModel.safeField(c, 'circuit_id', ...
+                    MitigationCompareViewModel.safeField(c, 'id', '?'));
             end
             lbl = sprintf('%s (%dq)', char(string(n)), double(q));
+        end
+
+        function id = pickCircuitId(c)
+            id = MitigationCompareViewModel.safeField(c, 'circuit_id', '');
+            if isempty(id)
+                id = MitigationCompareViewModel.safeField(c, 'id', '');
+            end
+            id = char(string(id));
         end
 
         function v = safeField(s, field, def)

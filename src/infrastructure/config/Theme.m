@@ -456,7 +456,7 @@ classdef Theme
             p.warning       = [0.95 0.72 0.37];  % orange #FFB86C
             p.purple        = [0.74 0.58 0.98];
             p.amber         = [0.95 0.98 0.55];  % yellow #F1FA8C
-            p.accentBg      = [0.21 0.22 0.28];
+            p.accentBg      = [0.45 0.36 0.62];  % must stay != btnBgGhost so 'primary' chips/buttons read as selected
             p.btnBg         = [0.26 0.28 0.35];
             p.btnFg         = [0.97 0.97 0.95];
             p.btnBgSecondary= [0.26 0.28 0.35];

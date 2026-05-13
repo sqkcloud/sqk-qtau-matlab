@@ -319,8 +319,35 @@ classdef WelcomeViewModel < handle
                     try h.HTMLSource    = ''; catch; end
                 end
             end
+
+            % Same race surfaces in LabelController / ButtonController
+            % when uilabel / uihyperlink / uibutton children get cascade-
+            % deleted with a peerEvent still queued — fingerprint matches
+            % the "Invalid or deleted object" stack at
+            % getComponentToApplyButtonEvent line 110. Null any callback
+            % they expose so MATLAB can't invoke a stale binding, then
+            % let the extended drain below process whatever is in flight.
+            if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                try
+                    dlgKids = findall(app.LoginDialog);
+                    for k = 1:numel(dlgKids)
+                        ch = dlgKids(k);
+                        if ~isvalid(ch); continue; end
+                        try; if isprop(ch, 'ButtonPushedFcn');     ch.ButtonPushedFcn     = ''; end; catch; end
+                        try; if isprop(ch, 'HyperlinkClickedFcn'); ch.HyperlinkClickedFcn = ''; end; catch; end
+                        try; if isprop(ch, 'ValueChangedFcn');     ch.ValueChangedFcn     = ''; end; catch; end
+                    end
+                catch
+                end
+            end
+
             drawnow;
             pause(0.15);
+            drawnow;
+            % Extra cycle: the 150 ms above is calibrated for uihtml
+            % bridge latency; non-uihtml children need one more pump
+            % round-trip for queued mouse / focus peerEvents to drain.
+            pause(0.05);
             drawnow;
 
             for i = 1:numel(htmlFields)

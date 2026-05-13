@@ -29,16 +29,22 @@ function MitigationCompareScreen(app)
     end
 
     % Row heights tuned per role:
-    %   Toolbar 56  — header label row (18) + input row (30) + 6 inner pad
-    %   Chips   56  — same density as Toolbar; chips are 1 row of buttons
-    %   Cards   160 — empty state placeholder fits in ~60 px; sized to host
-    %                 a single row of strategy cards comfortably. CardPanel
-    %                 is Scrollable for the rare 6-strategy case.
-    %   Ranking 200 — chart needs vertical room for bars + axis labels
+    %   Toolbar 71  — header label row + input row + padding; trimmed to
+    %                 match the dropdown / Estimate-button intrinsic height
+    %                 without trailing whitespace under the controls.
+    %   Chips   71  — chip-row height tuned to button intrinsic height with
+    %                 enough room for the title label above; no trailing
+    %                 whitespace under the chips.
+    %   Cards   150 — host row for the strategy-card strip. Each card has
+    %                 its own uigridlayout.Scrollable='on' so any vertical
+    %                 overflow (Summary / Status lines) is reachable via
+    %                 a per-card scrollbar — the row itself stays compact.
+    %   Ranking 190 — chart row for the shot-multiplier bar chart;
+    %                 fits ≤6 bars × ~20 px + axis label + panel chrome.
     %   Recco   72  — guaranteed minimum so the strip never collapses to
     %                 a sliver when the body is empty.
     g = uigridlayout(t, [5 1]);
-    g.RowHeight    = {56, 56, 160, 200, 72};
+    g.RowHeight    = {71, 71, 160, 190, 72};
     g.Padding      = Theme.GRID_PADDING;
     g.RowSpacing   = 12;
     g.BackgroundColor = Theme.COLOR_BG;
@@ -159,25 +165,18 @@ function buildRanking(parent, vm)
     g.Padding = [16 10 16 10];
     g.BackgroundColor = Theme.COLOR_CARD;
 
-    ax = uiaxes(g);
-    ax.Toolbar.Visible = 'off';
-    ax.Color = Theme.COLOR_CARD;
-    ax.XColor = Theme.COLOR_MUTED; ax.YColor = Theme.COLOR_MUTED;
-    ax.FontSize = 10;
-    ax.Box = 'off';
-    ax.XTick = []; ax.YTick = [];
-    try; disableDefaultInteractivity(ax); catch; end
+    % Lazy uiaxes — building it eagerly costs ~500–1500 ms cold-paint
+    % (full plot system + interactivity layer) just to host placeholder
+    % text. repaintRanking promotes the placeholder uilabel to a real
+    % uiaxes the first time it actually has data to draw.
+    placeholder = uilabel(g, ...
+        'Text', 'Awaiting estimate — strategy ranking will appear here.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
 
-    % Empty-state caption centered on the axes via normalized units.
-    % cla(ax) inside repaintRanking removes this when the bars draw.
-    emptyT = text(ax, 0.5, 0.5, ...
-        'Awaiting estimate — strategy ranking will appear here.', ...
-        'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-        'FontSize', 11, 'Color', Theme.COLOR_MUTED);
-    emptyT.Units = 'normalized';
-    emptyT.Position = [0.5, 0.5, 0];
-
-    vm.RankAxes = ax;
+    vm.RankGrid        = g;
+    vm.RankPlaceholder = placeholder;
+    vm.RankAxes        = [];
 end
 
 % ── Recommendation strip ─────────────────────────────────────────────────

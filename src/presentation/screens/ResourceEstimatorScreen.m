@@ -18,7 +18,7 @@ function ResourceEstimatorScreen(app)
     end
 
     g = uigridlayout(t, [5 1]);
-    g.RowHeight    = {76, 60, 220, 220, 'fit'};
+    g.RowHeight    = {76, 70, 180, 180, 'fit'};
     g.Padding      = Theme.GRID_PADDING;
     g.RowSpacing   = 10;
     g.BackgroundColor = Theme.COLOR_BG;
@@ -57,9 +57,9 @@ function buildToolbar(parent, vm)
         'BorderColor', Theme.COLOR_DIVIDER, 'BackgroundColor', Theme.COLOR_CARD);
     panel.Layout.Row = 2; panel.Layout.Column = 1;
 
-    g = uigridlayout(panel, [2 11]);
+    g = uigridlayout(panel, [2 12]);
     g.RowHeight    = {18, 30};
-    g.ColumnWidth  = {'fit', 220, 'fit', 140, 'fit', 90, 'fit', 90, 'fit', 100, 110};
+    g.ColumnWidth  = {'fit', 220, 'fit', 140, 'fit', 90, 'fit', 90, 'fit', 100, 110, '1x'};
     g.Padding      = [12 6 12 6];
     g.RowSpacing   = 2; g.ColumnSpacing = 8;
     g.BackgroundColor = Theme.COLOR_CARD;
@@ -113,8 +113,9 @@ function buildToolbar(parent, vm)
     StyleHelper.styleBtn(vm.EstimateBtn, 'primary');
 
     vm.StatusLbl = uilabel(g, 'Text', Labels.get('resource_estimator_status_idle'), ...
-        'FontSize', 11, 'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
-    vm.StatusLbl.Layout.Row = 1; vm.StatusLbl.Layout.Column = 11;
+        'FontSize', 11, 'FontColor', Theme.COLOR_LABEL, ...
+        'WordWrap', 'on', 'VerticalAlignment', 'center');
+    vm.StatusLbl.Layout.Row = [1 2]; vm.StatusLbl.Layout.Column = 12;
 end
 
 % ── Three result cards ───────────────────────────────────────────────────

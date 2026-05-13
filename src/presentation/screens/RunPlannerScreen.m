@@ -22,7 +22,7 @@ function RunPlannerScreen(app)
     % body block stops stretching to fill empty viewport space (~50 px
     % shorter than the previous '1x' resolution on a typical desktop).
     g = uigridlayout(t, [4 1]);
-    g.RowHeight    = {76, 80, 400, 'fit'};
+    g.RowHeight    = {76, 80, 385, 'fit'};
     g.Padding      = Theme.GRID_PADDING;
     g.RowSpacing   = 10;
     g.BackgroundColor = Theme.COLOR_BG;

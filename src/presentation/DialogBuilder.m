@@ -213,12 +213,33 @@ classdef DialogBuilder
                     h.DataChangedFcn = '';
                 end
             end
+            % Same race in LabelController / ButtonController for the
+            % dialog's non-uihtml children (uilabel / uihyperlink /
+            % uibutton). Null any user callback so a stale binding is
+            % unreachable, then let the drawnow+pause+drawnow cycles
+            % below drain whatever the browser still has in flight.
+            if ~isempty(src) && isvalid(src)
+                try
+                    dlgKids = findall(src);
+                    for k = 1:numel(dlgKids)
+                        ch = dlgKids(k);
+                        if ~isvalid(ch); continue; end
+                        try; if isprop(ch, 'ButtonPushedFcn');     ch.ButtonPushedFcn     = ''; end; catch; end
+                        try; if isprop(ch, 'HyperlinkClickedFcn'); ch.HyperlinkClickedFcn = ''; end; catch; end
+                        try; if isprop(ch, 'ValueChangedFcn');     ch.ValueChangedFcn     = ''; end; catch; end
+                    end
+                catch
+                end
+            end
             % drawnow + pause + drawnow drains in-transit client→server
             % peerEvents from the uihtml bridge. A single drawnow leaves
             % a window where MATLAB's HTMLController dispatches a queued
             % event AFTER the model is deleted, producing the noisy
             % "Invalid or deleted object" stack at
-            % getComponentToApplyButtonEvent line 110.
+            % getComponentToApplyButtonEvent line 110. The extra cycle
+            % covers non-uihtml children (uilabel mouse/focus events).
+            drawnow;
+            pause(0.05);
             drawnow;
             pause(0.05);
             drawnow;
