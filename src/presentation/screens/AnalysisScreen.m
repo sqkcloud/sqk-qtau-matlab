@@ -186,11 +186,11 @@ function AnalysisScreen(app)
     exportPanel = uipanel(g, 'Title', Labels.get('analysis_panel_decision'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     exportPanel.Layout.Row = 5; exportPanel.Layout.Column = [1 2];
-    exportPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    exportPanel.BackgroundColor = Theme.COLOR_CARD;
 
     eg = uigridlayout(exportPanel, [1 6]);
     eg.ColumnWidth = {'1x', 150, 170, 170, 150, 170};
-    eg.Padding = [14 8 14 8]; eg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    eg.Padding = [14 8 14 8]; eg.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(eg, 'Text', Labels.get('analysis_action_msg'));
     desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

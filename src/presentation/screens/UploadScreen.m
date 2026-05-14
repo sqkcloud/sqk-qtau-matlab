@@ -24,13 +24,13 @@ function UploadScreen(app)
     projPanel = uipanel(g, 'Title', '', 'BorderType', 'line', ...
         'BorderColor', Theme.COLOR_DIVIDER);
     projPanel.Layout.Row = 1; projPanel.Layout.Column = [1 2];
-    projPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    projPanel.BackgroundColor = Theme.COLOR_CARD;
     projPanel.Visible = 'off';
 
     pg = uigridlayout(projPanel, [1 2]);
     pg.ColumnWidth = {120, '1x'};
     pg.Padding = [14 4 14 4]; pg.ColumnSpacing = 8;
-    pg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    pg.BackgroundColor = Theme.COLOR_CARD;
 
     lbl = uilabel(pg, 'Text', Labels.get('upload_label_active_project'));
     lbl.FontSize = 13; lbl.FontWeight = 'bold';
@@ -84,7 +84,7 @@ function UploadScreen(app)
     app.CircuitPreviewArea = uitextarea(dg, 'Editable', 'on');
     app.CircuitPreviewArea.Layout.Row = 4; app.CircuitPreviewArea.Layout.Column = [1 4];
     app.CircuitPreviewArea.FontName = 'Courier New'; app.CircuitPreviewArea.FontSize = 13;
-    app.CircuitPreviewArea.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    app.CircuitPreviewArea.BackgroundColor = Theme.COLOR_CARD;
     app.CircuitPreviewArea.FontColor = Theme.COLOR_HEADING;
     app.CircuitPreviewArea.Value = { ...
         'OPENQASM 2.0;', 'include "qelib1.inc";', '', ...
@@ -185,10 +185,10 @@ function UploadScreen(app)
     actionPanel = uipanel(g, 'Title', Labels.get('upload_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     actionPanel.Layout.Row = 5; actionPanel.Layout.Column = [1 2];
-    actionPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    actionPanel.BackgroundColor = Theme.COLOR_CARD;
 
     ag = uigridlayout(actionPanel, [1 3]); ag.ColumnWidth = {'1x',170,150};
-    ag.Padding = [14 8 14 8]; ag.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    ag.Padding = [14 8 14 8]; ag.BackgroundColor = Theme.COLOR_CARD;
     msg = uilabel(ag, 'Text', Labels.get('upload_action_msg'));
     msg.FontSize = 13; msg.FontWeight = 'bold'; msg.Layout.Row = 1; msg.Layout.Column = 1;
     msg.VerticalAlignment = 'center'; msg.WordWrap = 'on';

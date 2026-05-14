@@ -255,11 +255,11 @@ function ResultsScreen(app)
     % ── Row 6: Action bar (existing — Tier B exports already present) ──────
     bottom = uipanel(g, 'Title', Labels.get('results_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
-        'BackgroundColor', Theme.COLOR_ACCENT_BG);
+        'BackgroundColor', Theme.COLOR_CARD);
     bottom.Layout.Row = 6; bottom.Layout.Column = 1;
     bg = uigridlayout(bottom, [1 7]);
     bg.ColumnWidth = {'1x', 110, 180, 195, 160, 130, 110};
-    bg.Padding = [14 8 14 8]; bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    bg.Padding = [14 8 14 8]; bg.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(bg, 'Text', Labels.get('results_action_msg'));
     desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

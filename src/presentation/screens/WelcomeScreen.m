@@ -70,11 +70,11 @@ function WelcomeScreen(app)
     activeBox = uipanel(pg, 'Title', '', 'BorderType', 'line', ...
         'BorderColor', Theme.COLOR_DIVIDER);
     activeBox.Layout.Row = 1; activeBox.Layout.Column = 1;
-    activeBox.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    activeBox.BackgroundColor = Theme.COLOR_CARD;
     abg = uigridlayout(activeBox, [1 2]);
     abg.ColumnWidth = {'fit', '1x'};
     abg.Padding = [12 6 12 6]; abg.ColumnSpacing = 8;
-    abg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    abg.BackgroundColor = Theme.COLOR_CARD;
     activeLbl = uilabel(abg, 'Text', Labels.get('welcome_active_project_label', 'Active Project:'), ...
         'FontSize', 13, 'FontWeight', 'bold', 'FontColor', Theme.COLOR_PRIMARY);
     activeLbl.Layout.Row = 1; activeLbl.Layout.Column = 1;

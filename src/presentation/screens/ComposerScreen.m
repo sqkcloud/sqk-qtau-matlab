@@ -328,7 +328,7 @@ function buildMirror(parent, vm)
     ta.Layout.Row = 2;
     ta.FontName = 'Menlo';
     ta.FontSize = 11;
-    ta.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    ta.BackgroundColor = Theme.COLOR_CARD;
     ta.FontColor       = Theme.COLOR_LABEL;
     ta.Editable = 'on';
 

@@ -147,11 +147,11 @@ function BenchmarkScreen(app)
     nextPanel = uipanel(g, 'Title', Labels.get('benchmark_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 2];
-    nextPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    nextPanel.BackgroundColor = Theme.COLOR_CARD;
 
     ng = uigridlayout(nextPanel, [1 4]);
     ng.ColumnWidth = {'1x', 200, 165, 165};
-    ng.Padding = [14 8 14 8]; ng.ColumnSpacing = 8; ng.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    ng.Padding = [14 8 14 8]; ng.ColumnSpacing = 8; ng.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(ng, 'Text', Labels.get('benchmark_action_msg'));
     desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';

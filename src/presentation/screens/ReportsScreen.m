@@ -249,7 +249,7 @@ function ReportsScreen(app)
         'Title', Labels.get('reports_panel_workflow', 'Workflow'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     bottom.Layout.Row = 3; bottom.Layout.Column = 1;
-    bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    bottom.BackgroundColor = Theme.COLOR_CARD;
 
     %  Workflow row restack (Phase 6.7 polish): description on top,
     %  buttons centered on the bottom row. The previous [1 3] grid
@@ -260,7 +260,7 @@ function ReportsScreen(app)
     bg.RowHeight = {'1x', 38};
     bg.ColumnWidth = {'1x'};
     bg.Padding = [18 12 18 12]; bg.RowSpacing = 6;
-    bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    bg.BackgroundColor = Theme.COLOR_CARD;
 
     flowDesc = uilabel(bg, ...
         'Text', Labels.get('reports_action_msg', ...
@@ -279,7 +279,7 @@ function ReportsScreen(app)
     btnRow.RowHeight   = {'1x'};
     btnRow.ColumnWidth = {'1x', 180, 180};
     btnRow.Padding = [0 0 0 0]; btnRow.ColumnSpacing = 10;
-    btnRow.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    btnRow.BackgroundColor = Theme.COLOR_CARD;
 
     btnDA = uibutton(btnRow, ...
         'Text', [char(9651) ' Detailed Analysis'], ...

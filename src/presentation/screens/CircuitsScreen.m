@@ -87,13 +87,13 @@ function CircuitsScreen(app)
     barPanel = uipanel(g, 'Title', '', 'BorderType', 'line', ...
         'BorderColor', Theme.COLOR_DIVIDER);
     barPanel.Layout.Row = 2; barPanel.Layout.Column = 1;
-    barPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    barPanel.BackgroundColor = Theme.COLOR_CARD;
 
     bg = uigridlayout(barPanel, [1 6]);
     bg.ColumnWidth = {'1x', 80, 90, 80, 140, 140};
     bg.RowHeight = {34};
     bg.Padding = [10 10 10 10]; bg.ColumnSpacing = 8;
-    bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    bg.BackgroundColor = Theme.COLOR_CARD;
 
     % Spacer
     spacer = uilabel(bg, 'Text', '');

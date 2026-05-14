@@ -137,12 +137,12 @@ function SettingsScreen(app)
     bottom = uipanel(g, 'Title', '', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     bottom.Layout.Row = 3;
-    bottom.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    bottom.BackgroundColor = Theme.COLOR_CARD;
 
     abg = uigridlayout(bottom, [1 3]);
     abg.RowHeight = {34}; abg.ColumnWidth = {'1x', 180, 180};
     abg.ColumnSpacing = 8;
-    abg.Padding = [8 8 8 8]; abg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    abg.Padding = [8 8 8 8]; abg.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(abg, 'Text', Labels.get('settings_panel_action_label'));
     desc.FontSize = 13; desc.FontWeight = 'bold';
     desc.Layout.Row = 1; desc.Layout.Column = 1;
