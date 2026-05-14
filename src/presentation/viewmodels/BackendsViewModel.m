@@ -802,7 +802,32 @@ classdef BackendsViewModel < handle
                 'getTopology failed for %s: %s', char(backendName), ME.message);
         end
 
+        function ensureTopologyAxes(obj)
+            % Lazy build — BackendsScreen ships a uilabel placeholder
+            % to keep cold-mount fast. Materialise the real uiaxes
+            % inside the saved grid the first time we need to draw a
+            % coupling-map graph; subsequent calls are a no-op.
+            app = obj.App;
+            if ~isempty(app.TopologyAxes) && isvalid(app.TopologyAxes); return; end
+            if isempty(app.TopologyGrid) || ~isvalid(app.TopologyGrid); return; end
+            if ~isempty(app.TopologyPlaceholder) && isvalid(app.TopologyPlaceholder)
+                delete(app.TopologyPlaceholder);
+                app.TopologyPlaceholder = [];
+            end
+            ax = uiaxes(app.TopologyGrid);
+            ax.Layout.Row = 1; ax.Layout.Column = 1;
+            ax.Toolbar.Visible = 'off';
+            ax.Color   = Theme.COLOR_CARD;
+            ax.XColor  = Theme.COLOR_MUTED;
+            ax.YColor  = Theme.COLOR_MUTED;
+            ax.XTick = []; ax.YTick = [];
+            ax.Box     = 'off';
+            try; disableDefaultInteractivity(ax); catch; end
+            app.TopologyAxes = ax;
+        end
+
         function paintTopology(obj, backendName)
+            obj.ensureTopologyAxes();
             app = obj.App;
             if isempty(app.TopologyAxes) || ~isvalid(app.TopologyAxes); return; end
             ax = app.TopologyAxes;
@@ -907,6 +932,15 @@ classdef BackendsViewModel < handle
         end
 
         function paintTopologyPlaceholder(obj, msg)
+            % If the lazy uiaxes hasn't been materialised yet, just
+            % update the placeholder uilabel directly — no need to
+            % spin up a full uiaxes just to host a status message.
+            app = obj.App;
+            if ~isempty(app.TopologyPlaceholder) && isvalid(app.TopologyPlaceholder) ...
+                    && (isempty(app.TopologyAxes) || ~isvalid(app.TopologyAxes))
+                try app.TopologyPlaceholder.Text = char(msg); catch; end
+                return;
+            end
             app = obj.App;
             if isempty(app.TopologyAxes) || ~isvalid(app.TopologyAxes); return; end
             ax = app.TopologyAxes;

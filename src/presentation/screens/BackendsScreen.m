@@ -265,15 +265,17 @@ function BackendsScreen(app)
     topoGrid.ColumnSpacing = 10;
     topoGrid.BackgroundColor = Theme.COLOR_CARD;
 
-    app.TopologyAxes = uiaxes(topoGrid);
-    app.TopologyAxes.Layout.Row = 1; app.TopologyAxes.Layout.Column = 1;
-    app.TopologyAxes.Toolbar.Visible = 'off';
-    app.TopologyAxes.Color   = Theme.COLOR_CARD;
-    app.TopologyAxes.XColor  = Theme.COLOR_MUTED;
-    app.TopologyAxes.YColor  = Theme.COLOR_MUTED;
-    app.TopologyAxes.XTick = []; app.TopologyAxes.YTick = [];
-    app.TopologyAxes.Box     = 'off';
-    try; disableDefaultInteractivity(app.TopologyAxes); catch; end
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host a "click a backend" placeholder. BackendsViewModel.paintTopology
+    % promotes this label to a real uiaxes when topology data lands.
+    topoPlaceholder = uilabel(topoGrid, ...
+        'Text', Labels.get('backends_topology_no_selection'), ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    topoPlaceholder.Layout.Row = 1; topoPlaceholder.Layout.Column = 1;
+    app.TopologyGrid        = topoGrid;
+    app.TopologyPlaceholder = topoPlaceholder;
+    app.TopologyAxes        = [];
 
     sideGrid = uigridlayout(topoGrid, [3 1]);
     sideGrid.Layout.Row = 1; sideGrid.Layout.Column = 2;
