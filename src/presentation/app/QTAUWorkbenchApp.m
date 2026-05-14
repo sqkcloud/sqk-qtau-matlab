@@ -668,9 +668,17 @@ classdef QTAUWorkbenchApp < handle
     % ── QEC Visualization tab ─────────────────────────────────────────────────
     properties
         QecBlochAxes
+        QecBlochGrid                   % parent grid for the lazy uiaxes
+        QecBlochPlaceholder            % uilabel placeholder until the uiaxes materialises
         QecLatticeAxes
+        QecLatticeGrid                 % parent grid for the lazy uiaxes
+        QecLatticePlaceholder          % uilabel placeholder until the uiaxes materialises
         QecDecayAxes
+        QecDecayGrid                   % parent grid for the lazy uiaxes
+        QecDecayPlaceholder            % uilabel placeholder until the uiaxes materialises
         QecErrorWeightAxes
+        QecErrorWeightGrid             % parent grid for the lazy uiaxes
+        QecErrorWeightPlaceholder      % uilabel placeholder until the uiaxes materialises
         QecRefreshBlochButton
         QecRefreshLatticeButton
         QecAnimateButton
@@ -1054,6 +1062,29 @@ classdef QTAUWorkbenchApp < handle
 
         function styleTable(app, tbl) %#ok<INUSL>
             StyleHelper.styleTable(tbl);
+        end
+
+        function ax = ensureLazyAxes(app, axesField, gridField, placeholderField)
+            % Materialise a lazy uiaxes on first access — see Phase 3
+            % perf notes. Screens build a uilabel placeholder + store
+            % the parent grid + placeholder on app at construction
+            % time (cheap). The first repaint call into a screen calls
+            % ensureLazyAxes(...) to swap the placeholder for a real
+            % uiaxes, paying the ~0.5–1.5 s cold-paint cost inside the
+            % spinner window the user is already watching instead of
+            % at screen-mount time. Returns [] when the parent grid is
+            % missing — caller should bail out. Idempotent: subsequent
+            % calls return the cached axes unchanged.
+            ax = app.(axesField);
+            if ~isempty(ax) && isvalid(ax); return; end
+            g = app.(gridField);
+            if isempty(g) || ~isvalid(g); ax = []; return; end
+            if ~isempty(app.(placeholderField)) && isvalid(app.(placeholderField))
+                delete(app.(placeholderField));
+                app.(placeholderField) = [];
+            end
+            ax = uiaxes(g);
+            app.(axesField) = ax;
         end
 
         % -- Popups (→ PopupMenuManager) ---------------------------------------

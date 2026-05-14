@@ -458,6 +458,12 @@ classdef QecSimulationViewModel < handle
         function plotSingleResult(obj, result)
             app = obj.App;
 
+            % Lazy build all 3 axes (idempotent — subsequent calls
+            % return the cached uiaxes unchanged).
+            if isempty(app.ensureLazyAxes('QecSyndromeAxes', 'QecSyndromeGrid', 'QecSyndromePlaceholder')); return; end
+            if isempty(app.ensureLazyAxes('QecSuccessAxes',  'QecSuccessGrid',  'QecSuccessPlaceholder'));  return; end
+            if isempty(app.ensureLazyAxes('QecFidelityAxes', 'QecFidelityGrid', 'QecFidelityPlaceholder')); return; end
+
             % Syndrome histogram
             cla(app.QecSyndromeAxes);
             synMap = result.syndromeHistogram;
@@ -513,6 +519,7 @@ classdef QecSimulationViewModel < handle
 
         function plotSweep(obj, sweep)
             app = obj.App;
+            if isempty(app.ensureLazyAxes('QecFidelityAxes', 'QecFidelityGrid', 'QecFidelityPlaceholder')); return; end
             cla(app.QecFidelityAxes);
             plot(app.QecFidelityAxes, sweep.errorRates, sweep.fidelities, ...
                 '-o', 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.8, 'MarkerSize', 3);
@@ -525,6 +532,7 @@ classdef QecSimulationViewModel < handle
 
         function plotComparison(obj, results, codeLabels, pRange)
             app = obj.App;
+            if isempty(app.ensureLazyAxes('QecFidelityAxes', 'QecFidelityGrid', 'QecFidelityPlaceholder')); return; end
             cla(app.QecFidelityAxes);
             colors = [
                 0.18 0.45 0.82;

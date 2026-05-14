@@ -203,16 +203,16 @@ function QecSimulationScreen(app)
     fidPanel.BackgroundColor = Theme.COLOR_CARD;
     fpg = uigridlayout(fidPanel, [1 1]);
     fpg.Padding = [10 10 10 10]; fpg.BackgroundColor = Theme.COLOR_CARD;
-    app.QecFidelityAxes = uiaxes(fpg);
-    % Demo data
-    pDemo = linspace(0, 0.5, 30);
-    fDemo = 1 - 1.5*pDemo.^2;
-    plot(app.QecFidelityAxes, pDemo, fDemo, '-o', 'Color', Theme.COLOR_PRIMARY, ...
-        'LineWidth', 1.6, 'MarkerSize', 3);
-    app.styleAxes(app.QecFidelityAxes);
-    app.QecFidelityAxes.Title.String  = Labels.get('qec_sim_plot_fidelity_title', 'Fidelity vs Physical Error Rate (demo)');
-    app.QecFidelityAxes.XLabel.String = Labels.get('qec_sim_plot_fidelity_x', 'Physical Error Probability (p)');
-    app.QecFidelityAxes.YLabel.String = Labels.get('qec_sim_plot_fidelity_y', 'Logical Qubit Fidelity');
+    % Lazy uiaxes — eager construction + demo plot costs ~0.5–1.5 s
+    % cold-paint. Materialised by QecSimulationViewModel via
+    % app.ensureLazyAxes('QecFidelityAxes', ...) on first real plot.
+    fidPlaceholder = uilabel(fpg, ...
+        'Text', 'Run a simulation to see fidelity vs physical error rate.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.QecFidelityGrid        = fpg;
+    app.QecFidelityPlaceholder = fidPlaceholder;
+    app.QecFidelityAxes        = [];
 
     % ── Syndrome Distribution chart (right, row 3) ───────────────────────
     synPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_syndrome', 'Syndrome Distribution'), ...
@@ -221,13 +221,14 @@ function QecSimulationScreen(app)
     synPanel.BackgroundColor = Theme.COLOR_CARD;
     spg = uigridlayout(synPanel, [1 1]);
     spg.Padding = [10 10 10 10]; spg.BackgroundColor = Theme.COLOR_CARD;
-    app.QecSyndromeAxes = uiaxes(spg);
-    % Demo data
-    bar(app.QecSyndromeAxes, 1:4, [65 20 10 5], 'FaceColor', [0.56 0.27 0.68]);
-    app.styleAxes(app.QecSyndromeAxes);
-    app.QecSyndromeAxes.Title.String  = Labels.get('qec_sim_plot_syndrome_title', 'Syndrome Measurement Distribution (demo)');
-    app.QecSyndromeAxes.XLabel.String = Labels.get('qec_sim_plot_syndrome_x', 'Syndrome Pattern');
-    app.QecSyndromeAxes.YLabel.String = Labels.get('qec_sim_plot_syndrome_y', 'Frequency');
+    % Lazy uiaxes — see Fidelity note.
+    synPlaceholder = uilabel(spg, ...
+        'Text', 'Run a simulation to see the syndrome distribution.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.QecSyndromeGrid        = spg;
+    app.QecSyndromePlaceholder = synPlaceholder;
+    app.QecSyndromeAxes        = [];
 
     % ── Correction Success (left, row 4) ──────────────────────────────────
     successPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_success', 'Correction Success Rate'), ...
@@ -236,12 +237,14 @@ function QecSimulationScreen(app)
     successPanel.BackgroundColor = Theme.COLOR_CARD;
     scpg = uigridlayout(successPanel, [1 1]);
     scpg.Padding = [10 10 10 10]; scpg.BackgroundColor = Theme.COLOR_CARD;
-    app.QecSuccessAxes = uiaxes(scpg);
-    barh(app.QecSuccessAxes, 1, 0.95, 'FaceColor', Theme.COLOR_SUCCESS);
-    app.QecSuccessAxes.XLim = [0 1];
-    app.QecSuccessAxes.YTickLabel = {'Success Rate'};
-    app.styleAxes(app.QecSuccessAxes);
-    app.QecSuccessAxes.Title.String = 'Correction Success Rate (demo)';
+    % Lazy uiaxes — see Fidelity note.
+    sucPlaceholder = uilabel(scpg, ...
+        'Text', 'Run a simulation to see the correction success rate.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.QecSuccessGrid        = scpg;
+    app.QecSuccessPlaceholder = sucPlaceholder;
+    app.QecSuccessAxes        = [];
 
     % ── Results Table (right, row 4) ──────────────────────────────────────
     resultsPanel = uipanel(g, 'Title', Labels.get('qec_sim_panel_results', 'Simulation Results'), ...
