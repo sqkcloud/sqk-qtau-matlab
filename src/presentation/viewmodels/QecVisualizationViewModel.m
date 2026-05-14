@@ -338,7 +338,8 @@ classdef QecVisualizationViewModel < handle
         end
 
         function drawBlochSphere(obj, blochVec, idealVec)
-            ax = obj.App.QecBlochAxes;
+            ax = obj.App.ensureLazyAxes('QecBlochAxes', 'QecBlochGrid', 'QecBlochPlaceholder');
+            if isempty(ax); return; end
             cla(ax); hold(ax, 'on');
             obj.renderBlochBase(ax);
 
@@ -360,7 +361,8 @@ classdef QecVisualizationViewModel < handle
         end
 
         function drawBlochSphereWithTrail(obj, currentVec, idealVec, trail)
-            ax = obj.App.QecBlochAxes;
+            ax = obj.App.ensureLazyAxes('QecBlochAxes', 'QecBlochGrid', 'QecBlochPlaceholder');
+            if isempty(ax); return; end
             cla(ax); hold(ax, 'on');
             obj.renderBlochBase(ax);
 
@@ -444,7 +446,8 @@ classdef QecVisualizationViewModel < handle
         end
 
         function drawLattice(obj, lattice, errorProb)
-            ax = obj.App.QecLatticeAxes;
+            ax = obj.App.ensureLazyAxes('QecLatticeAxes', 'QecLatticeGrid', 'QecLatticePlaceholder');
+            if isempty(ax); return; end
             d = lattice.distance;
             cla(ax); hold(ax, 'on');
 
@@ -514,7 +517,8 @@ classdef QecVisualizationViewModel < handle
         end
 
         function plotDecay(obj, decay)
-            ax = obj.App.QecDecayAxes;
+            ax = obj.App.ensureLazyAxes('QecDecayAxes', 'QecDecayGrid', 'QecDecayPlaceholder');
+            if isempty(ax); return; end
             cla(ax);
             plot(ax, decay.rounds, decay.fidelities, '-s', ...
                 'Color', Theme.COLOR_SUCCESS, 'LineWidth', 1.8, ...
@@ -527,7 +531,8 @@ classdef QecVisualizationViewModel < handle
         end
 
         function plotErrorWeights(obj, dist)
-            ax = obj.App.QecErrorWeightAxes;
+            ax = obj.App.ensureLazyAxes('QecErrorWeightAxes', 'QecErrorWeightGrid', 'QecErrorWeightPlaceholder');
+            if isempty(ax); return; end
             cla(ax);
             bar(ax, dist.weights, dist.probs, 'FaceColor', [0.85 0.33 0.10]);
             obj.App.styleAxes(ax);

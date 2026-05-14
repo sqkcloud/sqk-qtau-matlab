@@ -92,9 +92,15 @@ function QecVisualizationScreen(app)
     blochPanel.BackgroundColor = Theme.COLOR_CARD;
     bpg = uigridlayout(blochPanel, [1 1]);
     bpg.Padding = [6 6 6 6]; bpg.BackgroundColor = Theme.COLOR_CARD;
-    app.QecBlochAxes = uiaxes(bpg);
-    % Render initial demo Bloch sphere
-    drawBlochSphereDemo(app.QecBlochAxes, [0 0 1]);
+    % Lazy uiaxes — drawBlochSphere(WithTrail) materialise via
+    % app.ensureLazyAxes(...) on first real paint.
+    blochPlaceholder = uilabel(bpg, ...
+        'Text', 'Bloch sphere appears here after a simulation step.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.QecBlochGrid        = bpg;
+    app.QecBlochPlaceholder = blochPlaceholder;
+    app.QecBlochAxes        = [];
 
     % ── Surface Code Lattice (right, row 2) ──────────────────────────────
     latticePanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_lattice', 'Surface Code Lattice'), ...
@@ -103,9 +109,14 @@ function QecVisualizationScreen(app)
     latticePanel.BackgroundColor = Theme.COLOR_CARD;
     lpg = uigridlayout(latticePanel, [1 1]);
     lpg.Padding = [6 6 6 6]; lpg.BackgroundColor = Theme.COLOR_CARD;
-    app.QecLatticeAxes = uiaxes(lpg);
-    % Render initial demo lattice
-    drawSurfaceCodeDemo(app.QecLatticeAxes, 3);
+    % Lazy uiaxes — drawLattice materialises via ensureLazyAxes(...).
+    latticePlaceholder = uilabel(lpg, ...
+        'Text', 'Surface code lattice appears here after a simulation step.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.QecLatticeGrid        = lpg;
+    app.QecLatticePlaceholder = latticePlaceholder;
+    app.QecLatticeAxes        = [];
 
     % ── Fidelity Decay Over Rounds (left, row 3) ─────────────────────────
     decayPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_decay', 'Fidelity Decay Over Rounds'), ...
@@ -114,17 +125,14 @@ function QecVisualizationScreen(app)
     decayPanel.BackgroundColor = Theme.COLOR_CARD;
     dpg = uigridlayout(decayPanel, [1 1]);
     dpg.Padding = [10 10 10 10]; dpg.BackgroundColor = Theme.COLOR_CARD;
-    app.QecDecayAxes = uiaxes(dpg);
-    % Demo decay
-    rounds = 1:10;
-    decayDemo = 1 - 0.02*(rounds-1) - 0.005*randn(1,10);
-    plot(app.QecDecayAxes, rounds, decayDemo, '-s', 'Color', Theme.COLOR_SUCCESS, ...
-        'LineWidth', 1.8, 'MarkerSize', 5, 'MarkerFaceColor', Theme.COLOR_SUCCESS);
-    app.styleAxes(app.QecDecayAxes);
-    app.QecDecayAxes.Title.String  = Labels.get('qec_viz_plot_decay_title', 'Fidelity vs Correction Round (demo)');
-    app.QecDecayAxes.XLabel.String = Labels.get('qec_viz_plot_decay_x', 'Correction Round');
-    app.QecDecayAxes.YLabel.String = Labels.get('qec_viz_plot_decay_y', 'Fidelity');
-    app.QecDecayAxes.YLim = [0 1.05];
+    % Lazy uiaxes — see Bloch note.
+    decayPlaceholder = uilabel(dpg, ...
+        'Text', 'Fidelity-decay chart appears here after a simulation step.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.QecDecayGrid        = dpg;
+    app.QecDecayPlaceholder = decayPlaceholder;
+    app.QecDecayAxes        = [];
 
     % ── Error Weight Distribution (right, row 3) ─────────────────────────
     ewPanel = uipanel(g, 'Title', Labels.get('qec_viz_panel_errweight', 'Error Weight Distribution'), ...
@@ -133,15 +141,14 @@ function QecVisualizationScreen(app)
     ewPanel.BackgroundColor = Theme.COLOR_CARD;
     ewpg = uigridlayout(ewPanel, [1 1]);
     ewpg.Padding = [10 10 10 10]; ewpg.BackgroundColor = Theme.COLOR_CARD;
-    app.QecErrorWeightAxes = uiaxes(ewpg);
-    % Demo error weight
-    weights = 0:3;
-    probs = [0.857 0.135 0.007 0.001];
-    bar(app.QecErrorWeightAxes, weights, probs, 'FaceColor', [0.85 0.33 0.10]);
-    app.styleAxes(app.QecErrorWeightAxes);
-    app.QecErrorWeightAxes.Title.String  = Labels.get('qec_viz_plot_errweight_title', 'Error Weight Distribution (demo)');
-    app.QecErrorWeightAxes.XLabel.String = Labels.get('qec_viz_plot_errweight_x', 'Number of Errors');
-    app.QecErrorWeightAxes.YLabel.String = Labels.get('qec_viz_plot_errweight_y', 'Probability');
+    % Lazy uiaxes — see Bloch note.
+    ewPlaceholder = uilabel(ewpg, ...
+        'Text', 'Error weight distribution appears here after a simulation step.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.QecErrorWeightGrid        = ewpg;
+    app.QecErrorWeightPlaceholder = ewPlaceholder;
+    app.QecErrorWeightAxes        = [];
 
     Logger.info('QecVisualizationScreen', 'QEC Visualization tab UI built successfully');
 end
