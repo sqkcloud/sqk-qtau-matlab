@@ -134,11 +134,16 @@ function BenchmarkDashboardScreen(app)
     volPanel.BackgroundColor = Theme.COLOR_CARD;
     vpg = uigridlayout(volPanel, [1 1]);
     vpg.Padding = [10 10 10 10]; vpg.BackgroundColor = Theme.COLOR_CARD;
-    app.VolumetricAxes = uiaxes(vpg);
-    title(app.VolumetricAxes, 'Volumetric Fidelity Map', 'Interpreter', 'none');
-    xlabel(app.VolumetricAxes, 'Circuit Depth', 'Interpreter', 'none');
-    ylabel(app.VolumetricAxes, 'Circuit Width', 'Interpreter', 'none');
-    app.styleAxes(app.VolumetricAxes);
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host an empty heatmap. Promoted to a real uiaxes on first
+    % paint call.
+    volPlaceholder = uilabel(vpg, ...
+        'Text', 'Volumetric fidelity map appears here after benchmark runs.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.VolumetricGrid        = vpg;
+    app.VolumetricPlaceholder = volPlaceholder;
+    app.VolumetricAxes        = [];
 
     % ── Row 4 Right: Backend Scorecard Radar Chart ───────────────────────
     radarPanel = uipanel(g, 'Title', 'Backend Scorecard', ...
@@ -160,11 +165,14 @@ function BenchmarkDashboardScreen(app)
     calPanel.BackgroundColor = Theme.COLOR_CARD;
     cpg = uigridlayout(calPanel, [1 1]);
     cpg.Padding = [10 10 10 10]; cpg.BackgroundColor = Theme.COLOR_CARD;
-    app.CalibrationAxes = uiaxes(cpg);
-    title(app.CalibrationAxes, 'Predicted vs Actual Fidelity', 'Interpreter', 'none');
-    xlabel(app.CalibrationAxes, 'Predicted Fidelity', 'Interpreter', 'none');
-    ylabel(app.CalibrationAxes, 'Actual Fidelity', 'Interpreter', 'none');
-    app.styleAxes(app.CalibrationAxes);
+    % Lazy uiaxes — see Volumetric note above.
+    calPlaceholder = uilabel(cpg, ...
+        'Text', 'Prediction calibration scatter appears here after benchmark runs.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.CalibrationGrid        = cpg;
+    app.CalibrationPlaceholder = calPlaceholder;
+    app.CalibrationAxes        = [];
 
     % ── Row 5 Right: Benchmark Regression time-series ────────────────────
     regPanel = uipanel(g, 'Title', 'Benchmark Regression', ...
@@ -173,11 +181,14 @@ function BenchmarkDashboardScreen(app)
     regPanel.BackgroundColor = Theme.COLOR_CARD;
     rrpg = uigridlayout(regPanel, [1 1]);
     rrpg.Padding = [10 10 10 10]; rrpg.BackgroundColor = Theme.COLOR_CARD;
-    app.RegressionAxes = uiaxes(rrpg);
-    title(app.RegressionAxes, 'Fidelity over Time', 'Interpreter', 'none');
-    xlabel(app.RegressionAxes, 'Time', 'Interpreter', 'none');
-    ylabel(app.RegressionAxes, 'Fidelity', 'Interpreter', 'none');
-    app.styleAxes(app.RegressionAxes);
+    % Lazy uiaxes — see Volumetric note above.
+    regPlaceholder = uilabel(rrpg, ...
+        'Text', 'Benchmark regression time series appears here after benchmark runs.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.RegressionGrid        = rrpg;
+    app.RegressionPlaceholder = regPlaceholder;
+    app.RegressionAxes        = [];
 
     Logger.info('BenchmarkDashboardScreen', 'Benchmark Dashboard tab built');
 end

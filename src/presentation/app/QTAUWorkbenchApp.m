@@ -397,6 +397,8 @@ classdef QTAUWorkbenchApp < handle
         TelemetryPerQubitGrid         % uigridlayout for the Per-Qubit heat grid (8x16)
         TelemetryHistoryAxes          % {1×3} cell of uiaxes for History sparklines (T1/T2/2Q)
         TopologyAxes                  % uiaxes hosting the coupling-map graph plot
+        TopologyGrid                  % parent grid for the lazy uiaxes
+        TopologyPlaceholder           % uilabel placeholder until the uiaxes materialises
         TopologyInfoLbl               % side-panel uilabel for clicked-qubit detail
         TopologyCache         = []    % struct keyed by makeValidName(backend) → topology response
     end
@@ -536,9 +538,15 @@ classdef QTAUWorkbenchApp < handle
         BenchmarkStatusLabel        % "N jobs · M preds · cal 18 h old · source: ibm_runtime"
         BenchmarkSourceBadge        % small tinted badge in the toolbar showing metrics source
         VolumetricAxes
+        VolumetricGrid                 % parent grid for the lazy uiaxes
+        VolumetricPlaceholder          % uilabel placeholder until the uiaxes materialises
         ScorecardAxes
         CalibrationAxes
+        CalibrationGrid                % parent grid for the lazy uiaxes
+        CalibrationPlaceholder         % uilabel placeholder until the uiaxes materialises
         RegressionAxes
+        RegressionGrid                 % parent grid for the lazy uiaxes
+        RegressionPlaceholder          % uilabel placeholder until the uiaxes materialises
     end
 
     % ── Circuit Cutting tab ──────────────────────────────────────────────────
@@ -632,8 +640,14 @@ classdef QTAUWorkbenchApp < handle
         QecRoundsSpinner
         QecTrialsSpinner
         QecFidelityAxes
+        QecFidelityGrid                % parent grid for the lazy uiaxes
+        QecFidelityPlaceholder         % uilabel placeholder until the uiaxes materialises
         QecSyndromeAxes
+        QecSyndromeGrid                % parent grid for the lazy uiaxes
+        QecSyndromePlaceholder         % uilabel placeholder until the uiaxes materialises
         QecSuccessAxes
+        QecSuccessGrid                 % parent grid for the lazy uiaxes
+        QecSuccessPlaceholder          % uilabel placeholder until the uiaxes materialises
         QecResultsTable
         QecRunButton
         QecSweepButton

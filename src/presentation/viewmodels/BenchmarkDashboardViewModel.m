@@ -329,6 +329,19 @@ classdef BenchmarkDashboardViewModel < handle
         % ── Volumetric Heatmap ───────────────────────────────────────────
         function applyVolumetric(obj, app, data)
             ax = app.VolumetricAxes;
+            if isempty(ax) || ~isvalid(ax)
+                if isempty(app.VolumetricGrid) || ~isvalid(app.VolumetricGrid); return; end
+                if ~isempty(app.VolumetricPlaceholder) && isvalid(app.VolumetricPlaceholder)
+                    delete(app.VolumetricPlaceholder);
+                    app.VolumetricPlaceholder = [];
+                end
+                ax = uiaxes(app.VolumetricGrid);
+                title(ax, 'Volumetric Fidelity Map', 'Interpreter', 'none');
+                xlabel(ax, 'Circuit Depth', 'Interpreter', 'none');
+                ylabel(ax, 'Circuit Width', 'Interpreter', 'none');
+                app.styleAxes(ax);
+                app.VolumetricAxes = ax;
+            end
             cla(ax);
             if isempty(data) || ~isstruct(data)
                 obj.showEmptyAxesMessage(ax, ...
@@ -404,6 +417,19 @@ classdef BenchmarkDashboardViewModel < handle
         % ── Prediction Calibration (Scatter) ─────────────────────────────
         function applyCalibration(obj, app, data)
             ax = app.CalibrationAxes;
+            if isempty(ax) || ~isvalid(ax)
+                if isempty(app.CalibrationGrid) || ~isvalid(app.CalibrationGrid); return; end
+                if ~isempty(app.CalibrationPlaceholder) && isvalid(app.CalibrationPlaceholder)
+                    delete(app.CalibrationPlaceholder);
+                    app.CalibrationPlaceholder = [];
+                end
+                ax = uiaxes(app.CalibrationGrid);
+                title(ax, 'Predicted vs Actual Fidelity', 'Interpreter', 'none');
+                xlabel(ax, 'Predicted Fidelity', 'Interpreter', 'none');
+                ylabel(ax, 'Actual Fidelity', 'Interpreter', 'none');
+                app.styleAxes(ax);
+                app.CalibrationAxes = ax;
+            end
             cla(ax);
             if isempty(data) || ~isstruct(data)
                 obj.showEmptyAxesMessage(ax, ...
@@ -452,6 +478,19 @@ classdef BenchmarkDashboardViewModel < handle
         % ── Benchmark Regression (Time Series) ──────────────────────────
         function applyRegression(obj, app, backendName, data)
             ax = app.RegressionAxes;
+            if isempty(ax) || ~isvalid(ax)
+                if isempty(app.RegressionGrid) || ~isvalid(app.RegressionGrid); return; end
+                if ~isempty(app.RegressionPlaceholder) && isvalid(app.RegressionPlaceholder)
+                    delete(app.RegressionPlaceholder);
+                    app.RegressionPlaceholder = [];
+                end
+                ax = uiaxes(app.RegressionGrid);
+                title(ax, 'Fidelity over Time', 'Interpreter', 'none');
+                xlabel(ax, 'Time', 'Interpreter', 'none');
+                ylabel(ax, 'Fidelity', 'Interpreter', 'none');
+                app.styleAxes(ax);
+                app.RegressionAxes = ax;
+            end
             cla(ax);
             if isempty(backendName)
                 obj.showEmptyAxesMessage(ax, ...
