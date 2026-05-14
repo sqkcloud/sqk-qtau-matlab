@@ -162,13 +162,18 @@ function AnalysisScreen(app)
     qvGrid.RowHeight   = {'1x'};
     qvGrid.Padding = Theme.KPI_INNER_PAD; qvGrid.BackgroundColor = Theme.COLOR_CARD;
 
-    app.QVHeatmapAxes = uiaxes(qvGrid);
-    app.QVHeatmapAxes.Layout.Row = 1; app.QVHeatmapAxes.Layout.Column = 1;
-    app.styleAxes(app.QVHeatmapAxes);
-    title(app.QVHeatmapAxes, Labels.get('analysis_qv_title', ...
-        'Circuit Depth vs Width (Avg Result Fidelity)'));
-    xlabel(app.QVHeatmapAxes, Labels.get('analysis_qv_xlabel', 'Circuit Depth'));
-    ylabel(app.QVHeatmapAxes, Labels.get('analysis_qv_ylabel', 'Circuit Width (Qubits)'));
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host a blank heatmap. AnalysisViewModel.buildQVHeatmap promotes
+    % this label to a real uiaxes when the analysis payload lands.
+    qvPlaceholder = uilabel(qvGrid, ...
+        'Text', Labels.get('analysis_qv_initial', ...
+            'Run analysis to populate the Quantum Volume chart.'), ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    qvPlaceholder.Layout.Row = 1; qvPlaceholder.Layout.Column = 1;
+    app.QVHeatmapGrid        = qvGrid;
+    app.QVHeatmapPlaceholder = qvPlaceholder;
+    app.QVHeatmapAxes        = [];
 
     app.QVInfoLabel = uilabel(qvGrid, ...
         'Text', Labels.get('analysis_qv_initial', ...

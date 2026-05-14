@@ -134,14 +134,17 @@ function buildScatter(parent, vm)
     g.Padding = [12 8 12 8];
     g.BackgroundColor = Theme.COLOR_CARD;
 
-    ax = uiaxes(g);
-    ax.Toolbar.Visible = 'off';
-    ax.Color = Theme.COLOR_CARD;
-    ax.XColor = Theme.COLOR_MUTED; ax.YColor = Theme.COLOR_MUTED;
-    ax.FontSize = 10;
-    ax.Box = 'off';
-    try; disableDefaultInteractivity(ax); catch; end
-    vm.ScatterAxes = ax;
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint
+    % just to host placeholder text. repaintScatter promotes this label
+    % to a real uiaxes the first time it has Pareto points to draw.
+    placeholder = uilabel(g, ...
+        'Text', 'Pareto frontier appears here after you click Plan.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+
+    vm.ScatterGrid        = g;
+    vm.ScatterPlaceholder = placeholder;
+    vm.ScatterAxes        = [];
 end
 
 function buildRecommendCard(parent, vm)

@@ -171,6 +171,8 @@ classdef QTAUWorkbenchApp < handle
         DashStepperNames             % {1×8} cell of uibutton handles for stage names (Phase 2: clickable)
         DashReadinessLabels          % {1×4} cell of uilabel handles for run-readiness KPIs
         DashActivityAxes             % uiaxes for the 7-day jobs-per-day bar chart
+        DashActivityGrid             % parent grid for the lazy uiaxes (built on first paint)
+        DashActivityPlaceholder      % uilabel placeholder until the uiaxes materialises
         % ── Phase 2 dashboard refactor (live system status) ──────────────
         DashBackendHealthCards       % {1×N} cell of structs {nameLbl, dotLbl, qubitsLbl}
                                      %   for the Backend Health panel; rendered from the
@@ -276,6 +278,8 @@ classdef QTAUWorkbenchApp < handle
         SimilarityTable
         AnalysisCompareArea
         QVHeatmapAxes
+        QVHeatmapGrid             % parent grid for the lazy uiaxes (built on first paint)
+        QVHeatmapPlaceholder      % uilabel placeholder until the uiaxes materialises
         QVInfoLabel
         % Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)
         %   Hosted inside the modal popup built by DialogBuilder.buildQmcDialog;
@@ -418,7 +422,11 @@ classdef QTAUWorkbenchApp < handle
         PredictionBackendDropdown   % Backend selector on the Prediction toolbar
         PredictionTable
         PredictionDistAxes      % Probability distribution bar chart
+        PredictionDistGrid              % parent grid for the lazy uiaxes
+        PredictionDistPlaceholder       % uilabel placeholder until the uiaxes materialises
         PredictionBudgetAxes    % Error budget breakdown bar chart
+        PredictionBudgetGrid            % parent grid for the lazy uiaxes
+        PredictionBudgetPlaceholder     % uilabel placeholder until the uiaxes materialises
         PredictionHeadlineLabel % Top-backend recommendation callout
         SubmitJobButton         % Submit to IBM Quantum (POST /api/jobs/submit)
     end
@@ -474,6 +482,8 @@ classdef QTAUWorkbenchApp < handle
         ResultsKpiReadoutSub
         % Distribution + histogram row.
         ResultsHistogramAxes          % uiaxes — bars + ideal overlay
+        ResultsHistogramGrid          % parent grid for the lazy uiaxes
+        ResultsHistogramPlaceholder   % uilabel placeholder until the uiaxes materialises
         % Mitigation / Timing / Context tiles (cell arrays of uilabels).
         ResultsMitigationLabels = {}  % {LevelVal, TwirlingVal, DDVal, ZNEVal}
         ResultsTimingLabels    = {}   % {QueuedVal, RunVal, TotalVal}
@@ -756,6 +766,16 @@ classdef QTAUWorkbenchApp < handle
             app.CuttingSvc    = app.Services.CuttingSvc;
             app.MitigationSvc = app.Services.MitigationSvc;
 
+            % Kick the parallel-pool warm-up as soon as services are
+            % wired — the pool acquisition is the slow part (1.3–3.9 s
+            % cold on macOS) and parfeval(@()true) runs in the
+            % background. By the time the user reads the login dialog
+            % and submits credentials, the pool is already warm and the
+            % first real AsyncRunner.run() lands on a hot worker.
+            % Idempotent; the original (now redundant) call at the end
+            % of buildUI is left in place as a no-op safety net.
+            AsyncRunner.warmUp();
+
             Logger.info('QTAUWorkbenchApp', 'Services ready — creating WelcomeVm (lazy init for others)');
             app.WelcomeVm = WelcomeViewModel(app);
 
@@ -773,6 +793,14 @@ classdef QTAUWorkbenchApp < handle
                 end
             catch ME
                 Logger.debug('QTAUWorkbenchApp', 'Logout on close: %s', ME.message);
+            end
+            % LoginDialog is kept alive across the session for reuse;
+            % tear it down now since the app is exiting.
+            try
+                if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                    delete(app.LoginDialog);
+                end
+            catch
             end
             try
                 if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
@@ -1080,7 +1108,18 @@ classdef QTAUWorkbenchApp < handle
 
         % -- Dialogs (→ DialogBuilder) -----------------------------------------
         function showLoginDialog(app)
-            DialogBuilder.buildLoginDialog(app);
+            % Reuse-not-rebuild: the LoginDialog stays alive across
+            % the session (3 uihtml fields cost 4–18 s cold to build).
+            % First call → buildLoginDialog. Subsequent calls (after
+            % logout, X-close, or login-success) → resetLoginDialog +
+            % Visible='on'. Sub-second on every show after the first.
+            if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                DialogBuilder.resetLoginDialog(app);
+                try app.LoginDialog.Visible = 'on'; catch; end
+                try figure(app.LoginDialog); catch; end
+            else
+                DialogBuilder.buildLoginDialog(app);
+            end
         end
 
         function showNewProjectDialog(app)

@@ -199,13 +199,18 @@ function buildPie(parent, vm)
     g.Padding = [12 8 12 8];
     g.BackgroundColor = Theme.COLOR_CARD;
 
-    ax = uiaxes(g);
-    ax.Toolbar.Visible = 'off';
-    ax.Color = Theme.COLOR_CARD;
-    ax.XColor = Theme.COLOR_MUTED; ax.YColor = Theme.COLOR_MUTED;
-    ax.Box = 'off'; ax.XTick = []; ax.YTick = [];
-    try; disableDefaultInteractivity(ax); catch; end
-    vm.PieAxes = ax;
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host placeholder text. repaintPie promotes this label to a real
+    % uiaxes the first time a result lands and there is allocation data
+    % to slice.
+    placeholder = uilabel(g, ...
+        'Text', 'Qubit allocation appears here after you click Estimate.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+
+    vm.PieGrid        = g;
+    vm.PiePlaceholder = placeholder;
+    vm.PieAxes        = [];
 end
 
 % ── Insight strip ────────────────────────────────────────────────────────

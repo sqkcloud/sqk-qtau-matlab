@@ -191,11 +191,17 @@ function ResultsScreen(app)
     histPanel.Layout.Column = 1;
     hpg = uigridlayout(histPanel, [1 1]);
     hpg.Padding = [10 8 10 8]; hpg.BackgroundColor = Theme.COLOR_CARD;
-    app.ResultsHistogramAxes = uiaxes(hpg);
-    app.styleAxes(app.ResultsHistogramAxes);
-    title(app.ResultsHistogramAxes, '');
-    xlabel(app.ResultsHistogramAxes, 'Basis state');
-    ylabel(app.ResultsHistogramAxes, 'Probability');
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host a blank chart. ResultsViewModel.paintResultsHistogram
+    % promotes this label to a real uiaxes when a job's measurement
+    % distribution lands.
+    histPlaceholder = uilabel(hpg, ...
+        'Text', 'Run a circuit to see its measurement distribution here.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.ResultsHistogramGrid        = hpg;
+    app.ResultsHistogramPlaceholder = histPlaceholder;
+    app.ResultsHistogramAxes        = [];
 
     comparePanel = uipanel(distRow, 'Title', Labels.get('results_panel_dist'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...

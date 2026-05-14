@@ -480,6 +480,19 @@ classdef PredictionViewModel < handle
 
         function renderDistributionChart(obj, distMap)
             ax = obj.App.PredictionDistAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — PredictionScreen ships a uilabel
+                % placeholder to keep cold-mount fast. Pay the uiaxes
+                % cost here, inside the predict-async window the user
+                % is already watching.
+                if isempty(obj.App.PredictionDistGrid) || ~isvalid(obj.App.PredictionDistGrid); return; end
+                if ~isempty(obj.App.PredictionDistPlaceholder) && isvalid(obj.App.PredictionDistPlaceholder)
+                    delete(obj.App.PredictionDistPlaceholder);
+                    obj.App.PredictionDistPlaceholder = [];
+                end
+                ax = uiaxes(obj.App.PredictionDistGrid);
+                obj.App.PredictionDistAxes = ax;
+            end
             cla(ax, 'reset');
             obj.App.styleAxes(ax);
             if ~isstruct(distMap) || isempty(fieldnames(distMap))
@@ -548,6 +561,19 @@ classdef PredictionViewModel < handle
 
         function renderBudgetChart(obj, budgetMap)
             ax = obj.App.PredictionBudgetAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — PredictionScreen ships a uilabel
+                % placeholder to keep cold-mount fast. Pay the uiaxes
+                % cost here, inside the predict-async window the user
+                % is already watching.
+                if isempty(obj.App.PredictionBudgetGrid) || ~isvalid(obj.App.PredictionBudgetGrid); return; end
+                if ~isempty(obj.App.PredictionBudgetPlaceholder) && isvalid(obj.App.PredictionBudgetPlaceholder)
+                    delete(obj.App.PredictionBudgetPlaceholder);
+                    obj.App.PredictionBudgetPlaceholder = [];
+                end
+                ax = uiaxes(obj.App.PredictionBudgetGrid);
+                obj.App.PredictionBudgetAxes = ax;
+            end
             cla(ax, 'reset');
             obj.App.styleAxes(ax);
             if ~isstruct(budgetMap) || isempty(fieldnames(budgetMap))

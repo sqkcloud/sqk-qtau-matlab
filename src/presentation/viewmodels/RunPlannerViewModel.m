@@ -28,6 +28,8 @@ classdef RunPlannerViewModel < handle
         BundleBtn
         StatusLbl
 
+        ScatterGrid        % parent for the lazy uiaxes (built on first repaintScatter)
+        ScatterPlaceholder % uilabel shown until the uiaxes materialises
         ScatterAxes
 
         % Recommendation card
@@ -380,7 +382,26 @@ classdef RunPlannerViewModel < handle
 
         function repaintScatter(obj)
             ax = obj.ScatterAxes;
-            if isempty(ax) || ~isvalid(ax); return; end
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — buildScatter deliberately ships a uilabel
+                % placeholder to keep screen-mount fast. Pay the uiaxes
+                % construction cost here, inside the Plan-spinner window
+                % the user is already watching.
+                if isempty(obj.ScatterGrid) || ~isvalid(obj.ScatterGrid); return; end
+                if ~isempty(obj.ScatterPlaceholder) && isvalid(obj.ScatterPlaceholder)
+                    delete(obj.ScatterPlaceholder);
+                    obj.ScatterPlaceholder = [];
+                end
+                ax = uiaxes(obj.ScatterGrid);
+                ax.Toolbar.Visible = 'off';
+                ax.Color  = Theme.COLOR_CARD;
+                ax.XColor = Theme.COLOR_MUTED;
+                ax.YColor = Theme.COLOR_MUTED;
+                ax.FontSize = 10;
+                ax.Box = 'off';
+                try; disableDefaultInteractivity(ax); catch; end
+                obj.ScatterAxes = ax;
+            end
             cla(ax);
             if isempty(obj.Points); return; end
             costs = [obj.Points.cost];

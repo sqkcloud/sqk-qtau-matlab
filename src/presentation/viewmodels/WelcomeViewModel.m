@@ -281,88 +281,19 @@ classdef WelcomeViewModel < handle
                 app.State.currentUser, app.State.tokenType, app.State.defaultProjectId));
             app.State.logActivity(sprintf('Login — user: %s', app.State.currentUser), 'Success');
 
-            % Clear password from memory
-            app.LoginDlgPasswordReal = '';
-            if ~isempty(app.LoginDlgPasswordField) && isvalid(app.LoginDlgPasswordField)
-                app.LoginDlgPasswordField.Data = struct('a', 'clear');
-            end
-
-            % Teardown order matters: under load (slow /api/projects +
-            % dashboard fetch) the prior 50 ms pause was not enough to
-            % drain the uihtml peer-event queue. A trailing JS->MATLAB
-            % event then fires sendFlushEventToClient against an already-
-            % deleted viewmodel and surfaces as
-            %   "Attempt to call a method on an empty value"
-            % inside viewmodel.internal.ViewModel/dispatchEvent
-            % (HTMLController/handleClientEvent -> sendFlushEventToClient
-            % -> DialogHelper.dispatchWhenPeerNodeViewIsReady).
-            %
-            % Robust shutdown sequence:
-            %   1. Hide the dialog so the browser stops dispatching new
-            %      DOM events from the uihtml fields.
-            %   2. Unmount each uihtml: clear DataChangedFcn AND
-            %      HTMLSource so the JS peer disconnects.
-            %   3. Drain the event queue with drawnow + pause + drawnow.
-            %   4. Delete the uihtml children individually.
-            %   5. drawnow, then delete the figure.
-            htmlFields = {'LoginDlgBaseUrlField', 'LoginDlgUsernameField', 'LoginDlgPasswordField'};
-
+            % Reuse-not-delete: hide the LoginDialog and reset its
+            % sensitive state for the next show. The earlier ceremony
+            % (drain uihtml peerEvents, clear HTMLSource, delete each
+            % field individually, then delete the figure) existed to
+            % mitigate the LabelController / PushButtonController
+            % "Invalid or deleted object" race that fired when MATLAB
+            % dispatched a queued event against a cascade-deleted
+            % handle. With the delete gone, the race is gone — and the
+            % dialog re-shows in well under a second on the next login
+            % attempt instead of paying a 4–18 s cold rebuild.
+            DialogBuilder.resetLoginDialog(app);
             if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
                 try app.LoginDialog.Visible = 'off'; catch; end
-            end
-            drawnow;
-
-            for i = 1:numel(htmlFields)
-                h = app.(htmlFields{i});
-                if ~isempty(h) && isvalid(h)
-                    try h.DataChangedFcn = ''; catch; end
-                    try h.HTMLSource    = ''; catch; end
-                end
-            end
-
-            % Same race surfaces in LabelController / ButtonController
-            % when uilabel / uihyperlink / uibutton children get cascade-
-            % deleted with a peerEvent still queued — fingerprint matches
-            % the "Invalid or deleted object" stack at
-            % getComponentToApplyButtonEvent line 110. Null any callback
-            % they expose so MATLAB can't invoke a stale binding, then
-            % let the extended drain below process whatever is in flight.
-            if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
-                try
-                    dlgKids = findall(app.LoginDialog);
-                    for k = 1:numel(dlgKids)
-                        ch = dlgKids(k);
-                        if ~isvalid(ch); continue; end
-                        try; if isprop(ch, 'ButtonPushedFcn');     ch.ButtonPushedFcn     = ''; end; catch; end
-                        try; if isprop(ch, 'HyperlinkClickedFcn'); ch.HyperlinkClickedFcn = ''; end; catch; end
-                        try; if isprop(ch, 'ValueChangedFcn');     ch.ValueChangedFcn     = ''; end; catch; end
-                    end
-                catch
-                end
-            end
-
-            drawnow;
-            pause(0.15);
-            drawnow;
-            % Extra cycle: the 150 ms above is calibrated for uihtml
-            % bridge latency; non-uihtml children need one more pump
-            % round-trip for queued mouse / focus peerEvents to drain.
-            pause(0.05);
-            drawnow;
-
-            for i = 1:numel(htmlFields)
-                h = app.(htmlFields{i});
-                if ~isempty(h) && isvalid(h)
-                    try delete(h); catch; end
-                end
-                app.(htmlFields{i}) = [];
-            end
-            drawnow;
-
-            % Close the login dialog
-            if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
-                delete(app.LoginDialog);
-                app.LoginDialog = [];
             end
             drawnow;
 

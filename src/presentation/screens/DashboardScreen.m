@@ -363,12 +363,17 @@ function DashboardScreen(app)
         'VerticalAlignment',   'center');
     app.DashStatsSubline.Layout.Row = 1; app.DashStatsSubline.Layout.Column = 1;
 
-    app.DashActivityAxes = uiaxes(apg);
-    app.DashActivityAxes.Layout.Row = 2; app.DashActivityAxes.Layout.Column = 1;
-    app.styleAxes(app.DashActivityAxes);
-    app.DashActivityAxes.Title.String  = '';
-    app.DashActivityAxes.XLabel.String = '';
-    app.DashActivityAxes.YLabel.String = '';
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host a blank chart. DashboardViewModel.onJobsForTrend promotes
+    % this label to a real uiaxes when the 7-day jobs payload lands.
+    activityPlaceholder = uilabel(apg, ...
+        'Text', 'Activity trend appears here once jobs are recorded.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    activityPlaceholder.Layout.Row = 2; activityPlaceholder.Layout.Column = 1;
+    app.DashActivityGrid        = apg;
+    app.DashActivityPlaceholder = activityPlaceholder;
+    app.DashActivityAxes        = [];
 
     % ── Row 5: Recent Activity table with pagination ─────────────────────────
     activityTablePanel = uipanel(g, 'Title', Labels.get( ...

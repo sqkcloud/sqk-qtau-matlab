@@ -205,49 +205,40 @@ classdef DialogBuilder
             Logger.info('DialogBuilder', 'Login dialog shown');
         end
 
+        function resetLoginDialog(app)
+            % Clear sensitive state on a re-shown LoginDialog.
+            %   - Password field (security): always cleared.
+            %   - Status label: cleared so a prior error doesn't haunt
+            %     the next attempt.
+            %   - Username & baseUrl: intentionally NOT cleared — users
+            %     typically retry the same account, and baseUrl rarely
+            %     changes between attempts (Settings has its own editor).
+            if isprop(app, 'LoginDlgPasswordReal')
+                app.LoginDlgPasswordReal = '';
+            end
+            if isprop(app, 'LoginDlgPasswordField') ...
+                    && ~isempty(app.LoginDlgPasswordField) ...
+                    && isvalid(app.LoginDlgPasswordField)
+                try app.LoginDlgPasswordField.Data = struct('a', 'clear'); catch; end
+            end
+            if isprop(app, 'LoginDlgStatusLabel') ...
+                    && ~isempty(app.LoginDlgStatusLabel) ...
+                    && isvalid(app.LoginDlgStatusLabel)
+                try app.LoginDlgStatusLabel.Text = ''; catch; end
+            end
+        end
+
         function closeLoginDialog(app, src)
-            htmlFields = {'LoginDlgBaseUrlField', 'LoginDlgUsernameField', 'LoginDlgPasswordField'};
-            for i = 1:numel(htmlFields)
-                h = app.(htmlFields{i});
-                if ~isempty(h) && isvalid(h)
-                    h.DataChangedFcn = '';
-                end
-            end
-            % Same race in LabelController / ButtonController for the
-            % dialog's non-uihtml children (uilabel / uihyperlink /
-            % uibutton). Null any user callback so a stale binding is
-            % unreachable, then let the drawnow+pause+drawnow cycles
-            % below drain whatever the browser still has in flight.
+            % Reuse-not-delete: hide the dialog and reset sensitive
+            % state. The previous teardown ceremony existed to drain
+            % uihtml peerEvents before a delete() that no longer
+            % happens. With no delete there is no LabelController /
+            % PushButtonController lifecycle race to drain against, so
+            % the dialog can re-show in well under a second on the
+            % next click instead of paying the 4–18 s cold rebuild.
+            DialogBuilder.resetLoginDialog(app);
             if ~isempty(src) && isvalid(src)
-                try
-                    dlgKids = findall(src);
-                    for k = 1:numel(dlgKids)
-                        ch = dlgKids(k);
-                        if ~isvalid(ch); continue; end
-                        try; if isprop(ch, 'ButtonPushedFcn');     ch.ButtonPushedFcn     = ''; end; catch; end
-                        try; if isprop(ch, 'HyperlinkClickedFcn'); ch.HyperlinkClickedFcn = ''; end; catch; end
-                        try; if isprop(ch, 'ValueChangedFcn');     ch.ValueChangedFcn     = ''; end; catch; end
-                    end
-                catch
-                end
-            end
-            % drawnow + pause + drawnow drains in-transit client→server
-            % peerEvents from the uihtml bridge. A single drawnow leaves
-            % a window where MATLAB's HTMLController dispatches a queued
-            % event AFTER the model is deleted, producing the noisy
-            % "Invalid or deleted object" stack at
-            % getComponentToApplyButtonEvent line 110. The extra cycle
-            % covers non-uihtml children (uilabel mouse/focus events).
-            drawnow;
-            pause(0.05);
-            drawnow;
-            pause(0.05);
-            drawnow;
-            if ~isempty(src) && isvalid(src)
-                delete(src);
-            end
-            if isprop(app, 'LoginDialog')
-                app.LoginDialog = [];
+                try src.Visible = 'off'; catch; end
             end
         end
 

@@ -1011,10 +1011,24 @@ classdef ResultsViewModel < handle
             % rows otherwise. Ideal overlay is plotted as a dashed line
             % on the same axes when distribution_review carries an
             % `ideal` column.
-            if isempty(app.ResultsHistogramAxes) || ~isvalid(app.ResultsHistogramAxes)
-                return;
-            end
             ax = app.ResultsHistogramAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — ResultsScreen ships a uilabel placeholder
+                % to keep cold-mount fast. Pay the uiaxes construction
+                % cost here, inside the GET /api/jobs/:id/results window
+                % the user is already watching.
+                if isempty(app.ResultsHistogramGrid) || ~isvalid(app.ResultsHistogramGrid); return; end
+                if ~isempty(app.ResultsHistogramPlaceholder) && isvalid(app.ResultsHistogramPlaceholder)
+                    delete(app.ResultsHistogramPlaceholder);
+                    app.ResultsHistogramPlaceholder = [];
+                end
+                ax = uiaxes(app.ResultsHistogramGrid);
+                app.styleAxes(ax);
+                title(ax, '');
+                xlabel(ax, 'Basis state');
+                ylabel(ax, 'Probability');
+                app.ResultsHistogramAxes = ax;
+            end
             cla(ax);
             states = {}; measured = []; ideals = [];
             % Prefer histogram_data (richer, already sorted).

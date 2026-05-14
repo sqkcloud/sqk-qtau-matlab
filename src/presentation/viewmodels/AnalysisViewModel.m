@@ -3054,6 +3054,26 @@ classdef AnalysisViewModel < handle
             %   genuinely updates every time the circuit changes.
             app = obj.App;
             ax  = app.QVHeatmapAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — AnalysisScreen ships a uilabel placeholder
+                % to keep cold-mount fast. Pay the uiaxes construction
+                % cost here, inside the analysis-payload window the user
+                % is already watching.
+                if ~isempty(app.QVHeatmapGrid) && isvalid(app.QVHeatmapGrid)
+                    if ~isempty(app.QVHeatmapPlaceholder) && isvalid(app.QVHeatmapPlaceholder)
+                        delete(app.QVHeatmapPlaceholder);
+                        app.QVHeatmapPlaceholder = [];
+                    end
+                    ax = uiaxes(app.QVHeatmapGrid);
+                    ax.Layout.Row = 1; ax.Layout.Column = 1;
+                    app.styleAxes(ax);
+                    title(ax, Labels.get('analysis_qv_title', ...
+                        'Circuit Depth vs Width (Avg Result Fidelity)'));
+                    xlabel(ax, Labels.get('analysis_qv_xlabel', 'Circuit Depth'));
+                    ylabel(ax, Labels.get('analysis_qv_ylabel', 'Circuit Width (Qubits)'));
+                    app.QVHeatmapAxes = ax;
+                end
+            end
             try
                 % --- Extract current circuit metrics ----------------------
                 curDepth = JsonHelper.toDouble(JsonHelper.pick(data, {'depth'}));

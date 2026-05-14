@@ -40,6 +40,8 @@ classdef ResourceEstimatorViewModel < handle
         LblLatticeCycles
         LblTotalRuntime
 
+        PieGrid          % parent for the lazy uiaxes (built on first repaintPie)
+        PiePlaceholder   % uilabel shown until the uiaxes materialises
         PieAxes
         InsightLbl
     end
@@ -211,8 +213,28 @@ classdef ResourceEstimatorViewModel < handle
         end
 
         function repaintPie(obj)
-            r = obj.LastResult; ax = obj.PieAxes;
-            if isempty(r) || isempty(ax) || ~isvalid(ax); return; end
+            r = obj.LastResult;
+            if isempty(r); return; end
+            ax = obj.PieAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — buildPie ships a uilabel placeholder to
+                % keep screen-mount fast. Pay the uiaxes construction
+                % cost here, inside the Estimate-click flow the user
+                % is already watching.
+                if isempty(obj.PieGrid) || ~isvalid(obj.PieGrid); return; end
+                if ~isempty(obj.PiePlaceholder) && isvalid(obj.PiePlaceholder)
+                    delete(obj.PiePlaceholder);
+                    obj.PiePlaceholder = [];
+                end
+                ax = uiaxes(obj.PieGrid);
+                ax.Toolbar.Visible = 'off';
+                ax.Color  = Theme.COLOR_CARD;
+                ax.XColor = Theme.COLOR_MUTED;
+                ax.YColor = Theme.COLOR_MUTED;
+                ax.Box = 'off'; ax.XTick = []; ax.YTick = [];
+                try; disableDefaultInteractivity(ax); catch; end
+                obj.PieAxes = ax;
+            end
             cla(ax);
             slices = [r.dataQubits, r.ancillaQubits, max(0, r.factoryQubits)];
             labels = { ...

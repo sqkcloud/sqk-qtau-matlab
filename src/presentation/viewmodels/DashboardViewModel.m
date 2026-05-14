@@ -649,10 +649,25 @@ classdef DashboardViewModel < handle
         end
 
         function onJobsForTrend(obj, app, data)
-            if isempty(app.DashActivityAxes) || ~isvalid(app.DashActivityAxes)
-                return;
-            end
             ax = app.DashActivityAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — DashboardScreen ships a uilabel
+                % placeholder to keep cold-mount fast. Pay the uiaxes
+                % cost here, inside the listJobs async window the user
+                % is already watching via the dashboard spinner.
+                if isempty(app.DashActivityGrid) || ~isvalid(app.DashActivityGrid); return; end
+                if ~isempty(app.DashActivityPlaceholder) && isvalid(app.DashActivityPlaceholder)
+                    delete(app.DashActivityPlaceholder);
+                    app.DashActivityPlaceholder = [];
+                end
+                ax = uiaxes(app.DashActivityGrid);
+                ax.Layout.Row = 2; ax.Layout.Column = 1;
+                app.styleAxes(ax);
+                ax.Title.String  = '';
+                ax.XLabel.String = '';
+                ax.YLabel.String = '';
+                app.DashActivityAxes = ax;
+            end
             cla(ax);
             try
                 items = JsonHelper.extractListSafe(data, 'jobs');
