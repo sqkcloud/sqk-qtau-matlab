@@ -18,7 +18,7 @@ function ResourceEstimatorScreen(app)
     end
 
     g = uigridlayout(t, [5 1]);
-    g.RowHeight    = {76, 70, 180, 180, 'fit'};
+    g.RowHeight    = {76, 70, 182, 182, 'fit'};
     g.Padding      = Theme.GRID_PADDING;
     g.RowSpacing   = 10;
     g.BackgroundColor = Theme.COLOR_BG;
