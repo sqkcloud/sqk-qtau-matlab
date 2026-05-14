@@ -1,18 +1,17 @@
 % BenchmarkDashboardScreen  Populates the Benchmark Dashboard section panel.
 %
 %   Layout:
-%     Row 1 (34 px):   Toolbar — Backend selector + Refresh All + Export Data.
-%     Row 2 (120 px):  System Metrics KPI cards (5 cards, full width).
-%     Row 3 ('1.2x'):  Volumetric Fidelity Heatmap (left) |
-%                       Backend Scorecard Radar Chart (right).
-%     Row 4 ('1x'):    Prediction Calibration scatter (left) |
-%                       Benchmark Regression time-series (right).
+%     Row 1 (34 px):   Toolbar — Backend selector + source badge + Refresh All + Export Data.
+%     Row 2 (22 px):   Status line — "N jobs · M predictions · cal 18 h · source: ibm_runtime".
+%     Row 3 (130 px):  System Metrics KPI cards (5 cards, full width, with secondary unit line).
+%     Row 4 ('1.2x'):  Volumetric Fidelity Heatmap (left) | Backend Scorecard Radar (right).
+%     Row 5 ('1x'):    Prediction Calibration scatter (left) | Benchmark Regression line (right).
 function BenchmarkDashboardScreen(app)
     Logger.info('BenchmarkDashboardScreen', 'Building Benchmark Dashboard tab UI');
     t = app.createSectionPage('Benchmark Dashboard');
 
-    g = uigridlayout(t, [4 2]);
-    g.RowHeight     = {34, 120, '1.2x', '1x'};
+    g = uigridlayout(t, [5 2]);
+    g.RowHeight     = {34, 22, 130, '1.2x', '1x'};
     g.ColumnWidth   = {'1x', '1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -20,9 +19,9 @@ function BenchmarkDashboardScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Row 1: Toolbar ───────────────────────────────────────────────────
-    toolbar = uigridlayout(g, [1 4]);
+    toolbar = uigridlayout(g, [1 5]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 2];
-    toolbar.ColumnWidth = {90, '1x', 110, 110};
+    toolbar.ColumnWidth = {90, '1x', 120, 110, 110};
     toolbar.Padding = [0 0 0 0]; toolbar.ColumnSpacing = 8;
     toolbar.BackgroundColor = Theme.COLOR_BG;
 
@@ -38,22 +37,43 @@ function BenchmarkDashboardScreen(app)
     app.BenchmarkBackendDropdown.Layout.Column = 2;
     app.BenchmarkBackendDropdown.Tooltip = 'Select a backend to update per-backend metrics, scorecard, and regression charts.';
 
+    % Source badge — tinted label showing where system-metrics data came from
+    % (ibm_runtime / stub / unavailable). Hidden until first refresh populates it.
+    app.BenchmarkSourceBadge = uilabel(toolbar, ...
+        'Text', '', 'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'center', 'FontSize', 11, 'FontWeight', 'bold', ...
+        'FontColor', Theme.COLOR_LABEL, 'BackgroundColor', Theme.COLOR_CARD, ...
+        'Tooltip', 'Data source for System Benchmark Metrics.');
+    app.BenchmarkSourceBadge.Layout.Row = 1;
+    app.BenchmarkSourceBadge.Layout.Column = 3;
+
     app.BenchmarkRefreshButton = uibutton(toolbar, 'Text', ...
         [char(8635) ' Refresh All'], ...
         'ButtonPushedFcn', @(~,~) app.BenchmarkDashboardVm.onRefreshAll());
     app.BenchmarkRefreshButton.Layout.Row = 1;
-    app.BenchmarkRefreshButton.Layout.Column = 3;
+    app.BenchmarkRefreshButton.Layout.Column = 4;
     app.styleBtn(app.BenchmarkRefreshButton, 'primary');
 
     exportBtn = uibutton(toolbar, 'Text', [char(8681) ' Export Data'], ...
         'ButtonPushedFcn', @(~,~) app.BenchmarkDashboardVm.onExportData());
-    exportBtn.Layout.Row = 1; exportBtn.Layout.Column = 4;
+    exportBtn.Layout.Row = 1; exportBtn.Layout.Column = 5;
     app.styleBtn(exportBtn, 'ghost');
 
-    % ── Row 2: System Metrics KPI cards ──────────────────────────────────
+    % ── Row 2: Status line ──────────────────────────────────────────────
+    % WordWrap lets the long "source: … — …" tail wrap to a second line on
+    % narrow windows instead of silently truncating the right side.
+    app.BenchmarkStatusLabel = uilabel(g, ...
+        'Text', 'Select a backend and press Refresh All to load data.', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'center', ...
+        'WordWrap', 'on', 'Interpreter', 'none');
+    app.BenchmarkStatusLabel.Layout.Row = 2;
+    app.BenchmarkStatusLabel.Layout.Column = [1 2];
+
+    % ── Row 3: System Metrics KPI cards ──────────────────────────────────
     kpiPanel = uipanel(g, 'Title', 'System Benchmark Metrics', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    kpiPanel.Layout.Row = 2; kpiPanel.Layout.Column = [1 2];
+    kpiPanel.Layout.Row = 3; kpiPanel.Layout.Column = [1 2];
     kpiPanel.BackgroundColor = Theme.COLOR_CARD;
 
     kg = uigridlayout(kpiPanel, [1 5]);
@@ -62,11 +82,17 @@ function BenchmarkDashboardScreen(app)
     kg.BackgroundColor = Theme.COLOR_CARD;
 
     cardNames   = {'Quantum Volume', 'CLOPS', 'Layer Fidelity', 'EPLG', 'Overall Score'};
+    % Keep unit strings ASCII + short: Unicode en-dashes and multiplication
+    % signs render wider than most chars, and the Overall Score card is
+    % narrowest on the right edge of the row (last '1x' column). Replaced
+    % "0 - 10 (= LF x 10)" with "0 - 10 scale" to fit.
+    cardUnits   = {'log2', 'kilo ops/s', '0 - 1', '0 - 1', '0 - 10'};
     cardDefault = {'--','--','--','--','--'};
     cardAccents = {Theme.COLOR_PRIMARY, Theme.COLOR_SUCCESS, ...
                    [0.50 0.25 0.72], [0.80 0.50 0.10], [0.10 0.58 0.56]};
 
     app.BenchmarkKpiLabels = cell(1, 5);
+    app.BenchmarkKpiUnits  = cell(1, 5);
     for i = 1:5
         p = uipanel(kg, 'Title', '', 'BorderType', 'line', ...
             'BorderColor', Theme.COLOR_DIVIDER);
@@ -81,9 +107,9 @@ function BenchmarkDashboardScreen(app)
         strip.Layout.Row = 1; strip.Layout.Column = 1;
         strip.BackgroundColor = cardAccents{i};
 
-        inner = uigridlayout(pg, [2 1]);
+        inner = uigridlayout(pg, [3 1]);
         inner.Layout.Row = 1; inner.Layout.Column = 2;
-        inner.RowHeight = {18, '1x'}; inner.Padding = [8 8 8 8];
+        inner.RowHeight = {18, '1x', 16}; inner.Padding = [8 8 8 6];
         inner.BackgroundColor = Theme.COLOR_CARD;
 
         l1 = uilabel(inner, 'Text', cardNames{i}, ...
@@ -94,25 +120,35 @@ function BenchmarkDashboardScreen(app)
             'FontWeight', 'bold', 'FontSize', 17, 'WordWrap', 'on');
         l2.Layout.Row = 2; l2.Layout.Column = 1;
         app.BenchmarkKpiLabels{i} = l2;
+
+        l3 = uilabel(inner, 'Text', cardUnits{i}, ...
+            'FontColor', Theme.COLOR_MUTED, 'FontSize', 10);
+        l3.Layout.Row = 3; l3.Layout.Column = 1;
+        app.BenchmarkKpiUnits{i} = l3;
     end
 
-    % ── Row 3 Left: Volumetric Fidelity Heatmap ─────────────────────────
+    % ── Row 4 Left: Volumetric Fidelity Heatmap ─────────────────────────
     volPanel = uipanel(g, 'Title', 'Volumetric Fidelity Map', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    volPanel.Layout.Row = 3; volPanel.Layout.Column = 1;
+    volPanel.Layout.Row = 4; volPanel.Layout.Column = 1;
     volPanel.BackgroundColor = Theme.COLOR_CARD;
     vpg = uigridlayout(volPanel, [1 1]);
     vpg.Padding = [10 10 10 10]; vpg.BackgroundColor = Theme.COLOR_CARD;
-    app.VolumetricAxes = uiaxes(vpg);
-    title(app.VolumetricAxes, 'Volumetric Fidelity Map');
-    xlabel(app.VolumetricAxes, 'Circuit Depth');
-    ylabel(app.VolumetricAxes, 'Circuit Width');
-    app.styleAxes(app.VolumetricAxes);
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host an empty heatmap. Promoted to a real uiaxes on first
+    % paint call.
+    volPlaceholder = uilabel(vpg, ...
+        'Text', 'Volumetric fidelity map appears here after benchmark runs.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.VolumetricGrid        = vpg;
+    app.VolumetricPlaceholder = volPlaceholder;
+    app.VolumetricAxes        = [];
 
-    % ── Row 3 Right: Backend Scorecard Radar Chart ───────────────────────
+    % ── Row 4 Right: Backend Scorecard Radar Chart ───────────────────────
     radarPanel = uipanel(g, 'Title', 'Backend Scorecard', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    radarPanel.Layout.Row = 3; radarPanel.Layout.Column = 2;
+    radarPanel.Layout.Row = 4; radarPanel.Layout.Column = 2;
     radarPanel.BackgroundColor = Theme.COLOR_CARD;
     rpg = uigridlayout(radarPanel, [1 1]);
     rpg.Padding = [10 10 10 10]; rpg.BackgroundColor = Theme.COLOR_CARD;
@@ -120,33 +156,39 @@ function BenchmarkDashboardScreen(app)
     app.ScorecardAxes.ThetaTick = [0 90 180 270];
     app.ScorecardAxes.ThetaTickLabel = {'Capacity','Scalability','Accuracy','Runtime'};
     app.ScorecardAxes.RLim = [0 10];
-    title(app.ScorecardAxes, 'Backend Scorecard');
+    title(app.ScorecardAxes, 'Backend Scorecard', 'Interpreter', 'none');
 
-    % ── Row 4 Left: Prediction Calibration scatter ───────────────────────
+    % ── Row 5 Left: Prediction Calibration scatter ───────────────────────
     calPanel = uipanel(g, 'Title', 'Prediction Calibration', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    calPanel.Layout.Row = 4; calPanel.Layout.Column = 1;
+    calPanel.Layout.Row = 5; calPanel.Layout.Column = 1;
     calPanel.BackgroundColor = Theme.COLOR_CARD;
     cpg = uigridlayout(calPanel, [1 1]);
     cpg.Padding = [10 10 10 10]; cpg.BackgroundColor = Theme.COLOR_CARD;
-    app.CalibrationAxes = uiaxes(cpg);
-    title(app.CalibrationAxes, 'Predicted vs Actual Fidelity');
-    xlabel(app.CalibrationAxes, 'Predicted Fidelity');
-    ylabel(app.CalibrationAxes, 'Actual Fidelity');
-    app.styleAxes(app.CalibrationAxes);
+    % Lazy uiaxes — see Volumetric note above.
+    calPlaceholder = uilabel(cpg, ...
+        'Text', 'Prediction calibration scatter appears here after benchmark runs.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.CalibrationGrid        = cpg;
+    app.CalibrationPlaceholder = calPlaceholder;
+    app.CalibrationAxes        = [];
 
-    % ── Row 4 Right: Benchmark Regression time-series ────────────────────
+    % ── Row 5 Right: Benchmark Regression time-series ────────────────────
     regPanel = uipanel(g, 'Title', 'Benchmark Regression', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    regPanel.Layout.Row = 4; regPanel.Layout.Column = 2;
+    regPanel.Layout.Row = 5; regPanel.Layout.Column = 2;
     regPanel.BackgroundColor = Theme.COLOR_CARD;
     rrpg = uigridlayout(regPanel, [1 1]);
     rrpg.Padding = [10 10 10 10]; rrpg.BackgroundColor = Theme.COLOR_CARD;
-    app.RegressionAxes = uiaxes(rrpg);
-    title(app.RegressionAxes, 'Fidelity over Time');
-    xlabel(app.RegressionAxes, 'Time');
-    ylabel(app.RegressionAxes, 'Fidelity');
-    app.styleAxes(app.RegressionAxes);
+    % Lazy uiaxes — see Volumetric note above.
+    regPlaceholder = uilabel(rrpg, ...
+        'Text', 'Benchmark regression time series appears here after benchmark runs.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.RegressionGrid        = rrpg;
+    app.RegressionPlaceholder = regPlaceholder;
+    app.RegressionAxes        = [];
 
     Logger.info('BenchmarkDashboardScreen', 'Benchmark Dashboard tab built');
 end

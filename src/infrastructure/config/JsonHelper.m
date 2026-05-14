@@ -76,6 +76,19 @@ classdef JsonHelper
         % pickOne  Navigate a single dotted path, return toStr result.
         function value = pickOne(data, path)
             value  = "";
+            % Fast path — single-segment field name (no dots). Avoids
+            % the string()/split() round-trip + numel-loop overhead,
+            % which adds up across 4–7 picks per row × N rows in the
+            % table renderers below. ~95% of callsites pass a simple
+            % field name here ('name', 'job_id', 'status', ...).
+            pathChar = char(path);
+            if ~any(pathChar == '.')
+                if isstruct(data) && isfield(data, pathChar)
+                    value = JsonHelper.toStr(data.(pathChar));
+                end
+                return;
+            end
+            % Dotted path — split-and-walk (existing behaviour).
             parts  = split(string(path), '.');
             cursor = data;
             for k = 1:numel(parts)
@@ -89,12 +102,52 @@ classdef JsonHelper
             value = JsonHelper.toStr(cursor);
         end
 
+        % pickNumeric  Resolve a dotted path and coerce to a scalar double.
+        %   Returns `default` when the path is missing, empty, or not numerically
+        %   convertible. Handles struct/char/string/numeric values uniformly so
+        %   ViewModels can read JSON fields that webread may decode as any of
+        %   these types.
+        function value = pickNumeric(data, path, default)
+            if nargin < 3; default = NaN; end
+            [found, raw] = JsonHelper.pickRawOne(JsonHelper.decodeIfJson(data), string(path));
+            if ~found
+                value = default; return;
+            end
+            try
+                if isnumeric(raw) || islogical(raw)
+                    if isempty(raw); value = default; return; end
+                    value = double(raw(1));
+                elseif ischar(raw) || isstring(raw)
+                    v = str2double(char(raw));
+                    if isnan(v); value = default; else; value = v; end
+                else
+                    value = default;
+                end
+            catch
+                value = default;
+            end
+        end
+
         % pickRawOne  Navigate a single dotted path, return (found, raw).
         %   found=false when the path does not resolve, or when it resolves
         %   to an empty value (JSON null decodes to []).
         function [found, value] = pickRawOne(data, path)
             found = false;
             value = [];
+            % Fast path — single-segment field name (no dots). Same
+            % rationale as pickOne above: skip the string()/split()
+            % cost on the common case used by every *toRows mapper.
+            pathChar = char(path);
+            if ~any(pathChar == '.')
+                if isstruct(data) && isfield(data, pathChar)
+                    raw = data.(pathChar);
+                    if isempty(raw); return; end
+                    found = true;
+                    value = raw;
+                end
+                return;
+            end
+            % Dotted path — split-and-walk (existing behaviour).
             parts  = split(string(path), '.');
             cursor = data;
             for k = 1:numel(parts)
@@ -153,57 +206,170 @@ classdef JsonHelper
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
                 q = JsonHelper.pick(items(i), {'num_qubits','qubits','n_qubits'});
-                rows{i,2} = JsonHelper.toDouble(q);
-                rows{i,3} = char(JsonHelper.pick(items(i), {'status','operational_status'}));
+                % int32 (not double) so uitable renders qubit counts as
+                % plain integers (156) rather than the 4-decimal default
+                % MATLAB applies to doubles (156.0000). Qubit counts are
+                % always integer; fractional display was a category error.
+                qd = JsonHelper.toDouble(q);
+                if isnan(qd); qd = 0; end
+                rows{i,2} = int32(qd);
+                % Uppercase Status to match Role + the Jobs / Cutting
+                % Batches convention (ONLINE / OFFLINE / MAINTENANCE).
+                rows{i,3} = upper(char(JsonHelper.pick(items(i), {'status','operational_status'})));
                 f = JsonHelper.pick(items(i), {'predicted_fidelity','fidelity','avg_fidelity'});
                 rows{i,4} = JsonHelper.toDouble(f);
                 rows{i,5} = char(JsonHelper.pick(items(i), {'queue_length','queue','queue_status'}));
-                rows{i,6} = char(JsonHelper.pick(items(i), {'role','notes','description'}));
+                % Uppercase the Role column to match the convention used
+                % on Status (Jobs screen) and Status (Cutting Batches).
+                rows{i,6} = upper(char(JsonHelper.pick(items(i), {'role','notes','description'})));
             end
         end
 
         % jobsToRows  Map /jobs response → 5-column cell matrix
         %   Job ID | Backend | Status | Progress | Created
-        function rows = jobsToRows(data)
-            rows  = cell(0, 5);
+        function rows = jobsToRows(data, circuitNameMap)
+            % 7-column layout: Job ID | Circuit | Backend | Status |
+            % Progress | Created | Mitigation. `circuitNameMap`
+            % (optional) is a containers.Map keyed by circuit_id →
+            % display name; when supplied, the Circuit cell shows the
+            % name, otherwise it falls back to the raw circuit_id.
+            %
+            % Column 7 (Mitigation, Phase 5.2) reads from each job's
+            % mitigation_plan.name field — the resolved QEM ladder
+            % level applied at submit time (e.g. 'standard',
+            % 'aggressive'). Empty string for jobs persisted before
+            % Phase 2.2 or for direct API calls that bypassed
+            % MitigationService.
+            %
+            % Rows are sorted by Created (column 6) descending so the
+            % most recent submission always lands at the top of the
+            % Job Monitoring Dashboard. The backend's
+            % MongoIBMJobRepository.list_by_project already does this
+            % server-side; we re-sort defensively here so the UI is
+            % correct even against a stale API container, a third-party
+            % caller that hits /api/jobs without the sort param, or a
+            % malformed doc with a missing submitted_at.
+            if nargin < 2; circuitNameMap = containers.Map(); end
+            rows  = cell(0, 7);
             items = JsonHelper.extractListSafe(data, 'jobs');
             n = numel(items);
             if n == 0; return; end
-            rows = cell(n, 5);
+            rows = cell(n, 7);
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'job_record_id','job_id','id'}));
-                rows{i,2} = char(JsonHelper.pick(items(i), {'backend_name','backend'}));
-                rows{i,3} = char(JsonHelper.pick(items(i), {'status'}));
+
+                cid = char(JsonHelper.pick(items(i), {'circuit_id'}));
+                if isKey(circuitNameMap, cid)
+                    circName = circuitNameMap(cid);
+                else
+                    circName = cid;
+                end
+                % Tag cutting children so the user can see which jobs
+                % belong to a Circuit Cutting batch instead of seeing
+                % anonymous standalone-looking rows. The batch_id and
+                % cut_role fields land on the JobStatusResponse only
+                % when the job was submitted via
+                % JobService.submit_cutting_subcircuit.
+                bid = char(JsonHelper.pick(items(i), {'batch_id'}, ''));
+                if ~isempty(bid)
+                    role = char(JsonHelper.pick(items(i), {'cut_role'}, ''));
+                    label = role;
+                    if startsWith(role, 'label=')
+                        label = char(extractAfter(role, 'label='));
+                    end
+                    if isempty(label)
+                        rows{i,2} = sprintf('%c %s', char(9986), circName);
+                    else
+                        rows{i,2} = sprintf('%c %s (%s)', char(9986), circName, label);
+                    end
+                else
+                    rows{i,2} = circName;
+                end
+
+                rows{i,3} = char(JsonHelper.pick(items(i), {'backend_name','backend'}));
+                rows{i,4} = upper(char(JsonHelper.pick(items(i), {'status'})));
                 pctStr = string(JsonHelper.pick(items(i), {'progress_pct','progress','completion_pct'}));
                 pctNum = str2double(pctStr);
                 if ~isnan(pctNum)
                     % Backend returns 0-100 (e.g. queued=10, running=50);
                     % legacy callers may send 0-1, so scale up those too.
                     if pctNum <= 1.0 && pctNum > 0; pctNum = pctNum * 100; end
-                    rows{i,4} = sprintf('%.0f%%', pctNum);
+                    rows{i,5} = sprintf('%.0f%%', pctNum);
                 else
-                    rows{i,4} = char(pctStr);
+                    rows{i,5} = char(pctStr);
                 end
-                rows{i,5} = char(JsonHelper.pick(items(i), {'created_at','submitted_at'}));
+                rows{i,6} = char(JsonHelper.pick(items(i), {'created_at','submitted_at'}));
+
+                % Column 7: Mitigation badge. Read mitigation_plan.name
+                % (Phase 2.2 schema) → display string. Falls back to
+                % the level-id integer when only mitigation_plan.level
+                % is present, then to empty string. Older jobs without
+                % the mitigation_plan field render as empty cells.
+                rows{i,7} = '';
+                try
+                    mp = JsonHelper.pick(items(i), {'mitigation_plan'}, struct());
+                    if isstruct(mp) || isa(mp, 'containers.Map')
+                        nm = char(string(JsonHelper.pick(mp, {'name'}, '')));
+                        if isempty(nm)
+                            % No name → fall back to the integer level
+                            % so Custom (-1) and unknown roles still
+                            % render something the operator can identify.
+                            lvl = JsonHelper.pick(mp, {'level'}, []);
+                            if isnumeric(lvl) && ~isempty(lvl)
+                                nm = sprintf('level=%d', int32(lvl));
+                            end
+                        end
+                        rows{i,7} = char(nm);
+                    end
+                catch
+                    rows{i,7} = '';
+                end
+            end
+
+            % Sort newest-first by the Created column. ISO-8601 strings
+            % sort lexicographically in the same order as chronologically
+            % so a plain string sort is correct; missing/empty values
+            % sort to the bottom of the list.
+            try
+                created = string(rows(:, 6));
+                % Empty strings sort *before* any ISO date in ascending
+                % order; flip to descending then push empties to the end
+                % by replacing them with a sentinel that sorts lowest.
+                key = created;
+                key(strlength(key) == 0) = "";
+                [~, order] = sort(key, 'descend');
+                rows = rows(order, :);
+            catch
+                % If anything about the Created column is unexpected,
+                % fall back to insertion order rather than crash.
             end
         end
 
         % resultsToRows  Map job results → 5-column cell matrix
         %   Metric | Measured | Predicted | Ideal | Notes
+        %
+        % Reads the `measured_vs_predicted` array from the
+        % `/api/jobs/{id}/results` (ResultSummary) response. Falls back
+        % to the legacy `metrics` field name for older payload shapes.
         function rows = resultsToRows(data)
             rows = cell(0, 5);
             try
                 data = JsonHelper.decodeIfJson(data);
                 metrics = {};
                 if isstruct(data)
-                    if isfield(data, 'metrics'); metrics = data.metrics; end
+                    if isfield(data, 'measured_vs_predicted')
+                        metrics = data.measured_vs_predicted;
+                    elseif isfield(data, 'metrics')
+                        metrics = data.metrics;
+                    end
                 end
                 if isempty(metrics); return; end
-                n    = numel(metrics);
+                if iscell(metrics); items = metrics; else; items = num2cell(metrics(:).'); end
+                n    = numel(items);
                 rows = cell(n, 5);
                 for i = 1:n
-                    m = metrics(i);
-                    rows{i,1} = char(JsonHelper.pick(m, {'name','metric'}));
+                    m = items{i};
+                    rows{i,1} = char(JsonHelper.pick(m, {'metric','name'}));
                     rows{i,2} = JsonHelper.toDouble(JsonHelper.pick(m, {'measured'}));
                     rows{i,3} = JsonHelper.toDouble(JsonHelper.pick(m, {'predicted'}));
                     rows{i,4} = JsonHelper.toDouble(JsonHelper.pick(m, {'ideal'}));
@@ -211,6 +377,38 @@ classdef JsonHelper
                 end
             catch ME
                 Logger.warn('JsonHelper', 'resultsToRows() failed: %s', ME.message);
+            end
+        end
+
+        % distributionToRows  Map distribution_review → 4-column cell matrix
+        %   State | Measured | Predicted | Ideal
+        %
+        % Reads the `distribution_review` array from the ResultSummary
+        % payload — the per-output-state probability comparison the
+        % Distribution Review table on the Results screen renders.
+        function rows = distributionToRows(data)
+            rows = cell(0, 4);
+            try
+                data = JsonHelper.decodeIfJson(data);
+                items = {};
+                if isstruct(data) && isfield(data, 'distribution_review')
+                    raw = data.distribution_review;
+                    if iscell(raw); items = raw;
+                    elseif ~isempty(raw); items = num2cell(raw(:).');
+                    end
+                end
+                if isempty(items); return; end
+                n = numel(items);
+                rows = cell(n, 4);
+                for i = 1:n
+                    it = items{i};
+                    rows{i,1} = char(JsonHelper.pick(it, {'state','bitstring','outcome'}));
+                    rows{i,2} = JsonHelper.toDouble(JsonHelper.pick(it, {'measured'}));
+                    rows{i,3} = JsonHelper.toDouble(JsonHelper.pick(it, {'predicted'}));
+                    rows{i,4} = JsonHelper.toDouble(JsonHelper.pick(it, {'ideal'}));
+                end
+            catch ME
+                Logger.warn('JsonHelper', 'distributionToRows() failed: %s', ME.message);
             end
         end
 
@@ -239,8 +437,16 @@ classdef JsonHelper
             rows = cell(n, 5);
             for i = 1:n
                 rows{i,1} = char(JsonHelper.pick(items(i), {'name','strategy','strategy_name'}));
-                rows{i,2} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'depth','depth_after'}));
-                rows{i,3} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'two_qubit_gates','two_qubit_gates_after','cx_count','num_2q'}));
+                % Depth and 2Q-gate counts are integer-valued — cast to
+                % int32 so uitable renders '303' instead of '303.0000'
+                % (default 4-decimal format for double cells). Same fix
+                % as the Backends Qubits column.
+                d  = JsonHelper.toDouble(JsonHelper.pick(items(i), {'depth','depth_after'}));
+                if isnan(d); d = 0; end
+                rows{i,2} = int32(d);
+                g = JsonHelper.toDouble(JsonHelper.pick(items(i), {'two_qubit_gates','two_qubit_gates_after','cx_count','num_2q'}));
+                if isnan(g); g = 0; end
+                rows{i,3} = int32(g);
                 rows{i,4} = JsonHelper.toDouble(JsonHelper.pick(items(i), {'predicted_fidelity','fidelity'}));
                 rows{i,5} = char(JsonHelper.pick(items(i), {'comment','notes','description'}));
             end

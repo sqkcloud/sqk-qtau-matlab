@@ -7,6 +7,11 @@ classdef CircuitsViewModel < handle
 
     properties
         LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+        % Set by prefetchCircuits while a parallel-fetch dispatched by
+        % NavigationManager.kickPrefetch is awaiting its callback.
+        % autoLoadScreen reads this and SKIPS the redundant
+        % onLoadCircuits call so we never double-fetch.
+        PrefetchInFlight (1,1) logical = false
     end
 
     properties (Access = private)
@@ -30,13 +35,55 @@ classdef CircuitsViewModel < handle
 
         function onLoadCircuits(obj)
             app = obj.App;
-            if ~app.State.isAuthenticated() || ~app.State.hasProject()
+            % Precondition checks — split so the empty-state banner can
+            % explain *why* the table is empty (auth vs no-project).
+            if ~app.State.isAuthenticated()
                 app.CircuitsTable.Data = {};
                 obj.RowCircuitIds = {};
                 obj.RowCircuits   = {};
+                obj.setEmptyStateMessage('circuits_empty_not_auth');
                 obj.updatePageLabel();
                 return;
             end
+            if ~app.State.hasProject()
+                app.CircuitsTable.Data = {};
+                obj.RowCircuitIds = {};
+                obj.RowCircuits   = {};
+                obj.setEmptyStateMessage('circuits_empty_no_project');
+                obj.updatePageLabel();
+                return;
+            end
+            % Clear the banner before fetching — a stale message from a
+            % previous open shouldn't linger while the new load is in flight.
+            obj.setEmptyStateMessage('');
+            obj.dispatchCircuitsFetch();
+        end
+
+        function prefetchCircuits(obj)
+            % Called by NavigationManager.kickPrefetch BEFORE the screen
+            % builder runs. Dispatches the listCircuits HTTP call in
+            % parallel with the synchronous widget construction + first
+            % paint of the new panel — which together take ~1-1.5 s on
+            % first nav and otherwise serialize ahead of the fetch.
+            %
+            % The AsyncRunner polling timer cannot fire its callback
+            % until the main thread is idle (after ensureScreenBuilt +
+            % autoLoadScreen finish), so CircuitsTable /
+            % CircuitsEmptyStateLabel are guaranteed to exist by the
+            % time onLoadCircuitsComplete runs.
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            if ~app.State.hasProject();      return; end
+            obj.PrefetchInFlight = true;
+            obj.dispatchCircuitsFetch();
+        end
+
+        function dispatchCircuitsFetch(obj)
+            % Internal: fires the AsyncRunner.run with no UI writes.
+            % Shared by onLoadCircuits (UI exists, precondition writes
+            % already done) and prefetchCircuits (UI does not exist yet
+            % — must NOT touch CircuitsTable / EmptyStateLabel).
+            app = obj.App;
             app.logEvent('API', sprintf('GET /api/circuits?skip=%d&limit=%d — project: %s', ...
                 obj.PageSkip, obj.PageLimit, char(app.State.currentProjectId)));
             skip  = obj.PageSkip;
@@ -150,14 +197,12 @@ classdef CircuitsViewModel < handle
             curDp   = JsonHelper.safeField(c, 'depth', '');
             if isnumeric(curDp); curDp = num2str(curDp); else; curDp = char(string(curDp)); end
 
-            % Fetch full circuit record (includes raw_content)
-            curContent = '';
-            try
-                full = app.CircuitSvc.getCircuit(cid, app.State.authToken);
-                curContent = char(string(JsonHelper.safeField(full, 'raw_content', '')));
-            catch
-                % raw_content not available — leave empty
-            end
+            % Open the dialog immediately with a placeholder so the user
+            % gets instant feedback on the click. The full circuit record
+            % (raw_content) is fetched asynchronously below and back-filled
+            % into contentField once it lands. Was a synchronous GET that
+            % froze the parent window for ~0.3-1.5 s on every Edit click.
+            curContent = Labels.get('circuits_edit_loading_content', '(Loading content...)');
 
             % ── Build modal dialog ───────────────────────────────────
             figPos = app.UIFigure.Position;
@@ -314,6 +359,18 @@ classdef CircuitsViewModel < handle
                 'FontSize', 11, 'FontColor', Theme.COLOR_DANGER, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
             statusLbl.Layout.Row = 14;
+
+            % Async raw_content fetch — dialog is fully built, so the
+            % contentField handle is safe to capture. The success
+            % callback only updates the textarea if the dialog is still
+            % open (user might cancel mid-flight).
+            svc   = app.CircuitSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.getCircuit(cid, token), ...
+                @(full) obj.onEditDialogContentLoaded(contentField, full), ...
+                @(ME) Logger.debug('CircuitsViewModel', ...
+                    'Edit dialog raw_content fetch: %s', ME.message));
         end
 
         function onDeleteCircuit(obj, row)
@@ -371,24 +428,59 @@ classdef CircuitsViewModel < handle
                 return;
             end
 
-            try
-                statusLbl.Text = Labels.get('circuits_status_saving', 'Saving...');
-                statusLbl.FontColor = Theme.COLOR_MUTED;
-                drawnow;
-                app.CircuitSvc.updateCircuit(cid, patch, app.State.authToken);
-                app.logEvent('API', sprintf('Circuit updated: %s', cid));
+            statusLbl.Text = Labels.get('circuits_status_saving', 'Saving...');
+            statusLbl.FontColor = Theme.COLOR_MUTED;
+            drawnow;
+
+            % Async — the PATCH /api/circuits/{id} round-trip was
+            % freezing the Edit dialog (and the parent window) for the
+            % duration of the request. Success/error callbacks run on
+            % the main thread and have direct access to dlg/statusLbl
+            % via the closure.
+            svc   = app.CircuitSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.updateCircuit(cid, patch, token), ...
+                @(~)  obj.onSaveCircuitComplete(app, dlg, cid), ...
+                @(ME) obj.onSaveCircuitError(app, statusLbl, ME));
+        end
+
+        function onSaveCircuitComplete(obj, app, dlg, cid)
+            app.logEvent('API', sprintf('Circuit updated: %s', cid));
+            % Circuit metadata changed — invalidate shared cache so
+            % dropdowns elsewhere pick up the rename/format/category.
+            try; app.State.invalidateCircuitsListCache(); catch; end
+            if ~isempty(dlg) && isvalid(dlg)
                 delete(dlg);
-                obj.onLoadCircuits();
-            catch ME
+            end
+            obj.onLoadCircuits();
+        end
+
+        function onSaveCircuitError(~, app, statusLbl, ME)
+            if ~isempty(statusLbl) && isvalid(statusLbl)
                 statusLbl.Text = sprintf('%s %s', Labels.get('circuits_error_save_failed', 'Save failed:'), ME.message);
                 statusLbl.FontColor = Theme.COLOR_DANGER;
-                app.logEvent('ERROR', sprintf('updateCircuit FAILED: %s', ME.message));
+            end
+            app.logEvent('ERROR', sprintf('updateCircuit FAILED: %s', ME.message));
+        end
+
+        function onEditDialogContentLoaded(~, contentField, full)
+            % Back-fill the Edit dialog's QASM textarea once the
+            % async getCircuit lands. The user may have closed the
+            % dialog in the meantime, so guard the handle.
+            if isempty(contentField) || ~isvalid(contentField); return; end
+            try
+                content = char(string(JsonHelper.safeField(full, 'raw_content', '')));
+                contentField.Value = content;
+            catch ME
+                Logger.debug('CircuitsViewModel', ...
+                    'Edit dialog content set: %s', ME.message);
             end
         end
 
         function doDeleteCircuit(obj, cid, ~)
             app = obj.App;
-            app.showLoading('Deleting circuit...');
+            app.showLoading(Labels.get('loading_circuits_delete', 'Deleting circuit...'));
             svc   = app.CircuitSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...
@@ -398,14 +490,22 @@ classdef CircuitsViewModel < handle
         end
 
         function onLoadCircuitsComplete(obj, app, data)
+            obj.PrefetchInFlight = false;
+            app.hideLoading();
             circuits = JsonHelper.extractList(data, 'circuits');
             if isempty(circuits)
                 app.CircuitsTable.Data = {};
                 obj.RowCircuitIds = {};
                 obj.RowCircuits   = {};
+                % Project is active but the API returned no circuits.
+                % Distinguish from "no project" by showing the upload-hint
+                % message instead of the welcome-screen-hint message.
+                obj.setEmptyStateMessage('circuits_empty_no_circuits');
                 obj.updatePageLabel();
                 return;
             end
+            % Data loaded — clear any previous empty-state banner.
+            obj.setEmptyStateMessage('');
             if isstruct(circuits)
                 circuits = num2cell(circuits);
             end
@@ -459,6 +559,8 @@ classdef CircuitsViewModel < handle
         end
 
         function onLoadCircuitsError(obj, app, ME)
+            obj.PrefetchInFlight = false;
+            app.hideLoading();
             app.logEvent('ERROR', sprintf('listCircuitsPaged FAILED: %s', ME.message));
             obj.updatePageLabel();
         end
@@ -466,6 +568,8 @@ classdef CircuitsViewModel < handle
         function onDeleteComplete(obj, app, cid)
             app.logEvent('API', sprintf('Circuit deleted: %s', cid));
             app.State.logActivity(sprintf('Delete circuit — %s', char(cid)), 'Success');
+            % Circuit list shrank — invalidate shared cache.
+            try; app.State.invalidateCircuitsListCache(); catch; end
             app.hideLoading();
             obj.onLoadCircuits();
         end
@@ -494,6 +598,32 @@ classdef CircuitsViewModel < handle
                     app.CircuitsNextBtn.Enable = size(tData, 1) >= obj.PageLimit;
                 end
             end
+        end
+
+        function setEmptyStateMessage(obj, key)
+            % Drive the empty-state banner that sits above the table.
+            % `key` is a labels.properties key; pass '' to clear.  The
+            % isprop / isvalid guards keep this safe against partially-
+            % built screens (lazy nav) and stub apps used by tests.
+            app = obj.App;
+            if ~isprop(app, 'CircuitsEmptyStateLabel'); return; end
+            if isempty(app.CircuitsEmptyStateLabel); return; end
+            if ~isvalid(app.CircuitsEmptyStateLabel); return; end
+            if isempty(key)
+                app.CircuitsEmptyStateLabel.Text = '';
+                return;
+            end
+            switch key
+                case 'circuits_empty_not_auth'
+                    fallback = 'Sign in to view circuits.';
+                case 'circuits_empty_no_project'
+                    fallback = 'No project selected — pick one on the Welcome screen first.';
+                case 'circuits_empty_no_circuits'
+                    fallback = 'No circuits in this project yet — go to Upload to add one.';
+                otherwise
+                    fallback = '';
+            end
+            app.CircuitsEmptyStateLabel.Text = Labels.get(key, fallback);
         end
     end
 end

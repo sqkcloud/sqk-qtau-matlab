@@ -10,20 +10,27 @@ function CircuitsScreen(app)
     t = app.createSectionPage('Circuits');
 
     g = uigridlayout(t, [2 1]);
-    g.RowHeight     = {'1x', 48};
-    g.Padding       = Theme.GRID_PADDING;
+    g.RowHeight     = {'1x', 54};
+    g.Padding       = [16 16 16 16];
     g.RowSpacing    = 10;
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Circuits table (full width) ───────────────────────────────────────
-    tablePanel = uipanel(g, 'Title', Labels.get('circuits_panel_table', 'Project Circuits'), ...
+    % Drop the inline 'Project Circuits' title — redundant with the
+    % outer screen header and its ~22 px title strip is what created
+    % the visual asymmetry between the top border and the search bar.
+    tablePanel = uipanel(g, 'Title', '', ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     tablePanel.Layout.Row = 1; tablePanel.Layout.Column = 1;
     tablePanel.BackgroundColor = Theme.COLOR_CARD;
 
-    tg = uigridlayout(tablePanel, [2 1]);
-    tg.RowHeight = {32, '1x'};
-    tg.Padding = Theme.KPI_INNER_PAD; tg.RowSpacing = 6; tg.BackgroundColor = Theme.COLOR_CARD;
+    tg = uigridlayout(tablePanel, [3 1]);
+    % Empty-state row collapsed to 0: 'fit' was preserving the uilabel's
+    % ~20 px minimum height even when its text was empty, which inflated
+    % the search→table gap. Collapsing to 0 makes the gap exactly
+    % RowSpacing × 2 = 10 px, matching the top and bottom paddings.
+    tg.RowHeight = {36, 0, '1x'};
+    tg.Padding = [10 10 10 10]; tg.RowSpacing = 5; tg.BackgroundColor = Theme.COLOR_CARD;
 
     % Search bar
     searchGrid = uigridlayout(tg, [1 2]);
@@ -39,6 +46,19 @@ function CircuitsScreen(app)
         'ButtonPushedFcn', @(~,~)app.CircuitsVm.onSearch(app.CircuitsSearchField.Value));
     app.styleBtn(searchBtn, 'ghost');
 
+    % Empty-state banner above the table — populated by
+    % CircuitsViewModel.setEmptyStateMessage based on AppState
+    % (auth + active project) and the API response.  When Text is
+    % empty the row collapses ('fit'), so this is invisible during
+    % normal operation.
+    app.CircuitsEmptyStateLabel = uilabel(tg, ...
+        'Text', '', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED, ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'WordWrap', 'on');
+    app.CircuitsEmptyStateLabel.Layout.Row = 2;
+    app.CircuitsEmptyStateLabel.Layout.Column = 1;
+
     app.CircuitsTable = uitable(tg, ...
         'ColumnName', { ...
             '', ...
@@ -53,7 +73,7 @@ function CircuitsScreen(app)
         'RowName', {}, ...
         'SelectionType', 'row', ...
         'CellSelectionCallback', @(src,evt)app.CircuitsVm.onCellSelected(src, evt));
-    app.CircuitsTable.Layout.Row = 2; app.CircuitsTable.Layout.Column = 1;
+    app.CircuitsTable.Layout.Row = 3; app.CircuitsTable.Layout.Column = 1;
     app.CircuitsTable.FontSize = 12;
     app.CircuitsTable.ColumnSortable = true;
     addStyle(app.CircuitsTable, uistyle('HorizontalAlignment','center'), 'column', 1);
@@ -67,12 +87,13 @@ function CircuitsScreen(app)
     barPanel = uipanel(g, 'Title', '', 'BorderType', 'line', ...
         'BorderColor', Theme.COLOR_DIVIDER);
     barPanel.Layout.Row = 2; barPanel.Layout.Column = 1;
-    barPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    barPanel.BackgroundColor = Theme.COLOR_CARD;
 
-    bg = uigridlayout(barPanel, [1 5]);
-    bg.ColumnWidth = {'1x', 80, 90, 80, 140};
-    bg.Padding = [10 4 10 4]; bg.ColumnSpacing = 8;
-    bg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    bg = uigridlayout(barPanel, [1 6]);
+    bg.ColumnWidth = {'1x', 80, 90, 80, 140, 140};
+    bg.RowHeight = {34};
+    bg.Padding = [10 10 10 10]; bg.ColumnSpacing = 8;
+    bg.BackgroundColor = Theme.COLOR_CARD;
 
     % Spacer
     spacer = uilabel(bg, 'Text', '');
@@ -100,11 +121,20 @@ function CircuitsScreen(app)
     app.CircuitsNextBtn.Layout.Row = 1; app.CircuitsNextBtn.Layout.Column = 4;
     app.styleBtn(app.CircuitsNextBtn, 'ghost');
 
+    % Composer button — fast-path to in-app circuit authoring.
+    app.CircuitsComposerBtn = uibutton(bg, 'Text', ...
+        [char(9998) ' ' Labels.get('circuits_btn_composer', 'Composer')], ...
+        'ButtonPushedFcn', @(~,~)app.onSelectSection('Composer'));
+    app.CircuitsComposerBtn.Layout.Row = 1; app.CircuitsComposerBtn.Layout.Column = 5;
+    app.styleBtn(app.CircuitsComposerBtn, 'secondary');
+    app.CircuitsComposerBtn.FontSize = 14;
+    app.CircuitsComposerBtn.Tooltip = 'Open the Composer to author a new circuit';
+
     % Upload button with icon
     app.CircuitsUploadBtn = uibutton(bg, 'Text', ...
         [char(8593) ' ' Labels.get('circuits_btn_upload', 'Upload')], ...
         'ButtonPushedFcn', @(~,~)app.CircuitsVm.onGoToUpload());
-    app.CircuitsUploadBtn.Layout.Row = 1; app.CircuitsUploadBtn.Layout.Column = 5;
+    app.CircuitsUploadBtn.Layout.Row = 1; app.CircuitsUploadBtn.Layout.Column = 6;
     app.styleBtn(app.CircuitsUploadBtn, 'primary');
     app.CircuitsUploadBtn.FontSize = 14;
     app.CircuitsUploadBtn.Tooltip = 'Navigate to Upload screen';

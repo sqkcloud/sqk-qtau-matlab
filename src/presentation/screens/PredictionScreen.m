@@ -22,15 +22,38 @@ function PredictionScreen(app)
     g.ColumnSpacing = Theme.GRID_ROW_SPACING;
     g.BackgroundColor = Theme.COLOR_BG;
 
-    % ── Row 1: Toolbar ───────────────────────────────────────────────────────
-    toolbar = uigridlayout(g, [1 2]);
+    % ── Row 1: Toolbar — Circuit | Backend | Predict ────────────────────────
+    toolbar = uigridlayout(g, [1 6]);
     toolbar.Layout.Row = 1; toolbar.Layout.Column = [1 3];
-    toolbar.ColumnWidth = {'1x', 150};
-    toolbar.Padding = [0 0 0 0]; toolbar.BackgroundColor = Theme.COLOR_BG;
+    toolbar.ColumnWidth = {70, '1x', 70, '1x', 20, 150};
+    toolbar.Padding = [0 0 0 0]; toolbar.ColumnSpacing = 8;
+    toolbar.BackgroundColor = Theme.COLOR_BG;
+
+    circLbl = uilabel(toolbar, 'Text', Labels.get('prediction_label_circuit', 'Circuit'), ...
+        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+    circLbl.Layout.Row = 1; circLbl.Layout.Column = 1;
+
+    app.PredictionCircuitDropdown = uidropdown(toolbar, ...
+        'Items', {'(loading...)'}, 'ItemsData', {''}, 'Value', '', ...
+        'ValueChangedFcn', @(src,~)app.PredictionVm.onCircuitSelected(src.Value));
+    app.PredictionCircuitDropdown.Layout.Row = 1;
+    app.PredictionCircuitDropdown.Layout.Column = 2;
+
+    bendLbl = uilabel(toolbar, 'Text', Labels.get('prediction_label_backend', 'Backend'), ...
+        'FontSize', 13, 'FontColor', Theme.COLOR_LABEL, ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
+    bendLbl.Layout.Row = 1; bendLbl.Layout.Column = 3;
+
+    app.PredictionBackendDropdown = uidropdown(toolbar, ...
+        'Items', {'(loading...)'}, 'ItemsData', {''}, 'Value', '', ...
+        'ValueChangedFcn', @(src,~)app.PredictionVm.onBackendSelected(src.Value));
+    app.PredictionBackendDropdown.Layout.Row = 1;
+    app.PredictionBackendDropdown.Layout.Column = 4;
 
     app.PredictButton = uibutton(toolbar, 'Text', [char(9881) ' ' Labels.get('prediction_btn_run', 'Run Prediction')], ...
         'ButtonPushedFcn', @(~,~)app.PredictionVm.onRunPrediction());
-    app.PredictButton.Layout.Row = 1; app.PredictButton.Layout.Column = 2;
+    app.PredictButton.Layout.Row = 1; app.PredictButton.Layout.Column = 6;
     app.styleBtn(app.PredictButton, 'primary');
     app.PredictButton.FontSize = 14;
     app.PredictButton.Tooltip = 'POST /api/predict with current circuit + backend + benchmark config';
@@ -41,7 +64,7 @@ function PredictionScreen(app)
             'Run a prediction to see the recommended backend and expected fidelity.'), ...
         'FontSize', 13, 'FontWeight', 'bold', ...
         'FontColor', Theme.COLOR_LABEL, ...
-        'BackgroundColor', Theme.COLOR_ACCENT_BG, ...
+        'BackgroundColor', Theme.COLOR_CARD, ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
         'WordWrap', 'on', 'Interpreter', 'none');
     app.PredictionHeadlineLabel.Layout.Row = 2; app.PredictionHeadlineLabel.Layout.Column = [1 3];
@@ -77,17 +100,16 @@ function PredictionScreen(app)
 
     dpg = uigridlayout(distPanel, [1 1]);
     dpg.Padding = [10 10 10 10]; dpg.BackgroundColor = Theme.COLOR_CARD;
-    app.PredictionDistAxes = uiaxes(dpg);
-    app.styleAxes(app.PredictionDistAxes);
-    title(app.PredictionDistAxes, ...
-        Labels.get('prediction_dist_title', 'Top measurement outcomes'));
-    xlabel(app.PredictionDistAxes, 'Bitstring');
-    ylabel(app.PredictionDistAxes, 'Probability');
-    text(app.PredictionDistAxes, 0.5, 0.5, ...
-        Labels.get('prediction_dist_initial', 'Run prediction to populate'), ...
-        'Units', 'normalized', 'HorizontalAlignment', 'center', ...
-        'VerticalAlignment', 'middle', 'Color', [0.55 0.60 0.68], ...
-        'FontSize', 11, 'Interpreter', 'none');
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host placeholder text. renderDistributionChart promotes this
+    % label to a real uiaxes when the prediction payload lands.
+    distPlaceholder = uilabel(dpg, ...
+        'Text', Labels.get('prediction_dist_initial', 'Run prediction to populate'), ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.PredictionDistGrid        = dpg;
+    app.PredictionDistPlaceholder = distPlaceholder;
+    app.PredictionDistAxes        = [];
 
     % ── Row 3, Col 3: Error Budget breakdown chart ───────────────────────────
     budgetPanel = uipanel(g, 'Title', Labels.get('prediction_panel_budget', 'Error Budget'), ...
@@ -97,28 +119,28 @@ function PredictionScreen(app)
 
     bpg = uigridlayout(budgetPanel, [1 1]);
     bpg.Padding = [10 10 10 10]; bpg.BackgroundColor = Theme.COLOR_CARD;
-    app.PredictionBudgetAxes = uiaxes(bpg);
-    app.styleAxes(app.PredictionBudgetAxes);
-    title(app.PredictionBudgetAxes, ...
-        Labels.get('prediction_budget_title', 'Error budget breakdown'));
-    xlabel(app.PredictionBudgetAxes, 'Fraction of total error');
-    text(app.PredictionBudgetAxes, 0.5, 0.5, ...
-        Labels.get('prediction_budget_initial', 'Run prediction to populate'), ...
-        'Units', 'normalized', 'HorizontalAlignment', 'center', ...
-        'VerticalAlignment', 'middle', 'Color', [0.55 0.60 0.68], ...
-        'FontSize', 11, 'Interpreter', 'none');
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host placeholder text. renderBudgetChart promotes this label to
+    % a real uiaxes when the prediction payload lands.
+    budgetPlaceholder = uilabel(bpg, ...
+        'Text', Labels.get('prediction_budget_initial', 'Run prediction to populate'), ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.PredictionBudgetGrid        = bpg;
+    app.PredictionBudgetPlaceholder = budgetPlaceholder;
+    app.PredictionBudgetAxes        = [];
 
     % ── Row 4: Action bar ────────────────────────────────────────────────────
     submitPanel = uipanel(g, 'Title', Labels.get('prediction_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     submitPanel.Layout.Row = 4; submitPanel.Layout.Column = [1 3];
-    submitPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    submitPanel.BackgroundColor = Theme.COLOR_CARD;
 
     sg = uigridlayout(submitPanel, [1 5]);
     sg.ColumnWidth = {'1x', 170, 110, 130, 140};
-    sg.Padding = [14 8 14 8]; sg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    sg.Padding = [14 8 14 8]; sg.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(sg, 'Text', Labels.get('prediction_action_msg'));
-    desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
+    desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
 
     % POST /api/jobs/submit with the current circuit + backend + shots/opt.

@@ -5,7 +5,7 @@ classdef SettingsService < handle
     %   user preferences and verifying IBM Quantum credentials.
 
     properties (Access = private)
-        Client FastAPIClient
+        Client  % FastAPIClient instance (relaxed from typed property so tests can inject a StubFastAPIClient)
     end
 
     methods

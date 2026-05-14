@@ -7,12 +7,86 @@ classdef DetailedAnalysisViewModel < handle
     %     onPlotTemporal    — line + band: confidence per shot batch
     %     onPlotQubit       — scatter: T1 vs T2 coloured by readout fidelity
     %     onPlotRBDecay     — errorbar + fit: randomized benchmarking decay
+    properties
+        % Set on every onEnter() via tic; read externally by
+        % NavigationManager.isScreenFresh (cache-TTL gate that skips
+        % redundant data fetches when the operator re-enters the screen
+        % within the configured ``screen_cache_ttl`` window). Must be
+        % publicly readable since the freshness check lives outside the
+        % VM. Other VMs (Circuits, Dashboard, Backends, etc.) declare
+        % the same field — this one was missing it, so onEnter crashed
+        % with "Unrecognized property 'LastRefresh'".
+        LastRefresh = []
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
     methods
         function obj = DetailedAnalysisViewModel(app)
             obj.App = app;
+        end
+
+        function onDownloadDetailedJson(obj)
+            % Fetch /api/jobs/{id}/results/detailed and dump to a
+            % user-chosen .json file. Tier B export action.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Download JSON', 'Icon', 'warning');
+                return;
+            end
+            jid = char(app.State.selectedJobId);
+            if isempty(strtrim(jid))
+                uialert(app.UIFigure, ...
+                    'Open the Results screen first so a completed job is selected.', ...
+                    'Download JSON', 'Icon', 'info');
+                return;
+            end
+            app.logEvent('API', sprintf('GET /api/jobs/%s/results/detailed (export)', jid));
+            app.showLoading('Fetching detailed results for export...');
+            jobSvc = app.JobSvc;
+            token  = app.State.authToken;
+            AsyncRunner.run( ...
+                @() jobSvc.getDetailedResults(jid, token), ...
+                @(data) obj.onDetailedJsonReady(app, data, jid), ...
+                @(ME)   obj.onDetailedJsonError(app, ME));
+        end
+
+        function onDetailedJsonReady(~, app, data, jid)
+            app.hideLoading();
+            cname = char(app.State.selectedCircuitName);
+            % Operator filename rule: Results_Detailed_<circuit>_<jid>_<YYYYMMDD_HHMM>.json
+            fname = Exporter.suggestFilename('Results', { ...
+                'Detailed', cname, jid, Exporter.minuteStamp()});
+            ok = Exporter.toJsonFile(data, fname, app.UIFigure);
+            if ok
+                app.logEvent('FILE', sprintf('Detailed JSON saved (job %s)', jid));
+                app.State.logActivity( ...
+                    sprintf('Download Detailed JSON — %s', cname), 'Success');
+            end
+        end
+
+        function onDetailedJsonError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Detailed JSON export FAILED: %s', ME.message));
+            app.showError('Download JSON', ME);
+        end
+
+        function onGenerateRunReport(obj)
+            % Bridge from the Detailed Analysis screen to Reports —
+            % pre-fills the title via Reports' own loadReportsList →
+            % seedReportTitle. Same handover pattern used by Results
+            % and Analysis.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            app.logEvent('NAV', 'Detailed Analysis → Reports');
+            app.onSelectSection('Reports');
         end
 
         function onPlotComparison(obj)
@@ -44,6 +118,7 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function onPlotTemporalComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('TemporalAxes', 'TemporalGrid', 'TemporalPlaceholder')); return; end
             try
                 cla(app.TemporalAxes);
                 items = JsonHelper.extractList(data, 'trend');
@@ -123,6 +198,7 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function onPlotQubitComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('QubitAxes', 'QubitGrid', 'QubitPlaceholder')); return; end
             try
                 % Backend: qubit_metrics: [{qubit_index, readout_error, t1_us, t2_us, gate_error_1q, ...}]
                 items = JsonHelper.extractList(data, 'qubit_metrics');
@@ -211,6 +287,7 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function onPlotHeatmapComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('ErrorHeatmapAxes', 'ErrorHeatmapGrid', 'ErrorHeatmapPlaceholder')); return; end
             try
                 % Backend: fidelity_heatmap: list[list[float]] (2D grid)
                 mat = [];
@@ -283,6 +360,7 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function onPlotRBDecayComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('RBDecayAxes', 'RBDecayGrid', 'RBDecayPlaceholder')); return; end
             try
                 items = JsonHelper.extractList(data, 'rb_data');
                 if isempty(items); items = JsonHelper.asList(data); end
@@ -347,10 +425,79 @@ classdef DetailedAnalysisViewModel < handle
 
     methods (Access = private)
         function onPlotComparisonComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('CompareAxes', 'CompareGrid', 'ComparePlaceholder')); return; end
             obj.plotComparisonFromData(data);
             app.logEvent('API', 'Comparison plot updated from live data');
             app.State.logActivity('Detailed analysis — comparison plot', 'Success');
             app.hideLoading();
+            obj.populateDetailedKpis(app, data);
+        end
+
+        function populateDetailedKpis(obj, app, data)
+            % Populate the M3 KPI strip from a detailed-results payload.
+            % Each card pulls best-effort from the response and shows
+            % "—" when the field is absent. Called from the comparison /
+            % temporal / qubit plot completion handlers so the strip
+            % refreshes as the user explores different views.
+            try
+                fidVal = JsonHelper.pickNumeric(data, ...
+                    {'estimated_fidelity','measured_fidelity','fidelity'}, NaN);
+                if isfinite(fidVal)
+                    obj.setDetailedKpi(app.DetailedKpiFidelityVal, ...
+                        app.DetailedKpiFidelitySub, ...
+                        sprintf('%.4f', fidVal), 'measured');
+                end
+                drift = JsonHelper.pickNumeric(data, ...
+                    {'drift_total','drift_score','temporal_drift'}, NaN);
+                if isfinite(drift)
+                    obj.setDetailedKpi(app.DetailedKpiDriftVal, ...
+                        app.DetailedKpiDriftSub, ...
+                        sprintf('%.4f', drift), 'across runs');
+                end
+                nq = JsonHelper.pickNumeric(data, ...
+                    {'num_qubits','width','qubit_count'}, NaN);
+                if isfinite(nq) && nq > 0
+                    obj.setDetailedKpi(app.DetailedKpiQubitsVal, ...
+                        app.DetailedKpiQubitsSub, ...
+                        sprintf('%d', round(nq)), '');
+                end
+                rb = JsonHelper.pickNumeric(data, ...
+                    {'rb_decay','randomized_benchmark.decay'}, NaN);
+                if isfinite(rb)
+                    obj.setDetailedKpi(app.DetailedKpiRBVal, ...
+                        app.DetailedKpiRBSub, ...
+                        sprintf('%.4f', rb), 'avg gate fidelity');
+                end
+                outliers = JsonHelper.pickNumeric(data, ...
+                    {'outlier_count','outliers'}, NaN);
+                if isfinite(outliers)
+                    obj.setDetailedKpi(app.DetailedKpiOutliersVal, ...
+                        app.DetailedKpiOutliersSub, ...
+                        sprintf('%d', round(outliers)), 'states beyond 3σ');
+                end
+            catch ME
+                Logger.debug('DetailedAnalysisViewModel', ...
+                    'populateDetailedKpis: %s', ME.message);
+            end
+        end
+
+        function setDetailedKpi(~, valLbl, subLbl, valTxt, subTxt)
+            % Sibling of AnalysisViewModel.setAnalysisKpi — tilde first
+            % arg so callers can use obj.setDetailedKpi(...) without
+            % the helper itself touching obj.
+            try
+                if ~isempty(valLbl) && isvalid(valLbl)
+                    if isempty(strtrim(char(string(valTxt))))
+                        valLbl.Text = char(8212);
+                    else
+                        valLbl.Text = char(string(valTxt));
+                    end
+                end
+                if ~isempty(subLbl) && isvalid(subLbl)
+                    subLbl.Text = char(string(subTxt));
+                end
+            catch
+            end
         end
 
         function onPlotComparisonError(obj, app, ME)
@@ -358,6 +505,64 @@ classdef DetailedAnalysisViewModel < handle
             app.logEvent('ERROR', sprintf('Detailed results failed: %s', ME.message));
             obj.reportLiveError('Compare', ME);
             obj.plotComparisonDemo();
+        end
+
+        function onDetailedCircuitsLoaded(obj, app, data)
+            try; app.hideLoading(); catch; end
+            % Write-through to the shared session cache so Mitigation
+            % Compare / Run Planner / Resource Estimator pick up the
+            % same circuits without their own /api/circuits fetch.
+            try; app.State.setCircuitsListCache(data); catch; end
+            if isempty(app.DetailedAnalysisCircuitDropdown) ...
+                    || ~isvalid(app.DetailedAnalysisCircuitDropdown); return; end
+            items = JsonHelper.extractList(data, 'circuits');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.DetailedAnalysisCircuitDropdown.Items     = {'(no circuits)'};
+                app.DetailedAnalysisCircuitDropdown.ItemsData = {''};
+                app.DetailedAnalysisCircuitDropdown.Value     = '';
+                return;
+            end
+            names = cell(1, n); ids = cell(1, n);
+            for i = 1:n
+                ids{i}   = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
+                nm       = char(JsonHelper.pick(items(i), {'name','circuit_name'}));
+                if isempty(nm); nm = ids{i}; end
+                names{i} = nm;
+            end
+            app.DetailedAnalysisCircuitDropdown.Items     = names;
+            app.DetailedAnalysisCircuitDropdown.ItemsData = ids;
+            selId = char(app.State.selectedCircuitId);
+            match = find(strcmp(ids, selId), 1);
+            if ~isempty(match)
+                app.DetailedAnalysisCircuitDropdown.Value = ids{match};
+            else
+                app.DetailedAnalysisCircuitDropdown.Value = ids{1};
+                app.State.selectedCircuitId   = string(ids{1});
+                app.State.selectedCircuitName = string(names{1});
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d circuits into Detailed Analysis dropdown', n));
+            % Auto-fire the per-circuit refresh now that the dropdown
+            % has settled on a selection. Without this the initial
+            % screen entry would still show the stale demo charts
+            % until the user manually re-picked the dropdown — the
+            % exact UX the operator complained about. Calling on the
+            % VM (not the screen) so any future onCircuitSelected
+            % wiring still routes through the same code path.
+            obj.refreshAllForCircuit();
+        end
+
+        function onDetailedCircuitsError(~, app, ME)
+            try; app.hideLoading(); catch; end
+            Logger.warn('DetailedAnalysisViewModel', ...
+                'Failed to load circuits: %s', ME.message);
+            if ~isempty(app.DetailedAnalysisCircuitDropdown) ...
+                    && isvalid(app.DetailedAnalysisCircuitDropdown)
+                app.DetailedAnalysisCircuitDropdown.Items     = {'(load failed)'};
+                app.DetailedAnalysisCircuitDropdown.ItemsData = {''};
+                app.DetailedAnalysisCircuitDropdown.Value     = '';
+            end
         end
     end
 
@@ -375,6 +580,247 @@ classdef DetailedAnalysisViewModel < handle
             obj.plotTemporalDemo();
             obj.plotQubitDemo();
             obj.plotRBDecayDemo();
+        end
+
+        % ── Circuit selector wiring ─────────────────────────────────────
+        %   The toolbar's Circuit dropdown is populated on screen entry
+        %   and on demand. Picking a row updates app.State so every
+        %   downstream call (Compare, Heatmap, Temporal, Qubits, RB
+        %   Decay) targets the right circuit.
+
+        function onEnter(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            obj.loadCircuits();
+            obj.LastRefresh = tic;
+        end
+
+        function loadCircuits(obj)
+            app   = obj.App;
+            state = app.State;
+            ttl   = AppConfig.getDouble('shared_cache_ttl', 120);
+            % Cache hit — populate the dropdown synchronously, no HTTP.
+            if state.isCircuitsListCacheFresh(ttl)
+                obj.onDetailedCircuitsLoaded(app, state.CircuitListCache);
+                return;
+            end
+            token   = state.authToken;
+            circSvc = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() circSvc.listCircuits(token), ...
+                @(data) obj.onDetailedCircuitsLoaded(app, data), ...
+                @(ME)   obj.onDetailedCircuitsError(app, ME));
+        end
+
+        function onCircuitSelected(obj, circuitId)
+            app = obj.App;
+            if isempty(circuitId); return; end
+            app.State.selectedCircuitId = string(circuitId);
+            try
+                items = app.DetailedAnalysisCircuitDropdown.Items;
+                ids   = app.DetailedAnalysisCircuitDropdown.ItemsData;
+                k = find(strcmp(ids, char(circuitId)), 1);
+                if ~isempty(k)
+                    app.State.selectedCircuitName = string(items{k});
+                end
+            catch
+            end
+            app.logEvent('UI', sprintf('Detailed Analysis circuit selected: %s', ...
+                char(app.State.selectedCircuitName)));
+            % Trigger the per-circuit data refresh so each dropdown
+            % change repaints all 6 panels with that circuit's live
+            % data (or a clear empty-state if the circuit has no
+            % completed jobs yet). Without this, switching the
+            % dropdown silently kept the old demo charts in place,
+            % giving the operator the impression every circuit had
+            % the same data.
+            obj.refreshAllForCircuit();
+        end
+
+        % ── Auto-refresh orchestration ──────────────────────────────────
+        %   When the operator picks a circuit (or lands on the screen),
+        %   resolve the most recent COMPLETED job for that circuit and
+        %   fan out the 5 plot refreshes. If no completed job exists
+        %   yet, clear all panels and write an empty-state message
+        %   into the Insights panel so the user knows what action
+        %   unblocks the view.
+
+        function refreshAllForCircuit(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated() || ~app.State.hasProject(); return; end
+            cid = char(app.State.selectedCircuitId);
+            if isempty(cid); return; end
+            % Use the existing /api/jobs endpoint (server-side filter
+            % by circuit_id isn't supported today; we fetch a page and
+            % filter client-side, matching the pattern in
+            % ResultsViewModel.onJobsListedForResults). limit=100 is
+            % the server cap — covers typical projects; very busy
+            % projects may need pagination as a follow-up.
+            app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
+            jobSvc = app.JobSvc;
+            token  = app.State.authToken;
+            AsyncRunner.run( ...
+                @() jobSvc.listJobs(token, 0, 100), ...
+                @(data) obj.onJobsListedForCircuit(app, cid, data), ...
+                @(ME)   obj.onJobLookupError(app, ME));
+        end
+
+        function onJobsListedForCircuit(obj, app, cid, data)
+            items = JsonHelper.extractListSafe(data, 'jobs');
+            completedId = '';
+            for i = 1:numel(items)
+                if iscell(items); it = items{i}; else; it = items(i); end
+                ic = char(JsonHelper.pick(it, {'circuit_id'}, ''));
+                if ~strcmp(ic, cid); continue; end
+                st = lower(char(JsonHelper.pick(it, {'status'}, '')));
+                if any(strcmp(st, {'completed','done','success'}))
+                    completedId = char(JsonHelper.pick(it, ...
+                        {'job_record_id','job_id','id'}));
+                    if ~isempty(completedId); break; end
+                end
+            end
+            app.hideLoading();
+            if isempty(completedId)
+                % Empty state — circuit has no completed runs yet.
+                % Clear demos so the user isn't misled into thinking
+                % the placeholders are this circuit's data.
+                obj.clearAllAxes();
+                if ~isempty(app.DetailedInsightArea) && isvalid(app.DetailedInsightArea)
+                    app.DetailedInsightArea.Value = { ...
+                        sprintf('No completed jobs for "%s" yet.', ...
+                            char(app.State.selectedCircuitName)), ...
+                        '', ...
+                        'Run this circuit from the Analysis or Backends screen to populate Detailed Analysis.', ...
+                        '', ...
+                        'The 6 panels above will repaint automatically once at least one job completes.'};
+                end
+                return;
+            end
+            % Live job found — wire it as the active selection and fan
+            % out the 5 plot refreshes. Each handler shows/hides its
+            % own overlay; they run concurrently via AsyncRunner so
+            % the user sees results in roughly one RTT, not five.
+            app.State.selectedJobId = string(completedId);
+            if ~isempty(app.DetailedInsightArea) && isvalid(app.DetailedInsightArea)
+                app.DetailedInsightArea.Value = { ...
+                    sprintf('Live data for circuit: %s', ...
+                        char(app.State.selectedCircuitName)), ...
+                    sprintf('Job: %s', completedId), ...
+                    '', ...
+                    'Diagnostics auto-populate as each plot finishes.'};
+            end
+            obj.onPlotComparison();
+            obj.onPlotHeatmap();
+            obj.onPlotTemporal();
+            obj.onPlotQubit();
+            obj.onPlotRBDecay();
+        end
+
+        function onJobLookupError(obj, app, ME)
+            app.hideLoading();
+            Logger.warn('DetailedAnalysisViewModel', ...
+                'Job lookup failed: %s', ME.message);
+            obj.clearAllAxes();
+            if ~isempty(app.DetailedInsightArea) && isvalid(app.DetailedInsightArea)
+                app.DetailedInsightArea.Value = { ...
+                    'Could not look up jobs for this circuit.', ...
+                    sprintf('Error: %s', ME.message), ...
+                    '', ...
+                    'Check connectivity and try the Refresh buttons above.'};
+            end
+        end
+
+        function clearAllAxes(obj)
+            % Wipe every panel's content + title so the empty-state
+            % screen looks intentional rather than half-rendered.
+            app = obj.App;
+            axesList = {app.CompareAxes, app.ErrorHeatmapAxes, app.TemporalAxes, ...
+                        app.QubitAxes, app.RBDecayAxes};
+            for k = 1:numel(axesList)
+                a = axesList{k};
+                if isempty(a) || ~isvalid(a); continue; end
+                try
+                    cla(a);
+                    if isprop(a, 'Title') && ~isempty(a.Title)
+                        a.Title.String = '';
+                    end
+                catch ME
+                    Logger.debug('DetailedAnalysisViewModel', ...
+                        'clearAllAxes(%d): %s', k, ME.message);
+                end
+            end
+        end
+
+        function onAnalyze(obj)
+            % Bridge to the Analysis screen: navigate there with the
+            % currently-selected Detailed Analysis circuit pre-selected
+            % and auto-trigger the analyze POST so the user lands on the
+            % result without having to click a second button.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, Labels.get('error_not_authenticated'), ...
+                    'Detailed Analysis', 'Icon', 'warning'); return;
+            end
+            % Read the current selection directly from the dropdown;
+            % onCircuitSelected keeps app.State in sync, but be defensive
+            % in case the user never touched the dropdown.
+            cid = '';
+            name = '';
+            try
+                cid = char(app.DetailedAnalysisCircuitDropdown.Value);
+                items = app.DetailedAnalysisCircuitDropdown.Items;
+                ids   = app.DetailedAnalysisCircuitDropdown.ItemsData;
+                k = find(strcmp(ids, cid), 1);
+                if ~isempty(k); name = items{k}; end
+            catch
+            end
+            if isempty(strtrim(cid))
+                uialert(app.UIFigure, ...
+                    'Pick a circuit from the dropdown before clicking Analyze.', ...
+                    'Detailed Analysis', 'Icon', 'warning');
+                return;
+            end
+            % Propagate the selection so the Analysis screen's own
+            % onEnter → onEnterCircuitsLoaded path auto-selects it when
+            % the dropdown populates, and so onAnalyzeCircuit picks it
+            % up even if the Analysis dropdown is still loading.
+            app.State.selectedCircuitId   = string(cid);
+            if ~isempty(name)
+                app.State.selectedCircuitName = string(name);
+            end
+            app.logEvent('UI', sprintf( ...
+                'Detailed Analysis → Analysis (circuit: %s)', ...
+                char(app.State.selectedCircuitName)));
+
+            % Navigate. autoLoadScreen on the target 'Analysis' case
+            % calls AnalysisVm.onEnter when the cache is stale; when
+            % the cache is fresh, the existing dropdown already has
+            % our circuit — we just need to nudge it visually and fire
+            % onCircuitSelected so dependent state (e.g. backend list)
+            % refreshes.
+            app.onSelectSection('Analysis');
+            try
+                if ~isempty(app.AnalysisCircuitDropdown) ...
+                        && isvalid(app.AnalysisCircuitDropdown) ...
+                        && iscell(app.AnalysisCircuitDropdown.ItemsData) ...
+                        && any(strcmp(app.AnalysisCircuitDropdown.ItemsData, cid))
+                    app.AnalysisCircuitDropdown.Value = cid;
+                    app.AnalysisVm.onCircuitSelected(cid);
+                end
+            catch ME
+                Logger.debug('DetailedAnalysisViewModel', ...
+                    'Analysis dropdown sync: %s', ME.message);
+            end
+
+            % Kick off the analyze request. onAnalyzeCircuit reads
+            % app.State.selectedCircuitId directly — it doesn't depend
+            % on whether the Analysis dropdown has repainted yet.
+            try
+                app.AnalysisVm.onAnalyzeCircuit();
+            catch ME
+                Logger.warn('DetailedAnalysisViewModel', ...
+                    'onAnalyzeCircuit: %s', ME.message);
+            end
         end
 
         function plotComparisonDemo(obj)

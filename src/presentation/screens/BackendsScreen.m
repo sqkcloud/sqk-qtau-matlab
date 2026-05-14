@@ -150,20 +150,173 @@ function BackendsScreen(app)
 
     dg2 = uigridlayout(detailPanel, [1 1]);
     dg2.Padding = [12 10 12 10]; dg2.BackgroundColor = Theme.COLOR_CARD;
-    app.BackendStatusArea = uitextarea(dg2, 'Editable', 'off'); app.BackendStatusArea.FontSize = 12;
+
+    % C2.B1 — Telemetry tab strip: Overview | Per-Qubit | History.
+    % Overview hosts the legacy BackendStatusArea uitextarea (kept for
+    % app.setStatus back-compat). Per-Qubit hosts a color-coded heat
+    % grid; History hosts three sparkline uiaxes (T1/T2/2Q error).
+    telemetryTg = uitabgroup(dg2);
+    telemetryTg.Layout.Row = 1; telemetryTg.Layout.Column = 1;
+
+    tabOverview = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_overview', 'Overview'));
+    tabOverview.BackgroundColor = Theme.COLOR_CARD;
+    overviewGrid = uigridlayout(tabOverview, [2 1]);
+    overviewGrid.RowHeight = {64, '1x'};
+    overviewGrid.Padding = [12 8 12 8];
+    overviewGrid.RowSpacing = 8;
+    overviewGrid.BackgroundColor = Theme.COLOR_CARD;
+
+    % KPI strip — 4 mini-cards summarising the loaded backend pool so
+    % the Overview tab tells the operator something useful at a glance
+    % instead of just echoing "Loaded N backend(s)".
+    kpiStrip = uigridlayout(overviewGrid, [1 4]);
+    kpiStrip.Layout.Row = 1; kpiStrip.Layout.Column = 1;
+    kpiStrip.ColumnWidth = {'1x','1x','1x','1x'};
+    kpiStrip.ColumnSpacing = 6;
+    kpiStrip.Padding = [0 0 0 0];
+    kpiStrip.BackgroundColor = Theme.COLOR_CARD;
+    kpiTitles = { ...
+        Labels.get('backends_overview_kpi_total',       'Total backends'), ...
+        Labels.get('backends_overview_kpi_operational', 'Operational'), ...
+        Labels.get('backends_overview_kpi_top_qubits',  'Top width (qubits)'), ...
+        Labels.get('backends_overview_kpi_selected',    'Selected backend')};
+    app.OverviewKpiLabels = cell(1, 4);
+    for kpiIdx = 1:4
+        card = uipanel(kpiStrip, 'Title', '', 'BorderType', 'line', ...
+            'BorderColor', Theme.COLOR_DIVIDER, ...
+            'BackgroundColor', Theme.COLOR_CARD);
+        card.Layout.Row = 1; card.Layout.Column = kpiIdx;
+        cg = uigridlayout(card, [2 1]);
+        cg.RowHeight = {16, '1x'};
+        cg.Padding = [8 4 8 4];
+        cg.BackgroundColor = Theme.COLOR_CARD;
+        uilabel(cg, 'Text', kpiTitles{kpiIdx}, 'FontSize', 10, ...
+            'FontColor', Theme.COLOR_MUTED);
+        app.OverviewKpiLabels{kpiIdx} = uilabel(cg, 'Text', char(8212), ...
+            'FontSize', 16, 'FontWeight', 'bold', ...
+            'FontColor', Theme.COLOR_HEADING, ...
+            'VerticalAlignment', 'center');
+    end
+
+    app.BackendStatusArea = uitextarea(overviewGrid, 'Editable', 'off');
+    app.BackendStatusArea.Layout.Row = 2; app.BackendStatusArea.Layout.Column = 1;
+    app.BackendStatusArea.FontSize = 12;
     app.BackendStatusArea.Value = {Labels.get('backends_status_initial')};
+
+    tabPerQubit = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_perqubit', 'Per-Qubit'));
+    tabPerQubit.BackgroundColor = Theme.COLOR_CARD;
+    % Widened from [6 16] to [6 17] so the first column can host
+    % metric row labels (qubit / T1 / T2 / Gate / Readout / 2Q),
+    % which were missing before — the cells were a wall of numbers
+    % with no row identifier. paintTelemetryPerQubitHeatGrid in
+    % BackendsViewModel fills columns 2-17 with per-qubit values.
+    app.TelemetryPerQubitGrid = uigridlayout(tabPerQubit, [6 17]);
+    app.TelemetryPerQubitGrid.Padding = [12 8 12 8];
+    app.TelemetryPerQubitGrid.RowSpacing = 2;
+    app.TelemetryPerQubitGrid.ColumnSpacing = 2;
+    app.TelemetryPerQubitGrid.BackgroundColor = Theme.COLOR_CARD;
+
+    tabHistory = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_history', 'History'));
+    tabHistory.BackgroundColor = Theme.COLOR_CARD;
+    historyGrid = uigridlayout(tabHistory, [3 1]);
+    historyGrid.Padding = [12 8 12 8]; historyGrid.BackgroundColor = Theme.COLOR_CARD;
+    historyGrid.RowSpacing = 8;
+    historyTitles = { ...
+        Labels.get('backends_history_t1_title', 'T1 coherence (µs)'), ...
+        Labels.get('backends_history_t2_title', 'T2 coherence (µs)'), ...
+        Labels.get('backends_history_2q_title', '2Q gate error')};
+    app.TelemetryHistoryAxes = cell(1, 3);
+    for k = 1:3
+        ax = uiaxes(historyGrid);
+        ax.Layout.Row = k;
+        ax.Layout.Column = 1;
+        ax.Toolbar.Visible = 'off';
+        % Theme-aligned sparkline styling. Set on creation so the
+        % panel looks intentional even before any calibration data
+        % arrives — the user sees three labeled sub-charts instead
+        % of three black rectangles.
+        ax.Color  = Theme.COLOR_CARD;
+        ax.XColor = Theme.COLOR_MUTED;
+        ax.YColor = Theme.COLOR_MUTED;
+        ax.GridColor     = Theme.COLOR_DIVIDER;
+        ax.GridLineStyle = ':';
+        ax.GridAlpha     = 0.35;
+        ax.Box           = 'off';
+        ax.XGrid         = 'on';
+        ax.YGrid         = 'on';
+        ax.Title.String  = historyTitles{k};
+        ax.Title.Color   = Theme.COLOR_LABEL;
+        ax.Title.FontSize = 11;
+        ax.Title.FontWeight = 'bold';
+        try; disableDefaultInteractivity(ax); catch; end
+        app.TelemetryHistoryAxes{k} = ax;
+    end
+
+    % ── Topology tab — coupling-map graph view ───────────────────────────────
+    % Lazy-loaded: when the user activates this tab, BackendsVm dispatches
+    % BackendService.getTopology(...) and paints the graph. Force-directed
+    % layout via MATLAB's native graph plot. Click a qubit → side panel
+    % renders that qubit's calibration.
+    tabTopology = uitab(telemetryTg, 'Title', Labels.get('backends_topology_tab_title'));
+    tabTopology.BackgroundColor = Theme.COLOR_CARD;
+    topoGrid = uigridlayout(tabTopology, [1 2]);
+    topoGrid.ColumnWidth = {'1x', 240};
+    topoGrid.Padding = [12 8 12 8];
+    topoGrid.ColumnSpacing = 10;
+    topoGrid.BackgroundColor = Theme.COLOR_CARD;
+
+    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
+    % to host a "click a backend" placeholder. BackendsViewModel.paintTopology
+    % promotes this label to a real uiaxes when topology data lands.
+    topoPlaceholder = uilabel(topoGrid, ...
+        'Text', Labels.get('backends_topology_no_selection'), ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    topoPlaceholder.Layout.Row = 1; topoPlaceholder.Layout.Column = 1;
+    app.TopologyGrid        = topoGrid;
+    app.TopologyPlaceholder = topoPlaceholder;
+    app.TopologyAxes        = [];
+
+    sideGrid = uigridlayout(topoGrid, [3 1]);
+    sideGrid.Layout.Row = 1; sideGrid.Layout.Column = 2;
+    sideGrid.RowHeight = {'fit', 'fit', '1x'};
+    sideGrid.Padding = [0 0 0 0]; sideGrid.RowSpacing = 8;
+    sideGrid.BackgroundColor = Theme.COLOR_CARD;
+
+    legendLbl = uilabel(sideGrid, ...
+        'Text', Labels.get('backends_topology_legend'), ...
+        'FontSize', 10, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    legendLbl.Layout.Row = 1;
+
+    metaLbl = uilabel(sideGrid, 'Text', '', ...
+        'FontSize', 11, 'FontWeight', 'bold', ...
+        'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
+    metaLbl.Layout.Row = 2;
+
+    app.TopologyInfoLbl = uilabel(sideGrid, ...
+        'Text', Labels.get('backends_topology_no_selection'), ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
+    app.TopologyInfoLbl.Layout.Row = 3;
+    app.TopologyInfoLbl.UserData = metaLbl;  % stash so VM can update meta line
+
+    % Wire row selection so clicking a backend drills into its
+    % Telemetry tabs. SelectionChangedFcn (NOT the legacy
+    % CellSelectionChangedFcn — removed for uifigure-hosted uitable in
+    % R2025b) fires on every click; onTableRowSelected is idempotent.
+    app.BackendTable.SelectionChangedFcn = @(~,~) app.BackendsVm.onTableRowSelected();
+    telemetryTg.SelectionChangedFcn = @(s,e) app.BackendsVm.onTelemetryTabChanged(e);
 
     % ── Action bar ────────────────────────────────────────────────────────────
     nextPanel = uipanel(g, 'Title', Labels.get('backends_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     nextPanel.Layout.Row = 3; nextPanel.Layout.Column = [1 2];
-    nextPanel.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    nextPanel.BackgroundColor = Theme.COLOR_CARD;
 
     ng = uigridlayout(nextPanel, [1 4]);
     ng.ColumnWidth = {'1x', 220, 150, 150};
-    ng.Padding = [14 8 14 8]; ng.BackgroundColor = Theme.COLOR_ACCENT_BG;
+    ng.Padding = [14 8 14 8]; ng.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(ng, 'Text', Labels.get('backends_action_msg'));
-    desc.FontSize = 13; desc.FontWeight = 'bold'; desc.Layout.Row = 1; desc.Layout.Column = 1;
+    desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
     desc.VerticalAlignment = 'center'; desc.WordWrap = 'on';
 
     % Submit to IBM pool (fan-out across IBM_BACKENDS list — char(9889) = ⚡)

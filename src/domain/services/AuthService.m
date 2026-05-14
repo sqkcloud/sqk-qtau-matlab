@@ -5,7 +5,7 @@ classdef AuthService < handle
     %   and provides a single place for login, logout, and user-info calls.
 
     properties (Access = private)
-        Client FastAPIClient
+        Client  % FastAPIClient instance (relaxed from typed property so tests can inject a StubFastAPIClient)
     end
 
     methods

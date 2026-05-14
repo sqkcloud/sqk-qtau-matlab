@@ -80,11 +80,19 @@ classdef Logger
         % reload  Re-read the log level from AppConfig.  Call this after
         %         AppConfig.reload() if the config file has changed.
         function reload()
+            % Default raised from DEBUG to INFO. With DEBUG, every
+            % HTTP request prints a line via Logger.http (mapped to
+            % priority 0 in LEVEL_MAP), which on data-heavy screens
+            % like Backends fan-out produces ~80 fprintf calls per
+            % visit and contributes to the perceived sluggishness
+            % via the synchronous stdout write + EventLog cell-array
+            % prepend. Set log_level=DEBUG in app.properties to opt
+            % back into verbose logging during development.
             try
-                lvl = upper(AppConfig.get('log_level', 'DEBUG'));
+                lvl = upper(AppConfig.get('log_level', 'INFO'));
                 Logger.setLevel(lvl);
             catch
-                Logger.setLevel('DEBUG');
+                Logger.setLevel('INFO');
             end
         end
 
@@ -118,9 +126,16 @@ classdef Logger
 
         function lvl = currentLevel(newLevel)
             % Persistent storage for the active log level.
+            % Initial value raised to INFO so any boot-time logger
+            % call that fires BEFORE Logger.reload() runs (e.g. very
+            % early in QTAUWorkbenchApp construction or inside
+            % AppConfig.loadProps) still respects the quieter
+            % default. Setting log_level=DEBUG in app.properties or
+            % calling Logger.setLevel('DEBUG') restores verbose
+            % output.
             persistent storedLevel;
             if isempty(storedLevel)
-                storedLevel = 'DEBUG';
+                storedLevel = 'INFO';
             end
             if nargin > 0
                 storedLevel = upper(char(newLevel));

@@ -20,6 +20,9 @@ classdef ServiceContainer < handle
         SettingsSvc     % SettingsService
         QecEngine       % QecEngineService (local computation, no HTTP)
         BenchmarkSvc    % BenchmarkService
+        QmcSvc          % QmcService (Quantum Amplitude Estimation / QMC)
+        CuttingSvc      % CuttingService (circuit cutting + reconstruction)
+        MitigationSvc   % MitigationService (QEM ladder, cost preview)
     end
 
     methods
@@ -36,6 +39,9 @@ classdef ServiceContainer < handle
             obj.SettingsSvc   = SettingsService(obj.Client);
             obj.QecEngine     = QecEngineService();
             obj.BenchmarkSvc  = BenchmarkService(obj.Client);
+            obj.QmcSvc        = QmcService(obj.Client);
+            obj.CuttingSvc    = CuttingService(obj.Client);
+            obj.MitigationSvc = MitigationService(obj.Client);
             Logger.info('ServiceContainer', 'All services initialized');
         end
     end

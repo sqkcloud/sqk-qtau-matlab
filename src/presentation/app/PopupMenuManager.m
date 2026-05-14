@@ -184,12 +184,90 @@ classdef PopupMenuManager
             end
         end
 
+        % ── Reports popup ────────────────────────────────────────────────
+        %   Mirrors the Backends/Circuits convention: a uipanel of left-
+        %   aligned uibutton rows shown on right-click of a row in the
+        %   Reports library uitable. Rows replace the dedicated
+        %   Distribution row that used to live below the table.
+
+        function buildReportsPopup(app)
+            popW = 180; popH = 144;
+            app.ReportsPopupPanel = uipanel(app.UIFigure, ...
+                'Title', '', 'BorderType', 'line', ...
+                'BackgroundColor', Theme.COLOR_CARD, ...
+                'BorderColor', Theme.COLOR_DIVIDER, ...
+                'Position', [0 0 popW popH], ...
+                'Visible', 'off');
+
+            pg = uigridlayout(app.ReportsPopupPanel, [4 1]);
+            pg.RowHeight   = {'1x', '1x', '1x', '1x'};
+            pg.ColumnWidth = {'1x'};
+            pg.Padding     = [4 4 4 4];
+            pg.RowSpacing  = 2;
+            pg.BackgroundColor = Theme.COLOR_CARD;
+
+            % Open (char(9654) — ▶)
+            b1 = uibutton(pg, 'Text', ...
+                [' ' char(9654) '  ' Labels.get('reports_ctx_open', 'Open')], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~) PopupMenuManager.runAndHide(app, ...
+                    @() app.ReportsVm.onOpenReport()));
+            b1.Layout.Row = 1;
+            b1.BackgroundColor = Theme.COLOR_CARD; b1.FontColor = Theme.BTN_FG_DEFAULT;
+
+            % Download (char(8595) — ↓)
+            b2 = uibutton(pg, 'Text', ...
+                [' ' char(8595) '  ' Labels.get('reports_ctx_download', 'Download')], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~) PopupMenuManager.runAndHide(app, ...
+                    @() app.ReportsVm.onDownloadPdf()));
+            b2.Layout.Row = 2;
+            b2.BackgroundColor = Theme.COLOR_CARD; b2.FontColor = Theme.BTN_FG_DEFAULT;
+
+            % Email (char(9993) — ✉)
+            b3 = uibutton(pg, 'Text', ...
+                [' ' char(9993) '  ' Labels.get('reports_ctx_email', 'Email')], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~) PopupMenuManager.runAndHide(app, ...
+                    @() app.ReportsVm.onShareEmail()));
+            b3.Layout.Row = 3;
+            b3.BackgroundColor = Theme.COLOR_CARD; b3.FontColor = Theme.BTN_FG_DEFAULT;
+
+            % Print (char(9113) — ⎙)
+            b4 = uibutton(pg, 'Text', ...
+                [' ' char(9113) '  ' Labels.get('reports_ctx_print', 'Print')], ...
+                'HorizontalAlignment', 'left', 'FontSize', 13, ...
+                'ButtonPushedFcn', @(~,~) PopupMenuManager.runAndHide(app, ...
+                    @() app.ReportsVm.onPrintReport()));
+            b4.Layout.Row = 4;
+            b4.BackgroundColor = Theme.COLOR_CARD; b4.FontColor = Theme.BTN_FG_DEFAULT;
+        end
+
+        function showReportsPopup(app, x, y)
+            if isempty(app.ReportsPopupPanel) || ~isvalid(app.ReportsPopupPanel)
+                PopupMenuManager.buildReportsPopup(app);
+            end
+            popW = 180; popH = 144;
+            figPos = app.UIFigure.Position;
+            px = min(x, figPos(3) - popW - 4);
+            py = max(y - popH, 4);
+            app.ReportsPopupPanel.Position = [px py popW popH];
+            app.ReportsPopupPanel.Visible = 'on';
+        end
+
+        function hideReportsPopup(app)
+            if ~isempty(app.ReportsPopupPanel) && isvalid(app.ReportsPopupPanel)
+                app.ReportsPopupPanel.Visible = 'off';
+            end
+        end
+
         % ── Global dismiss (called on figure mouse-down) ─────────────────
 
         function dismissPopups(app)
             PopupMenuManager.dismissOne(app, 'ProjectsPopupPanel', @PopupMenuManager.hideProjectPopup);
             PopupMenuManager.dismissOne(app, 'CircuitsPopupPanel', @PopupMenuManager.hideCircuitsPopup);
             PopupMenuManager.dismissOne(app, 'BackendsPopupPanel', @PopupMenuManager.hideBackendsPopup);
+            PopupMenuManager.dismissOne(app, 'ReportsPopupPanel',  @PopupMenuManager.hideReportsPopup);
         end
 
     end
@@ -205,6 +283,18 @@ classdef PopupMenuManager
                     hideFcn(app);
                 end
             end
+        end
+
+        function runAndHide(app, fn)
+            % Used by Reports context-menu rows: invoke the action, then
+            % close the popup so it doesn't linger after the user clicks.
+            % The fn callback handles its own errors via uialert; here we
+            % just guarantee the popup hides on every code path.
+            try; fn(); catch ME
+                Logger.warn('PopupMenuManager', ...
+                    'context-menu action failed: %s', ME.message);
+            end
+            try; PopupMenuManager.hideReportsPopup(app); catch; end
         end
     end
 end

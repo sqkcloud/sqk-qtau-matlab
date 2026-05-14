@@ -7,12 +7,75 @@ classdef PredictionViewModel < handle
     %     - Headline callout (one-liner recommendation)
     %     - Probability distribution bar chart (top 8 measurement outcomes)
     %     - Error budget breakdown bar chart (gate/readout/decoherence/crosstalk)
+    properties
+        LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+    end
     properties (Access = private)
         App  % QTAUWorkbenchApp
     end
     methods
         function obj = PredictionViewModel(app)
             obj.App = app;
+        end
+
+        % Populate the Circuit + Backend dropdowns on the toolbar from
+        % the live API. Called by NavigationManager.autoLoadScreen when
+        % the user opens the Prediction tab.
+        function onEnter(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            obj.loadCircuits();
+            obj.loadBackends();
+            obj.LastRefresh = tic;
+        end
+
+        function loadCircuits(obj)
+            app = obj.App;
+            token = app.State.authToken;
+            circSvc = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() circSvc.listCircuits(token), ...
+                @(data) obj.onCircuitsLoaded(app, data), ...
+                @(ME)   obj.onDropdownLoadError(app, 'circuits', ME));
+        end
+
+        function loadBackends(obj)
+            app = obj.App;
+            token = app.State.authToken;
+            backendSvc = app.BackendSvc;
+            circSvc    = app.CircuitSvc;
+            cid = '';
+            if app.State.hasCircuit(); cid = char(app.State.selectedCircuitId); end
+            AsyncRunner.run( ...
+                @() PredictionViewModel.fetchBackendList(backendSvc, circSvc, cid, token), ...
+                @(data) obj.onBackendsLoaded(app, data), ...
+                @(ME)   obj.onDropdownLoadError(app, 'backends', ME));
+        end
+
+        function onCircuitSelected(obj, circuitId)
+            app = obj.App;
+            if isempty(circuitId); return; end
+            app.State.selectedCircuitId = string(circuitId);
+            % Update the circuit name for logging / UI too.
+            try
+                items = app.PredictionCircuitDropdown.Items;
+                ids   = app.PredictionCircuitDropdown.ItemsData;
+                k = find(strcmp(ids, char(circuitId)), 1);
+                if ~isempty(k)
+                    app.State.selectedCircuitName = string(items{k});
+                end
+            catch; end
+            app.logEvent('UI', sprintf('Prediction circuit selected: %s', ...
+                char(app.State.selectedCircuitName)));
+            % Backend fidelity depends on the circuit — refresh the list.
+            obj.loadBackends();
+        end
+
+        function onBackendSelected(obj, backendName)
+            app = obj.App;
+            if isempty(backendName); return; end
+            app.State.selectedBackend = string(backendName);
+            app.logEvent('UI', sprintf('Prediction backend selected: %s', char(backendName)));
         end
 
         function onRunPrediction(obj)
@@ -164,9 +227,159 @@ classdef PredictionViewModel < handle
             end
             app.showError('Submit to IBM', ME);
         end
+
+        function onCircuitsLoaded(~, app, data)
+            try; app.hideLoading(); catch; end
+            if isempty(app.PredictionCircuitDropdown) ...
+                    || ~isvalid(app.PredictionCircuitDropdown); return; end
+            items = JsonHelper.extractList(data, 'circuits');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.PredictionCircuitDropdown.Items     = {'(no circuits)'};
+                app.PredictionCircuitDropdown.ItemsData = {''};
+                app.PredictionCircuitDropdown.Value     = '';
+                return;
+            end
+            names = cell(1, n); ids = cell(1, n);
+            for i = 1:n
+                ids{i}   = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
+                nm       = char(JsonHelper.pick(items(i), {'name','circuit_name'}));
+                if isempty(nm); nm = ids{i}; end
+                names{i} = nm;
+            end
+            app.PredictionCircuitDropdown.Items     = names;
+            app.PredictionCircuitDropdown.ItemsData = ids;
+            selId = char(app.State.selectedCircuitId);
+            match = find(strcmp(ids, selId), 1);
+            if ~isempty(match)
+                app.PredictionCircuitDropdown.Value = ids{match};
+            else
+                app.PredictionCircuitDropdown.Value = ids{1};
+                app.State.selectedCircuitId   = string(ids{1});
+                app.State.selectedCircuitName = string(names{1});
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d circuits into Prediction dropdown', n));
+        end
+
+        function onBackendsLoaded(~, app, data)
+            try; app.hideLoading(); catch; end
+            if isempty(app.PredictionBackendDropdown) ...
+                    || ~isvalid(app.PredictionBackendDropdown); return; end
+            items = JsonHelper.extractList(data, 'backends');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.PredictionBackendDropdown.Items     = {'(no backends)'};
+                app.PredictionBackendDropdown.ItemsData = {''};
+                app.PredictionBackendDropdown.Value     = '';
+                return;
+            end
+            names = cell(1, n);
+            for i = 1:n
+                names{i} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+            end
+            app.PredictionBackendDropdown.Items     = names;
+            app.PredictionBackendDropdown.ItemsData = names;
+            sel = char(app.State.selectedBackend);
+            match = find(strcmp(names, sel), 1);
+            if ~isempty(match)
+                app.PredictionBackendDropdown.Value = names{match};
+            else
+                app.PredictionBackendDropdown.Value = names{1};
+                app.State.selectedBackend = string(names{1});
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d backends into Prediction dropdown', n));
+
+            % Oversize-circuit nudge — data has landed, check whether the
+            % selected circuit is wider than any backend in the pool.
+            % Async dispatch — the listCircuits round-trip ran on the
+            % main thread before, adding a second blocking GET to the
+            % backends-loaded callback.
+            selCid = char(app.State.selectedCircuitId);
+            if ~isempty(selCid)
+                svc   = app.CircuitSvc;
+                token = app.State.authToken;
+                AsyncRunner.run( ...
+                    @() svc.listCircuits(token), ...
+                    @(circList) PredictionViewModel.onCircuitsForOversize( ...
+                        app, data, selCid, circList), ...
+                    @(ME) Logger.debug('PredictionViewModel', ...
+                        'OversizeDetector listCircuits: %s', ME.message));
+            end
+        end
+
+        function onDropdownLoadError(~, app, which, ME)
+            try; app.hideLoading(); catch; end
+            Logger.warn('PredictionViewModel', ...
+                'Failed to load %s: %s', which, ME.message);
+            if strcmp(which, 'circuits') ...
+                    && ~isempty(app.PredictionCircuitDropdown) ...
+                    && isvalid(app.PredictionCircuitDropdown)
+                app.PredictionCircuitDropdown.Items     = {'(load failed)'};
+                app.PredictionCircuitDropdown.ItemsData = {''};
+                app.PredictionCircuitDropdown.Value     = '';
+            elseif strcmp(which, 'backends') ...
+                    && ~isempty(app.PredictionBackendDropdown) ...
+                    && isvalid(app.PredictionBackendDropdown)
+                app.PredictionBackendDropdown.Items     = {'(load failed)'};
+                app.PredictionBackendDropdown.ItemsData = {''};
+                app.PredictionBackendDropdown.Value     = '';
+            end
+        end
     end
 
     methods (Static, Access = private)
+        function onCircuitsForOversize(app, backendsData, selCid, circList)
+            % MAIN-THREAD callback for the async listCircuits dispatched
+            % from onBackendsLoaded. Finds the selected circuit and
+            % invokes OversizeDetector with the original backends payload.
+            try
+                circs = JsonHelper.extractList(circList, 'circuits');
+                for i = 1:numel(circs)
+                    c = circs(i);
+                    if iscell(circs); c = circs{i}; end
+                    if strcmp(char(JsonHelper.pick(c, {'circuit_id','id'})), selCid)
+                        OversizeDetector.check(app, c, backendsData);
+                        break;
+                    end
+                end
+            catch ME
+                Logger.debug('PredictionViewModel', ...
+                    'OversizeDetector: %s', ME.message);
+            end
+        end
+
+        function data = fetchBackendList(backendSvc, circSvc, cid, token)
+            % 3-tier fallback: circuit-scoped list → first circuit → unscoped.
+            if ~isempty(cid) && strlength(string(cid)) > 0
+                try
+                    data = backendSvc.listBackends(token, cid);
+                    if isstruct(data) && isfield(data, 'backends') ...
+                            && ~isempty(data.backends)
+                        return;
+                    end
+                catch
+                end
+            end
+            try
+                circList = circSvc.listCircuits(token);
+                items = JsonHelper.extractList(circList, 'circuits');
+                if ~isempty(items)
+                    fallbackCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
+                    if ~isempty(fallbackCid)
+                        data = backendSvc.listBackends(token, fallbackCid);
+                        if isstruct(data) && isfield(data, 'backends') ...
+                                && ~isempty(data.backends)
+                            return;
+                        end
+                    end
+                end
+            catch
+            end
+            data = backendSvc.listBackends(token, '');
+        end
+
         function explain503(app, cfg, cid, backend)
             broken = logical(JsonHelper.safeField(cfg, 'runtime_broken', false));
             reason = char(JsonHelper.safeField(cfg, 'runtime_broken_reason', ''));
@@ -267,6 +480,19 @@ classdef PredictionViewModel < handle
 
         function renderDistributionChart(obj, distMap)
             ax = obj.App.PredictionDistAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — PredictionScreen ships a uilabel
+                % placeholder to keep cold-mount fast. Pay the uiaxes
+                % cost here, inside the predict-async window the user
+                % is already watching.
+                if isempty(obj.App.PredictionDistGrid) || ~isvalid(obj.App.PredictionDistGrid); return; end
+                if ~isempty(obj.App.PredictionDistPlaceholder) && isvalid(obj.App.PredictionDistPlaceholder)
+                    delete(obj.App.PredictionDistPlaceholder);
+                    obj.App.PredictionDistPlaceholder = [];
+                end
+                ax = uiaxes(obj.App.PredictionDistGrid);
+                obj.App.PredictionDistAxes = ax;
+            end
             cla(ax, 'reset');
             obj.App.styleAxes(ax);
             if ~isstruct(distMap) || isempty(fieldnames(distMap))
@@ -294,6 +520,13 @@ classdef PredictionViewModel < handle
             % followed by digits.
             displayNames = cellfun(@PredictionViewModel.unmangleStateLabel, ...
                 names, 'UniformOutput', false);
+            % Wide circuits (QMC is 156 qubits) produce bitstrings that
+            % are 100+ characters long; a 30° tick rotation spills the
+            % text off the axes and the bars disappear behind them.
+            % Collapse runs (e.g. "0000…0000") and truncate to something
+            % readable.
+            displayNames = cellfun(@PredictionViewModel.shortenBitstring, ...
+                displayNames, 'UniformOutput', false);
 
             hold(ax, 'on');
             barColor = [0.22 0.48 0.78];
@@ -313,7 +546,8 @@ classdef PredictionViewModel < handle
             ax.XTick = 1:keep;
             ax.XTickLabel = displayNames;
             ax.TickLabelInterpreter = 'none';
-            ax.XTickLabelRotation = 30;
+            ax.XTickLabelRotation = 45;
+            ax.FontSize = 9;
             ax.XLim = [0.4, keep + 0.6];
             ax.YLim = [0, max(probs) * 1.22];
             ax.YTick = 0:0.2:1;
@@ -327,6 +561,19 @@ classdef PredictionViewModel < handle
 
         function renderBudgetChart(obj, budgetMap)
             ax = obj.App.PredictionBudgetAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — PredictionScreen ships a uilabel
+                % placeholder to keep cold-mount fast. Pay the uiaxes
+                % cost here, inside the predict-async window the user
+                % is already watching.
+                if isempty(obj.App.PredictionBudgetGrid) || ~isvalid(obj.App.PredictionBudgetGrid); return; end
+                if ~isempty(obj.App.PredictionBudgetPlaceholder) && isvalid(obj.App.PredictionBudgetPlaceholder)
+                    delete(obj.App.PredictionBudgetPlaceholder);
+                    obj.App.PredictionBudgetPlaceholder = [];
+                end
+                ax = uiaxes(obj.App.PredictionBudgetGrid);
+                obj.App.PredictionBudgetAxes = ax;
+            end
             cla(ax, 'reset');
             obj.App.styleAxes(ax);
             if ~isstruct(budgetMap) || isempty(fieldnames(budgetMap))
@@ -533,6 +780,26 @@ classdef PredictionViewModel < handle
             else
                 s = c;
             end
+        end
+
+        function s = shortenBitstring(label)
+            % Keep short bitstrings as-is. For long ones (>14 chars),
+            % collapse long runs of identical bits and ellipsise the
+            % middle so a 156-bit string like "00000…00000" becomes
+            % something readable like "0000…(152)…0000".
+            c = char(label);
+            n = numel(c);
+            if n <= 14
+                s = c;
+                return;
+            end
+            % If the bitstring is all 0s / all 1s, describe it compactly.
+            if all(c == c(1))
+                s = sprintf('%c×%d', c(1), n);
+                return;
+            end
+            % Otherwise keep the first 6 and last 6 bits, note length.
+            s = sprintf('%s…(%d)…%s', c(1:6), n - 12, c(end-5:end));
         end
 
     end

@@ -1,5 +1,5 @@
 % seed_qasmbench.m ─────────────────────────────────────────────────────────────
-% Uploads QASMBench circuits from samples/qasmbench/ via the QTAU Connector
+% Uploads QTAUBench circuits from samples/qasmbench/ via the QTAU Connector
 % REST API.  Files are read from disk (small/, medium/, large/ subdirectories).
 %
 % Usage:
@@ -12,7 +12,7 @@
 % Provides data for: Upload screen, Analysis screen
 % ──────────────────────────────────────────────────────────────────────────────
 
-fprintf('\n=== QTAU Seed: Uploading QASMBench circuits ===\n\n');
+fprintf('\n=== QTAU Seed: Uploading QTAUBench circuits ===\n\n');
 
 % ── User-tuneable knobs ─────────────────────────────────────────────────────
 if ~exist('MAX_FILE_KB', 'var'),        MAX_FILE_KB = 512;           end
@@ -28,7 +28,7 @@ BASE_URL = cfg.base_url;
 rootDir = fullfile(fileparts(mfilename('fullpath')), '..', 'samples', 'qasmbench');
 if ~isfolder(rootDir)
     error('seed_qasmbench:notFound', ...
-        'samples/qasmbench/ not found. Clone QASMBench files first.');
+        'samples/qasmbench/ not found. Clone QTAUBench files first.');
 end
 
 % ── Step 1: Authenticate ────────────────────────────────────────────────────
@@ -179,8 +179,8 @@ if totalFiles == 0
     return;
 end
 
-% ── Step 3: Delete existing QASMBench circuits ──────────────────────────────
-fprintf('[3/4] Deleting existing QASMBench circuits ... ');
+% ── Step 3: Delete existing QTAUBench circuits ──────────────────────────────
+fprintf('[3/4] Deleting existing QTAUBench circuits ... ');
 getOpts    = seed_helpers.getOpts(token);
 deleteOpts = weboptions('Timeout', 30, 'RequestMethod', 'delete', ...
     'HeaderFields', {'Authorization', char("Bearer " + token)});
@@ -205,7 +205,7 @@ try
             if isstruct(items(k)) && isfield(items(k), 'source')
                 src = string(items(k).source);
             end
-            if src == "QASMBench"
+            if src == "QTAUBench"
                 idsToDelete{end+1} = char(string(items(k).circuit_id)); %#ok<SAGROW>
             end
         end
@@ -230,7 +230,7 @@ catch
 end
 
 % ── Step 4: Upload circuits ─────────────────────────────────────────────────
-fprintf('[4/4] Uploading %d QASMBench circuits ...\n', totalFiles);
+fprintf('[4/4] Uploading %d QTAUBench circuits ...\n', totalFiles);
 
 uploadUrl    = [BASE_URL '/api/circuits/upload'];
 opts         = seed_helpers.postOpts(token);
@@ -253,7 +253,7 @@ for i = 1:totalFiles
         'name',     entry.name, ...
         'format',   'qasm2', ...
         'category', entry.category, ...
-        'source',   'QASMBench', ...
+        'source',   'QTAUBench', ...
         'content',  content);
 
     try

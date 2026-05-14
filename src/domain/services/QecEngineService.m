@@ -24,8 +24,20 @@ classdef QecEngineService < handle
         end
 
         % ── Main simulation pipeline ─────────────────────────────────────────
-        function result = simulate(obj, codeType, noiseModel, errorProb, initialState, nRounds)
+        function result = simulate(obj, codeType, noiseModel, errorProb, initialState, nRounds, errorProbVec)
+            % SIMULATE  Run a QEC code under a noise channel.
+            %
+            % errorProbVec (optional) is a row vector of per-qubit error
+            % rates. When provided, applyNoiseChannel uses errorProbVec(q)
+            % for each physical qubit q instead of the uniform errorProb.
+            % Supplied by QecSimulationViewModel after the operator picks
+            % a backend (calibration → per-qubit gate errors) and a
+            % circuit (qubit subset). Length must be >= the QEC code's
+            % qubit count; the scalar errorProb is recorded as the
+            % population mean for Sweep / Compare paths that don't carry
+            % the vector.
             if nargin < 6; nRounds = 1; end
+            if nargin < 7; errorProbVec = []; end
             codeType    = char(codeType);
             noiseModel  = char(noiseModel);
             initialState = char(initialState);
@@ -44,6 +56,10 @@ classdef QecEngineService < handle
             % Encode
             rhoEncoded = obj.encode(psi0, codeType);
 
+            % Resolve per-qubit error vector. Falls back to a uniform
+            % `errorProb` repeat when the caller didn't pass calibration.
+            pVec = QecEngineService.resolveErrorVec(errorProb, errorProbVec, nQubits);
+
             % Syndrome histogram accumulator
             syndromeMap = containers.Map('KeyType', 'char', 'ValueType', 'double');
             nSuccess    = 0;
@@ -52,8 +68,8 @@ classdef QecEngineService < handle
             for trial = 1:nTrials
                 rho = rhoEncoded;
                 for round = 1:nRounds
-                    % Apply noise to each physical qubit
-                    rho = obj.applyNoiseChannel(rho, noiseModel, errorProb, nQubits);
+                    % Apply noise using the per-qubit rate vector pVec
+                    rho = obj.applyNoiseChannel(rho, noiseModel, pVec, nQubits);
                     % Syndrome extraction and correction
                     [synBits, rho] = obj.extractAndCorrect(rho, codeType);
                     synKey = mat2str(synBits);
@@ -72,7 +88,7 @@ classdef QecEngineService < handle
             % Final single-shot for output density matrix
             rho = rhoEncoded;
             for round = 1:nRounds
-                rho = obj.applyNoiseChannel(rho, noiseModel, errorProb, nQubits);
+                rho = obj.applyNoiseChannel(rho, noiseModel, pVec, nQubits);
                 [~, rho] = obj.extractAndCorrect(rho, codeType);
             end
             rhoLogical = obj.decodeLogical(rho, codeType);
@@ -87,6 +103,8 @@ classdef QecEngineService < handle
             result.codeType          = codeType;
             result.noiseModel        = noiseModel;
             result.errorProb         = errorProb;
+            result.errorProbVec      = pVec;
+            result.usedCalibration   = ~isempty(errorProbVec);
             result.nRounds           = nRounds;
             result.initialState      = initialState;
         end
@@ -117,6 +135,42 @@ classdef QecEngineService < handle
             results = cell(1, nCodes);
             for c = 1:nCodes
                 results{c} = obj.sweepErrorRate(codeTypes{c}, noiseModel, pRange, initialState, nRounds);
+            end
+        end
+
+        % ── Phase C: Analytical compare (closed-form fidelity curves) ────────
+        function results = compareCodesAnalytical(~, codeTypes, noiseModel, pRange)
+            % Return the same struct shape as compareCodes, but compute
+            % fidelity curves via leading-order closed-form formulas
+            % instead of Monte Carlo. Density-matrix MC for Shor(9) and
+            % Steane(7) takes O(4^N) per gate-application — Compare with
+            % all 5 codes was ~16 minutes. Analytical compare is ~1 ms.
+            %
+            % The formulas use the binomial decoder-success approximation
+            % F_logical(p) ≈ Σ_{k=0..t} C(d,k) p^k (1-p)^(d-k) where d is
+            % the code's physical-qubit count and t = floor((d-1)/2) is
+            % the maximum number of correctable errors. This matches the
+            % MC simulator's leading-order behaviour at small p and gives
+            % a visually correct QEC curve for all noise models the code
+            % is matched to. Mismatched code/noise combos return F=1-p
+            % (no protection).
+            nCodes = numel(codeTypes);
+            results = cell(1, nCodes);
+            M = numel(pRange);
+            for c = 1:nCodes
+                ct = char(codeTypes{c});
+                F  = zeros(1, M);
+                for i = 1:M
+                    F(i) = QecEngineService.analyticalFidelity(ct, noiseModel, pRange(i));
+                end
+                results{c} = struct( ...
+                    'errorRates',   pRange, ...
+                    'fidelities',   F, ...
+                    'blochVectors', zeros(M, 3), ...
+                    'successRates', F, ...
+                    'codeType',     ct, ...
+                    'noiseModel',   char(noiseModel), ...
+                    'analytical',   true);
             end
         end
 
@@ -403,9 +457,22 @@ classdef QecEngineService < handle
 
         % ── Noise channels ────────────────────────────────────────────────────
         function rho = applyNoiseChannel(obj, rho, noiseModel, p, nQubits)
+            % `p` can be a scalar (uniform error probability across all
+            % qubits) or a row vector with one rate per physical qubit
+            % (sourced from backend calibration). Per-qubit rates let
+            % the simulator reflect real device asymmetry — q[5] on
+            % ibm_pittsburgh has a different gate error than q[42], so
+            % the encoded logical state's effective fidelity depends on
+            % which qubits the circuit actually uses.
             dim = 2^nQubits;
+            isVec = ~isscalar(p);
             for q = 1:nQubits
-                kraus = obj.krausOperators(noiseModel, p, q, nQubits);
+                if isVec
+                    pq = p(min(q, numel(p)));
+                else
+                    pq = p;
+                end
+                kraus = obj.krausOperators(noiseModel, pq, q, nQubits);
                 rhoNew = zeros(dim);
                 for k = 1:numel(kraus)
                     rhoNew = rhoNew + kraus{k} * rho * kraus{k}';
@@ -856,5 +923,82 @@ classdef QecEngineService < handle
             end
         end
 
+    end
+
+    methods (Static, Access = private)
+        function F = analyticalFidelity(codeType, noiseModel, p)
+            % Closed-form leading-order logical fidelity. Used by
+            % compareCodesAnalytical for the Compare button so users
+            % don't sit through 16+ minutes of MC. Formulas: decoder
+            % succeeds when ≤ floor((d-1)/2) physical errors occur,
+            % so F = Σ C(d,k) p^k (1-p)^(d-k) for k=0..t.
+            p = max(0, min(1, double(p)));
+            if ~QecEngineService.isMatchedNoise(codeType, noiseModel)
+                F = max(0, 1 - p);  % code provides no protection
+                return;
+            end
+            switch char(codeType)
+                case {'bitflip3', 'phaseflip3'}
+                    % d=3, t=1: F = (1-p)^3 + 3p(1-p)^2 = 1 - 3p^2 + 2p^3
+                    F = (1-p)^3 + 3*p*(1-p)^2;
+                case 'perfect5'
+                    % [[5,1,3]] perfect code, d=5, t=1
+                    F = (1-p)^5 + 5*p*(1-p)^4;
+                case 'steane7'
+                    % [[7,1,3]] Steane CSS code, d=7, t=1
+                    F = (1-p)^7 + 7*p*(1-p)^6;
+                case 'shor9'
+                    % [[9,1,3]] Shor concatenated code, d=9, t=1
+                    F = (1-p)^9 + 9*p*(1-p)^8;
+                case 'surface'
+                    % d=3 surface code uses 9 data qubits → same
+                    % leading-order term as Shor for the curve shape
+                    F = (1-p)^9 + 9*p*(1-p)^8;
+                otherwise
+                    F = (1-p)^3 + 3*p*(1-p)^2;
+            end
+        end
+
+        function tf = isMatchedNoise(codeType, noiseModel)
+            % Repetition codes only protect against errors of their
+            % matching axis (Bit-Flip code catches X errors only).
+            % Block codes (Shor/Steane/Perfect/Surface) catch any
+            % single-qubit Pauli error so all common channels match.
+            n = lower(char(noiseModel));
+            switch char(codeType)
+                case 'bitflip3'
+                    tf = any(strcmp(n, {'bit_flip','depolarizing'}));
+                case 'phaseflip3'
+                    tf = any(strcmp(n, {'phase_flip','depolarizing'}));
+                case {'shor9','steane7','perfect5','surface'}
+                    tf = any(strcmp(n, ...
+                        {'bit_flip','phase_flip','depolarizing', ...
+                         'amplitude_damping','phase_damping'}));
+                otherwise
+                    tf = false;
+            end
+        end
+
+        function pVec = resolveErrorVec(scalarP, vecP, nQubits)
+            % Pick per-qubit error rates. When the caller supplied a
+            % calibration vector long enough for the QEC code we use
+            % it as-is; when the vector is shorter, we pad with the
+            % scalar fallback (so e.g. a 7-qubit Steane code on a
+            % 5-qubit-cal slice still works). When no vector was
+            % supplied at all, repeat the scalar — preserves the
+            % simulator's pre-Phase-2 uniform-rate behaviour for
+            % sweep / compare callers and any caller that never wires
+            % a backend.
+            if isempty(vecP)
+                pVec = repmat(double(scalarP), 1, nQubits);
+                return;
+            end
+            v = double(vecP(:).');
+            if numel(v) >= nQubits
+                pVec = v(1:nQubits);
+            else
+                pVec = [v, repmat(double(scalarP), 1, nQubits - numel(v))];
+            end
+        end
     end
 end

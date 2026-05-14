@@ -4,6 +4,21 @@ classdef CircuitDiagram
     %   Usage:  lines = CircuitDiagram.render(qasmText)       % plain text
     %           html  = CircuitDiagram.renderHtml(qasmText)   % colored HTML
     %           src   = CircuitDiagram.wrapHtml(text)         % wrap in page
+    %
+    %   Static-only utility namespace. The constructor is private to
+    %   block accidental REPL instantiation — typing `CircuitDiagram`
+    %   alone (without a method call) used to silently produce
+    %       ans = CircuitDiagram with no properties.
+    %   which is confusing noise that hides the fact that no work was
+    %   being done. Now the REPL errors with "no public constructor",
+    %   which surfaces the intent: call methods via
+    %   `CircuitDiagram.<method>(...)`.
+
+    methods (Access = private)
+        function obj = CircuitDiagram()  %#ok<STOUT>
+            % Private — see classdef header for rationale.
+        end
+    end
 
     methods (Static)
 
@@ -110,15 +125,70 @@ classdef CircuitDiagram
         end
 
         function src = buildStatsHtml(infoLines, diagramHtml)
-            % buildStatsHtml  Wrap SVG or HTML diagram for uihtml display.
-            %   Uses a wrapper div for centering so that overflow scrolling
-            %   works correctly for large diagrams (many qubits / columns).
+            % buildStatsHtml  Wrap SVG or HTML diagram for uihtml display
+            %   with vertical AND horizontal scroll on overflow.
+            %
+            % Layout strategy: body uses CSS Grid + place-items:center so a
+            % small diagram is centered in the viewport, while large
+            % diagrams (many qubits / many gate columns) overflow the body
+            % and surface both-axis scrollbars via overflow:auto.
+            %
+            % Why grid and not flex: the previous `display:inline-flex` +
+            % `align-items:center` on `.wrap` had the classic flex-
+            % centering scroll-clip bug — when the wrapped child is wider
+            % than the viewport, flex centering pushes the child's left
+            % edge OUT of the document's scrollable area, so the user
+            % could see scrollbars but couldn't actually pan to the left
+            % portion of the circuit. CSS Grid does not have this bug:
+            % grid items can overflow their cell in both directions and
+            % remain reachable via the body's scrollbars.
+            %
+            % Why `.wrap svg{max-width:none}`: the Qiskit server-side
+            % preview (matplotlib drawer) emits `<svg width="100%" ...>`
+            % for some circuits, which would force the SVG to shrink to
+            % the viewport regardless of viewBox intrinsic size. Setting
+            % max-width:none lets the SVG render at its true width, so
+            % wide circuits actually trigger horizontal scrolling.
+            % Layered fix (round 2 — was still missing scrollbars on
+            % wide circuits even after the prior grid-centering CSS):
+            %
+            %   1. overflow:auto on <html> (not body) — html is the
+            %      conventional scroll container; some CEF builds get
+            %      quirky when overflow + display:grid live on the
+            %      same element. Putting them on different elements
+            %      is the safer pattern.
+            %
+            %   2. svg{width:auto;height:auto;max-width:none} — CSS
+            %      width:auto OVERRIDES inline width="100%" SVG
+            %      attributes that Qiskit's matplotlib drawer emits.
+            %      Without this, max-width:none alone is insufficient
+            %      because the SVG presentation attribute wins
+            %      against external stylesheet rules without an
+            %      explicit width declaration. With width:auto the
+            %      SVG renders at its viewBox-intrinsic size —
+            %      exactly the size needed to make horizontal
+            %      scrolling kick in for wide many-qubit circuits.
+            %
+            %   3. ::-webkit-scrollbar styling — macOS auto-hides
+            %      system scrollbars by default. The user can scroll
+            %      via trackpad gesture but has zero visual
+            %      indication that scrolling is even possible — which
+            %      is exactly what the user reported on a 110-qubit
+            %      circuit preview that already scrolled correctly
+            %      under the hood. Forcing always-visible WebKit
+            %      scrollbars makes the affordance discoverable.
             src = [ ...
                 '<html><head><style>' ...
-                'html,body{width:100%;height:100%;margin:0;padding:0;overflow:auto;' ...
-                'background:#111827;}' ...
-                '.wrap{display:inline-flex;flex-direction:column;align-items:center;' ...
-                'min-width:100%;min-height:100%;padding:12px;box-sizing:border-box;}' ...
+                'html,body{margin:0;padding:0;background:#111827;}' ...
+                'html{width:100%;height:100%;overflow:auto;}' ...
+                'body{min-width:100%;min-height:100%;display:grid;place-items:center;}' ...
+                '.wrap{padding:12px;box-sizing:border-box;}' ...
+                '.wrap svg{display:block;width:auto;height:auto;max-width:none;}' ...
+                '::-webkit-scrollbar{width:14px;height:14px;}' ...
+                '::-webkit-scrollbar-track{background:#1f2937;}' ...
+                '::-webkit-scrollbar-thumb{background:#4b5563;border-radius:7px;border:2px solid #1f2937;}' ...
+                '::-webkit-scrollbar-thumb:hover{background:#6b7280;}' ...
+                '::-webkit-scrollbar-corner{background:#1f2937;}' ...
                 '</style></head><body>' ...
                 '<div class="wrap">' char(diagramHtml) '</div>' ...
                 '</body></html>'];
@@ -461,22 +531,40 @@ classdef CircuitDiagram
             %   and per-qubit measurement probabilities.
             if nargin < 3, stateVec = []; end
 
-            % Layout constants
-            gateW   = 38;   % gate box width
-            gateH   = 32;   % gate box height
-            colW    = 52;   % column spacing
-            rowH    = 54;   % row spacing (qubit wire spacing)
-            labelW  = 80;   % left margin for qubit labels
-            padR    = 24;   % right padding
-            padT    = 16;   % top padding
-            padB    = 16;   % bottom padding
+            % Layout constants — matched to ComposerViewModel.repaintCanvas
+            % so a circuit looks identical in the Composer's interactive
+            % canvas and in this SVG preview. Composer renders at 25 px
+            % per qubit unit with gate boxes filling ~0.55 of the row;
+            % these SVG sizes scale that proportion up just enough to
+            % keep the gate-symbol text legible after uihtml's container
+            % scaling.
+            gateW   = 24;   % gate box width   (was 38)
+            gateH   = 20;   % gate box height  (was 32)
+            colW    = 32;   % column spacing   (was 52)
+            rowH    = 32;   % row spacing — qubit wire pitch (was 54)
+            labelW  = 80;   % left margin for qubit labels (kept; "q[N] |0>" still fits)
+            padR    = 18;   % right padding   (was 24)
+            padT    = 12;   % top padding     (was 16)
+            padB    = 12;   % bottom padding  (was 16)
             maxCols = 10000; % max gate columns to display
             probW   = 110;  % width reserved for probability labels on the right
 
-            % Dark theme colors
-            bgColor     = '#111827';  % dark charcoal background
-            wireColor   = '#4B5563';  % subtle gray wires
-            labelColor  = '#D1D5DB';  % light gray labels
+            % Structural colors → drawn from the active Theme palette so
+            % the SVG inherits the same look as the Composer canvas
+            % (panel cards, wires, labels) and follows theme changes.
+            % Each lookup is guarded so a stub Theme (during isolated
+            % unit tests) falls back to the prior hardcoded dark hex.
+            try; bgColor       = Theme.toHex(Theme.COLOR_CARD);    catch; bgColor       = '#111827'; end
+            try; wireColor     = Theme.toHex(Theme.COLOR_DIVIDER); catch; wireColor     = '#4B5563'; end
+            try; labelColor    = Theme.toHex(Theme.COLOR_LABEL);   catch; labelColor    = '#D1D5DB'; end
+            try; truncColor    = Theme.toHex(Theme.COLOR_MUTED);   catch; truncColor    = '#6B7280'; end
+            try; gateTextColor = Theme.toHex(Theme.COLOR_HEADING); catch; gateTextColor = '#FFFFFF'; end
+
+            % Decorative element colors — kept as-is so per-family gate
+            % differentiation, the amber SWAP, the blue CNOT target, the
+            % light-blue control dot, the measurement meter ornament,
+            % and the green probability bar all stay visually distinct
+            % the way they are today (user requested no element drops).
             ctrlDot     = '#93C5FD';  % light blue control dot
             ctrlLine    = '#60A5FA';  % blue connector lines
             cnotFill    = '#2563EB';  % blue CNOT target
@@ -484,7 +572,6 @@ classdef CircuitDiagram
             swapColor   = '#F59E0B';  % amber SWAP
             measFill    = '#1E293B';  % dark slate measurement box
             measStroke  = '#475569';
-            truncColor  = '#6B7280';  % muted text
             probColor   = '#34D399';  % emerald green for probability text
             probBarBg   = '#1F2937';  % dark bar background
             probBarFill = '#10B981';  % emerald bar fill
@@ -603,11 +690,15 @@ classdef CircuitDiagram
                         bx = cx - gateW/2; by = cy - gateH/2;
                         parts{end+1} = sprintf('<rect x="%.0f" y="%.0f" width="%d" height="%d" rx="5" fill="%s" stroke="%s" stroke-width="1.2"/>', ...
                             bx, by, gateW, gateH, clr.bg, clr.border);
-                        fs = 13;
-                        if length(sym) > 2; fs = 10; end
-                        if length(sym) > 3; fs = 9; end
-                        parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">%s</text>', ...
-                            cx, cy, fs, sym);
+                        % Font-size ladder scaled down to fit the smaller
+                        % gateH=20 box (was 32). Keeps the same ~0.55
+                        % text-to-box ratio the Composer canvas uses
+                        % (FontSize 11 inside an axes-units 0.55-tall box).
+                        fs = 11;
+                        if length(sym) > 2; fs = 9; end
+                        if length(sym) > 3; fs = 8; end
+                        parts{end+1} = sprintf('<text x="%.0f" y="%.0f" font-size="%d" font-weight="bold" fill="%s" text-anchor="middle" dominant-baseline="central">%s</text>', ...
+                            cx, cy, fs, gateTextColor, sym);
                     end
                 end
 

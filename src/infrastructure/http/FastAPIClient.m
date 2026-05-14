@@ -93,7 +93,18 @@ classdef FastAPIClient < handle
                 data = FastAPIClient.normalizeJsonResponse(raw);
                 Logger.debug('FastAPIClient', 'GET %s → OK', endpoint);
             catch ME
-                Logger.error('FastAPIClient', 'GET %s FAILED: %s', endpoint, ME.message);
+                % HTTP 404 on a GET is the canonical "does this resource
+                % exist?" probe (e.g. GET .../qae/result → 404 means
+                % "no cached QMC result yet"). Logging at ERROR floods
+                % the event log with red lines for what callers already
+                % handle as routine control flow at DEBUG. Demote 404
+                % to DEBUG; everything else (5xx, 4xx other than 404,
+                % network/timeout failures) stays at ERROR.
+                if contains(ME.identifier, 'HTTP404')
+                    Logger.debug('FastAPIClient', 'GET %s → 404 Not Found', endpoint);
+                else
+                    Logger.error('FastAPIClient', 'GET %s FAILED: %s', endpoint, ME.message);
+                end
                 rethrow(ME);
             end
         end
@@ -109,26 +120,98 @@ classdef FastAPIClient < handle
                 data = FastAPIClient.normalizeJsonResponse(raw);
                 Logger.debug('FastAPIClient', 'GET %s → OK', endpoint);
             catch ME
-                Logger.error('FastAPIClient', 'GET %s FAILED: %s', endpoint, ME.message);
+                % See the matching note in get() above — 404 on GET is
+                % a routine "does this resource exist?" signal (e.g.
+                % the QMC cache probe at GET .../qae/result). Demote
+                % to DEBUG so the event log isn't noisy with red ERROR
+                % lines for what's actually expected control flow.
+                if contains(ME.identifier, 'HTTP404')
+                    Logger.debug('FastAPIClient', 'GET %s → 404 Not Found', endpoint);
+                else
+                    Logger.error('FastAPIClient', 'GET %s FAILED: %s', endpoint, ME.message);
+                end
                 rethrow(ME);
             end
         end
 
-        % POST JSON with Bearer token
-        function data = postAuthJson(obj, endpoint, payload, token)
+        % GET with Bearer token → save response body to a local file.
+        % Used for binary downloads (PDF, HTML, JSON report files) where
+        % the server replies with a FileResponse stream.
+        function localPath = downloadFileAuth(obj, endpoint, token, localPath)
             url = char(obj.BaseUrl + string(endpoint));
-            Logger.http('POST', url);
-            opts = weboptions('Timeout', obj.Timeout, ...
-                'MediaType', 'application/json', 'ContentType', 'json', ...
+            Logger.http('GET(download)', url);
+            opts = weboptions('Timeout', max(obj.Timeout, 120), ...
+                'ContentType', 'raw', ...
                 'HeaderFields', FastAPIClient.authHeaders(token, obj.ProjectId));
             try
-                raw  = webwrite(url, payload, opts);
-                data = FastAPIClient.normalizeJsonResponse(raw);
-                Logger.debug('FastAPIClient', 'POST %s → OK', endpoint);
+                websave(char(localPath), url, opts);
+                Logger.debug('FastAPIClient', 'DOWNLOAD %s → %s', endpoint, char(localPath));
+            catch ME
+                Logger.error('FastAPIClient', 'DOWNLOAD %s FAILED: %s', endpoint, ME.message);
+                rethrow(ME);
+            end
+        end
+
+        % POST JSON with Bearer token. Optional timeoutSec overrides
+        % the default obj.Timeout for long-running endpoints (e.g. IBM
+        % Runtime QMC where the server waits on QPU execution).
+        %
+        % Routes through matlab.net.http (instead of webwrite) so the
+        % FastAPI {"detail": "..."} body is captured on non-2xx responses
+        % — webwrite drops the body before throwing, so callers only ever
+        % saw "Unprocessable Entity" with no actionable reason. The thrown
+        % MException keeps the canonical identifier shape
+        % MATLAB:webservices:HTTP<code>StatusCodeError so existing
+        % showError/identifier handling stays compatible.
+        function data = postAuthJson(obj, endpoint, payload, token, timeoutSec)
+            if nargin < 5 || isempty(timeoutSec); timeoutSec = obj.Timeout; end
+            url = char(obj.BaseUrl + string(endpoint));
+            Logger.http('POST', url);
+
+            import matlab.net.http.*
+            import matlab.net.http.field.*
+            import matlab.net.*
+
+            headers = [ContentTypeField(MediaType('application/json')), ...
+                       GenericField('Accept', 'application/json'), ...
+                       GenericField('Authorization', ['Bearer ' char(token)])];
+            if strlength(string(obj.ProjectId)) > 0
+                headers = [headers, GenericField('X-Project-Id', char(obj.ProjectId))];
+            end
+            msgBody = MessageBody();
+            % unicode2native(..., 'UTF-8') NOT uint8(...). uint8 on a MATLAB
+            % string casts each char to char & 0xFF, so multibyte
+            % characters (em-dash U+2014, smart quotes, anything outside
+            % ASCII) get truncated to a single garbage byte. The server's
+            % UTF-8 JSON parser then rejects the body with HTTP 400
+            % "There was an error parsing the body" — visible in the API
+            % logs as a � replacement char where the original
+            % character should be. unicode2native emits the correct
+            % multi-byte UTF-8 sequence so any valid Unicode string in a
+            % POST payload (cut_plan.feasibility_reason, report titles,
+            % etc.) round-trips cleanly.
+            msgBody.Payload = unicode2native(jsonencode(payload), 'UTF-8');
+            req  = RequestMessage(RequestMethod.POST, headers, msgBody);
+            opts = HTTPOptions('ConnectTimeout', double(timeoutSec));
+
+            try
+                resp = req.send(URI(url), opts);
             catch ME
                 Logger.error('FastAPIClient', 'POST %s FAILED: %s', endpoint, ME.message);
                 rethrow(ME);
             end
+
+            httpStatus = double(resp.StatusCode);
+            bodyData = resp.Body.Data;
+            if isa(bodyData, 'uint8'); bodyData = char(bodyData'); end
+
+            if httpStatus >= 400
+                Logger.error('FastAPIClient', 'POST %s FAILED: HTTP %d', endpoint, httpStatus);
+                FastAPIClient.throwHttpError(httpStatus, resp.StatusCode, url, bodyData);
+            end
+
+            data = FastAPIClient.normalizeJsonResponse(bodyData);
+            Logger.debug('FastAPIClient', 'POST %s → OK', endpoint);
         end
 
         % PUT JSON with Bearer token
@@ -312,6 +395,52 @@ classdef FastAPIClient < handle
                  contains(ME.identifier, 'URLREAD');
         end
 
+        function throwHttpError(httpStatus, statusCode, url, bodyData)
+            % Throw an MException whose identifier matches the shape MATLAB's
+            % webread/webwrite uses on non-2xx responses, but whose message
+            % includes the FastAPI `detail` body when present so the UI's
+            % showError dialog gets actionable text instead of just the bare
+            % status phrase ("Unprocessable Entity", "Internal Server Error").
+            phrase = FastAPIClient.humanStatusPhrase(statusCode);
+            base = sprintf(['The server returned the status %d with message ' ...
+                            '"%s" in response to the request to URL %s.'], ...
+                            httpStatus, phrase, url);
+            detail = FastAPIClient.extractErrorMessage(bodyData, httpStatus);
+            fallback = sprintf('Request failed with status %d', httpStatus);
+            if isempty(detail) || strcmp(detail, fallback)
+                msg = base;
+            else
+                msg = sprintf('%s\n\nDetails:\n%s', base, detail);
+            end
+            id = sprintf('MATLAB:webservices:HTTP%dStatusCodeError', httpStatus);
+            err = MException(id, '%s', msg);
+            throw(err);
+        end
+
+        function phrase = humanStatusPhrase(statusCode)
+            % Convert a matlab.net.http.StatusCode enum (or numeric/string
+            % fallback) into the human reason phrase MATLAB's webread shows
+            % — e.g. StatusCode.UnprocessableEntity → "Unprocessable Entity".
+            % NOTE: char(enum) returns the enum NAME ("Unauthorized"), while
+            % string(enum) coerces to its underlying numeric value ("401")
+            % on R2025b. We want the name so the regex below produces
+            % "Unauthorized" → "Unauthorized" / "InternalServerError" →
+            % "Internal Server Error" matching webread's display style.
+            try
+                name = char(statusCode);
+            catch
+                name = '';
+            end
+            if isempty(name)
+                phrase = 'Error';
+                return;
+            end
+            % Insert a space between lowercase→uppercase boundaries so
+            % "InternalServerError" → "Internal Server Error". Two-letter
+            % acronyms like "OK" are unaffected by the regex.
+            phrase = regexprep(name, '([a-z])([A-Z])', '$1 $2');
+        end
+
         function msg = extractErrorMessage(bodyData, httpStatus)
             % Try to extract a human-readable message from a JSON error body.
             % bodyData may be a char array (raw JSON), a struct (auto-parsed
@@ -387,9 +516,14 @@ classdef FastAPIClient < handle
         end
 
         function data = uploadViaHttpNet(url, filePath, extraFields, token, timeout, projectId)
-            % matlab.net.http multipart upload (R2016b+)
+            % matlab.net.http multipart upload.
+            %   Builds the multipart/form-data body manually (raw bytes +
+            %   custom boundary) to avoid depending on the FormField /
+            %   MultipartFormProvider constructor signatures, which have
+            %   shifted between MATLAB releases (R2025b currently rejects
+            %   the 4-arg FormField ctor that worked in earlier versions).
             import matlab.net.http.*
-            import matlab.net.http.io.*
+            import matlab.net.http.field.*
             import matlab.net.*
 
             [~, fname, ext] = fileparts(filePath);
@@ -400,33 +534,47 @@ classdef FastAPIClient < handle
                 error('FastAPIClient:fileNotFound', 'Cannot open file: %s', filePath);
             end
             closeFile = onCleanup(@() fclose(fid));
-            bytes = fread(fid, '*uint8');
+            fileBytes = fread(fid, '*uint8')';  % row vector uint8
 
-            dispValue = sprintf('form-data; name="file"; filename="%s"', fileName);
+            % Unique boundary marker, unlikely to collide with file contents.
+            boundary = sprintf('----QDashBoundary%s%06d', ...
+                datestr(now, 'yyyymmddHHMMSSFFF'), randi(999999));
+            CRLF = uint8([13 10]);
 
-            filePart = FormField('file', bytes, ...
-                field.ContentTypeField('application/octet-stream'), ...
-                field.GenericField('Content-Disposition', dispValue));
-
-            parts = {filePart};
+            body = uint8([]);
+            % Extra text fields come first (order doesn't matter to FastAPI).
             if isstruct(extraFields)
                 fnames = fieldnames(extraFields);
                 for i = 1:numel(fnames)
                     val = extraFields.(fnames{i});
                     if isnumeric(val); val = num2str(val); end
-                    parts{end+1} = FormField(fnames{i}, char(val)); %#ok
+                    header = sprintf(['--%s\r\n' ...
+                                      'Content-Disposition: form-data; name="%s"\r\n' ...
+                                      '\r\n'], boundary, fnames{i});
+                    body = [body, uint8(header), uint8(char(val)), CRLF]; %#ok<AGROW>
                 end
             end
+            % File part last.
+            fileHeader = sprintf(['--%s\r\n' ...
+                                  'Content-Disposition: form-data; name="file"; filename="%s"\r\n' ...
+                                  'Content-Type: application/octet-stream\r\n' ...
+                                  '\r\n'], boundary, fileName);
+            body = [body, uint8(fileHeader), fileBytes, CRLF];
+            % Closing boundary.
+            body = [body, uint8(sprintf('--%s--\r\n', boundary))];
 
-            provider = MultipartFormProvider(parts{:});
-            hdrs     = [field.GenericField('Authorization', ['Bearer ' char(token)]), ...
-                        field.GenericField('Accept', 'application/json')];
+            hdrs = [ContentTypeField(['multipart/form-data; boundary=' boundary]), ...
+                    GenericField('Authorization', ['Bearer ' char(token)]), ...
+                    GenericField('Accept', 'application/json')];
             if nargin >= 6 && strlength(string(projectId)) > 0
-                hdrs = [hdrs, field.GenericField('X-Project-Id', char(projectId))];
+                hdrs = [hdrs, GenericField('X-Project-Id', char(projectId))];
             end
-            req      = RequestMessage(RequestMethod.POST, hdrs, provider);
-            opts     = HTTPOptions('ConnectTimeout', timeout);
-            resp     = req.send(URI(url), opts);
+
+            msgBody = MessageBody();
+            msgBody.Payload = body;
+            req  = RequestMessage(RequestMethod.POST, hdrs, msgBody);
+            opts = HTTPOptions('ConnectTimeout', timeout);
+            resp = req.send(URI(url), opts);
 
             httpStatus = double(resp.StatusCode);
             bodyData = resp.Body.Data;

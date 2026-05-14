@@ -84,6 +84,77 @@ classdef AnalysisViewModel < handle
             end
             app.logEvent('UI', sprintf('Circuit selected: %s (%s)', ...
                 char(app.State.selectedCircuitName), circuitId));
+            % M7 — disable the export buttons whenever the circuit
+            % changes. They re-enable after a successful Analyze in
+            % applyAnalysisData. Without this, the operator could
+            % export the prior circuit's analyze response under the
+            % new circuit's filename — confusingly stale.
+            obj.toggleExportButtons(false);
+        end
+
+        function onDownloadAnalysisJson(obj)
+            % Re-fetch GET /api/circuits/{id}/analysis and dump the
+            % response to a user-chosen .json file. GET (not POST
+            % /analyze) so re-fetching is cheap — no recompute.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Download JSON', 'Icon', 'warning');
+                return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(app.UIFigure, ...
+                    'Pick a circuit and click Analyze first.', ...
+                    'Download JSON', 'Icon', 'info');
+                return;
+            end
+            cid = char(app.State.selectedCircuitId);
+            app.logEvent('API', sprintf('GET /api/circuits/%s/analysis (export)', cid));
+            app.showLoading('Fetching analysis for export...');
+            circSvc = app.CircuitSvc;
+            token   = app.State.authToken;
+            AsyncRunner.run( ...
+                @() circSvc.getAnalysis(cid, token), ...
+                @(data) obj.onAnalysisJsonReady(app, data, cid), ...
+                @(ME)   obj.onAnalysisJsonError(app, ME));
+        end
+
+        function onAnalysisJsonReady(~, app, data, cid)
+            app.hideLoading();
+            cname = char(app.State.selectedCircuitName);
+            % Operator filename rule: Results_<descriptor>_<YYYYMMDD_HHMM>.json
+            fname = Exporter.suggestFilename('Results', { ...
+                'Analysis', cname, cid, Exporter.minuteStamp()});
+            ok = Exporter.toJsonFile(data, fname, app.UIFigure);
+            if ok
+                app.logEvent('FILE', sprintf('Analysis JSON saved (circuit %s)', cid));
+                app.State.logActivity( ...
+                    sprintf('Download Analysis JSON — %s', cname), 'Success');
+            end
+        end
+
+        function onAnalysisJsonError(~, app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf('Analysis JSON export FAILED: %s', ME.message));
+            app.showError('Download JSON', ME);
+        end
+
+        function onGenerateRunReport(obj)
+            % Bridge from the Analysis screen to Reports — pre-fills
+            % the title via Reports' own loadReportsList →
+            % seedReportTitle. Operator confirms format / sections; no
+            % retyping. Same handover pattern used by Results and
+            % Detailed Analysis for consistency.
+            app = obj.App;
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            app.logEvent('NAV', 'Analysis → Reports');
+            app.onSelectSection('Reports');
         end
 
         function onAnalyzeCircuit(obj)
@@ -106,6 +177,571 @@ classdef AnalysisViewModel < handle
                 @(ME) obj.onAnalyzeError(app, cid, ME));
         end
 
+        % Open the Quantum Monte Carlo Simulation (Quantum Amplitude
+        % Estimation) popup. Fetches any previously cached result for the
+        % selected circuit so the dialog opens with data already shown.
+        function onOpenQmcDialog(obj)
+            app = obj.App;
+            if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
+                figure(app.QmcDialog);  % bring existing dialog to front
+                return;
+            end
+            DialogBuilder.buildQmcDialog(app);
+            % Populate the backend dropdown from BackendService so the
+            % popup mirrors the Backends screen's list.
+            obj.loadQmcBackends();
+            % Lazy-fetch the active circuit's qubit count if we don't
+            % already know it. Without this the viability check has no
+            % data when the user opens QMC before clicking Analyze, and
+            % silently lets a too-wide circuit submit (server still
+            % rejects with 422, but the UX is worse).
+            obj.loadQmcCircuitMeta();
+            % Best-effort: pre-populate with the last cached result for
+            % this circuit so returning users see data immediately.
+            % Async — the GET /api/circuits/{id}/qae/last round-trip was
+            % blocking the QMC dialog open for ~200-500 ms. Render +
+            % button-reveal moves to onQmcLastResultLoaded; missing-cache
+            % path stays silent (toggleIbmLogButton(app, []) only).
+            if app.State.isAuthenticated() && app.State.hasCircuit()
+                cid    = char(app.State.selectedCircuitId);
+                token  = app.State.authToken;
+                qaeSvc = app.QmcSvc;
+                AsyncRunner.run( ...
+                    @() qaeSvc.getLast(cid, token), ...
+                    @(cached) obj.onQmcLastResultLoaded(app, cached), ...
+                    @(ME)     obj.onQmcLastResultMissing(app, ME));
+            else
+                AnalysisViewModel.toggleIbmLogButton(app, []);
+            end
+            % Show the viability banner immediately based on circuit
+            % width alone (statevector branch). The runtime branch will
+            % re-evaluate once loadQmcBackends completes asynchronously.
+            try
+                v = AnalysisViewModel.evaluateQmcViability(app);
+                AnalysisViewModel.applyQmcViability(app, v);
+            catch ME
+                Logger.debug('AnalysisViewModel', 'Initial QMC viability eval failed: %s', ME.message);
+            end
+        end
+
+        function onQmcLastResultLoaded(obj, app, cached)
+            % MAIN-THREAD callback for the async QmcSvc.getLast dispatched
+            % at QMC dialog open. Hydrates the dialog with the previous
+            % run's cached result + reveals the export-button trio.
+            if isempty(app.QmcDialog) || ~isvalid(app.QmcDialog)
+                return;  % dialog closed before the prefill landed
+            end
+            if isempty(cached)
+                AnalysisViewModel.toggleIbmLogButton(app, []);
+                return;
+            end
+            app.QmcLastResult = cached;
+            try
+                obj.renderQmcResult(app, cached);
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'renderQmcResult (cached): %s', ME.message);
+            end
+            AnalysisViewModel.toggleIbmLogButton(app, cached);
+            % M9 — cached result exists, so the export trio (Download
+            % Results / Download IBM Log / Generate Report) becomes
+            % meaningful immediately on dialog open. Reveal the buttons.
+            AnalysisViewModel.revealQmcResultButtons(app);
+        end
+
+        function onQmcLastResultMissing(~, app, ME)
+            % No cached result for this circuit (404 / empty / network
+            % blip). Stay silent — the user can still run a fresh QMC.
+            Logger.debug('AnalysisViewModel', ...
+                'No cached QMC result: %s', ME.message);
+            AnalysisViewModel.toggleIbmLogButton(app, []);
+        end
+
+        % Populate app.QmcBackendField (uidropdown) using BackendService,
+        % mirroring BenchmarkDashboardViewModel.loadBackends' 3-tier
+        % fallback (selected circuit → first circuit → unscoped list).
+        function loadQmcBackends(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated(); return; end
+            token = app.State.authToken;
+
+            cid = '';
+            if app.State.hasCircuit(); cid = char(app.State.selectedCircuitId); end
+
+            backendSvc = app.BackendSvc;
+            circSvc    = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() AnalysisViewModel.fetchBackendList(backendSvc, circSvc, cid, token), ...
+                @(data) obj.onQmcBackendsLoaded(app, data), ...
+                @(ME)   obj.onQmcBackendsError(app, ME));
+        end
+
+        function onQmcBackendsLoaded(~, app, data)
+            if isempty(app.QmcBackendField) || ~isvalid(app.QmcBackendField); return; end
+            items = JsonHelper.extractList(data, 'backends');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.QmcBackendField.Items     = {'(no backends)'};
+                app.QmcBackendField.ItemsData = {''};
+                app.QmcBackendField.Value     = '';
+                app.QmcBackendMeta = [];
+                return;
+            end
+            names = cell(1, n);
+            metaRows = repmat(struct('name','', 'num_qubits', 0), 1, n);
+            for i = 1:n
+                bname = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+                bq    = JsonHelper.toDouble(JsonHelper.pick(items(i), {'num_qubits','qubit_count'}));
+                if ~isfinite(bq); bq = 0; end
+                names{i} = bname;
+                metaRows(i).name = bname;
+                metaRows(i).num_qubits = bq;
+            end
+            app.QmcBackendMeta = metaRows;
+            app.QmcBackendField.ItemsData = names;
+            % Decorate dropdown labels using the current circuit width.
+            % Decoration is shared with the post-circuit-meta refresh so
+            % a missing selectedCircuitQubits doesn't leave the dropdown
+            % stuck without "too narrow" hints.
+            AnalysisViewModel.decorateQmcBackendDropdown(app);
+            % Prefer the currently-selected backend if present, else first.
+            sel = char(app.State.selectedBackend);
+            match = find(strcmp(names, sel), 1);
+            if ~isempty(match)
+                app.QmcBackendField.Value = names{match};
+            else
+                app.QmcBackendField.Value = names{1};
+            end
+            app.logEvent('LOAD', sprintf('Loaded %d backends into QMC dropdown', n));
+            % Now that we know each backend's width, evaluate whether
+            % QMC can actually run for the active circuit. This drives
+            % the banner + Run-button enable state in one place.
+            try
+                v = AnalysisViewModel.evaluateQmcViability(app);
+                AnalysisViewModel.applyQmcViability(app, v);
+            catch ME
+                Logger.warn('AnalysisViewModel', 'QMC viability evaluation failed: %s', ME.message);
+            end
+        end
+
+        % Public refresh hook used by the QMC dialog's Mode/Backend
+        % dropdowns. Re-evaluates viability and updates the banner +
+        % Run button without re-fetching backend metadata.
+        function refreshQmcViability(obj)
+            app = obj.App;
+            try
+                v = AnalysisViewModel.evaluateQmcViability(app);
+                AnalysisViewModel.applyQmcViability(app, v);
+            catch ME
+                Logger.warn('AnalysisViewModel', 'QMC viability refresh failed: %s', ME.message);
+            end
+        end
+
+        function onQmcBackendsError(~, app, ME)
+            if ~isempty(app.QmcBackendField) && isvalid(app.QmcBackendField)
+                app.QmcBackendField.Items     = {'(load failed)'};
+                app.QmcBackendField.ItemsData = {''};
+                app.QmcBackendField.Value     = '';
+            end
+            Logger.warn('AnalysisViewModel', 'QMC backend load failed: %s', ME.message);
+        end
+
+        % Lazy-fetch the selected circuit's qubit count when the QMC
+        % popup opens. Required because selectedCircuitQubits is only
+        % populated by Analyze; users who open QMC straight from the
+        % circuit picker have a stale 0, which silently disables the
+        % viability check.
+        function loadQmcCircuitMeta(obj)
+            app = obj.App;
+            if ~app.State.isAuthenticated() || ~app.State.hasCircuit(); return; end
+            % Already known — no need to round-trip.
+            try
+                if double(app.State.selectedCircuitQubits) > 0; return; end
+            catch
+            end
+            cid = char(app.State.selectedCircuitId);
+            token = app.State.authToken;
+            circSvc = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() circSvc.getCircuit(cid, token), ...
+                @(data) obj.onQmcCircuitMetaLoaded(app, data), ...
+                @(ME) Logger.debug('AnalysisViewModel', ...
+                    'QMC circuit-meta fetch failed: %s', ME.message));
+        end
+
+        function onQmcCircuitMetaLoaded(~, app, data)
+            % Receive the circuit doc, extract num_qubits, and refresh
+            % the dropdown labels + viability banner.
+            try
+                q = JsonHelper.toDouble(JsonHelper.pick(data, {'num_qubits','width'}));
+                if isfinite(q) && q > 0
+                    app.State.selectedCircuitQubits = double(q);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'QMC circuit-meta parse failed: %s', ME.message);
+                return;
+            end
+            % Recompute dropdown decorations and viability now that we
+            % know the circuit width.
+            try
+                AnalysisViewModel.decorateQmcBackendDropdown(app);
+                v = AnalysisViewModel.evaluateQmcViability(app);
+                AnalysisViewModel.applyQmcViability(app, v);
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'QMC viability refresh after meta load failed: %s', ME.message);
+            end
+        end
+
+        % Quantum Monte Carlo Simulation (Quantum Amplitude Estimation)
+        %   Runs a QMC analysis on the selected circuit via the FastAPI
+        %   backend and refreshes the Analysis screen's QMC section.
+        function onRunQmcAnalysis(obj)
+            app = obj.App;
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            if ~app.State.isAuthenticated()
+                uialert(alertParent, Labels.get('error_not_authenticated'), ...
+                    'Quantum Monte Carlo', 'Icon', 'warning');
+                return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(alertParent, ...
+                    'Select an uploaded circuit first (e.g. an AQS-QMC VaR circuit).', ...
+                    'Quantum Monte Carlo', 'Icon', 'warning');
+                return;
+            end
+            cid = app.State.selectedCircuitId;
+            mode = char(app.QmcModeDropdown.Value);
+            backend = char(app.QmcBackendField.Value);
+            if strcmp(mode, 'statevector'); backend = ''; end
+
+            % Pre-flight width check: if we know both the circuit width
+            % and the picked backend's qubit count, fail fast in the UI
+            % rather than waiting for the server to reject. Catches the
+            % common QMC pitfall of selecting a 156q IBM device for a
+            % 255q QASMBench circuit (CircuitTooWideForTarget).
+            if strcmp(mode, 'runtime') && ~isempty(backend)
+                cWidth = 0;
+                try; cWidth = double(app.State.selectedCircuitQubits); catch; end
+                if isnan(cWidth); cWidth = 0; end
+                bWidth = AnalysisViewModel.lookupBackendQubits(app, backend);
+                if cWidth > 0 && bWidth > 0 && cWidth > bWidth
+                    msg = sprintf( ...
+                        ['Circuit "%s" needs %d qubits but backend "%s" only supports %d.\n\n', ...
+                         'Pick a backend with %d+ qubits, switch Execution Mode to "Statevector (local)" ', ...
+                         'for circuits up to ~30 qubits, or split the workload via Circuit Cutting before running QMC.'], ...
+                        char(app.State.selectedCircuitName), round(cWidth), backend, round(bWidth), round(cWidth));
+                    uialert(alertParent, msg, 'Quantum Monte Carlo', 'Icon', 'warning');
+                    app.logEvent('WARN', sprintf('QMC blocked client-side — circuit %dq > backend %s %dq', ...
+                        round(cWidth), backend, round(bWidth)));
+                    return;
+                end
+            end
+
+            shots = double(app.QmcShotsField.Value);
+            epsilon = double(app.QmcEpsilonField.Value);
+            confidence = double(app.QmcConfidenceField.Value);
+            risk = char(app.QmcRiskDropdown.Value);
+            % Map the shot/epsilon-derived path register width.
+            n = 7;
+            try; n = max(2, min(12, app.State.selectedCircuitQubits)); catch; end
+
+            % Advanced controls (mitigation + real-time market params).
+            opts = struct();
+            try
+                if ~isempty(app.QmcMitigationDropdown) && isvalid(app.QmcMitigationDropdown)
+                    opts.mitigation = char(app.QmcMitigationDropdown.Value);
+                end
+            catch; end
+            try
+                opts.market = struct( ...
+                    'spot',              double(app.QmcSpotField.Value), ...
+                    'strike',            double(app.QmcStrikeField.Value), ...
+                    'volatility',        double(app.QmcVolField.Value), ...
+                    'risk_free_rate',    double(app.QmcRateField.Value), ...
+                    'time_to_maturity',  double(app.QmcTenorField.Value), ...
+                    'option_type',       char(app.QmcOptionTypeDropdown.Value), ...
+                    'notional',          double(app.QmcNotionalField.Value));
+            catch
+                % Market controls not yet built — server uses defaults.
+            end
+            opts.compute_greeks = true;
+
+            if isfield(opts,'mitigation'); mitLog = opts.mitigation; else; mitLog = 'none'; end
+            app.logEvent('API', sprintf('POST /api/circuits/%s/qae/analyze — mode=%s shots=%d mitig=%s', ...
+                cid, mode, shots, mitLog));
+            % Wipe every KPI / Greek / chart on the popup so the user sees
+            % empty controls while the server is running rather than stale
+            % values from a previous run.
+            obj.resetQmcUi(app);
+            app.showLoading(Labels.get('loading_qmc_run', 'Running Quantum Monte Carlo simulation...'));
+
+            qaeSvc = app.QmcSvc;
+            token  = app.State.authToken;
+            % Submit the async job. The server enqueues the work and
+            % returns {job_id, status:"queued"} in a few hundred ms;
+            % long IBM waits happen inside the poll loop, not on this
+            % HTTP call.
+            try
+                envelope = qaeSvc.submitAnalyze(cid, mode, shots, epsilon, ...
+                    confidence, n, risk, backend, opts, token);
+            catch ME
+                obj.onQmcError(app, ME);
+                return;
+            end
+            jobId = char(JsonHelper.pick(envelope, {'job_id'}, ''));
+            if isempty(jobId)
+                obj.onQmcError(app, MException('QTAU:QmcSubmit', ...
+                    'Server did not return a job_id.'));
+                return;
+            end
+            app.QmcActiveJobId = jobId;
+            app.logEvent('API', sprintf('QMC job %s queued (mode=%s) — polling every 3s', jobId, mode));
+            obj.startQmcPoll(app, jobId);
+        end
+
+        function onCloseQmcDialog(obj)
+            % Teardown: stop polling timer, hide overlay, destroy dialog.
+            % The async QMC job (if any) is left running on the server;
+            % the user can reopen the popup and getLast will show the
+            % result when it completes.
+            app = obj.App;
+            try; obj.stopQmcPoll(app); catch; end
+            try; app.hideLoading(); catch; end
+            app.QmcActiveJobId = '';
+            try
+                if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
+                    delete(app.QmcDialog);
+                end
+            catch
+            end
+        end
+
+        function onChooseCompatibleCircuit(obj)
+            % Wired to the QMC Run-button when the active circuit is too
+            % wide for both Statevector (≤30q) and the widest IBM Runtime
+            % backend. Opens the modal picker filtered to circuits the
+            % user can actually run QMC on; the picker invokes
+            % onCompatibleCircuitPicked when the operator commits.
+            app = obj.App;
+            v = AnalysisViewModel.evaluateQmcViability(app);
+            % Ceiling = the wider of the two modes' limits so the picker
+            % offers every circuit that has a chance of running. If the
+            % chosen circuit only fits Runtime, applyQmcViability re-marks
+            % Statevector as unavailable on reload — but Runtime is
+            % already the default mode, so nothing breaks.
+            ceiling = max(30, double(v.max_runtime_qubits));
+            DialogBuilder.buildCompatibleCircuitPicker(app, ceiling, ...
+                @(c) obj.onCompatibleCircuitPicked(c));
+        end
+
+        function onCompatibleCircuitPicked(obj, circuit)
+            % Picker callback — circuit is a struct
+            %   {id, name, qubits, gates, depth}.
+            % Updates the global session state so every screen sees the
+            % new active circuit, then closes + reopens the QMC dialog
+            % so applyQmcViability re-evaluates with the new qubit width.
+            app = obj.App;
+            if ~isstruct(circuit) || ~isfield(circuit, 'id') || isempty(circuit.id)
+                Logger.warn('AnalysisViewModel', ...
+                    'onCompatibleCircuitPicked: missing circuit id, ignoring');
+                return;
+            end
+            try
+                app.State.selectedCircuitId     = string(circuit.id);
+                app.State.selectedCircuitName   = string(circuit.name);
+                app.State.selectedCircuitQubits = double(circuit.qubits);
+            catch ME
+                Logger.warn('AnalysisViewModel', ...
+                    'onCompatibleCircuitPicked state swap: %s', ME.message);
+            end
+            app.logEvent('UI', sprintf( ...
+                'QMC oracle swapped to compatible circuit: %s (%dq)', ...
+                char(circuit.name), round(double(circuit.qubits))));
+            % Close the existing QMC dialog (cancels poll, deletes the
+            % uifigure) and reopen — full rebuild ensures the banner
+            % clears, viability re-evaluates, and the Run button reverts
+            % from "Choose Compatible Circuit" back to "Run QMC".
+            try; obj.onCloseQmcDialog(); catch; end
+            try; obj.onOpenQmcDialog();  catch ME
+                Logger.warn('AnalysisViewModel', ...
+                    'onCompatibleCircuitPicked reopen: %s', ME.message);
+            end
+        end
+
+        function onDownloadQmcResults(obj)
+            % M9 — export the cached QMC result struct (app.QmcLastResult)
+            % to a user-chosen .json file via the Exporter utility. The
+            % button that fires this is hidden until Run QMC succeeds,
+            % so QmcLastResult should always be populated when this
+            % runs; we still defend against a stale click.
+            app = obj.App;
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            if isempty(app.QmcLastResult)
+                uialert(alertParent, ...
+                    'Run QMC first — there is no cached result to export.', ...
+                    'Download Results', 'Icon', 'info');
+                return;
+            end
+            data = app.QmcLastResult;
+            cname = char(app.State.selectedCircuitName);
+            jid = char(JsonHelper.pick(data, {'runtime_job_id','job_id'}, ''));
+            if isempty(jid); jid = Exporter.todayStamp(); end
+            % Operator filename rule: Results_Qmc_<circuit>_<jid>_<YYYYMMDD_HHMM>.json
+            fname = Exporter.suggestFilename('Results', { ...
+                'Qmc', cname, jid, Exporter.minuteStamp()});
+            ok = Exporter.toJsonFile(data, fname, alertParent);
+            if ok
+                app.logEvent('FILE', sprintf('QMC results JSON saved (job %s)', jid));
+                app.State.logActivity( ...
+                    sprintf('Download QMC Results — %s', cname), 'Success');
+            end
+        end
+
+        function onDownloadIbmLog(obj)
+            app = obj.App;
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            if ~app.State.isAuthenticated()
+                uialert(alertParent, Labels.get('error_not_authenticated'), ...
+                    'Download IBM Log', 'Icon', 'warning');
+                return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(alertParent, 'Select a circuit first.', ...
+                    'Download IBM Log', 'Icon', 'warning');
+                return;
+            end
+            runtimeJobId = '';
+            if ~isempty(app.QmcLastResult)
+                runtimeJobId = char(JsonHelper.pick(app.QmcLastResult, ...
+                    {'runtime_job_id'}, ''));
+            end
+            if isempty(runtimeJobId)
+                uialert(alertParent, ...
+                    ['No IBM Runtime job is associated with the cached QMC result. ' ...
+                     'Switch Execution Mode to "IBM Runtime" and Run QMC first.'], ...
+                    'Download IBM Log', 'Icon', 'warning');
+                return;
+            end
+            cid      = char(app.State.selectedCircuitId);
+            circName = char(app.State.selectedCircuitName);
+            token    = app.State.authToken;
+            qaeSvc   = app.QmcSvc;
+            % JSONL matches the reference schema in
+            % samples/aqs-qmc/outputs_hybrid_mc_qdist_stable/quantum_exec_log.jsonl —
+            % one record per IBM job submission with the keys
+            % subcircuit_id/backend/shots/status/job_id/counts/error.
+            fmt      = 'jsonl';
+            tmpPath  = fullfile(tempdir, sprintf('quantum_exec_log_%s.%s', runtimeJobId, fmt));
+            app.logEvent('API', sprintf('GET /api/circuits/%s/qae/ibm-log (job=%s)', cid, runtimeJobId));
+            app.showLoading(Labels.get('loading_qmc_ibm_log', 'Fetching IBM Runtime log...'));
+            AsyncRunner.run( ...
+                @() qaeSvc.downloadIbmLog(cid, token, fmt, tmpPath), ...
+                @(savedPath) obj.onIbmLogDownloaded(app, savedPath, runtimeJobId, circName, fmt), ...
+                @(ME)        obj.onIbmLogError(app, ME));
+        end
+
+        function onGenerateQmcReport(obj)
+            app = obj.App;
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            if ~app.State.isAuthenticated()
+                uialert(alertParent, Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(alertParent, 'Select a circuit before generating the report.', ...
+                    'Generate Report', 'Icon', 'warning');
+                return;
+            end
+            cid = app.State.selectedCircuitId;
+            if isempty(app.QmcLastResult)
+                choice = uiconfirm(alertParent, ...
+                    'No QMC analysis has been run on this circuit yet. Run it now with current settings before generating the PDF?', ...
+                    'Generate Report', 'Options', {'Run and generate', 'Cancel'}, ...
+                    'DefaultOption', 1, 'CancelOption', 2);
+                if strcmp(choice, 'Cancel'); return; end
+                obj.onRunQmcAnalysis();
+                return;  % report will be requested after analyze completes (user clicks again)
+            end
+            app.showLoading(Labels.get('loading_qmc_report', 'Generating PDF report...'));
+            sections = { ...
+                'executive_summary', 'circuit_summary', 'feature_analysis', ...
+                'quantum_monte_carlo', 'key_insights'};
+            title = sprintf('Quantum Monte Carlo VaR Report — %s', char(app.State.selectedCircuitName));
+            reportSvc = app.ReportSvc;
+            token     = app.State.authToken;
+            AsyncRunner.run( ...
+                @() reportSvc.generateReport(title, 'technical', 'pdf', cid, '', '', sections, token), ...
+                @(data) obj.onQmcReportGenerated(app, data), ...
+                @(ME)   obj.onQmcReportError(app, ME));
+        end
+
+        function onCircuitCuttingBridge(obj)
+            % Bridge: Analysis → Circuit Cutting with the currently-selected
+            % circuit pre-applied. Mirrors the Detailed Analysis → Analysis
+            % bridge so the user does not have to re-pick the circuit on
+            % the Cutting screen.
+            app = obj.App;
+            cid = '';
+            try
+                if ~isempty(app.AnalysisCircuitDropdown) ...
+                        && isvalid(app.AnalysisCircuitDropdown)
+                    cid = char(string(app.AnalysisCircuitDropdown.Value));
+                end
+            catch
+            end
+            if isempty(strtrim(cid))
+                cid = char(app.State.selectedCircuitId);
+            end
+            if isempty(strtrim(cid))
+                uialert(app.UIFigure, ...
+                    'Pick a circuit from the dropdown before opening Circuit Cutting.', ...
+                    'Circuit Cutting', 'Icon', 'warning');
+                return;
+            end
+
+            % Resolve display name from the dropdown so the activity log
+            % and the target screen's status line stay consistent with
+            % what the user just saw on Analysis.
+            name = '';
+            try
+                items = app.AnalysisCircuitDropdown.Items;
+                ids   = app.AnalysisCircuitDropdown.ItemsData;
+                k = find(strcmp(ids, cid), 1);
+                if ~isempty(k); name = items{k}; end
+            catch
+            end
+
+            app.State.selectedCircuitId = string(cid);
+            if ~isempty(name)
+                app.State.selectedCircuitName = string(name);
+            end
+            app.logEvent('UI', sprintf( ...
+                'Analysis → Circuit Cutting (circuit: %s)', ...
+                char(app.State.selectedCircuitName)));
+
+            app.onSelectSection('Circuit Cutting');
+
+            % Nudge the Cutting screen's dropdown if it is already loaded;
+            % otherwise loadCircuits / onEnter will pick the cached
+            % selectedCircuitId on first refresh.
+            try
+                if ~isempty(app.CuttingCircuitDropdown) ...
+                        && isvalid(app.CuttingCircuitDropdown) ...
+                        && iscell(app.CuttingCircuitDropdown.ItemsData) ...
+                        && any(strcmp(app.CuttingCircuitDropdown.ItemsData, cid))
+                    app.CuttingCircuitDropdown.Value = cid;
+                    app.CircuitCuttingVm.onCircuitChanged(cid);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'Cutting bridge nudge: %s', ME.message);
+            end
+        end
+
         function onVisualizeSimilarity(obj)
             app = obj.App;
             try
@@ -115,6 +751,20 @@ classdef AnalysisViewModel < handle
                         'No Data', 'Icon', 'info');
                     return;
                 end
+                % Building the similarity visualization popup (3+ tabs,
+                % each with uiaxes + bar/plot calls) takes 1–3 s on the
+                % MATLAB UI thread for circuits with many similarity
+                % rows. Without an overlay the user clicks Visualize
+                % and thinks the click was ignored. Show the spinner,
+                % force a paint via drawnow + brief pause (matches the
+                % CEF render-race pattern in NavigationManager.
+                % ensureScreenBuilt), and pair with hideLoading on
+                % every exit path further down.
+                app.showLoading(Labels.get('loading_visualize_similarity', ...
+                    'Building similarity visualization...'));
+                drawnow;
+                pause(0.05);
+                drawnow;
                 n = size(tData, 1);
                 names = cell(n, 1);
                 sims  = zeros(n, 1);
@@ -158,7 +808,7 @@ classdef AnalysisViewModel < handle
                 dlgW = 1100; dlgH = 650;
                 dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
                 dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
-                dlg = uifigure('Name', 'QASMBench Similarity Visualization', ...
+                dlg = uifigure('Name', 'QTAUBench Similarity Visualization', ...
                     'Position', [dlgX dlgY dlgW dlgH], ...
                     'Resize', 'on', 'Color', Theme.COLOR_BG);
                 Theme.applyFigureMode(dlg, Theme.activeName());
@@ -173,14 +823,14 @@ classdef AnalysisViewModel < handle
                 tg.Layout.Row = 1; tg.Layout.Column = 1;
 
                 % ══════════════════════════════════════════════════════════════
-                % Tab 1: QASMBench Similarity Visualization
+                % Tab 1: QTAUBench Similarity Visualization
                 %   Single focused ranked-bar chart with auto-scaled X axis
                 %   (tight similarity bands of 97–98% become visually
                 %   differentiated) + a Match Profile side panel that
                 %   surfaces the current circuit, category breakdown, and
                 %   a calibrated interpretation of the top match.
                 % ══════════════════════════════════════════════════════════════
-                tab1 = uitab(tg, 'Title', 'QASMBench Similarity Visualization');
+                tab1 = uitab(tg, 'Title', 'QTAUBench Similarity Visualization');
                 tab1.BackgroundColor = Theme.COLOR_CARD;
 
                 dg = uigridlayout(tab1, [2 2]);
@@ -308,43 +958,23 @@ classdef AnalysisViewModel < handle
                 diagramHtml = uihtml(tab2Grid);
                 diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
 
-                % Fetch circuit diagram — prefer server-rendered SVG (Qiskit, all gates)
-                % with client-side renderSvg as fallback
+                % Async circuit-diagram fetch — was a chained sync
+                % round-trip (server SVG → fallback getCircuit) that
+                % froze the dialog while the placeholder text was up.
+                % The dispatcher walks the same fallback chain on the
+                % background pool; final HTMLSource lands from one of
+                % four main-thread callbacks (server-success, fallback-
+                % success, fallback-empty, fallback-failed).
                 svgContent = '<p style="color:#888;font-family:sans-serif">Loading circuit diagram...</p>';
                 diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
-                try
-                    if app.State.hasCircuit() && app.State.isAuthenticated()
-                        cid = app.State.selectedCircuitId;
-                        tok = app.State.authToken;
-                        % 1) Try server-side Qiskit preview (complete, all gates)
-                        serverOk = false;
-                        try
-                            prevData = app.CircuitSvc.previewCircuit(cid, tok);
-                            serverSvg = char(JsonHelper.pick(prevData, {'svg'}));
-                            if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
-                                svgContent = serverSvg;
-                                serverOk = true;
-                            end
-                        catch ME
-                            Logger.debug('AnalysisViewModel', 'loadDiagram serverPreview: %s', ME.message);
-                        end
-                        % 2) Fallback: client-side rendering (truncated for large circuits)
-                        if ~serverOk
-                            circData = app.CircuitSvc.getCircuit(cid, tok);
-                            qasmText = char(JsonHelper.pick(circData, {'content','raw_content','qasm_content','source'}));
-                            if ~isempty(qasmText)
-                                svgContent = CircuitDiagram.renderSvg(qasmText);
-                            else
-                                svgContent = '<p style="color:#888;font-family:sans-serif">No circuit content available.</p>';
-                            end
-                        end
-                    else
-                        svgContent = '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>';
-                    end
-                catch ME
-                    svgContent = sprintf('<p style="color:#DC2626;font-family:sans-serif">Failed to load diagram: %s</p>', CircuitDiagram.escapeHtml(ME.message));
+                if app.State.hasCircuit() && app.State.isAuthenticated()
+                    AnalysisViewModel.dispatchSimilarityDiagram( ...
+                        diagramHtml, app.CircuitSvc, ...
+                        char(app.State.selectedCircuitId), app.State.authToken);
+                else
+                    diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
+                        '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>');
                 end
-                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
 
                 % ── Separator line ─────────────────────────────────────────
                 sep = uipanel(rootGrid, 'Title', '', 'BorderType', 'none');
@@ -361,7 +991,13 @@ classdef AnalysisViewModel < handle
                     'ButtonPushedFcn', @(~,~) delete(dlg));
                 closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 2;
                 app.State.logActivity('Visualize similarity', 'Success');
+                app.hideLoading();
             catch ME
+                % Belt-and-braces: clear the overlay even if the build
+                % above threw partway through. Wrapped in try/catch so
+                % a teardown-time exception (e.g. dialog already gone)
+                % never masks the real error reported by Logger.warn.
+                try; app.hideLoading(); catch; end
                 Logger.warn('AnalysisViewModel', 'onVisualizeSimilarity failed: %s', ME.message);
             end
         end
@@ -373,9 +1009,532 @@ classdef AnalysisViewModel < handle
             % through the full analyze pipeline.
             obj.buildQVHeatmap(data);
         end
+
+        % ── Quantum Error Mitigation Analysis popup (Phase 6.x) ───────────
+        %   Reads /api/mitigation/levels + /api/mitigation/estimate +
+        %   cached QAE result + /api/cutting/analyze and renders the
+        %   results into the dialog built by
+        %   DialogBuilder.buildErrorMitigationDialog.  No async-job
+        %   submission; every endpoint returns synchronously.
+
+        function onOpenEmDialog(obj)
+            app = obj.App;
+            if ~isempty(app.EmDialog) && isvalid(app.EmDialog)
+                figure(app.EmDialog); return;
+            end
+            DialogBuilder.buildErrorMitigationDialog(app);
+            obj.loadEmBackendsForDialog(app);
+            obj.loadEmInitialData(app);
+        end
+
+        function onCloseEmDialog(obj)
+            app = obj.App;
+            try
+                if ~isempty(app.EmDialog) && isvalid(app.EmDialog)
+                    delete(app.EmDialog);
+                end
+            catch
+            end
+            app.EmDialog = [];
+        end
+
+        function onEmFormChanged(obj)
+            % Form-tweak handler -- refresh /api/mitigation/estimate sweep
+            % and re-render the technique table + cost summary.
+            obj.refreshEmEstimateBundle(obj.App);
+        end
+
+        function onEmRefreshEstimate(obj)
+            % Explicit "Estimate" button click: same as form-change. The
+            % async refresh in refreshEmEstimateBundle now also re-renders
+            % the KPI strip and PEC γ̄^depth chart in its onOk callback,
+            % so the previously-duplicated direct calls to renderEmKpis /
+            % renderEmGammaDepthCurve here have been removed (they would
+            % otherwise issue a second sync calibration GET — ~4s of UI
+            % freeze on cold cache — before the async work even started).
+            % The cuts curve has its own independent /api/cutting/analyze
+            % async path, so we still kick that here.
+            app = obj.App;
+            obj.refreshEmEstimateBundle(app);
+            obj.renderEmOverheadCutsCurve(app);
+        end
+
+        function onEmApplyToBenchmark(obj)
+            app = obj.App;
+            if isempty(app.EmEstimateBundle)
+                uialert(AnalysisViewModel.emAlertParent(app), ...
+                    'Run Estimate first to populate the technique comparison.', ...
+                    'Apply', 'Icon', 'warning');
+                return;
+            end
+            pick = AnalysisViewModel.bestRecommendation(app.EmEstimateBundle);
+            if isempty(pick)
+                uialert(AnalysisViewModel.emAlertParent(app), ...
+                    'No recommendation available - pick a different backend.', ...
+                    'Apply', 'Icon', 'warning');
+                return;
+            end
+            targetValue = AnalysisViewModel.mapEmTechniqueToBenchmark(pick.levelId);
+            try
+                if ~isempty(app.BenchmarkMitigationDropdown) && ...
+                        isvalid(app.BenchmarkMitigationDropdown)
+                    items = app.BenchmarkMitigationDropdown.ItemsData;
+                    idx = find(strcmp(items, targetValue), 1);
+                    if ~isempty(idx)
+                        app.BenchmarkMitigationDropdown.Value = items{idx};
+                    end
+                end
+            catch
+            end
+            obj.onCloseEmDialog();
+            app.onSelectSection('Benchmark');
+            app.logEvent('UI', sprintf( ...
+                'Error Mitigation -> Benchmark (level=%d, target=%s)', ...
+                pick.levelId, targetValue));
+        end
+
+        function onEmExportJson(obj)
+            app = obj.App;
+            alertParent = AnalysisViewModel.emAlertParent(app);
+            if isempty(app.EmEstimateBundle)
+                uialert(alertParent, ...
+                    'Run Estimate first to produce the bundle.', ...
+                    'Export JSON', 'Icon', 'warning');
+                return;
+            end
+            out = struct();
+            out.circuit_id = char(app.State.selectedCircuitId);
+            out.circuit_name = char(app.State.selectedCircuitName);
+            try; out.backend = char(app.EmBackendDropdown.Value); catch; out.backend = ''; end
+            out.bundle = app.EmEstimateBundle;
+            out.qae_cached = ~isempty(app.EmQaeCached);
+            out.cutting_cached = ~isempty(app.EmCuttingCached);
+            try
+                payload = jsonencode(out, 'PrettyPrint', true);
+            catch
+                payload = jsonencode(out);
+            end
+            safeName = regexprep(char(app.State.selectedCircuitName), '[^A-Za-z0-9_\-]', '_');
+            if isempty(safeName); safeName = 'circuit'; end
+            % Operator filename rule for QEM data: Results_Qem_<circuit>_<YYYYMMDD_HHMM>.json
+            defaultName = sprintf('Results_Qem_%s_%s.json', ...
+                safeName, Exporter.minuteStamp());
+            % Default to the OS Downloads folder — see Exporter.defaultDir.
+            [fileName, pathName] = uiputfile( ...
+                {'*.json', 'JSON (*.json)'}, ...
+                'Export Error Mitigation Analysis', ...
+                Exporter.savePath(defaultName));
+            if isequal(fileName, 0); return; end
+            target = fullfile(pathName, fileName);
+            try
+                fid = fopen(target, 'w');
+                fprintf(fid, '%s', payload);
+                fclose(fid);
+                uialert(alertParent, ...
+                    sprintf('Exported to:\n%s', target), ...
+                    'Export JSON', 'Icon', 'success');
+                app.logEvent('API', sprintf('EM bundle exported to %s', target));
+            catch ME
+                uialert(alertParent, ME.message, 'Export JSON', 'Icon', 'error');
+            end
+        end
+
+        function onEmGenerateReport(obj)
+            app = obj.App;
+            alertParent = AnalysisViewModel.emAlertParent(app);
+            if ~app.State.isAuthenticated()
+                uialert(alertParent, Labels.get('error_not_authenticated'), ...
+                    'Generate Report', 'Icon', 'warning'); return;
+            end
+            if ~app.State.hasCircuit()
+                uialert(alertParent, ...
+                    'Select a circuit before generating the report.', ...
+                    'Generate Report', 'Icon', 'warning'); return;
+            end
+            cid = app.State.selectedCircuitId;
+            app.showLoading(Labels.get('loading_em_report', 'Generating Error Mitigation report...'));
+            % `quantum_monte_carlo` is *deliberately* omitted so the
+            % backend chooses its QEM-specific PDF builder, not the QMC
+            % one. The `report_kind` metadata flag below is the primary
+            % signal — the section-list check is a belt-and-braces
+            % fallback for older servers that don't read metadata.
+            sections = { ...
+                'executive_summary', 'circuit_summary', 'feature_analysis', ...
+                'error_mitigation', 'key_insights'};
+            reportTitle = sprintf('Quantum Error Mitigation Report - %s', ...
+                char(app.State.selectedCircuitName));
+            reportSvc = app.ReportSvc;
+            token     = app.State.authToken;
+            metadata  = AnalysisViewModel.buildEmReportMetadata(app);
+            AsyncRunner.run( ...
+                @() reportSvc.generateReport(reportTitle, 'technical', 'pdf', ...
+                                             cid, '', '', sections, token, metadata), ...
+                @(data) obj.onQmcReportGenerated(app, data), ...
+                @(ME)   obj.onQmcReportError(app, ME));
+        end
     end
 
     methods (Static, Access = private)
+
+        function metadata = buildEmReportMetadata(app)
+            % Compose the metadata struct the QEM "Generate Report" path
+            % posts to /api/reports/generate. Tells the backend to route
+            % to its dedicated QEM PDF builder and supplies the in-memory
+            % bundle (technique sweep + form state) so the server doesn't
+            % need to re-run /api/mitigation/estimate to draw the table.
+            metadata = struct('report_kind', 'error_mitigation');
+
+            form = struct();
+            try; form.backend          = char(app.EmBackendDropdown.Value);    catch; end
+            try; form.primitive        = char(app.EmPrimitiveDropdown.Value);  catch; end
+            try; form.base_shots       = double(app.EmBaseShotsField.Value);   catch; end
+            try; form.level_id         = double(app.EmLevelDropdown.Value);    catch; end
+            try
+                idx = find(cellfun(@(x)isequal(x, form.level_id), ...
+                    app.EmLevelDropdown.ItemsData), 1);
+                if ~isempty(idx)
+                    form.level_label = app.EmLevelDropdown.Items{idx};
+                end
+            catch; end
+            try; form.zne_factors      = char(app.EmZneFactorsField.Value);    catch; end
+            try; form.zne_extrapolator = char(app.EmExtrapolatorDropdown.Value); catch; end
+            try; form.dd_sequence      = char(app.EmDdSequenceDropdown.Value); catch; end
+            try; form.twirl_gates      = logical(app.EmTwirlGatesCheckbox.Value);   catch; end
+            try; form.twirl_measurement= logical(app.EmTwirlMeasureCheckbox.Value); catch; end
+            try; form.tem              = logical(app.EmTemCheckbox.Value);     catch; end
+            try; form.also_run_raw     = logical(app.EmAlsoRunRawCheckbox.Value); catch; end
+            try
+                kpi5 = app.EmKpiLabels{5}.Text;
+                if ischar(kpi5) || isstring(kpi5)
+                    form.advantage = char(string(kpi5));
+                end
+            catch; end
+            try
+                kpi4 = app.EmKpiLabels{4}.Text;
+                form.gamma_bar = str2double(char(string(kpi4)));
+                if isnan(form.gamma_bar); form = rmfield(form, 'gamma_bar'); end
+            catch; end
+            try
+                if ~isempty(app.EmRecommendationLabel) && isvalid(app.EmRecommendationLabel)
+                    form.recommendation = char(string(app.EmRecommendationLabel.Text));
+                end
+            catch; end
+            metadata.em_form = form;
+
+            % Echo the technique-sweep bundle so the backend can render
+            % the comparison table without re-fetching estimates. Each
+            % entry is shaped {level_id, label, estimate}.
+            try
+                bundle = app.EmEstimateBundle;
+                if iscell(bundle) && ~isempty(bundle)
+                    cleaned = cell(1, numel(bundle));
+                    for i = 1:numel(bundle)
+                        row = bundle{i};
+                        cleaned{i} = struct( ...
+                            'level_id', double(row.levelId), ...
+                            'label',    char(string(row.label)), ...
+                            'estimate', row.estimate);
+                    end
+                    metadata.em_bundle = cleaned;
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'buildEmReportMetadata: bundle echo skipped: %s', ME.message);
+            end
+        end
+
+        function cal = lookupCachedCalibration(app, backend)
+            % Return the cached calibration data when its `backend` key
+            % matches the requested backend; otherwise []. Lets KPI /
+            % gamma-depth renderers reuse the calibration fetched by
+            % the most recent runAsyncWithLoading sweep instead of
+            % issuing another sync HTTP call (which on cold cache adds
+            % ~4s of UI freeze).
+            cal = [];
+            try
+                cache = app.EmCachedCalibration;
+                if isstruct(cache) ...
+                        && isfield(cache, 'backend') && isfield(cache, 'data') ...
+                        && strcmp(char(cache.backend), char(backend)) ...
+                        && ~isempty(cache.data)
+                    cal = cache.data;
+                end
+            catch
+            end
+        end
+
+        function dispatchEmCalibrationFetch(app, backend)
+            % Dispatch GET /api/backends/{name}/calibration on the
+            % background pool. Idempotent — if a fetch is already in
+            % flight for the same backend, this is a no-op. Result lands
+            % in app.EmCachedCalibration via onEmCalibrationLoaded which
+            % then re-runs renderEmKpis + renderEmGammaDepthCurve.
+            if ~app.State.isAuthenticated(); return; end
+            backend = char(backend);
+            if isempty(backend); return; end
+            % Per-backend dedup so concurrent renders (KPI + gamma curve)
+            % don't fan out duplicate round-trips.
+            try
+                if isprop(app, 'EmCalInFlightBackend') && ...
+                        ~isempty(app.EmCalInFlightBackend) && ...
+                        strcmp(char(app.EmCalInFlightBackend), backend)
+                    return;
+                end
+            catch
+            end
+            try; app.EmCalInFlightBackend = string(backend); catch; end
+            backendSvc = app.BackendSvc;
+            token      = app.State.authToken;
+            AsyncRunner.run( ...
+                @() backendSvc.getCalibration(backend, token), ...
+                @(cal) AnalysisViewModel.onEmCalibrationLoaded(app, backend, cal), ...
+                @(ME)  AnalysisViewModel.onEmCalibrationFetchError(app, backend, ME));
+        end
+
+        function onEmCalibrationLoaded(app, backend, cal)
+            % MAIN-THREAD callback for dispatchEmCalibrationFetch. Caches
+            % the result and re-renders the EM advisory KPIs / gamma-depth
+            % curve so the placeholder cells flip to real values.
+            try
+                if isprop(app, 'EmCalInFlightBackend') && ...
+                        strcmp(char(app.EmCalInFlightBackend), char(backend))
+                    app.EmCalInFlightBackend = '';
+                end
+            catch
+            end
+            try
+                app.EmCachedCalibration = struct( ...
+                    'backend', char(backend), 'data', cal);
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'EM cal cache write: %s', ME.message);
+                return;
+            end
+            % Re-render only when the dialog is still up; the renderers
+            % already guard their UI handles, but this short-circuit
+            % avoids work if the user closed the EM dialog mid-flight.
+            % renderEmKpis / renderEmGammaDepthCurve are private
+            % instance methods, so dispatch through the live VM
+            % instance on the app object (we're in a static context).
+            try
+                if isprop(app, 'EmDialog') && ~isempty(app.EmDialog) ...
+                        && isvalid(app.EmDialog) ...
+                        && isprop(app, 'AnalysisVm') && ~isempty(app.AnalysisVm)
+                    app.AnalysisVm.renderEmKpis(app);
+                    app.AnalysisVm.renderEmGammaDepthCurve(app);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'EM re-render after cal: %s', ME.message);
+            end
+        end
+
+        function onEmCalibrationFetchError(app, backend, ME)
+            % Background fetch failed (network, 404, IBM offline). Clear
+            % the in-flight flag so a subsequent render can retry; leave
+            % the placeholder KPI cells unchanged.
+            try
+                if isprop(app, 'EmCalInFlightBackend') && ...
+                        strcmp(char(app.EmCalInFlightBackend), char(backend))
+                    app.EmCalInFlightBackend = '';
+                end
+            catch
+            end
+            Logger.debug('AnalysisViewModel', ...
+                'EM cal fetch (%s): %s', char(backend), ME.message);
+        end
+
+        function dispatchSimilarityDiagram(diagramHtml, svc, cid, tok)
+            % Async dispatcher for the Visualize Similarity dialog's
+            % circuit-diagram tab. Calls server-side previewCircuit
+            % first; on success-with-empty-SVG or error, chains to the
+            % client-side getCircuit fallback. All HTMLSource updates
+            % happen on the main thread via the success/error callbacks.
+            AsyncRunner.run( ...
+                @() svc.previewCircuit(cid, tok), ...
+                @(prevData) AnalysisViewModel.onSimilarityServerSvgReady( ...
+                    diagramHtml, prevData, svc, cid, tok), ...
+                @(ME) AnalysisViewModel.onSimilarityServerSvgFailed( ...
+                    diagramHtml, ME, svc, cid, tok));
+        end
+
+        function onSimilarityServerSvgReady(diagramHtml, prevData, svc, cid, tok)
+            if isempty(diagramHtml) || ~isvalid(diagramHtml); return; end
+            serverSvg = '';
+            try
+                serverSvg = char(JsonHelper.pick(prevData, {'svg'}));
+            catch
+            end
+            if ~isempty(serverSvg) && startsWith(strtrim(serverSvg), '<svg')
+                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, serverSvg);
+                return;
+            end
+            % Server SVG empty — chain to client-side fallback render.
+            AnalysisViewModel.dispatchSimilarityFallback(diagramHtml, svc, cid, tok);
+        end
+
+        function onSimilarityServerSvgFailed(diagramHtml, ME, svc, cid, tok)
+            Logger.debug('AnalysisViewModel', ...
+                'loadDiagram serverPreview: %s', ME.message);
+            AnalysisViewModel.dispatchSimilarityFallback(diagramHtml, svc, cid, tok);
+        end
+
+        function dispatchSimilarityFallback(diagramHtml, svc, cid, tok)
+            if isempty(diagramHtml) || ~isvalid(diagramHtml); return; end
+            AsyncRunner.run( ...
+                @() svc.getCircuit(cid, tok), ...
+                @(circData) AnalysisViewModel.onSimilarityFallbackReady( ...
+                    diagramHtml, circData), ...
+                @(ME) AnalysisViewModel.onSimilarityFallbackFailed( ...
+                    diagramHtml, ME));
+        end
+
+        function onSimilarityFallbackReady(diagramHtml, circData)
+            if isempty(diagramHtml) || ~isvalid(diagramHtml); return; end
+            svgContent = '';
+            try
+                qasmText = char(JsonHelper.pick(circData, ...
+                    {'content','raw_content','qasm_content','source'}));
+                if ~isempty(qasmText)
+                    svgContent = CircuitDiagram.renderSvg(qasmText);
+                else
+                    svgContent = '<p style="color:#888;font-family:sans-serif">No circuit content available.</p>';
+                end
+            catch ME
+                svgContent = sprintf( ...
+                    '<p style="color:#DC2626;font-family:sans-serif">Failed to render: %s</p>', ...
+                    CircuitDiagram.escapeHtml(ME.message));
+            end
+            diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
+        end
+
+        function onSimilarityFallbackFailed(diagramHtml, ME)
+            if isempty(diagramHtml) || ~isvalid(diagramHtml); return; end
+            diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
+                sprintf('<p style="color:#DC2626;font-family:sans-serif">Failed to load diagram: %s</p>', ...
+                    CircuitDiagram.escapeHtml(ME.message)));
+        end
+
+        function snap = snapshotEmFormState(app)
+            % MAIN THREAD: snapshot every form input the async refresh
+            % needs into a struct of plain values. Decouples the
+            % background work from the live UI handles so the worker
+            % can't deref a torn-down dropdown if the dialog closes
+            % mid-flight.
+            snap = struct( ...
+                'backend',      '', ...
+                'primitive',    'sampler', ...
+                'baseShots',    4096, ...
+                'qubits',       5, ...
+                'sweepLevels',  [], ...
+                'currentLid',   1, ...
+                'options',      [], ...
+                'token',        '');
+            try; snap.backend     = char(app.EmBackendDropdown.Value);     catch; end
+            try; snap.primitive   = char(app.EmPrimitiveDropdown.Value);   catch; end
+            try; snap.baseShots   = double(app.EmBaseShotsField.Value);    catch; end
+            try; snap.currentLid  = double(app.EmLevelDropdown.Value);     catch; end
+            try; snap.sweepLevels = app.EmLevels;                          catch; end
+            try; snap.token       = app.State.authToken;                   catch; end
+            q = AnalysisViewModel.pickQubits(app.EmCircuitMeta);
+            if ~isnan(q); snap.qubits = q; end
+            % Capture Custom-level options only when Custom is the live
+            % selection — matches the legacy behaviour of forwarding
+            % advanced options to /api/mitigation/estimate only for the
+            % currently-selected level.
+            if snap.currentLid == 3 || snap.currentLid == -1
+                try; snap.options = AnalysisViewModel.currentEmOptions(app); catch; end
+            end
+        end
+
+        function results = computeEmRefresh(mitSvc, backendSvc, token, snap)
+            % BACKGROUND POOL: estimate sweep + calibration GET.
+            % Pure compute over the snapshot, no UI references. Returns
+            % a results struct consumed by applyEmRefreshResults on the
+            % main thread.
+            n = numel(snap.sweepLevels);
+            bundle = cell(1, n);
+            for i = 1:n
+                lid = JsonHelper.pickNumeric(snap.sweepLevels(i), 'id', i-1);
+                body = struct( ...
+                    'mitigation_level',         double(lid), ...
+                    'primitive',                snap.primitive, ...
+                    'backend_name',             snap.backend, ...
+                    'base_shots',               snap.baseShots, ...
+                    'circuit_qubits',           round(snap.qubits), ...
+                    'cutting_overhead_qubits',  0);
+                if snap.currentLid == lid && (lid == 3 || lid == -1) ...
+                        && ~isempty(snap.options)
+                    body.mitigation_options = snap.options;
+                end
+                est = [];
+                try
+                    est = mitSvc.estimate(body, token);
+                catch ME
+                    Logger.debug('AnalysisViewModel', ...
+                        'EM estimate fail (lid=%d): %s', lid, ME.message);
+                end
+                bundle{i} = struct( ...
+                    'levelId',  double(lid), ...
+                    'label',    char(JsonHelper.pick(snap.sweepLevels(i), ...
+                        {'label','name'}, sprintf('Level %d', lid))), ...
+                    'estimate', est);
+            end
+            cal = [];
+            if ~isempty(snap.backend)
+                try
+                    cal = backendSvc.getCalibration(snap.backend, token);
+                catch ME
+                    Logger.debug('AnalysisViewModel', ...
+                        'EM calibration fail (%s): %s', snap.backend, ME.message);
+                end
+            end
+            results = struct('bundle', {bundle}, 'calibration', cal);
+        end
+
+        function onEmRefreshError(app, ME)
+            % runAsyncWithLoading hides the overlay before this fires,
+            % so we just log here. Per-call HTTP failures are already
+            % tolerated inside computeEmRefresh; reaching this branch
+            % implies the background pool itself failed (rare).
+            Logger.warn('AnalysisViewModel', ...
+                'EM refresh failed: %s', ME.message);
+            try
+                if isprop(app, 'EmStatusBanner') ...
+                        && ~isempty(app.EmStatusBanner) ...
+                        && isvalid(app.EmStatusBanner)
+                    app.EmStatusBanner.Text = Labels.get( ...
+                        'em_status_refresh_failed', ...
+                        'Refresh failed - see event log for details.');
+                end
+            catch; end
+        end
+
+        function ladder = staticEmLevelLadder()
+            % Static mirror of /api/mitigation/levels — keeps the QEM
+            % popup usable when the deployed FastAPI server lacks the
+            % endpoint. Field shape matches LevelInfo so downstream
+            % renderers (refreshEmEstimateBundle, renderEmTechniqueTable,
+            % renderEmRecommendation) see the same struct layout as a
+            % live response.
+            ladder = struct( ...
+                'id', { 0, 1, 2, 3, -1 }, ...
+                'name', { 'raw', 'standard', 'aggressive', 'tem', 'custom' }, ...
+                'label', { 'Raw', 'Standard (default)', 'Aggressive', ...
+                           'TEM (utility-scale)', 'Custom (advanced)' }, ...
+                'description', { ...
+                    'Bare primitive — no mitigation. Use for hardware benchmarks.', ...
+                    'Pauli twirling + measurement TREX + dynamical decoupling.', ...
+                    'Standard + Zero-Noise Extrapolation (3-point exponential).', ...
+                    'Standard + Algorithmiq Tensor-Network Error Mitigation (Phase 4).', ...
+                    'Operator-supplied per-technique override.'}, ...
+                'overhead_hint', { ...
+                    '1× shots, 1× wall-clock', ...
+                    '~1× shots, ~1× wall-clock', ...
+                    '~3× shots, ~3× wall-clock', ...
+                    '~5–15× wall-clock (Phase 4)', ...
+                    'varies'});
+        end
 
         function step = niceTickStep(range, targetTicks)
             % Pick a human-readable tick step for the given numeric range.
@@ -409,7 +1568,7 @@ classdef AnalysisViewModel < handle
             elseif topSim > 0.85
                 interp = 'Good match — similar structure to a known benchmark.';
             elseif topSim > 0.70
-                interp = 'Moderate match — broadly comparable to QASMBench peers.';
+                interp = 'Moderate match — broadly comparable to QTAUBench peers.';
             else
                 interp = 'Weak match — novel structure with limited benchmark reference.';
             end
@@ -475,9 +1634,1141 @@ classdef AnalysisViewModel < handle
             if ~isempty(cur); parts{end+1} = cur; end
         end
 
+        function data = fetchBackendList(backendSvc, circSvc, cid, token)
+            % 3-tier fallback for populating the QMC Backend dropdown:
+            %   1. list scoped to the currently-selected circuit
+            %   2. list scoped to the first circuit in the project
+            %   3. basic unscoped list
+            if ~isempty(cid) && strlength(string(cid)) > 0
+                try
+                    data = backendSvc.listBackends(token, cid);
+                    if AnalysisViewModel.hasBackends(data); return; end
+                catch
+                end
+            end
+            try
+                circList = circSvc.listCircuits(token);
+                items = JsonHelper.extractList(circList, 'circuits');
+                if ~isempty(items)
+                    fallbackCid = char(JsonHelper.pick(items(1), {'circuit_id','id'}));
+                    if ~isempty(fallbackCid) && strlength(string(fallbackCid)) > 0
+                        data = backendSvc.listBackends(token, fallbackCid);
+                        if AnalysisViewModel.hasBackends(data); return; end
+                    end
+                end
+            catch
+            end
+            data = backendSvc.listBackends(token, '');
+        end
+
+        function tf = hasBackends(data)
+            tf = isstruct(data) && isfield(data, 'backends') && ~isempty(data.backends);
+        end
+
+        function decorateQmcBackendDropdown(app)
+            % Regenerate Items labels for app.QmcBackendField using the
+            % cached app.QmcBackendMeta and app.State.selectedCircuitQubits.
+            % Pure function — call it whenever either input changes.
+            % ItemsData (the bare backend names used for submission) is
+            % left intact; only the human-readable labels move.
+            try
+                if isempty(app.QmcBackendField) || ~isvalid(app.QmcBackendField); return; end
+                meta = app.QmcBackendMeta;
+                if isempty(meta); return; end
+                cWidth = 0;
+                try; cWidth = double(app.State.selectedCircuitQubits); catch; end
+                if isnan(cWidth); cWidth = 0; end
+                n = numel(meta);
+                labels = cell(1, n);
+                for i = 1:n
+                    bname = char(meta(i).name);
+                    bq    = double(meta(i).num_qubits);
+                    if ~isfinite(bq); bq = 0; end
+                    if bq > 0
+                        if cWidth > 0 && bq < cWidth
+                            labels{i} = sprintf('%s (%dq — too narrow)', bname, round(bq));
+                        else
+                            labels{i} = sprintf('%s (%dq)', bname, round(bq));
+                        end
+                    else
+                        labels{i} = bname;
+                    end
+                end
+                app.QmcBackendField.Items = labels;
+            catch
+            end
+        end
+
+        function q = lookupBackendQubits(app, backendName)
+            % Return num_qubits for the given backend from the cached
+            % QMC dropdown metadata, or 0 if unknown. The pre-flight
+            % width check in onRunQmcAnalysis falls back to "no check"
+            % when this returns 0 so a missing field never blocks Run.
+            q = 0;
+            try
+                meta = app.QmcBackendMeta;
+                if isempty(meta); return; end
+                names = arrayfun(@(s) string(s.name), meta);
+                idx = find(names == string(backendName), 1);
+                if ~isempty(idx)
+                    q = double(meta(idx).num_qubits);
+                end
+            catch
+                q = 0;
+            end
+            if isnan(q); q = 0; end
+        end
+
+        function v = evaluateQmcViability(app)
+            % Decide whether QMC can run for the currently selected
+            % circuit, in either Statevector (local) or any of the
+            % loaded IBM Runtime backends. Returns a struct so the UI
+            % layer can render a single banner + tooltip without
+            % duplicating the rules.
+            %
+            % Limits:
+            %   • Statevector: 30 qubits — Statevector.from_instruction
+            %     allocates 2^n complex amplitudes; 30q ~ 16 GiB which
+            %     is the practical ceiling on a typical workstation.
+            %   • Runtime: bounded by the widest available IBM backend.
+            STATEVECTOR_QUBIT_LIMIT = 30;
+
+            v = struct( ...
+                'ok', true, ...
+                'statevector_ok', true, ...
+                'runtime_ok', true, ...
+                'circuit_qubits', 0, ...
+                'max_runtime_qubits', 0, ...
+                'current_backend_qubits', 0, ...
+                'current_mode', '', ...
+                'reason', '');
+
+            cw = 0;
+            try; cw = double(app.State.selectedCircuitQubits); catch; end
+            if isnan(cw); cw = 0; end
+            v.circuit_qubits = cw;
+
+            % Statevector branch — only width matters, no backend.
+            if cw > 0 && cw > STATEVECTOR_QUBIT_LIMIT
+                v.statevector_ok = false;
+            end
+
+            % Runtime branch — need at least one backend with width >= cw.
+            maxQ = 0;
+            try
+                meta = app.QmcBackendMeta;
+                if ~isempty(meta)
+                    qs = arrayfun(@(s) double(s.num_qubits), meta);
+                    qs = qs(isfinite(qs) & qs > 0);
+                    if ~isempty(qs); maxQ = max(qs); end
+                end
+            catch
+            end
+            v.max_runtime_qubits = maxQ;
+            if cw > 0 && maxQ > 0 && cw > maxQ
+                v.runtime_ok = false;
+            end
+
+            % Currently-selected mode + backend (best-effort — the dialog
+            % may not be open yet when this is called).
+            try
+                if ~isempty(app.QmcModeDropdown) && isvalid(app.QmcModeDropdown)
+                    v.current_mode = char(app.QmcModeDropdown.Value);
+                end
+            catch
+            end
+            try
+                if ~isempty(app.QmcBackendField) && isvalid(app.QmcBackendField)
+                    bn = char(app.QmcBackendField.Value);
+                    v.current_backend_qubits = AnalysisViewModel.lookupBackendQubits(app, bn);
+                end
+            catch
+            end
+
+            % Overall verdict: blocked only when neither mode can run.
+            if ~v.statevector_ok && ~v.runtime_ok && cw > 0
+                v.ok = false;
+                if maxQ > 0
+                    v.reason = sprintf( ...
+                        ['QMC isn''t applicable to this circuit. The active circuit "%s" has %d qubits, ', ...
+                         'which exceeds both the local Statevector ceiling (%d qubits) and the widest ', ...
+                         'available IBM Runtime backend (%d qubits). Load a smaller amplitude-oracle ', ...
+                         'circuit (see samples/aqs-qmc/, e.g. aqs_qmc_var_7q_*.qasm) and reopen QMC.'], ...
+                        char(app.State.selectedCircuitName), round(cw), STATEVECTOR_QUBIT_LIMIT, round(maxQ));
+                else
+                    v.reason = sprintf( ...
+                        ['QMC isn''t applicable to this circuit. The active circuit "%s" has %d qubits, ', ...
+                         'beyond the local Statevector ceiling (%d qubits). Load a smaller amplitude-oracle ', ...
+                         'circuit (see samples/aqs-qmc/, e.g. aqs_qmc_var_7q_*.qasm) and reopen QMC.'], ...
+                        char(app.State.selectedCircuitName), round(cw), STATEVECTOR_QUBIT_LIMIT);
+                end
+            end
+        end
+
+        function applyQmcViability(app, v)
+            % Render the verdict from evaluateQmcViability into the QMC
+            % dialog: banner text+visibility, Mode dropdown adornment,
+            % and Run-button enable state. Also gates the per-mode hint
+            % so the user can see WHICH branch failed.
+            STATEVECTOR_QUBIT_LIMIT = 30;
+
+            % Banner — visible only when the overall verdict is blocked.
+            try
+                if ~isempty(app.QmcBanner) && isvalid(app.QmcBanner)
+                    if ~v.ok
+                        if ~isempty(app.QmcBannerLabel) && isvalid(app.QmcBannerLabel)
+                            app.QmcBannerLabel.Text = char(v.reason);
+                        end
+                        app.QmcBanner.Visible = 'on';
+                    else
+                        app.QmcBanner.Visible = 'off';
+                    end
+                end
+            catch
+            end
+
+            % Mode dropdown — adorn unavailable items with a "(too wide)"
+            % hint so the user sees which branch is the bottleneck.
+            try
+                if ~isempty(app.QmcModeDropdown) && isvalid(app.QmcModeDropdown)
+                    svLbl = 'Statevector (local)';
+                    rtLbl = 'IBM Runtime';
+                    if ~v.statevector_ok
+                        svLbl = sprintf('Statevector (local) — max %dq', STATEVECTOR_QUBIT_LIMIT);
+                    end
+                    if ~v.runtime_ok && v.max_runtime_qubits > 0
+                        rtLbl = sprintf('IBM Runtime — max %dq', round(v.max_runtime_qubits));
+                    end
+                    app.QmcModeDropdown.Items = {svLbl, rtLbl};
+                    % ItemsData is unchanged — the submit payload still
+                    % uses the bare 'statevector' / 'runtime' tokens.
+                end
+            catch
+            end
+
+            % Run QMC button — when the circuit can't run in either
+            % mode, the button transforms into a "Choose Compatible
+            % Circuit" CTA that opens a picker filtered to circuits
+            % within the qubit ceiling. Same position, primary style,
+            % different action — gives the operator a one-click path
+            % out instead of a dead-end disabled state. Reverts to
+            % "Run QMC" the moment a compatible circuit is selected.
+            try
+                if ~isempty(app.QmcRunButton) && isvalid(app.QmcRunButton)
+                    if ~v.ok
+                        app.QmcRunButton.Text = ...
+                            [char(8644) ' Choose Compatible Circuit'];
+                        app.QmcRunButton.Enable = 'on';
+                        app.QmcRunButton.Tooltip = ...
+                            ['This circuit is too wide for both Statevector ' ...
+                             'and IBM Runtime. Click to pick a smaller ' ...
+                             'amplitude-oracle circuit from the project.'];
+                        app.QmcRunButton.ButtonPushedFcn = ...
+                            @(~,~) app.AnalysisVm.onChooseCompatibleCircuit();
+                    else
+                        app.QmcRunButton.Text   = [char(9883) ' Run QMC'];
+                        app.QmcRunButton.Enable = 'on';
+                        app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
+                        app.QmcRunButton.ButtonPushedFcn = ...
+                            @(~,~) app.AnalysisVm.onRunQmcAnalysis();
+                    end
+                end
+            catch
+            end
+        end
+
+        function s = prettyJobStatus(status, serverMessage)
+            % Convert a raw status+message into something user-friendly
+            % for the loading overlay.
+            if ~isempty(serverMessage)
+                s = serverMessage;
+                return;
+            end
+            switch lower(char(status))
+                case 'queued';    s = 'Queued — waiting for backend';
+                case 'running';   s = 'Running Quantum Monte Carlo simulation';
+                case 'completed'; s = 'Completed';
+                case 'failed';    s = 'Failed';
+                case 'cancelled'; s = 'Cancelled';
+                otherwise;        s = char(status);
+            end
+        end
+
+        function toggleIbmLogButton(app, data)
+            % Enable the Download IBM Log button only when the cached
+            % QMC result carries a non-empty runtime_job_id (set by the
+            % server when execution_mode='runtime'). Statevector runs
+            % leave the field empty → keep the button disabled.
+            try
+                if ~isprop(app, 'QmcDownloadLogButton') || ...
+                        isempty(app.QmcDownloadLogButton) || ...
+                        ~isvalid(app.QmcDownloadLogButton)
+                    return;
+                end
+                jobId = '';
+                if ~isempty(data)
+                    jobId = char(JsonHelper.pick(data, {'runtime_job_id'}, ''));
+                end
+                if ~isempty(jobId)
+                    app.QmcDownloadLogButton.Enable = 'on';
+                else
+                    app.QmcDownloadLogButton.Enable = 'off';
+                end
+            catch
+            end
+        end
+
+        function revealQmcResultButtons(app)
+            % M9 — flip Visible='on' and restore real column widths on
+            % the three QMC export buttons (Download Results / Download
+            % IBM Log / Generate Report) once a result exists. Idempotent
+            % — calling twice is safe. Note: Download IBM Log's Enable
+            % state is still governed by toggleIbmLogButton (off in
+            % statevector mode); this helper only controls visibility.
+            try
+                if isprop(app, 'QmcFooterGrid') && ~isempty(app.QmcFooterGrid) ...
+                        && isvalid(app.QmcFooterGrid)
+                    %  6-column footer:  spacer | Run | DL Results | DL Log | Report | Close
+                    app.QmcFooterGrid.ColumnWidth = ...
+                        {'1x', 200, 150, 150, 160, 100};
+                end
+            catch
+            end
+            for h = {app.QmcDownloadResultsBtn, ...
+                     app.QmcDownloadLogButton, ...
+                     app.QmcReportButton}
+                try
+                    if ~isempty(h{1}) && isvalid(h{1})
+                        h{1}.Visible = 'on';
+                    end
+                catch
+                end
+            end
+        end
+
+        function hideQmcResultButtons(app)
+            % M9 — counterpart of revealQmcResultButtons. Called from
+            % resetQmcUi at the start of each Run so the prior result's
+            % export buttons disappear while the new run is in flight;
+            % onQmcComplete re-reveals them once the new result lands.
+            for h = {app.QmcDownloadResultsBtn, ...
+                     app.QmcDownloadLogButton, ...
+                     app.QmcReportButton}
+                try
+                    if ~isempty(h{1}) && isvalid(h{1})
+                        h{1}.Visible = 'off';
+                    end
+                catch
+                end
+            end
+            try
+                if isprop(app, 'QmcFooterGrid') && ~isempty(app.QmcFooterGrid) ...
+                        && isvalid(app.QmcFooterGrid)
+                    app.QmcFooterGrid.ColumnWidth = ...
+                        {'1x', 200, 0, 0, 0, 100};
+                end
+            catch
+            end
+        end
+
+        function parent = qmcAlertParent(app)
+            % Pick the right uialert parent so the alert draws on top
+            % of the Quantum Monte Carlo modal popup when it is open —
+            % parenting to app.UIFigure leaves the alert behind the
+            % popup because the popup is its own uifigure window.
+            parent = app.UIFigure;
+            try
+                if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog) ...
+                        && strcmp(app.QmcDialog.Visible, 'on')
+                    parent = app.QmcDialog;
+                end
+            catch
+            end
+        end
+
+        function savedPath = pollAndDownloadReport(reportSvc, reportId, token)
+            % Poll GET /reports/{id} until status='ready' (or 'completed'),
+            % then stream the file to a temp path and return it. Caller
+            % can uiputfile and copy to the user's chosen destination.
+            deadline = tic;
+            maxSeconds = 60;
+            pause_s = 0.75;
+            status = '';
+            fmt = '';
+            while toc(deadline) < maxSeconds
+                meta = reportSvc.getReport(reportId, token);
+                status = lower(char(JsonHelper.pick(meta, {'status'}, '')));
+                fmt    = lower(char(JsonHelper.pick(meta, {'format'}, 'pdf')));
+                if any(strcmp(status, {'ready', 'completed', 'success', 'done'}))
+                    break;
+                elseif any(strcmp(status, {'failed', 'error'}))
+                    msg = char(JsonHelper.pick(meta, {'message','error'}, ...
+                        'Report generation failed on the server.'));
+                    error('QTAU:ReportFailed', '%s', msg);
+                end
+                pause(pause_s);
+            end
+            if ~any(strcmp(status, {'ready', 'completed', 'success', 'done'}))
+                error('QTAU:ReportTimeout', ...
+                    'Report did not reach ready state within %d seconds.', maxSeconds);
+            end
+            if isempty(fmt); fmt = 'pdf'; end
+            ext = ['.' fmt];
+            if strcmp(ext, '.') || strcmp(ext, '..'); ext = '.pdf'; end
+            savedPath = fullfile(tempdir, sprintf('qmc_report_%s%s', reportId, ext));
+            reportSvc.downloadReportFile(reportId, token, savedPath);
+        end
+
+        % ── Quantum Error Mitigation helpers (Phase 6.x) ────────────────
+        function parent = emAlertParent(app)
+            % Pick the right uialert parent so the alert draws on top of
+            % the Quantum Error Mitigation modal popup when it is open.
+            parent = app.UIFigure;
+            try
+                if ~isempty(app.EmDialog) && isvalid(app.EmDialog) ...
+                        && strcmp(app.EmDialog.Visible, 'on')
+                    parent = app.EmDialog;
+                end
+            catch
+            end
+        end
+
+        function eplg = extractEplg(cal)
+            % Try multiple top-level field names first.
+            eplg = JsonHelper.pickNumeric(cal, 'eplg', NaN);
+            if ~isnan(eplg) && eplg > 0; return; end
+            eplg = JsonHelper.pickNumeric(cal, 'epc', NaN);
+            if ~isnan(eplg) && eplg > 0; return; end
+            eplg = JsonHelper.pickNumeric(cal, 'avg_2q_gate_error', NaN);
+            if ~isnan(eplg) && eplg > 0; return; end
+            eplg = JsonHelper.pickNumeric(cal, 'two_q_error_avg', NaN);
+            if ~isnan(eplg) && eplg > 0; return; end
+
+            % Fall back to per-coupling 2Q error if the calibration ships a
+            % populated `couplings[]` list with `gate_error_2q` per edge.
+            couplings = JsonHelper.extractList(cal, 'couplings');
+            if ~isempty(couplings)
+                vals = [];
+                for k = 1:numel(couplings)
+                    v = JsonHelper.pickNumeric(couplings(k), 'gate_error_2q', NaN);
+                    if isnan(v); v = JsonHelper.pickNumeric(couplings(k), 'cnot_error', NaN); end
+                    if isnan(v); v = JsonHelper.pickNumeric(couplings(k), 'ecr_error',  NaN); end
+                    if ~isnan(v) && v > 0; vals(end+1) = v; end %#ok<AGROW>
+                end
+                if ~isempty(vals); eplg = mean(vals); return; end
+            end
+
+            % Last-resort heuristic for IBM-shaped calibrations that only
+            % publish per-qubit `gate_error_1q` + `readout_error`. IBM 2Q
+            % errors run roughly 10× the 1Q error; readout adds a small
+            % per-layer contribution. Yields ~0.3–1% for healthy IBM
+            % devices, which is close enough to render the PEC γ̄^depth
+            % feasibility curve and the γ̄ KPI without a 2Q-calibration
+            % field. Still reads as NaN if the calibration response is
+            % entirely empty, so the "EPLG not available" empty state
+            % remains for genuinely calibration-less backends.
+            qubits = JsonHelper.extractList(cal, 'qubits');
+            if ~isempty(qubits)
+                g1 = []; rd = [];
+                for k = 1:numel(qubits)
+                    v = JsonHelper.pickNumeric(qubits(k), 'gate_error_1q', NaN);
+                    if ~isnan(v) && v > 0; g1(end+1) = v; end %#ok<AGROW>
+                    v = JsonHelper.pickNumeric(qubits(k), 'readout_error', NaN);
+                    if ~isnan(v) && v > 0; rd(end+1) = v; end %#ok<AGROW>
+                end
+                avg1q = NaN; avgRd = 0;
+                if ~isempty(g1); avg1q = mean(g1); end
+                if ~isempty(rd); avgRd = mean(rd); end
+                if ~isnan(avg1q)
+                    eplg = 10 * avg1q + 0.1 * avgRd;
+                    if eplg > 0 && eplg < 1; return; end
+                end
+            end
+            eplg = NaN;
+        end
+
+        function gb = computeGammaBar(eplg)
+            % gammabar = (1 - EPLG)^(-2). Returns NaN for invalid input.
+            if isnan(eplg) || eplg <= 0 || eplg >= 1
+                gb = NaN; return;
+            end
+            gb = (1 - eplg)^(-2);
+        end
+
+        function ovh = computeGammaBarOverhead(gammaBar, depth)
+            % PEC sampling overhead = gammabar^depth.  Capped at 1e30
+            % for plotting stability on log axes.
+            if isnan(gammaBar) || isnan(depth) || depth <= 0
+                ovh = NaN; return;
+            end
+            ovh = gammaBar^depth;
+            if isinf(ovh) || ovh > 1e30; ovh = 1e30; end
+        end
+
+        function q = pickQubits(meta)
+            q = JsonHelper.pickNumeric(meta, 'num_qubits', NaN);
+            if isnan(q); q = JsonHelper.pickNumeric(meta, 'qubits', NaN); end
+            if isnan(q); q = JsonHelper.pickNumeric(meta, 'width', NaN); end
+        end
+
+        function d = pickDepth(meta)
+            d = JsonHelper.pickNumeric(meta, 'depth', NaN);
+            if isnan(d); d = JsonHelper.pickNumeric(meta, 'circuit_depth', NaN); end
+        end
+
+        function n2q = pickTwoQGates(meta)
+            n2q = JsonHelper.pickNumeric(meta, 'num_2q_gates', NaN);
+            if isnan(n2q); n2q = JsonHelper.pickNumeric(meta, 'two_qubit_gates', NaN); end
+            if isnan(n2q); n2q = JsonHelper.pickNumeric(meta, 'cnot_count', NaN); end
+        end
+
+        function s = fmtIntKpi(v)
+            if isnan(v); s = '-'; else; s = sprintf('%d', round(v)); end
+        end
+
+        function biasReduction = estimateBiasReduction(levelId)
+            % Heuristic mapping from MitigationService level id to a
+            % rough bias-reduction factor.  Operator-facing only -- the
+            % UI labels these as "estimated".
+            %
+            % Level IDs match the backend's MitigationService enum:
+            %   0 = Raw, 1 = Standard, 2 = Aggressive, 3 = TEM,
+            %   -1 = Custom (advanced).
+            switch double(levelId)
+                case 0;  biasReduction = 1.0;   % Raw
+                case 1;  biasReduction = 1.6;   % Standard
+                case 2;  biasReduction = 2.8;   % Aggressive
+                case 3;  biasReduction = 3.5;   % TEM (utility-scale)
+                case -1; biasReduction = 2.5;   % Custom (depends on options)
+                otherwise; biasReduction = 1.0;
+            end
+        end
+
+        function pick = bestRecommendation(bundle)
+            % Heuristic ranking: maximise biasReduction / log(1+shotMul).
+            pick = [];
+            bestScore = -Inf;
+            for i = 1:numel(bundle)
+                b = bundle{i};
+                if isempty(b.estimate); continue; end
+                cost = JsonHelper.pick(b.estimate, {'cost'}, struct());
+                shotMul = JsonHelper.pickNumeric(cost, 'shot_multiplier', 1.0);
+                bias = AnalysisViewModel.estimateBiasReduction(b.levelId);
+                score = bias / log(1 + max(shotMul, 1.0));
+                if score > bestScore
+                    bestScore = score; pick = b;
+                end
+            end
+        end
+
+        function targetValue = mapEmTechniqueToBenchmark(levelId)
+            % Map MitigationService level id to BenchmarkScreen
+            % mitigation dropdown ItemsData.
+            switch double(levelId)
+                case 0;  targetValue = 'none';
+                case 1;  targetValue = 'measurement_mitigation';
+                case 2;  targetValue = 'zero_noise_extrapolation';
+                case 3;  targetValue = 'zero_noise_extrapolation';
+                case 4;  targetValue = 'readout_calibration';
+                otherwise; targetValue = 'none';
+            end
+        end
+
+        function factors = parseZneFactors(s)
+            % Parse "1.0, 3.0, 5.0" -> [1.0 3.0 5.0]; defaults on parse fail.
+            factors = [1.0 3.0 5.0];
+            try
+                parts = strsplit(strtrim(char(s)), ',');
+                out = [];
+                for i = 1:numel(parts)
+                    v = str2double(strtrim(parts{i}));
+                    if ~isnan(v) && v > 0
+                        out(end+1) = v; %#ok<AGROW>
+                    end
+                end
+                if ~isempty(out); factors = out; end
+            catch
+            end
+        end
+
+        function opts = currentEmOptions(app)
+            % Snapshot the form's advanced controls into a struct that
+            % matches the MitigationPlan options schema.
+            opts = struct();
+            try
+                opts.zne_noise_factors = AnalysisViewModel.parseZneFactors( ...
+                    app.EmZneFactorsField.Value);
+                opts.zne_extrapolator  = char(app.EmExtrapolatorDropdown.Value);
+                opts.dd_sequence       = char(app.EmDdSequenceDropdown.Value);
+                opts.twirling_gates    = logical(app.EmTwirlGatesCheckbox.Value);
+                opts.twirling_measure  = logical(app.EmTwirlMeasureCheckbox.Value);
+                opts.tem_enable        = logical(app.EmTemCheckbox.Value);
+                opts.also_run_raw      = logical(app.EmAlsoRunRawCheckbox.Value);
+            catch
+            end
+        end
+
+        function [labels, vals] = pickTopBitstrings(counts, n)
+            % Convert a struct of bitstring->count into the top-n
+            % normalised probabilities, ordered by descending magnitude.
+            labels = {}; vals = [];
+            if ~isstruct(counts); return; end
+            f = fieldnames(counts);
+            if isempty(f); return; end
+            nums = zeros(1, numel(f));
+            for i = 1:numel(f)
+                nums(i) = double(counts.(f{i}));
+            end
+            [nums, idx] = sort(nums, 'descend');
+            keys = f(idx);
+            take = min(n, numel(nums));
+            total = sum(nums);
+            if total <= 0; return; end
+            labels = cell(1, take);
+            vals = zeros(1, take);
+            for i = 1:take
+                labels{i} = keys{i};
+                vals(i)   = nums(i) / total;
+            end
+        end
+
     end
 
     methods (Access = private)
+        function onQmcComplete(obj, app, data)
+            app.hideLoading();
+            app.QmcLastResult = data;
+            obj.renderQmcResult(app, data);
+            AnalysisViewModel.toggleIbmLogButton(app, data);
+            app.logEvent('API', sprintf('QMC complete — amp=%.4f speedup=%.1fx', ...
+                JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
+                JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
+            app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
+            % M9 — reveal the export trio now that a fresh result
+            % exists. resetQmcUi has already hidden them at the start
+            % of this run, so this is the symmetric re-reveal.
+            AnalysisViewModel.revealQmcResultButtons(app);
+        end
+
+        function startQmcPoll(obj, app, jobId)
+            % Kick off a 3s MATLAB timer that polls GET /api/qae/jobs/{id}
+            % until the job reaches a terminal state. UI work happens on
+            % the main thread so we don't need AsyncRunner here — each
+            % tick does one fast HTTP GET.
+            obj.stopQmcPoll(app);
+            app.showLoading(Labels.get('loading_qmc_queued', 'Queued — waiting for backend...'));
+            t = timer( ...
+                'ExecutionMode', 'fixedSpacing', ...
+                'Period',        3.0, ...
+                'StartDelay',    0.0, ...
+                'BusyMode',      'drop', ...
+                'Name',          ['QmcPoll-' char(jobId)], ...
+                'TimerFcn',      @(src,~) obj.onQmcPollTick(app, jobId, src));
+            app.QmcPollTimer = t;
+            start(t);
+        end
+
+        function stopQmcPoll(~, app)
+            try
+                if ~isempty(app.QmcPollTimer) && isvalid(app.QmcPollTimer)
+                    stop(app.QmcPollTimer);
+                    delete(app.QmcPollTimer);
+                end
+            catch
+            end
+            app.QmcPollTimer = [];
+        end
+
+        function onQmcPollTick(obj, app, jobId, timerObj)
+            % One poll iteration. Swallows transient HTTP errors and
+            % lets the timer try again on the next tick.
+            if isempty(app.QmcActiveJobId) || ~strcmp(app.QmcActiveJobId, jobId)
+                % Job was superseded or cancelled; stop this timer.
+                try; stop(timerObj); delete(timerObj); catch; end
+                return;
+            end
+            try
+                state = app.QmcSvc.getAnalyzeJob(jobId, app.State.authToken);
+            catch ME
+                Logger.debug('AnalysisViewModel', 'QMC poll transient: %s', ME.message);
+                return;
+            end
+            status = lower(char(JsonHelper.pick(state, {'status'}, 'queued')));
+            progress = JsonHelper.pickNumeric(state, 'progress_pct', 0);
+            msg = char(JsonHelper.pick(state, {'message'}, ''));
+            % Refresh the loading overlay with the latest step.
+            displayMsg = sprintf('%s (%d%%)', AnalysisViewModel.prettyJobStatus(status, msg), round(progress));
+            try; app.showLoading(displayMsg); catch; end
+
+            switch status
+                case {'completed'}
+                    obj.stopQmcPoll(app);
+                    app.QmcActiveJobId = '';
+                    result = JsonHelper.pick(state, {'result'}, []);
+                    if isempty(result)
+                        obj.onQmcError(app, MException('QTAU:QmcEmpty', ...
+                            'Job completed but server returned no result payload.'));
+                        return;
+                    end
+                    obj.onQmcComplete(app, result);
+                case {'failed'}
+                    obj.stopQmcPoll(app);
+                    app.QmcActiveJobId = '';
+                    errMsg = char(JsonHelper.pick(state, {'error'}, ''));
+                    if isempty(errMsg); errMsg = msg; end
+                    if isempty(errMsg); errMsg = 'QMC job failed on the server.'; end
+                    obj.onQmcError(app, MException('QTAU:QmcFailed', '%s', errMsg));
+                case {'cancelled'}
+                    obj.stopQmcPoll(app);
+                    app.QmcActiveJobId = '';
+                    app.hideLoading();
+                    uialert(AnalysisViewModel.qmcAlertParent(app), ...
+                        'Quantum Monte Carlo job was cancelled.', ...
+                        'Quantum Monte Carlo', 'Icon', 'info');
+                otherwise
+                    % queued / running — keep polling.
+            end
+        end
+
+        function onIbmLogDownloaded(~, app, tmpPath, runtimeJobId, circName, fmt)
+            app.hideLoading();
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            if isempty(tmpPath) || exist(tmpPath, 'file') ~= 2
+                uialert(alertParent, 'IBM log download finished but the local file is missing.', ...
+                    'Download IBM Log', 'Icon', 'error');
+                return;
+            end
+            if isempty(fmt); fmt = 'jsonl'; end
+            ext = ['.' char(fmt)];
+            safeName = regexprep(char(circName), '[^A-Za-z0-9_\-]', '_');
+            if isempty(safeName); safeName = 'circuit'; end
+            backendName = '';
+            try
+                if ~isempty(app.QmcLastResult)
+                    backendName = char(JsonHelper.pick(app.QmcLastResult, {'backend'}, ''));
+                end
+            catch
+            end
+            safeBackend = regexprep(char(backendName), '[^A-Za-z0-9_\-]', '_');
+            if isempty(safeBackend); safeBackend = 'ibm_backend'; end
+            % Operator filename rule: Results_IbmLog_<backend>_<circuit>_<YYYYMMDD_HHMM>.{jsonl,json}
+            defaultName = sprintf('Results_IbmLog_%s_%s_%s%s', ...
+                safeBackend, safeName, Exporter.minuteStamp(), ext);
+            % Default to the OS Downloads folder — see Exporter.defaultDir.
+            [fileName, pathName] = uiputfile( ...
+                {'*.jsonl', 'JSON Lines (*.jsonl)'; ...
+                 '*.json',  'JSON (*.json)'; ...
+                 '*.*',     'All Files (*.*)'}, ...
+                'Save IBM Runtime log', Exporter.savePath(defaultName));
+            if isequal(fileName, 0)
+                uialert(alertParent, ...
+                    sprintf('IBM log downloaded to:\n%s', tmpPath), ...
+                    'Download IBM Log', 'Icon', 'success');
+                return;
+            end
+            target = fullfile(pathName, fileName);
+            try
+                copyfile(tmpPath, target, 'f');
+                app.logEvent('API', sprintf('IBM log %s saved to %s', runtimeJobId, target));
+                uialert(alertParent, ...
+                    sprintf('IBM Runtime log saved to:\n%s', target), ...
+                    'Download IBM Log', 'Icon', 'success');
+            catch ME
+                Logger.warn('AnalysisViewModel', 'IBM log copy failed: %s', ME.message);
+                uialert(alertParent, ...
+                    sprintf('IBM log downloaded to:\n%s\n\nCould not copy to chosen path: %s', ...
+                            tmpPath, ME.message), ...
+                    'Download IBM Log', 'Icon', 'warning');
+            end
+        end
+
+        function onIbmLogError(~, app, ME)
+            app.hideLoading();
+            uialert(AnalysisViewModel.qmcAlertParent(app), ME.message, ...
+                'Download IBM Log', 'Icon', 'error');
+            Logger.error('AnalysisViewModel', 'IBM log download failed: %s', ME.message);
+        end
+
+        function onQmcError(~, app, ME)
+            app.hideLoading();
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            isRuntime503 = contains(string(ME.message), '503') || ...
+                           contains(lower(string(ME.message)), 'runtime is not configured');
+            if isRuntime503
+                uialert(alertParent, ...
+                    sprintf(['IBM Qiskit Runtime is not configured on the server.\n' ...
+                             'Switch Execution Mode to "Statevector (local)" and try again.\n\n%s'], ...
+                             ME.message), ...
+                    'Quantum Monte Carlo', 'Icon', 'warning');
+            else
+                uialert(alertParent, ME.message, 'Quantum Monte Carlo', 'Icon', 'error');
+            end
+            Logger.error('AnalysisViewModel', 'QMC failed: %s', ME.message);
+        end
+
+        function onQmcReportGenerated(obj, app, data)
+            reportId = char(JsonHelper.pick(data, {'report_id'}, ''));
+            status   = char(JsonHelper.pick(data, {'status'}, 'unknown'));
+            app.logEvent('API', sprintf('Report generated — id=%s status=%s', reportId, status));
+            if isempty(reportId)
+                app.hideLoading();
+                uialert(AnalysisViewModel.qmcAlertParent(app), ...
+                    'The server did not return a report_id; cannot download.', ...
+                    'Generate Report', 'Icon', 'error');
+                return;
+            end
+
+            % Poll until status='ready', then stream the file to disk.
+            % Generation is synchronous in the current backend but we
+            % poll defensively in case it flips to async in the future.
+            app.showLoading(Labels.get('loading_report_download', 'Downloading PDF report...'));
+            reportSvc = app.ReportSvc;
+            token     = app.State.authToken;
+            circName  = char(app.State.selectedCircuitName);
+            AsyncRunner.run( ...
+                @() AnalysisViewModel.pollAndDownloadReport(reportSvc, reportId, token), ...
+                @(savedPath) obj.onQmcReportDownloaded(app, reportId, savedPath, circName), ...
+                @(ME)        obj.onQmcReportError(app, ME));
+        end
+
+        function onQmcReportDownloaded(~, app, reportId, tmpPath, circName)
+            app.hideLoading();
+            alertParent = AnalysisViewModel.qmcAlertParent(app);
+            % Ask the user where to save the final copy; default to a
+            % filename that includes the circuit name for findability.
+            if ~isempty(tmpPath) && exist(tmpPath, 'file') == 2
+                [~, ~, ext] = fileparts(tmpPath);
+                if isempty(ext); ext = '.pdf'; end
+                safeName = regexprep(char(circName), '[^A-Za-z0-9_\-]', '_');
+                if isempty(safeName); safeName = 'report'; end
+                % Operator filename rule for QMC PDF reports:
+                %   Report_Qmc_<circuit>_<YYYYMMDD_HHMM>.pdf
+                defaultName = sprintf('Report_Qmc_%s_%s%s', ...
+                    safeName, Exporter.minuteStamp(), ext);
+                % Default to the OS Downloads folder — see Exporter.defaultDir.
+                [fileName, pathName] = uiputfile( ...
+                    {['*' ext], ['Report (' ext ')']; '*.*', 'All Files (*.*)'}, ...
+                    'Save QMC report', Exporter.savePath(defaultName));
+                if isequal(fileName, 0)
+                    Logger.info('AnalysisViewModel', 'Save cancelled; temp file: %s', tmpPath);
+                    uialert(alertParent, ...
+                        sprintf('Report downloaded to:\n%s\n\nOpen the Reports screen any time to re-download.', tmpPath), ...
+                        'Generate Report', 'Icon', 'success');
+                    return;
+                end
+                target = fullfile(pathName, fileName);
+                try
+                    copyfile(tmpPath, target, 'f');
+                    app.logEvent('API', sprintf('Report %s saved to %s', reportId, target));
+                    uialert(alertParent, ...
+                        sprintf('Quantum Monte Carlo report saved to:\n%s', target), ...
+                        'Generate Report', 'Icon', 'success');
+                catch ME
+                    Logger.warn('AnalysisViewModel', 'Copy to user path failed: %s', ME.message);
+                    uialert(alertParent, ...
+                        sprintf('Report downloaded to:\n%s\n\nCould not copy to chosen path: %s', ...
+                                tmpPath, ME.message), ...
+                        'Generate Report', 'Icon', 'warning');
+                end
+            else
+                uialert(alertParent, ...
+                    'Download finished but the local file is missing.', ...
+                    'Generate Report', 'Icon', 'error');
+            end
+        end
+
+        function onQmcReportError(~, app, ME)
+            app.hideLoading();
+            uialert(AnalysisViewModel.qmcAlertParent(app), ME.message, ...
+                'Generate Report', 'Icon', 'error');
+            Logger.error('AnalysisViewModel', 'QMC report failed: %s', ME.message);
+        end
+
+        function resetQmcUi(~, app)
+            % Clear all KPI / Greek text and all plot axes on the QMC
+            % popup. Called at the start of each Run QMC so the user
+            % sees blanks while the API call is in flight rather than
+            % stale values from the previous analysis.
+            try
+                if ~isempty(app.QmcKpiLabels)
+                    for i = 1:numel(app.QmcKpiLabels)
+                        try; app.QmcKpiLabels{i}.Text = '—'; catch; end
+                    end
+                end
+            catch; end
+            try
+                if ~isempty(app.QmcGreeksLabels)
+                    for i = 1:numel(app.QmcGreeksLabels)
+                        try; app.QmcGreeksLabels{i}.Text = '—'; catch; end
+                    end
+                end
+            catch; end
+            axesHandles = {app.QmcPathAxes, app.QmcCdfAxes, ...
+                           app.QmcConvergenceAxes, app.QmcAmpAxes, ...
+                           app.QmcZneAxes};
+            for k = 1:numel(axesHandles)
+                ax = axesHandles{k};
+                try
+                    if ~isempty(ax) && isvalid(ax)
+                        cla(ax);
+                        lg = get(ax, 'Legend'); if ~isempty(lg); delete(lg); end
+                        ax.XGrid = 'off'; ax.YGrid = 'off';
+                        ax.XScale = 'linear'; ax.YScale = 'linear';
+                        ax.XTick = []; ax.YTick = [];
+                        title(ax, '');
+                        xlabel(ax, ''); ylabel(ax, '');
+                    end
+                catch; end
+            end
+            app.QmcLastResult = [];
+            AnalysisViewModel.toggleIbmLogButton(app, []);
+            % M9 — also re-hide the export trio at the start of each
+            % new run. They re-reveal in onQmcComplete once a fresh
+            % result is in hand.
+            AnalysisViewModel.hideQmcResultButtons(app);
+        end
+
+        function renderQmcResult(~, app, data)
+            % KPI strip: amplitude | expected payoff | VaR95 | VaR99 | speedup
+            try
+                amp     = JsonHelper.pickNumeric(data, 'amplitude_estimate', NaN);
+                ampLo   = JsonHelper.pickNumeric(data, 'amplitude_ci_low',   NaN);
+                ampHi   = JsonHelper.pickNumeric(data, 'amplitude_ci_high',  NaN);
+                payoff  = JsonHelper.pickNumeric(data, 'expected_payoff',    NaN);
+                var95   = JsonHelper.pickNumeric(data, 'var_95',             NaN);
+                var99   = JsonHelper.pickNumeric(data, 'var_99',             NaN);
+                speedup = JsonHelper.pickNumeric(data, 'quadratic_speedup',  NaN);
+
+                labels = app.QmcKpiLabels;
+                labels{1}.Text = sprintf('%.4f\n[%.3f, %.3f]', amp, ampLo, ampHi);
+                labels{2}.Text = sprintf('%.2f', payoff);
+                labels{3}.Text = sprintf('%.2f', var95);
+                labels{4}.Text = sprintf('%.2f', var99);
+                labels{5}.Text = sprintf('%.1fx', speedup);
+            catch ME
+                Logger.warn('AnalysisViewModel', 'QMC KPI render: %s', ME.message);
+            end
+
+            % Extract path_distribution once; used by both the loss
+            % histogram and the CDF overlay. jsondecode returns a
+            % homogeneous JSON array of objects as a *struct array*
+            % (not a cell array), so accept both shapes here.
+            xs = []; ps = []; losses = [];
+            try
+                pdf = JsonHelper.pick(data, {'path_distribution'}, []);
+                n = numel(pdf);
+                if n > 0 && (iscell(pdf) || isstruct(pdf))
+                    xs = zeros(n, 1);
+                    ps = zeros(n, 1);
+                    for i = 1:n
+                        if iscell(pdf); item = pdf{i}; else; item = pdf(i); end
+                        xs(i) = JsonHelper.pickNumeric(item, 'value', i);
+                        ps(i) = JsonHelper.pickNumeric(item, 'probability', 0);
+                    end
+                    % Convert log-return buckets into mark-to-market loss
+                    % using a $100 notional so the axes read in dollars,
+                    % matching the expected_payoff / VaR units.
+                    losses = -xs * 100.0;
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Path PDF decode: %s', ME.message);
+            end
+
+            var95 = JsonHelper.pickNumeric(data, 'var_95', NaN);
+            var99 = JsonHelper.pickNumeric(data, 'var_99', NaN);
+
+            % (1) Loss distribution with VaR threshold lines
+            try
+                if ~isempty(losses)
+                    cla(app.QmcPathAxes);
+                    bar(app.QmcPathAxes, losses, ps, 'FaceColor', Theme.COLOR_PRIMARY, ...
+                        'EdgeColor', 'none', 'FaceAlpha', 0.85, 'DisplayName', 'Loss PDF');
+                    hold(app.QmcPathAxes, 'on');
+                    yLim = ylim(app.QmcPathAxes);
+                    if ~isnan(var95)
+                        plot(app.QmcPathAxes, [var95 var95], yLim, '--', ...
+                            'Color', Theme.COLOR_WARNING, 'LineWidth', 1.6, ...
+                            'DisplayName', sprintf('VaR 95%% (%.1f)', var95));
+                    end
+                    if ~isnan(var99)
+                        plot(app.QmcPathAxes, [var99 var99], yLim, '--', ...
+                            'Color', Theme.COLOR_DANGER, 'LineWidth', 1.6, ...
+                            'DisplayName', sprintf('VaR 99%% (%.1f)', var99));
+                    end
+                    hold(app.QmcPathAxes, 'off');
+                    app.QmcPathAxes.XGrid = 'on'; app.QmcPathAxes.YGrid = 'on';
+                    legend(app.QmcPathAxes, 'Location', 'northwest', 'Box', 'off');
+                    title(app.QmcPathAxes, 'Loss distribution with VaR thresholds');
+                    xlabel(app.QmcPathAxes, 'Loss (negative = P&L down)');
+                    ylabel(app.QmcPathAxes, 'Probability');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Loss-distribution render: %s', ME.message);
+            end
+
+            % (2) Cumulative loss distribution (CDF)
+            try
+                if ~isempty(losses)
+                    [sortedLoss, idx] = sort(losses, 'ascend');
+                    cdf = cumsum(ps(idx));
+                    cla(app.QmcCdfAxes);
+                    stairs(app.QmcCdfAxes, sortedLoss, cdf, ...
+                        'Color', Theme.COLOR_SUCCESS, 'LineWidth', 2.0, ...
+                        'DisplayName', 'Cumulative P(loss \leq x)');
+                    hold(app.QmcCdfAxes, 'on');
+                    if ~isnan(var95)
+                        plot(app.QmcCdfAxes, [var95 var95], [0 1], '--', ...
+                            'Color', Theme.COLOR_WARNING, 'LineWidth', 1.4, ...
+                            'DisplayName', 'VaR 95%');
+                    end
+                    if ~isnan(var99)
+                        plot(app.QmcCdfAxes, [var99 var99], [0 1], '--', ...
+                            'Color', Theme.COLOR_DANGER, 'LineWidth', 1.4, ...
+                            'DisplayName', 'VaR 99%');
+                    end
+                    hold(app.QmcCdfAxes, 'off');
+                    app.QmcCdfAxes.YLim = [0 1.05];
+                    app.QmcCdfAxes.XGrid = 'on'; app.QmcCdfAxes.YGrid = 'on';
+                    legend(app.QmcCdfAxes, 'Location', 'southeast', 'Box', 'off');
+                    title(app.QmcCdfAxes, 'Cumulative loss distribution (CDF)');
+                    xlabel(app.QmcCdfAxes, 'Loss (negative = P&L down)');
+                    ylabel(app.QmcCdfAxes, 'P(loss \leq x)');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'CDF render: %s', ME.message);
+            end
+
+            % (3) QMC vs classical MC convergence (log-log). Same
+            % cell-vs-struct-array caveat as path_distribution above.
+            try
+                conv = JsonHelper.pick(data, {'convergence'}, []);
+                nConv = numel(conv);
+                if nConv > 0 && (iscell(conv) || isstruct(conv))
+                    ns   = zeros(nConv, 1);
+                    qae  = zeros(nConv, 1);
+                    mc   = zeros(nConv, 1);
+                    for i = 1:nConv
+                        if iscell(conv); item = conv{i}; else; item = conv(i); end
+                        ns(i)  = JsonHelper.pickNumeric(item, 'samples',             1);
+                        qae(i) = JsonHelper.pickNumeric(item, 'qae_error',           NaN);
+                        mc(i)  = JsonHelper.pickNumeric(item, 'classical_mc_error',  NaN);
+                    end
+                    cla(app.QmcConvergenceAxes);
+                    hold(app.QmcConvergenceAxes, 'on');
+                    plot(app.QmcConvergenceAxes, ns, qae, '-o', ...
+                        'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.8, ...
+                        'MarkerSize', 4, 'DisplayName', 'QMC ~ 1/N');
+                    plot(app.QmcConvergenceAxes, ns, mc, '-s', ...
+                        'Color', Theme.COLOR_DANGER, 'LineWidth', 1.8, ...
+                        'MarkerSize', 4, 'DisplayName', 'Classical MC ~ 1/\surd{N}');
+                    hold(app.QmcConvergenceAxes, 'off');
+                    app.QmcConvergenceAxes.XScale = 'log';
+                    app.QmcConvergenceAxes.YScale = 'log';
+                    app.QmcConvergenceAxes.XGrid  = 'on';
+                    app.QmcConvergenceAxes.YGrid  = 'on';
+                    legend(app.QmcConvergenceAxes, 'Location', 'northeast', 'Box', 'off');
+                    title(app.QmcConvergenceAxes, 'Convergence: QMC 1/N vs classical MC 1/\surd{N}');
+                    xlabel(app.QmcConvergenceAxes, 'Samples (log scale)');
+                    ylabel(app.QmcConvergenceAxes, 'Estimation error (log scale)');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Convergence render: %s', ME.message);
+            end
+
+            % Greeks KPI row (Delta / Gamma / Vega / Theta / Rho)
+            try
+                g = JsonHelper.pick(data, {'greeks'}, []);
+                if isstruct(g) && ~isempty(app.QmcGreeksLabels)
+                    vals = [ ...
+                        JsonHelper.pickNumeric(g, 'delta', NaN), ...
+                        JsonHelper.pickNumeric(g, 'gamma', NaN), ...
+                        JsonHelper.pickNumeric(g, 'vega',  NaN), ...
+                        JsonHelper.pickNumeric(g, 'theta', NaN), ...
+                        JsonHelper.pickNumeric(g, 'rho',   NaN)];
+                    for i = 1:5
+                        if isnan(vals(i))
+                            app.QmcGreeksLabels{i}.Text = '—';
+                        else
+                            app.QmcGreeksLabels{i}.Text = sprintf('%.4f', vals(i));
+                        end
+                    end
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Greeks render: %s', ME.message);
+            end
+
+            % (5) Zero-Noise Extrapolation curve (amplitude vs noise factor)
+            try
+                if ~isempty(app.QmcZneAxes) && isvalid(app.QmcZneAxes)
+                    cla(app.QmcZneAxes);
+                    curve = JsonHelper.pick(data, {'mitigation_curve'}, []);
+                    mit   = JsonHelper.pick(data, {'mitigation'}, 'none');
+                    nCurve = numel(curve);
+                    if nCurve > 0 && (iscell(curve) || isstruct(curve))
+                        nf = zeros(nCurve, 1);
+                        amps = zeros(nCurve, 1);
+                        for i = 1:nCurve
+                            if iscell(curve); item = curve{i}; else; item = curve(i); end
+                            nf(i)   = JsonHelper.pickNumeric(item, 'noise_factor', i - 1);
+                            amps(i) = JsonHelper.pickNumeric(item, 'amplitude',    NaN);
+                        end
+                        hold(app.QmcZneAxes, 'on');
+                        plot(app.QmcZneAxes, nf(nf > 0), amps(nf > 0), '-s', ...
+                            'Color', Theme.COLOR_DANGER, 'LineWidth', 1.6, ...
+                            'MarkerFaceColor', Theme.COLOR_DANGER, 'MarkerSize', 6, ...
+                            'DisplayName', 'Noisy samples');
+                        zeroIdx = find(nf == 0, 1);
+                        if ~isempty(zeroIdx)
+                            plot(app.QmcZneAxes, nf(zeroIdx), amps(zeroIdx), 'p', ...
+                                'MarkerSize', 14, 'LineWidth', 2.0, ...
+                                'Color', Theme.COLOR_SUCCESS, ...
+                                'MarkerFaceColor', Theme.COLOR_SUCCESS, ...
+                                'DisplayName', 'Extrapolated zero-noise');
+                        end
+                        hold(app.QmcZneAxes, 'off');
+                        app.QmcZneAxes.XGrid = 'on'; app.QmcZneAxes.YGrid = 'on';
+                        app.QmcZneAxes.XLim = [-0.3, max(nf) + 0.3];
+                        legend(app.QmcZneAxes, 'Location', 'northeast', 'Box', 'off');
+                    else
+                        text(app.QmcZneAxes, 0.5, 0.5, ...
+                            sprintf('Mitigation = %s.\nEnable ZNE or PEC for the extrapolation curve.', upper(string(mit))), ...
+                            'Units', 'normalized', 'HorizontalAlignment', 'center', ...
+                            'Color', Theme.COLOR_MUTED, 'FontSize', 12);
+                        app.QmcZneAxes.XTick = []; app.QmcZneAxes.YTick = [];
+                    end
+                    title(app.QmcZneAxes, 'Zero-Noise Extrapolation — amplitude vs noise factor');
+                    xlabel(app.QmcZneAxes, 'Noise factor (1.0 = native hardware)');
+                    ylabel(app.QmcZneAxes, 'Amplitude estimate');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'ZNE render: %s', ME.message);
+            end
+
+            % (4) Amplitude-estimation bar chart — the "objective qubit"
+            % measured in |0> / |1>, plus the classical-MC baseline of
+            % the same expectation for visual reference. This is what
+            % QMC is actually solving for (P(objective = 1) = a).
+            try
+                amp = JsonHelper.pickNumeric(data, 'amplitude_estimate', NaN);
+                if ~isnan(amp)
+                    cla(app.QmcAmpAxes);
+                    bar(app.QmcAmpAxes, [1 2], [1 - amp, amp], ...
+                        'FaceColor', Theme.COLOR_PRIMARY, 'EdgeColor', 'none', ...
+                        'FaceAlpha', 0.85);
+                    app.QmcAmpAxes.XTick = [1 2];
+                    app.QmcAmpAxes.XTickLabel = {'|0\rangle', '|1\rangle'};
+                    app.QmcAmpAxes.YLim = [0 1];
+                    app.QmcAmpAxes.XGrid = 'off'; app.QmcAmpAxes.YGrid = 'on';
+                    title(app.QmcAmpAxes, ...
+                        sprintf('Objective-qubit amplitude estimate (a = %.4f)', amp));
+                    xlabel(app.QmcAmpAxes, 'Measured basis state');
+                    ylabel(app.QmcAmpAxes, 'Probability');
+                end
+            catch ME
+                Logger.warn('AnalysisViewModel', 'Amplitude chart render: %s', ME.message);
+            end
+        end
+
         function onAnalyzeComplete(obj, app, cid, data)
             obj.applyAnalysisData(data);
             obj.applyBenchmarkMatches(data);
@@ -502,6 +2793,17 @@ classdef AnalysisViewModel < handle
                 name  = char(JsonHelper.pick(data, {'circuit_name','name'}));
                 depth = char(JsonHelper.pick(data, {'depth'}));
                 width = char(JsonHelper.pick(data, {'num_qubits','width'}));
+
+                % Track the circuit's qubit count on AppState so the QMC
+                % popup can pre-flight a runtime-mode submission against
+                % the chosen IBM backend's coupling-map width before
+                % POSTing /qae/analyze (rejects e.g. ghz_state_n255 on
+                % ibm_pittsburgh's 156q before the backend transpile
+                % crashes with CircuitTooWideForTarget).
+                widthNum = JsonHelper.toDouble(JsonHelper.pick(data, {'num_qubits','width'}));
+                if isfinite(widthNum) && widthNum > 0
+                    app.State.selectedCircuitQubits = double(widthNum);
+                end
 
                 % Extract gate counts from gate_counts map or fallback fields
                 gcMap = JsonHelper.safeField(data, 'gate_counts', struct());
@@ -561,9 +2863,96 @@ classdef AnalysisViewModel < handle
 
                 % Build Feature Summary text
                 obj.buildFeatureSummary(data, name, depth, width, sq, tq, meas, totalGates, tqRatio, tCount);
+
+                % M3 — populate the new top-of-screen KPI strip from
+                % the same analyze response. Defensive: each setKpi
+                % call is wrapped in a try so a missing widget never
+                % blocks the rest of the data flow.
+                try
+                    obj.setAnalysisKpi(app.AnalysisKpiQubitsVal, ...
+                        app.AnalysisKpiQubitsSub, width, '');
+                    obj.setAnalysisKpi(app.AnalysisKpiDepthVal, ...
+                        app.AnalysisKpiDepthSub, depth, '');
+                    if totalGates > 0
+                        obj.setAnalysisKpi(app.AnalysisKpiGatesVal, ...
+                            app.AnalysisKpiGatesSub, sprintf('%d', totalGates), ...
+                            sprintf('%d × 2Q', tq));
+                    end
+                    if ~isnan(tqRatio)
+                        obj.setAnalysisKpi(app.AnalysisKpiTwoQVal, ...
+                            app.AnalysisKpiTwoQSub, sprintf('%.1f%%', tqRatio * 100), ...
+                            'two-qubit fraction');
+                    end
+                    if ~isempty(par)
+                        obj.setAnalysisKpi(app.AnalysisKpiParaVal, ...
+                            app.AnalysisKpiParaSub, par, 'gates per layer');
+                    end
+                catch ME
+                    Logger.debug('AnalysisViewModel', ...
+                        'KPI populate failed: %s', ME.message);
+                end
+                % M7 — enable Download JSON / Generate Report now that
+                % a fresh analyze response exists for this circuit.
+                obj.toggleExportButtons(true);
             catch ME
                 Logger.warn('AnalysisViewModel', 'applyAnalysisData tree build failed: %s', ME.message);
                 uitreenode(app.FeatureTree, 'Text', JsonHelper.pretty(data));
+            end
+        end
+
+        function toggleExportButtons(obj, enable)
+            % M7 — flip Download JSON / Generate Report between
+            % enabled and disabled. Tooltip swaps between the
+            % "available" and "run Analyze first" copy so the disabled
+            % state is educational rather than mysterious.
+            app = obj.App;
+            if enable
+                onTip = 'Save /api/circuits/{id}/analysis to a .json file.';
+                offTip = 'Run Analyze first; this saves the response as a .json file.';
+                pdfOn = 'Open Reports with the title pre-filled for the active circuit.';
+                pdfOff = 'Run Analyze first; this opens Reports with the title pre-filled.';
+                jsonState = 'on';  jsonTip = onTip;  %#ok<NASGU>
+                pdfState  = 'on';  pdfTip  = pdfOn;  %#ok<NASGU>
+            else
+                jsonState = 'off';
+                jsonTip = 'Run Analyze first; this saves the response as a .json file.';
+                pdfState = 'off';
+                pdfTip = 'Run Analyze first; this opens Reports with the title pre-filled.';
+            end
+            try
+                if ~isempty(app.AnalysisDownloadJsonBtn) ...
+                        && isvalid(app.AnalysisDownloadJsonBtn)
+                    app.AnalysisDownloadJsonBtn.Enable = jsonState;
+                    app.AnalysisDownloadJsonBtn.Tooltip = jsonTip;
+                end
+            catch
+            end
+            try
+                if ~isempty(app.AnalysisGeneratePdfBtn) ...
+                        && isvalid(app.AnalysisGeneratePdfBtn)
+                    app.AnalysisGeneratePdfBtn.Enable = pdfState;
+                    app.AnalysisGeneratePdfBtn.Tooltip = pdfTip;
+                end
+            catch
+            end
+        end
+
+        function setAnalysisKpi(~, valLbl, subLbl, valTxt, subTxt)
+            % Tilde first arg so callers can use obj.setAnalysisKpi(...)
+            % from any instance method without the helper itself
+            % needing to touch obj.
+            try
+                if ~isempty(valLbl) && isvalid(valLbl)
+                    if isempty(strtrim(char(string(valTxt))))
+                        valLbl.Text = char(8212);
+                    else
+                        valLbl.Text = char(string(valTxt));
+                    end
+                end
+                if ~isempty(subLbl) && isvalid(subLbl)
+                    subLbl.Text = char(string(subTxt));
+                end
+            catch
             end
         end
 
@@ -623,7 +3012,7 @@ classdef AnalysisViewModel < handle
                             lines{end+1} = 'Novel structure — limited benchmark reference data.';
                         end
                     end
-                catch ME; Logger.debug('AnalysisViewModel', 'buildFeatureSummary QASMBench similarity: %s', ME.message); end
+                catch ME; Logger.debug('AnalysisViewModel', 'buildFeatureSummary QTAUBench similarity: %s', ME.message); end
 
                 app.AnalysisFeatureArea.Value = lines;
             catch ME
@@ -665,6 +3054,26 @@ classdef AnalysisViewModel < handle
             %   genuinely updates every time the circuit changes.
             app = obj.App;
             ax  = app.QVHeatmapAxes;
+            if isempty(ax) || ~isvalid(ax)
+                % Lazy build — AnalysisScreen ships a uilabel placeholder
+                % to keep cold-mount fast. Pay the uiaxes construction
+                % cost here, inside the analysis-payload window the user
+                % is already watching.
+                if ~isempty(app.QVHeatmapGrid) && isvalid(app.QVHeatmapGrid)
+                    if ~isempty(app.QVHeatmapPlaceholder) && isvalid(app.QVHeatmapPlaceholder)
+                        delete(app.QVHeatmapPlaceholder);
+                        app.QVHeatmapPlaceholder = [];
+                    end
+                    ax = uiaxes(app.QVHeatmapGrid);
+                    ax.Layout.Row = 1; ax.Layout.Column = 1;
+                    app.styleAxes(ax);
+                    title(ax, Labels.get('analysis_qv_title', ...
+                        'Circuit Depth vs Width (Avg Result Fidelity)'));
+                    xlabel(ax, Labels.get('analysis_qv_xlabel', 'Circuit Depth'));
+                    ylabel(ax, Labels.get('analysis_qv_ylabel', 'Circuit Width (Qubits)'));
+                    app.QVHeatmapAxes = ax;
+                end
+            end
             try
                 % --- Extract current circuit metrics ----------------------
                 curDepth = JsonHelper.toDouble(JsonHelper.pick(data, {'depth'}));
@@ -879,6 +3288,644 @@ classdef AnalysisViewModel < handle
                     curName, round(curDepth), round(curWidth), curFid);
             catch ME
                 Logger.warn('AnalysisViewModel', 'buildQVHeatmap failed: %s', ME.message);
+            end
+        end
+
+        % ── Quantum Error Mitigation private renderers (Phase 6.x) ──────
+
+        function loadEmBackendsForDialog(obj, app)
+            if ~app.State.isAuthenticated(); return; end
+            token = app.State.authToken;
+            cid = '';
+            if app.State.hasCircuit(); cid = char(app.State.selectedCircuitId); end
+            backendSvc = app.BackendSvc;
+            circSvc    = app.CircuitSvc;
+            AsyncRunner.run( ...
+                @() AnalysisViewModel.fetchBackendList(backendSvc, circSvc, cid, token), ...
+                @(data) obj.onEmBackendsLoaded(app, data), ...
+                @(ME)   obj.onEmBackendsError(app, ME));
+        end
+
+        function onEmBackendsLoaded(obj, app, data)
+            if isempty(app.EmBackendDropdown) || ~isvalid(app.EmBackendDropdown); return; end
+            items = JsonHelper.extractList(data, 'backends');
+            if isempty(items); items = JsonHelper.asList(data); end
+            n = numel(items);
+            if n == 0
+                app.EmBackendDropdown.Items = {'(no backends)'};
+                app.EmBackendDropdown.ItemsData = {''};
+                app.EmBackendDropdown.Value = '';
+                return;
+            end
+            names = cell(1, n);
+            for i = 1:n
+                names{i} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+            end
+            app.EmBackendDropdown.Items     = names;
+            app.EmBackendDropdown.ItemsData = names;
+            sel = '';
+            try; sel = char(app.State.selectedBackend); catch; end
+            match = find(strcmp(names, sel), 1);
+            if ~isempty(match)
+                app.EmBackendDropdown.Value = names{match};
+            else
+                app.EmBackendDropdown.Value = names{1};
+            end
+            % refreshEmEstimateBundle is now async and re-renders KPI +
+            % PEC γ̄^depth in its onOk, so we don't fire those here too.
+            % The async path also re-fetches the freshly-selected
+            % backend's calibration, which keeps γ̄ Score / Advantage
+            % aligned with the new backend instead of using a stale
+            % cache from the previous selection.
+            obj.refreshEmEstimateBundle(app);
+        end
+
+        function onEmBackendsError(~, app, ME)
+            if ~isempty(app.EmBackendDropdown) && isvalid(app.EmBackendDropdown)
+                app.EmBackendDropdown.Items = {'(load failed)'};
+                app.EmBackendDropdown.ItemsData = {''};
+                app.EmBackendDropdown.Value = '';
+            end
+            Logger.warn('AnalysisViewModel', 'EM backend load failed: %s', ME.message);
+        end
+
+        function loadEmInitialData(obj, app)
+            % Fan-out parallel fetches: levels, cached QAE, circuit meta.
+            % Each callback paints its panel independently.
+
+            % Paint the static fallback ladder *first* so the Mitigation
+            % level dropdown is usable immediately. The async fetch below
+            % overrides this on success. On failure (e.g. older deployed
+            % servers without /api/mitigation/levels) the fallback stays
+            % put — this is what stops the dropdown getting stuck on
+            % "(loading...)".
+            obj.applyEmLocalLevelFallback(app);
+
+            if ~app.State.isAuthenticated(); return; end
+            token = app.State.authToken;
+
+            mitSvc = app.MitigationSvc;
+            AsyncRunner.run( ...
+                @() mitSvc.listLevels(token), ...
+                @(data) obj.onEmLevelsLoaded(app, data), ...
+                @(ME)   obj.onEmLevelsLoadFailed(app, ME));
+
+            if app.State.hasCircuit()
+                qmcSvc = app.QmcSvc;
+                cid = char(app.State.selectedCircuitId);
+                AsyncRunner.run( ...
+                    @() qmcSvc.getLast(cid, token), ...
+                    @(data) obj.onEmQaeLoaded(app, data), ...
+                    @(ME)   obj.onEmQaeMissing(app, ME));
+
+                circSvc = app.CircuitSvc;
+                AsyncRunner.run( ...
+                    @() circSvc.getCircuit(cid, token), ...
+                    @(data) obj.onEmCircuitMetaLoaded(app, data), ...
+                    @(ME)   Logger.debug('AnalysisViewModel', ...
+                        'EM circuit meta load: %s', ME.message));
+            else
+                obj.applyEmStatusBanner(app, false);
+            end
+            obj.renderEmOverheadCutsCurve(app);
+        end
+
+        function onEmLevelsLoaded(obj, app, data)
+            if isempty(app.EmLevelDropdown) || ~isvalid(app.EmLevelDropdown); return; end
+            levels = JsonHelper.extractList(data, 'levels');
+            if isempty(levels); levels = JsonHelper.asList(data); end
+            if isempty(levels); return; end
+            n = numel(levels);
+            items = cell(1, n);
+            itemsData = cell(1, n);
+            for i = 1:n
+                lid = JsonHelper.pickNumeric(levels(i), 'id', i-1);
+                lab = char(JsonHelper.pick(levels(i), {'label','name'}));
+                if isempty(lab); lab = sprintf('Level %d', lid); end
+                items{i}     = lab;
+                itemsData{i} = double(lid);
+            end
+            app.EmLevelDropdown.Items     = items;
+            app.EmLevelDropdown.ItemsData = itemsData;
+            % Default to "Standard" (id=1) when present, else first.
+            if any(cellfun(@(x)isequal(x, 1), itemsData))
+                app.EmLevelDropdown.Value = 1;
+            else
+                app.EmLevelDropdown.Value = itemsData{1};
+            end
+            app.EmLevels = levels;
+            obj.refreshEmEstimateBundle(app);
+        end
+
+        function onEmLevelsLoadFailed(obj, app, ME)
+            % /api/mitigation/levels returned an error (commonly 404 on
+            % older deployed servers). Keep the static fallback ladder
+            % already painted by applyEmLocalLevelFallback so the dialog
+            % stays usable. Log once so operators can see why we fell back.
+            Logger.warn('AnalysisViewModel', ...
+                'EM levels load failed: %s — using local fallback ladder', ...
+                ME.message);
+            % If the dropdown was somehow re-initialised back to the
+            % "(loading...)" placeholder between the request and the
+            % error, repaint the fallback defensively.
+            if ~isempty(app.EmLevelDropdown) && isvalid(app.EmLevelDropdown)
+                items = app.EmLevelDropdown.Items;
+                if numel(items) <= 1 && ...
+                        (isempty(items) || strcmp(items{1}, '(loading...)'))
+                    obj.applyEmLocalLevelFallback(app);
+                end
+            end
+        end
+
+        function applyEmLocalLevelFallback(obj, app)
+            % Static QEM ladder mirroring the backend's LevelInfo response
+            % at src/qdash/api/routers/mitigation.py:list_levels. Used so
+            % the Mitigation-level dropdown is populated synchronously at
+            % dialog-open time (and as a fallback when the endpoint fails).
+            if isempty(app.EmLevelDropdown) || ~isvalid(app.EmLevelDropdown)
+                return;
+            end
+            ladder = AnalysisViewModel.staticEmLevelLadder();
+            n = numel(ladder);
+            items = cell(1, n);
+            itemsData = cell(1, n);
+            for i = 1:n
+                items{i}     = ladder(i).label;
+                itemsData{i} = double(ladder(i).id);
+            end
+            app.EmLevelDropdown.Items     = items;
+            app.EmLevelDropdown.ItemsData = itemsData;
+            % Default to Standard (id=1).
+            app.EmLevelDropdown.Value = 1;
+            app.EmLevels = ladder;
+            % Kick the estimate sweep so the technique table populates
+            % even when the levels endpoint is unavailable.
+            obj.refreshEmEstimateBundle(app);
+        end
+
+        function onEmQaeLoaded(obj, app, data)
+            app.EmQaeCached = data;
+            obj.renderEmZneCurve(app, data);
+            obj.renderEmRawMitigatedHistogram(app, data);
+            obj.applyEmStatusBanner(app, true);
+        end
+
+        function onEmQaeMissing(obj, app, ~)
+            app.EmQaeCached = [];
+            obj.applyEmStatusBanner(app, false);
+        end
+
+        function onEmCircuitMetaLoaded(obj, app, data)
+            app.EmCircuitMeta = data;
+            obj.renderEmKpis(app);
+            obj.renderEmGammaDepthCurve(app);
+        end
+
+        function refreshEmEstimateBundle(obj, app)
+            % Async-wrapped refresh of the estimate sweep + calibration.
+            %
+            % Triggered on every QEM form change (backend / mitigation
+            % level / primitive / base shots / advanced options) and on
+            % the explicit Estimate button. Uses the standard
+            % runAsyncWithLoading pattern so the UI thread stays
+            % responsive and the spinner overlay (re-parented to
+            % EmDialog by OverlayManager) gives the operator visible
+            % feedback while the 5 estimate POSTs + 1 calibration GET
+            % run on the background pool.
+            if isempty(app.EmLevelDropdown) || ~isvalid(app.EmLevelDropdown); return; end
+            if ~app.State.isAuthenticated(); return; end
+
+            snap = AnalysisViewModel.snapshotEmFormState(app);
+            if isempty(snap.backend); return; end
+            if isempty(snap.sweepLevels); return; end
+
+            mitSvc     = app.MitigationSvc;
+            backendSvc = app.BackendSvc;
+            token      = snap.token;
+
+            msg = Labels.get('loading_em_refresh', ...
+                'Refreshing mitigation analysis...');
+            app.runAsyncWithLoading(msg, ...
+                @() AnalysisViewModel.computeEmRefresh( ...
+                        mitSvc, backendSvc, token, snap), ...
+                @(results) obj.applyEmRefreshResults(app, results, snap.backend), ...
+                @(ME)      AnalysisViewModel.onEmRefreshError(app, ME));
+        end
+
+        function applyEmRefreshResults(obj, app, results, backend)
+            % MAIN THREAD continuation of refreshEmEstimateBundle. The
+            % overlay is already hidden by runAsyncWithLoading before
+            % this fires, so each downstream renderer paints into a
+            % visible dialog without any extra spinner churn.
+            if isempty(app.EmDialog) || ~isvalid(app.EmDialog); return; end
+            if ~isstruct(results); return; end
+
+            bundle = [];
+            cal    = [];
+            try; bundle = results.bundle;      catch; end
+            try; cal    = results.calibration; catch; end
+
+            if iscell(bundle)
+                app.EmEstimateBundle = bundle;
+                obj.renderEmTechniqueTable(app, bundle);
+                obj.renderEmRecommendation(app, bundle);
+                obj.refreshEmCostSummary(app, bundle);
+            end
+            if ~isempty(cal)
+                app.EmCachedCalibration = struct( ...
+                    'backend', char(backend), 'data', cal);
+            end
+            obj.renderEmKpis(app);
+            obj.renderEmGammaDepthCurve(app);
+        end
+
+        function refreshEmCostSummary(~, app, bundle)
+            if isempty(app.EmCostSummaryLabel) || ~isvalid(app.EmCostSummaryLabel); return; end
+            selLid = double(app.EmLevelDropdown.Value);
+            found = [];
+            for i = 1:numel(bundle)
+                if bundle{i}.levelId == selLid
+                    found = bundle{i}; break;
+                end
+            end
+            if isempty(found) || isempty(found.estimate)
+                app.EmCostSummaryLabel.Text = '-';
+                app.EmConflictLabel.Text = '';
+                return;
+            end
+            summary = char(JsonHelper.pick(found.estimate, {'summary'}, ''));
+            if isempty(summary)
+                cost = JsonHelper.pick(found.estimate, {'cost'}, struct());
+                eff  = JsonHelper.pickNumeric(cost, 'effective_shots', NaN);
+                wall = JsonHelper.pickNumeric(cost, 'est_wall_seconds', NaN);
+                if isnan(eff);  shotS = '?'; else; shotS = sprintf('%d', round(eff)); end
+                if isnan(wall); wallS = '?'; else; wallS = sprintf('%.1fs', wall); end
+                summary = sprintf('Effective shots: %s ; est. wall: %s', shotS, wallS);
+            end
+            app.EmCostSummaryLabel.Text = summary;
+            plan = JsonHelper.pick(found.estimate, {'plan'}, struct());
+            notes = JsonHelper.extractList(plan, 'conflicts');
+            if isempty(notes); notes = JsonHelper.extractList(plan, 'notes'); end
+            if iscell(notes) && ~isempty(notes)
+                strs = cell(1, numel(notes));
+                for k = 1:numel(notes); strs{k} = char(string(notes{k})); end
+                app.EmConflictLabel.Text = strjoin(strs, ' ; ');
+            else
+                app.EmConflictLabel.Text = '';
+            end
+        end
+
+        function renderEmKpis(~, app)
+            if isempty(app.EmKpiLabels); return; end
+            qubits = AnalysisViewModel.pickQubits(app.EmCircuitMeta);
+            depth  = AnalysisViewModel.pickDepth(app.EmCircuitMeta);
+            twoq   = AnalysisViewModel.pickTwoQGates(app.EmCircuitMeta);
+            app.EmKpiLabels{1}.Text = AnalysisViewModel.fmtIntKpi(qubits);
+            app.EmKpiLabels{2}.Text = AnalysisViewModel.fmtIntKpi(depth);
+            app.EmKpiLabels{3}.Text = AnalysisViewModel.fmtIntKpi(twoq);
+
+            gammaTxt = '-';
+            advTxt   = Labels.get('em_advantage_unknown', '-');
+            advColor = Theme.COLOR_MUTED;
+            calLoading = false;
+            try
+                backend = char(app.EmBackendDropdown.Value);
+                if ~isempty(backend)
+                    cal = AnalysisViewModel.lookupCachedCalibration(app, backend);
+                    if isempty(cal) && app.State.isAuthenticated()
+                        % Async — was a 5-15 s freeze on cold IBM cache.
+                        % Render with cal=[] (placeholder cells) for now;
+                        % onEmCalibrationLoaded re-runs this function once
+                        % the IBM round-trip completes.
+                        AnalysisViewModel.dispatchEmCalibrationFetch(app, backend);
+                        calLoading = true;
+                    end
+                    eplg = AnalysisViewModel.extractEplg(cal);
+                    if ~isnan(eplg) && eplg > 0
+                        gammaBar = AnalysisViewModel.computeGammaBar(eplg);
+                        if ~isnan(gammaBar)
+                            gammaTxt = sprintf('%.3f', gammaBar);
+                            if ~isnan(depth) && depth > 0
+                                ovh = AnalysisViewModel.computeGammaBarOverhead(gammaBar, depth);
+                                if ~isnan(ovh) && ovh < 1e4
+                                    advTxt   = Labels.get('em_advantage_yes', 'feasible');
+                                    advColor = Theme.COLOR_SUCCESS;
+                                elseif ~isnan(ovh)
+                                    advTxt   = Labels.get('em_advantage_no', 'infeasible');
+                                    advColor = Theme.COLOR_DANGER;
+                                end
+                            end
+                        end
+                    elseif calLoading
+                        % Calibration round-trip is in flight — surface
+                        % an explicit "loading" hint instead of the
+                        % generic "-" so the operator knows why the
+                        % advisory cells are empty. Cells flip to the
+                        % real values from onEmCalibrationLoaded.
+                        gammaTxt = char(8230);  % horizontal ellipsis
+                        advTxt   = Labels.get('em_advantage_loading', 'loading...');
+                        advColor = Theme.COLOR_MUTED;
+                    end
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'EM gammabar compute failed: %s', ME.message);
+            end
+            app.EmKpiLabels{4}.Text = gammaTxt;
+            app.EmKpiLabels{5}.Text = advTxt;
+            try; app.EmKpiLabels{5}.FontColor = advColor; catch; end
+        end
+
+        function renderEmZneCurve(~, app, qae)
+            ax = app.EmZneAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            cla(ax);
+            ax.XGrid = 'on'; ax.YGrid = 'on';
+            if isempty(qae); return; end
+            curve = JsonHelper.extractList(qae, 'mitigation_curve');
+            if isempty(curve); return; end
+            n = numel(curve);
+            nf = zeros(1, n); val = zeros(1, n);
+            for i = 1:n
+                nf(i)  = JsonHelper.pickNumeric(curve(i), 'noise_factor', NaN);
+                val(i) = JsonHelper.pickNumeric(curve(i), 'amplitude', NaN);
+            end
+            valid = ~isnan(nf) & ~isnan(val);
+            nf = nf(valid); val = val(valid);
+            if isempty(nf); return; end
+            [nf, idx] = sort(nf); val = val(idx);
+            hold(ax, 'on');
+            plot(ax, nf, val, '-o', 'LineWidth', 2, 'MarkerSize', 7, ...
+                'MarkerFaceColor', Theme.COLOR_PRIMARY, ...
+                'Color', Theme.COLOR_PRIMARY);
+            mitVal = JsonHelper.pickNumeric(qae, 'mitigated_amplitude', NaN);
+            if ~isnan(mitVal)
+                scatter(ax, 0, mitVal, 90, 'filled', ...
+                    'MarkerFaceColor', Theme.COLOR_SUCCESS, ...
+                    'MarkerEdgeColor', 'none');
+                text(ax, 0.05, mitVal, ' c=0 (mitigated)', ...
+                    'FontSize', 9, 'Color', Theme.COLOR_SUCCESS, ...
+                    'Interpreter', 'none');
+            end
+            % When the sweep has only a single noise factor, the line
+            % collapses to a marker. Add an explanatory annotation so
+            % the operator understands no extrapolation curve is being
+            % drawn (vs. a chart bug). The cached QAE was run without a
+            % multi-factor sweep — re-running the QMC analysis with
+            % `noise_factors=[1, 3, 5]` will populate the curve.
+            if numel(nf) <= 1
+                text(ax, 0.5, 0.92, ...
+                    Labels.get('em_zne_single_point', ...
+                        'Single noise-factor in cached QAE — re-run QMC with multi-factor ZNE to draw a curve.'), ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center', ...
+                    'Color', Theme.COLOR_MUTED, 'FontSize', 9, ...
+                    'Interpreter', 'none');
+            end
+            hold(ax, 'off');
+        end
+
+        function renderEmGammaDepthCurve(~, app)
+            ax = app.EmGammaDepthAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            cla(ax);
+            ax.XGrid = 'on'; ax.YGrid = 'on';
+            ax.XScale = 'log'; ax.YScale = 'log';
+            eplg = NaN;
+            calLoading = false;
+            try
+                backend = char(app.EmBackendDropdown.Value);
+                if ~isempty(backend)
+                    cal = AnalysisViewModel.lookupCachedCalibration(app, backend);
+                    if isempty(cal) && app.State.isAuthenticated()
+                        % Async — was a 5-15 s freeze on cold IBM cache.
+                        % Render the empty-curve placeholder; the curve
+                        % is re-drawn from onEmCalibrationLoaded once
+                        % the calibration arrives.
+                        AnalysisViewModel.dispatchEmCalibrationFetch(app, backend);
+                        calLoading = true;
+                    end
+                    eplg = AnalysisViewModel.extractEplg(cal);
+                end
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'EM gamma curve calibration miss: %s', ME.message);
+            end
+            if isnan(eplg) || eplg <= 0
+                if calLoading
+                    msg = Labels.get('em_gamma_loading_calibration', ...
+                        'Loading calibration...');
+                else
+                    msg = 'EPLG / 2Q error not available for this backend';
+                end
+                text(ax, 0.5, 0.5, msg, ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center', ...
+                    'Color', Theme.COLOR_MUTED, 'Interpreter', 'none');
+                return;
+            end
+            gammaBar = AnalysisViewModel.computeGammaBar(eplg);
+            if isnan(gammaBar); return; end
+            depthRange = logspace(0, 4, 60);
+            overhead = arrayfun(@(d) AnalysisViewModel.computeGammaBarOverhead(gammaBar, d), depthRange);
+            hold(ax, 'on');
+            plot(ax, depthRange, overhead, '-', 'LineWidth', 2, ...
+                'Color', Theme.COLOR_PRIMARY);
+            yline(ax, 1e4, '--', 'classical-sim threshold', ...
+                'Color', Theme.COLOR_DANGER, ...
+                'LabelHorizontalAlignment', 'left', ...
+                'Interpreter', 'none');
+            curDepth = AnalysisViewModel.pickDepth(app.EmCircuitMeta);
+            if ~isnan(curDepth) && curDepth > 0
+                xline(ax, curDepth, ':', ...
+                    sprintf('this circuit (depth=%d)', round(curDepth)), ...
+                    'Color', Theme.COLOR_HEADING, ...
+                    'LabelHorizontalAlignment', 'center', ...
+                    'Interpreter', 'none');
+            end
+            hold(ax, 'off');
+        end
+
+        function renderEmOverheadCutsCurve(obj, app)
+            ax = app.EmOverheadCutsAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            cla(ax);
+            ax.XGrid = 'on'; ax.YGrid = 'on';
+            ax.XScale = 'linear'; ax.YScale = 'log';
+            % Theoretical 4^k baseline always renders, even before async lands.
+            kRange = 0:8;
+            theoretical = 4 .^ kRange;
+            hold(ax, 'on');
+            plot(ax, kRange, theoretical, '--', ...
+                'Color', Theme.COLOR_MUTED, 'LineWidth', 1.5);
+            yline(ax, 1e4, '--', 'feasibility', ...
+                'Color', Theme.COLOR_DANGER, ...
+                'Interpreter', 'none');
+            hold(ax, 'off');
+            if ~app.State.isAuthenticated() || ~app.State.hasCircuit(); return; end
+            cid = char(app.State.selectedCircuitId);
+            cuttingSvc = app.CuttingSvc;
+            token      = app.State.authToken;
+            AsyncRunner.run( ...
+                @() cuttingSvc.analyzeCuts(cid, [], token), ...
+                @(data) obj.onEmCuttingAnalyzed(app, data), ...
+                @(ME)   Logger.debug('AnalysisViewModel', ...
+                    'EM cutting analyze: %s', ME.message));
+        end
+
+        function onEmCuttingAnalyzed(~, app, data)
+            ax = app.EmOverheadCutsAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            app.EmCuttingCached = data;
+            k = JsonHelper.pickNumeric(data, 'k', NaN);
+            overhead = JsonHelper.pickNumeric(data, 'sampling_overhead', NaN);
+            overheadLog = JsonHelper.pickNumeric(data, 'sampling_overhead_log10', NaN);
+            if (isnan(overhead) || overhead <= 0) && ~isnan(overheadLog)
+                overhead = 10^overheadLog;
+            end
+            if isnan(k) || isnan(overhead) || overhead <= 0; return; end
+            hold(ax, 'on');
+            scatter(ax, k, overhead, 120, 'filled', ...
+                'MarkerFaceColor', Theme.COLOR_PRIMARY, ...
+                'MarkerEdgeColor', 'none');
+            text(ax, k+0.2, overhead, sprintf(' k=%d, %.1fx', round(k), overhead), ...
+                'FontSize', 10, 'Color', Theme.COLOR_PRIMARY, ...
+                'Interpreter', 'none');
+            hold(ax, 'off');
+        end
+
+        function renderEmTechniqueTable(~, app, bundle)
+            if isempty(app.EmTechniqueTable) || ~isvalid(app.EmTechniqueTable); return; end
+            n = numel(bundle);
+            rows = cell(n, 5);
+            for i = 1:n
+                b = bundle{i};
+                est = b.estimate;
+                if isempty(est)
+                    rows(i,:) = {b.label, '-', '-', '-', ''};
+                    continue;
+                end
+                cost = JsonHelper.pick(est, {'cost'}, struct());
+                shotMul = JsonHelper.pickNumeric(cost, 'shot_multiplier', 1.0);
+                wall    = JsonHelper.pickNumeric(cost, 'est_wall_seconds', NaN);
+                bias    = AnalysisViewModel.estimateBiasReduction(b.levelId);
+                rows{i,1} = b.label;
+                rows{i,2} = sprintf('%.1fx', bias);
+                rows{i,3} = sprintf('%.2fx', shotMul);
+                if isnan(wall); rows{i,4} = '-'; else; rows{i,4} = sprintf('%.1f', wall); end
+                rows{i,5} = '';
+            end
+            pick = AnalysisViewModel.bestRecommendation(bundle);
+            if ~isempty(pick)
+                for i = 1:n
+                    if bundle{i}.levelId == pick.levelId
+                        rows{i,5} = char(10003);   % checkmark
+                        break;
+                    end
+                end
+            end
+            app.EmTechniqueTable.Data = rows;
+        end
+
+        function renderEmRecommendation(~, app, bundle)
+            if isempty(app.EmRecommendationLabel) || ~isvalid(app.EmRecommendationLabel); return; end
+            pick = AnalysisViewModel.bestRecommendation(bundle);
+            if isempty(pick) || isempty(pick.estimate)
+                app.EmRecommendationLabel.Text = Labels.get('em_recommendation_empty', ...
+                    'Pick a backend and circuit to see a recommendation.');
+                return;
+            end
+            cost = JsonHelper.pick(pick.estimate, {'cost'}, struct());
+            shotMul = JsonHelper.pickNumeric(cost, 'shot_multiplier', 1.0);
+            wall    = JsonHelper.pickNumeric(cost, 'est_wall_seconds', NaN);
+            bias    = AnalysisViewModel.estimateBiasReduction(pick.levelId);
+            if isnan(wall); wallS = '?'; else; wallS = sprintf('%.1fs', wall); end
+            txt = sprintf(['Pick: %s\n' ...
+                           '  est. bias reduction: %.1fx\n' ...
+                           '  shot overhead:       %.2fx\n' ...
+                           '  est. wall-clock:     %s\n\n' ...
+                           'Heuristic ranking - review the table for full tradeoffs.'], ...
+                pick.label, bias, shotMul, wallS);
+            app.EmRecommendationLabel.Text = txt;
+        end
+
+        function renderEmRawMitigatedHistogram(~, app, qae)
+            ax = app.EmHistogramAxes;
+            if isempty(ax) || ~isvalid(ax); return; end
+            cla(ax);
+            if isempty(qae); return; end
+
+            % Sampler-mode result (preferred) — bitstring counts.
+            counts = JsonHelper.pick(qae, {'raw_counts','counts'}, []);
+            if ~isempty(counts)
+                [labels, vals] = AnalysisViewModel.pickTopBitstrings(counts, 8);
+                if isempty(labels); return; end
+                bar(ax, vals, 'FaceColor', Theme.COLOR_PRIMARY, 'EdgeColor', 'none');
+                ax.XTick = 1:numel(labels);
+                ax.XTickLabel = labels;
+                ax.XTickLabelRotation = 45;
+                ax.TickLabelInterpreter = 'none';
+                ax.XGrid = 'off'; ax.YGrid = 'on';
+                title(ax, Labels.get('em_axes_histogram_title', ...
+                    'Raw vs Mitigated counts (top bitstrings)'), ...
+                    'Interpreter', 'none');
+                return;
+            end
+
+            % QAE-mode fallback — `path_distribution` lists path-amplitude
+            % bins with {bin_index, value, probability}. Plot the top-N
+            % bins by probability so the panel is meaningful even when
+            % the result is amplitude-mode (no bitstring counts).
+            paths = JsonHelper.extractList(qae, 'path_distribution');
+            if isempty(paths); return; end
+            nPaths = numel(paths);
+            indices = zeros(1, nPaths);
+            probs   = zeros(1, nPaths);
+            for k = 1:nPaths
+                indices(k) = JsonHelper.pickNumeric(paths(k), 'bin_index',  k-1);
+                probs(k)   = JsonHelper.pickNumeric(paths(k), 'probability', 0);
+            end
+            valid = ~isnan(probs) & probs >= 0;
+            indices = indices(valid); probs = probs(valid);
+            if isempty(probs); return; end
+            % Top 8 by probability, then re-sort ascending by bin index
+            % so the x-axis reads left-to-right in register order.
+            [~, sortIdx] = sort(probs, 'descend');
+            keep = min(8, numel(sortIdx));
+            sortIdx = sortIdx(1:keep);
+            sortIdx = sortIdx(:)';
+            [~, reIdx] = sort(indices(sortIdx));
+            sortIdx = sortIdx(reIdx);
+            nEvalQ = JsonHelper.pickNumeric(qae, 'num_eval_qubits', NaN);
+            if isnan(nEvalQ) || nEvalQ <= 0
+                nEvalQ = max(1, ceil(log2(max(nPaths, 2))));
+            end
+            width = max(1, round(nEvalQ));
+            labels = cell(1, numel(sortIdx));
+            vals   = zeros(1, numel(sortIdx));
+            for k = 1:numel(sortIdx)
+                idx = sortIdx(k);
+                labels{k} = dec2bin(round(indices(idx)), width);
+                vals(k)   = probs(idx);
+            end
+            bar(ax, vals, 'FaceColor', Theme.COLOR_PRIMARY, 'EdgeColor', 'none');
+            ax.XTick = 1:numel(labels);
+            ax.XTickLabel = labels;
+            ax.XTickLabelRotation = 45;
+            ax.TickLabelInterpreter = 'none';
+            ax.XGrid = 'off'; ax.YGrid = 'on';
+            title(ax, Labels.get('em_axes_histogram_title_qae', ...
+                'QAE path-distribution probability (top bins)'), ...
+                'Interpreter', 'none');
+        end
+
+        function applyEmStatusBanner(~, app, hasQae)
+            if isempty(app.EmStatusBanner) || ~isvalid(app.EmStatusBanner); return; end
+            if hasQae
+                app.EmStatusBanner.Text = Labels.get('em_footer_hint', '');
+                app.EmStatusBanner.FontColor = Theme.COLOR_MUTED;
+            else
+                app.EmStatusBanner.Text = Labels.get('em_status_no_qae_result', ...
+                    'No measured QMC result yet on this circuit.');
+                app.EmStatusBanner.FontColor = Theme.COLOR_WARNING;
             end
         end
     end

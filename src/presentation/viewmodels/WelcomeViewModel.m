@@ -9,6 +9,7 @@ classdef WelcomeViewModel < handle
         FullProjectIds   cell = {}   % unfiltered project IDs
         FilteredRows     cell = {}   % after search filter (or same as Full)
         FilteredIds      cell = {}
+        IsLoggingIn      logical = false  % re-entrancy guard for async login
     end
     properties
         CurrentPage  double = 1
@@ -186,7 +187,7 @@ classdef WelcomeViewModel < handle
             end
 
             app.logEvent('API', sprintf('DELETE /api/projects/%s', projectId));
-            app.showLoading('Deleting project...');
+            app.showLoading(Labels.get('loading_projects_delete', 'Deleting project...'));
             svc = app.ProjectSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...
@@ -230,70 +231,124 @@ classdef WelcomeViewModel < handle
             end
 
             app.logEvent('AUTH', sprintf('Login attempt — user: %s  url: %s', username, app.State.baseUrl));
-            try
-                data = app.AuthSvc.login(username, password);
-                app.State.authToken        = string(JsonHelper.pick(data, {'access_token','token','data.access_token'}));
-                app.State.tokenType        = string(JsonHelper.pick(data, {'token_type','data.token_type'}));
-                app.State.currentUser      = string(JsonHelper.pick(data, {'username','user.username','data.username'}));
-                app.State.defaultProjectId = string(JsonHelper.pick(data, {'default_project_id','data.default_project_id'}));
-                app.State.currentProjectId = app.State.defaultProjectId;
-                app.Client.ProjectId = app.State.currentProjectId;
 
-                if strlength(strtrim(app.State.authToken)) == 0
-                    app.logEvent('WARN', 'Login response received but no access_token found');
-                    app.LoginDlgStatusLabel.Text = Labels.get('error_login_no_token', 'No token in response.');
-                    return;
-                end
-                if strlength(strtrim(app.State.tokenType)) == 0
-                    app.State.tokenType = "Bearer";
-                end
-
-                app.logEvent('AUTH', sprintf('Login OK — user: %s  token_type: %s  default_project: %s', ...
-                    app.State.currentUser, app.State.tokenType, app.State.defaultProjectId));
-                app.State.logActivity(sprintf('Login — user: %s', app.State.currentUser), 'Success');
-
-                % Clear password from memory
-                app.LoginDlgPasswordReal = '';
-                if ~isempty(app.LoginDlgPasswordField) && isvalid(app.LoginDlgPasswordField)
-                    app.LoginDlgPasswordField.Data = struct('a', 'clear');
-                end
-
-                % Close the login dialog
-                if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
-                    delete(app.LoginDialog);
-                    app.LoginDialog = [];
-                end
-
-                % Update Welcome screen and hide auth overlay
-                app.updateWelcomeAuthButtons();
-                app.hideAuthOverlay();
-                if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
-
-                % Auto-fetch projects
-                obj.CurrentPage = 1;
-                obj.onFetchProjects();
-
-                % Populate server IBM config silently so downstream screens
-                % (Prediction's "Submit to IBM" button, Backends pool, etc.)
-                % can gate on the real server state instead of the default
-                % ServerIbmConfig struct (which has_token=false until set).
-                obj.prefetchServerIbmConfig(app);
-
-            catch ME
-                if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
-                    app.LoginDlgStatusLabel.FontColor = Theme.COLOR_DANGER;
-                    if contains(ME.message, '401')
-                        app.LoginDlgStatusLabel.Text = Labels.get('error_login_unauthorized', 'The Username or Password is incorrect.');
-                    elseif contains(ME.message, {'connection','connect','timeout','Timeout','Send failure','Broken pipe','refused'}, 'IgnoreCase', true)
-                        app.LoginDlgStatusLabel.Text = Labels.get('error_login_connection', ...
-                            'Unable to connect to server. Please check the Base URL and try again.');
-                    else
-                        app.LoginDlgStatusLabel.Text = Labels.get('error_login_generic', ...
-                            'Login failed. Please try again.');
-                    end
-                end
-                app.logEvent('ERROR', sprintf('Login FAILED (user: %s): %s', username, ME.message));
+            % Re-entrancy guard. The async dispatch keeps the dialog
+            % responsive, which means the Sign In button stays clickable
+            % during the round-trip — without this flag a second click
+            % would queue a duplicate auth request.
+            if obj.IsLoggingIn
+                return;
             end
+            obj.IsLoggingIn = true;
+
+            % Async dispatch — auth round-trip runs on backgroundPool;
+            % success/error callbacks run on the main thread via
+            % AsyncRunner's poll timer. Captures `username`/`password`
+            % into the closure so a later mutation of the password field
+            % can't race the worker's read.
+            authSvc = app.AuthSvc;
+            AsyncRunner.run( ...
+                @() authSvc.login(username, password), ...
+                @(data) obj.onLoginSuccess(app, data), ...
+                @(ME)   obj.onLoginError(app, username, ME));
+        end
+
+        function onLoginSuccess(obj, app, data)
+            % Main-thread success callback for the async login dispatch.
+            % Owns every post-login side-effect that previously lived
+            % inline inside onLogin's try-block.
+            obj.IsLoggingIn = false;
+            app.State.authToken        = string(JsonHelper.pick(data, {'access_token','token','data.access_token'}));
+            app.State.tokenType        = string(JsonHelper.pick(data, {'token_type','data.token_type'}));
+            app.State.currentUser      = string(JsonHelper.pick(data, {'username','user.username','data.username'}));
+            app.State.defaultProjectId = string(JsonHelper.pick(data, {'default_project_id','data.default_project_id'}));
+            app.State.currentProjectId = app.State.defaultProjectId;
+            app.Client.ProjectId = app.State.currentProjectId;
+
+            if strlength(strtrim(app.State.authToken)) == 0
+                app.logEvent('WARN', 'Login response received but no access_token found');
+                if ~isempty(app.LoginDlgStatusLabel) && isvalid(app.LoginDlgStatusLabel)
+                    app.LoginDlgStatusLabel.FontColor = Theme.COLOR_DANGER;
+                    app.LoginDlgStatusLabel.Text = Labels.get('error_login_no_token', 'No token in response.');
+                end
+                return;
+            end
+            if strlength(strtrim(app.State.tokenType)) == 0
+                app.State.tokenType = "Bearer";
+            end
+
+            app.logEvent('AUTH', sprintf('Login OK — user: %s  token_type: %s  default_project: %s', ...
+                app.State.currentUser, app.State.tokenType, app.State.defaultProjectId));
+            app.State.logActivity(sprintf('Login — user: %s', app.State.currentUser), 'Success');
+
+            % Reuse-not-delete: hide the LoginDialog and reset its
+            % sensitive state for the next show. The earlier ceremony
+            % (drain uihtml peerEvents, clear HTMLSource, delete each
+            % field individually, then delete the figure) existed to
+            % mitigate the LabelController / PushButtonController
+            % "Invalid or deleted object" race that fired when MATLAB
+            % dispatched a queued event against a cascade-deleted
+            % handle. With the delete gone, the race is gone — and the
+            % dialog re-shows in well under a second on the next login
+            % attempt instead of paying a 4–18 s cold rebuild.
+            DialogBuilder.resetLoginDialog(app);
+            if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                try app.LoginDialog.Visible = 'off'; catch; end
+            end
+            drawnow;
+
+            % Update Welcome screen and hide auth overlay
+            app.updateWelcomeAuthButtons();
+            app.hideAuthOverlay();
+            if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
+
+            % Auto-fetch projects
+            obj.CurrentPage = 1;
+            obj.onFetchProjects();
+
+            % Populate server IBM config silently so downstream screens
+            % (Prediction's "Submit to IBM" button, Backends pool, etc.)
+            % can gate on the real server state instead of the default
+            % ServerIbmConfig struct (which has_token=false until set).
+            obj.prefetchServerIbmConfig(app);
+
+            % Warm shared lookup caches (circuits / backends / mitigation
+            % levels) so Mitigation Compare / Run Planner / Resource
+            % Estimator render their dropdowns from cache on first visit.
+            % Fire-and-forget; failures log at debug.
+            try; app.eagerPrefetchSharedLookups(); catch; end
+
+            % Phase 8 (UX request): after login completes the user
+            % wants to land on the Dashboard, not the Projects/Welcome
+            % screen. The Projects tab is still reachable via the
+            % sidebar for switching projects later.
+            try
+                app.onSelectSection('Dashboard');
+            catch ME
+                Logger.debug('WelcomeViewModel', ...
+                    'auto-nav to Dashboard after login: %s', ME.message);
+            end
+        end
+
+        function onLoginError(obj, app, username, ME)
+            % Main-thread error callback for the async login dispatch.
+            % Same status-label classification as the prior synchronous
+            % catch — 401 vs connection vs generic — so the user sees
+            % the same actionable copy.
+            obj.IsLoggingIn = false;
+            if ~isempty(app.LoginDialog) && isvalid(app.LoginDialog)
+                app.LoginDlgStatusLabel.FontColor = Theme.COLOR_DANGER;
+                if contains(ME.message, '401')
+                    app.LoginDlgStatusLabel.Text = Labels.get('error_login_unauthorized', 'The Username or Password is incorrect.');
+                elseif contains(ME.message, {'connection','connect','timeout','Timeout','Send failure','Broken pipe','refused'}, 'IgnoreCase', true)
+                    app.LoginDlgStatusLabel.Text = Labels.get('error_login_connection', ...
+                        'Unable to connect to server. Please check the Base URL and try again.');
+                else
+                    app.LoginDlgStatusLabel.Text = Labels.get('error_login_generic', ...
+                        'Login failed. Please try again.');
+                end
+            end
+            app.logEvent('ERROR', sprintf('Login FAILED (user: %s): %s', username, ME.message));
         end
 
         function onLogout(obj)
@@ -303,37 +358,47 @@ classdef WelcomeViewModel < handle
                 app.updateWelcomeAuthButtons();
                 return;
             end
-            try
-                prevUser = app.State.currentUser;
-                app.AuthSvc.logout(app.State.authToken);
-                app.State.authToken = "";
-                app.State.currentUser = "";
-                % Reset cached server state so the next login's prefetch
-                % takes effect before the Submit button gets hit again.
-                app.ServerIbmConfig = struct('channel','','instance','', ...
-                    'backends',{{}},'has_token',false, ...
-                    'runtime_broken',false,'runtime_broken_reason','');
-                app.logEvent('AUTH', sprintf('Logout OK — user: %s', prevUser));
-                app.State.logActivity(sprintf('Logout — user: %s', prevUser), 'Success');
-                app.updateWelcomeAuthButtons();
-                app.showAuthOverlay();
-                if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
-                app.ActiveProjectLabel.Text = Labels.get('welcome_active_project_none', 'None');
-                if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
-                    app.UploadActiveProjectLabel.Text = Labels.get('upload_label_no_project');
-                end
-                if ~isempty(app.UploadCircuitsTable) && isvalid(app.UploadCircuitsTable)
-                    app.UploadCircuitsTable.Data = {};
-                end
-                app.ProjectsTable.Data = {};
-                app.ProjectsPageLabel.Text = '';
-                app.ProjectsPrevButton.Enable = 'off';
-                app.ProjectsNextButton.Enable = 'off';
-                obj.CurrentPage = 1;
-                obj.TotalItems = 0;
-            catch ME
-                app.showError('Logout', ME);
+
+            % Fire-and-forget pattern. The user-visible cost of "waiting
+            % for the server to acknowledge logout" is unjustified — the
+            % local session is already invalid client-side once we clear
+            % the token, and a failed server-side revoke isn't actionable
+            % to the user. So: clear UI/state immediately, dispatch the
+            % server call to backgroundPool, log result silently.
+            prevUser  = app.State.currentUser;
+            prevToken = app.State.authToken;
+            authSvc   = app.AuthSvc;
+
+            app.State.authToken   = "";
+            app.State.currentUser = "";
+            % Reset cached server state so the next login's prefetch
+            % takes effect before the Submit button gets hit again.
+            app.ServerIbmConfig = struct('channel','','instance','', ...
+                'backends',{{}},'has_token',false, ...
+                'runtime_broken',false,'runtime_broken_reason','');
+            app.State.logActivity(sprintf('Logout — user: %s', prevUser), 'Success');
+            app.updateWelcomeAuthButtons();
+            app.showAuthOverlay();
+            if ~isempty(app.UserInfoArea) && isvalid(app.UserInfoArea); app.UserInfoArea.Text = ''; end
+            app.ActiveProjectLabel.Text = Labels.get('welcome_active_project_none', 'None');
+            if ~isempty(app.UploadActiveProjectLabel) && isvalid(app.UploadActiveProjectLabel)
+                app.UploadActiveProjectLabel.Text = Labels.get('upload_label_no_project');
             end
+            if ~isempty(app.UploadCircuitsTable) && isvalid(app.UploadCircuitsTable)
+                app.UploadCircuitsTable.Data = {};
+            end
+            app.ProjectsTable.Data = {};
+            app.ProjectsPageLabel.Text = '';
+            app.ProjectsPrevButton.Enable = 'off';
+            app.ProjectsNextButton.Enable = 'off';
+            obj.CurrentPage = 1;
+            obj.TotalItems  = 0;
+
+            AsyncRunner.run( ...
+                @() authSvc.logout(prevToken), ...
+                @(~)  app.logEvent('AUTH', sprintf('Logout OK — user: %s', prevUser)), ...
+                @(ME) Logger.debug('WelcomeViewModel', ...
+                    'Server-side logout failed (local session already cleared): %s', ME.message));
         end
 
         function onFetchProjects(obj)

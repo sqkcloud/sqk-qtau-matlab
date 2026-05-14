@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-QDash Workbench is a **MATLAB R2025b** desktop application for managing quantum circuit experiments through a FastAPI backend (QTAU Connector). It provides a 17-screen UI spanning circuit upload, analysis, backend selection, benchmarking, predictions, job monitoring, QEC simulation, and reporting.
+QTAU Connector Workbench is a **MATLAB R2025b** desktop application for managing quantum circuit experiments through a FastAPI backend (QTAU Connector). It provides a 17-screen UI (16 visible in the sidebar, Notes is temporarily hidden) spanning circuit upload, analysis, backend selection, benchmarking, fidelity prediction, job monitoring, QEC simulation, and reporting. The Analysis screen hosts a Quantum Monte Carlo simulation popup with async job execution, IBM Runtime integration, zero-noise extrapolation, and one-click PDF report generation.
 
 ## Commands
 
@@ -27,7 +27,7 @@ AppConfig.reload(); Labels.reload();
 run('scripts/seed_all.m')
 % Or seed a single screen's data
 run('scripts/seed_projects.m')
-% Seed QASMBench circuits
+% Seed QTAUBench circuits
 run('scripts/seed_qasmbench.m')
 ```
 
@@ -47,13 +47,13 @@ src/
 │   │   ├── OverlayManager.m      ← Overlay/modal management
 │   │   ├── PopupMenuManager.m    ← Context menu management
 │   │   └── StyleHelper.m         ← UI styling utilities
-│   ├── screens/                  ← 17 screen builder functions (pure UI layout)
-│   ├── viewmodels/               ← 17 ViewModel classes (callbacks, event logic)
+│   ├── screens/                  ← 21 screen builder functions (pure UI layout)
+│   ├── viewmodels/               ← 21 ViewModel classes (callbacks, event logic)
 │   └── DialogBuilder.m           ← Dialog creation utilities
 ├── domain/
 │   ├── ServiceContainer.m        ← Dependency injection container
 │   ├── models/AppState.m         ← Session-scoped mutable state (auth token, project ID, etc.)
-│   └── services/                 ← 10 service classes
+│   └── services/                 ← 11 service classes
 │       ├── AuthService.m         ← Authentication (login/logout/me)
 │       ├── BackendService.m      ← Quantum backend management and calibration
 │       ├── BenchmarkService.m    ← Volumetric benchmarks, scorecards, regression
@@ -61,9 +61,11 @@ src/
 │       ├── JobService.m          ← Job submission, polling, results, error trends
 │       ├── PredictionService.m   ← Fidelity prediction and optimization
 │       ├── ProjectService.m      ← Project CRUD, dashboard, notes, activities
+│       ├── QaeService.m          ← Async QAE / Quantum Monte Carlo (submit / poll / cancel / IBM log)
 │       ├── QecEngineService.m    ← QEC simulation engine (surface codes, noise models)
 │       ├── ReportService.m       ← Report generation, download, sharing
 │       └── SettingsService.m     ← User settings and IBM token verification
+├── presentation/DialogBuilder.m  ← Modal dialog factory (hosts the Quantum Monte Carlo popup)
 └── infrastructure/
     ├── AsyncRunner.m             ← Async execution wrapper
     ├── http/FastAPIClient.m      ← HTTP gateway (webread/webwrite, Bearer auth, multipart upload)
@@ -85,31 +87,50 @@ src/
 - **ServiceContainer** wires all services with `FastAPIClient` via dependency injection.
 - **Static utilities** (`AppConfig`, `Labels`, `Logger`, `JsonHelper`) use static methods with cached state; call `.reload()` to refresh.
 
-## Screens (17)
+## Screens (22 total — 20 visible, 2 hidden — Notes + Upload)
 
-| Screen | ViewModel | Purpose |
-|--------|-----------|---------|
-| WelcomeScreen | WelcomeViewModel | Login, project selection, recent projects |
-| DashboardScreen | DashboardViewModel | Workflow summary and readiness storyboard |
-| CircuitsScreen | CircuitsViewModel | Browse, search, manage project circuits |
-| NotesScreen | NotesViewModel | Working notes and operator memos |
-| UploadScreen | UploadViewModel | Circuit upload with format selection and preview |
-| AnalysisScreen | AnalysisViewModel | Circuit feature extraction and QASMBench similarity |
-| DetailedAnalysisScreen | DetailedAnalysisViewModel | Heatmaps, drift, qubit metrics, cross-run comparisons |
-| BackendsScreen | BackendsViewModel | Backend explorer with primary/backup selection |
-| BenchmarkScreen | BenchmarkViewModel | Execution parameters, mitigation strategy, cost |
-| BenchmarkDashboardScreen | BenchmarkDashboardViewModel | Benchmark configuration summary and recommendations |
-| PredictionScreen | PredictionViewModel | Predicted fidelity, distribution, error budget |
-| JobsScreen | JobsViewModel | Job monitoring dashboard with logs |
-| ResultsScreen | ResultsViewModel | Measured vs predicted vs ideal result analysis |
-| ReportsScreen | ReportsViewModel | Report generation and viewing |
-| SettingsScreen | SettingsViewModel | Account settings, defaults, storage, notifications |
-| QecSimulationScreen | QecSimulationViewModel | QEC simulation under configurable noise models |
-| QecVisualizationScreen | QecVisualizationViewModel | 3D Bloch sphere, surface code lattice, error propagation |
+| Screen | ViewModel | Purpose | Sidebar |
+|--------|-----------|---------|:-------:|
+| DashboardScreen | DashboardViewModel | **Default landing screen after login.** Google/IBM-style workflow dashboard: KPI strip · clickable workflow stepper · Run Readiness (4-cell layout) · Backend Health · Job Submissions trend · merged Activity feed (UI events + job records) with right-click context menu · Smart Next-Step CTA · Project switcher in toolbar · **30 s silent auto-refresh** (no overlay flicker) · empty-state hero card for fresh projects | ✓ (1st) |
+| WelcomeScreen | WelcomeViewModel | Login, project selection, recent projects. **Displayed as "Projects"** in the sidebar (routing key remains `'Welcome'` for back-compat). Auto-navigates to Dashboard on successful login. | ✓ (2nd, labelled "Projects") |
+| CircuitsScreen | CircuitsViewModel | Browse, search, manage project circuits. Toolbar exposes both **Composer** (✎) and **Upload** (↑) buttons so the user can choose authoring or file-import paths from this screen — the Upload sidebar entry is hidden by default; this is the primary entry-point. | ✓ |
+| ComposerScreen | ComposerViewModel | **In-app circuit authoring.** Toolbar (Templates ▾, Save, Validate, **📤 Export**, **📦 Bundle**, ± qubit, Inspect) + click-to-place gate palette (H/X/Y/Z/S/T/S†/T†/Rx/Ry/Rz/reset/CX/CZ/SWAP/CCX/M/barrier) + uiaxes-based wire canvas + bidirectional **OpenQASM 2.0 mirror** (commit-on-edit re-renders canvas) + 12-template gallery (Bell, GHZ_n, QFT_n, Grover_k, Bernstein-Vazirani_n, Deutsch-Jozsa_n, Phase Estimation, VQE H₂, QAOA, Trotter, Teleport, Superdense) + **collapsible Inspect footer** with local statevector simulator (≤14 qubits) — slider, Bloch ⟨X⟩/⟨Y⟩/⟨Z⟩ tiles per qubit, top-K amplitude bars, ▶ Auto-step. **Multi-target code export** (📤 Export → modal): OpenQASM 2/3, Qiskit Python, Cirq Python, Braket Python, with copy-to-clipboard + save-to-file. **Reproducibility Bundle** (📦 Bundle → modal): one-click ZIP with circuit (QASM + 3 Python ecosystems) + circuit metadata + optional backend calibration snapshot + optional mitigation estimates + optional FT resource estimate + auto-generated README + manifest.json with SHA-256 checksums — Tier 3 moat (no competitor packages reproducibility metadata as a downloadable bundle). Save writes a temp QASM and POSTs `/api/circuits/upload/file` (no new backend endpoint needed). | ✓ |
+| NotesScreen | NotesViewModel | Working notes and operator memos | — (hidden) |
+| UploadScreen | UploadViewModel | Circuit upload with format selection and preview. **Hidden from the sidebar** — the Composer toolbar (Save) and Circuits toolbar (Upload button) are the canonical entry-points. UploadScreen / UploadViewModel / `app.UploadVm` remain wired so any cross-screen call to `app.onSelectSection('Upload')` still routes correctly. | — (hidden) |
+| AnalysisScreen | AnalysisViewModel | Circuit feature extraction, QTAUBench similarity, **Quantum Monte Carlo popup** | ✓ |
+| DetailedAnalysisScreen | DetailedAnalysisViewModel | Heatmaps, drift, qubit metrics, cross-run comparisons — toolbar has Circuit selector + **Analyze bridge** to the Analysis screen | ✓ |
+| BackendsScreen | BackendsViewModel | Backend explorer with primary/backup selection. Right panel hosts a **Telemetry tab strip** (`Overview / Per-Qubit / History / Topology`) — Per-Qubit shows a color-coded health heat-grid (T1/T2/gate_err/readout_err/2Q_err per qubit), History shows three 7-day sparklines (T1, T2, 2Q error), **Topology renders the chip's coupling-map as a force-directed graph** with per-qubit health-scored node colors (green/amber/red composite of T1·T2·gate-err) — click any node for that qubit's calibration + neighbour list. Click any backend row to drill in; topology data is lazy-loaded on tab activation via `GET /api/backends/{name}/topology`, cached on `app.TopologyCache`. | ✓ |
+| BenchmarkScreen | BenchmarkViewModel | Execution parameters, mitigation strategy, cost | ✓ |
+| BenchmarkDashboardScreen | BenchmarkDashboardViewModel | Benchmark configuration summary and recommendations | ✓ |
+| CircuitCuttingScreen | CircuitCuttingViewModel | Circuit cutting + distributed reconstruction (Automatic / Assisted / Manual modes, preset-driven for domain workflows in Phase 2) | ✓ |
+| PredictionScreen | PredictionViewModel | Predicted fidelity, distribution, error budget — Circuit + Backend dropdowns on toolbar | ✓ |
+| MitigationCompareScreen | MitigationCompareViewModel | **Pre-submit error-mitigation strategy planner.** Side-by-side cost / shot-multiplier / runtime / IQP-cost cards driven by parallel `POST /api/mitigation/estimate` calls (one per chip). Multi-select chip strip (None / Minimal / Standard / Aggressive / Custom from `/api/mitigation/levels`), color-graded shot-multiplier ranking bar chart, and a recommendation strip (cheapest / best balance / most aggressive). Differentiator surface — no competitor (IBM / AWS / Azure / Google / Quantinuum / IonQ / Rigetti) ships a side-by-side mitigation cost comparator today. Phase A = cost preview; Phase B will add live A/B with histograms via real job submissions. | ✓ |
+| ResourceEstimatorScreen | ResourceEstimatorViewModel | **Fault-tolerant overhead planner.** Given a circuit (uploaded *or* the live Composer model) and FT parameters (physical error rate, target logical error rate, cycle time), computes via `ResourceEstimatorService` the surface-code distance (Fowler et al. inverse threshold formula), physical-per-logical (2d²+1), T-state budget (T/T† direct + Toffoli×7 + Solovay-Kitaev rough bound for arbitrary rotations), T-factory count (15-to-1 distillation footprint), and total runtime. Renders three result cards (Logical / Physical / Runtime), a pie chart of qubit allocation (data / ancilla / T-factory), and an insight strip with scale narration (`near-term` / `exceeds today's largest deployed devices` / `fault-tolerant scale`). Tier 3 moat — only Azure Quantum ships an analogous Resource Estimator today. | ✓ |
+| RunPlannerScreen | RunPlannerViewModel | **Cost-aware run optimisation.** Given a circuit + target fidelity slider + shot count, dispatches *one* `PredictionService.predict` call (per-backend base fidelity) plus *N* parallel `MitigationService.estimate` calls (per-strategy cost), cross-multiplies into M·N candidate configurations, applies a heuristic mitigation-fidelity factor (None ×1.0 → Aggressive ×1.30, capped 0.99), computes the Pareto frontier via `RunPlannerService.computeParetoFrontier` (cost ↗ fidelity ↗), and recommends the cheapest configuration that hits the target via `RunPlannerService.pickOptimal`. Falls back to highest-fidelity-overall when no config meets the target. Renders a Pareto scatter (all points + frontier overlay + target line + optimal-star) and a recommendation card with Submit-this-run + Bundle-this-config hand-off buttons. **Tier 3 moat — unaddressed by all 7 platforms in the audit** (no competitor answers *"give me fidelity F at minimum cost"* in one click). | ✓ |
+| JobsScreen | JobsViewModel | Job Monitoring Dashboard with 6-col table (Job ID / Circuit / Backend / Status / Progress / Created), **auto-refresh every 5 s** while visible, detailed job logs | ✓ |
+| ResultsScreen | ResultsViewModel | Measured vs predicted vs ideal result analysis (auto-picks the first completed job) | ✓ |
+| ReportsScreen | ReportsViewModel | Report generation and viewing | ✓ |
+| SettingsScreen | SettingsViewModel | Account settings, defaults, storage, notifications | ✓ |
+| QecSimulationScreen | QecSimulationViewModel | QEC simulation under configurable noise models | ✓ |
+| QecVisualizationScreen | QecVisualizationViewModel | 3D Bloch sphere, surface code lattice, error propagation | ✓ |
+
+**Re-enable Notes:** add `'Notes'` back to `navNames` / `navLabels` and `char(9998)` to `navIcons` at position 4 in `NavigationManager.m`. The `NotesScreen` / `NotesViewModel` are still instantiated so the tab lights up immediately.
+
+## Quantum Monte Carlo (QMC) popup
+
+A modal `uifigure` (built by `DialogBuilder.buildQmcDialog`) launched from the Analysis toolbar. Runs QAE-based Monte Carlo risk analytics against either local statevector or IBM Runtime. Key integration points:
+
+- **Async job pattern:** `POST /api/circuits/{id}/qae/analyze` returns `HTTP 202 {job_id}` immediately. `AnalysisViewModel.startQaePoll` drives a 3-second MATLAB `timer` polling `GET /api/qae/jobs/{job_id}` until `status` is `completed / failed / cancelled`. The loading overlay shows live `Queued (0 %)` → `Running (50 %)` → `Completed (100 %)` as the server advances.
+- **Close mid-run:** `CloseRequestFcn` routes through `AnalysisViewModel.onCloseQaeDialog` which stops the poll timer; the server keeps running and the result is still cached on the circuit doc for the next visit.
+- **Execution mode:** defaults to **IBM Runtime**; mitigation defaults to **Zero-Noise Extrapolation**.
+- **Generate Report:** PDFs go through `ReportService._build_qmc_pdf_bytes` (dedicated vector-chart QMC builder — loss distribution with VaR, CDF, QAE vs classical MC convergence, amplitude bar, ZNE curve, Greeks table, market scenario, benchmark matches).
+- **Download IBM Log:** button next to Run QMC streams `GET /api/circuits/{id}/qae/ibm-log?fmt=jsonl` — one record per IBM submission matching the schema in `samples/aqs-qmc/outputs_hybrid_mc_qdist_stable/quantum_exec_log.jsonl` (`{subcircuit_id, backend, shots, status, job_id, counts, error}`). Default save name: `ExecLog_{backend}_{circuit}_{YYYYMMDD}.jsonl`. Button is disabled unless the cached QAE result has a `runtime_job_id`.
 
 ## Navigation and Screen Switching
 
 `QTAUWorkbenchApp` manages screens via `NavigationManager`. Each screen calls `app.createSectionPage('ScreenName')` during `buildUI()` to register a hidden panel, then populates it with UI controls. Navigation is handled by `onSelectSection(key)`, which hides all panels and shows the matching one. The `autoLoadScreen(key)` method triggers ViewModel data-fetching when a screen becomes visible (e.g., Dashboard auto-refreshes on enter).
+
+**Routing keys vs display labels.** `NavigationManager` exposes three parallel arrays: `navNames` (routing keys used by `onSelectSection`), `navIcons` (sidebar glyphs), and `navLabels` (human-facing button text and the section title). They are decoupled — e.g., the routing key `'Welcome'` is shown as `'Projects'` via `navLabels`. The screen-title label is resolved through `NavigationManager.displayLabelFor(key)`. The default landing screen at boot and after login is `'Dashboard'` (set in `QTAUWorkbenchApp.buildUI` and `WelcomeViewModel.onLogin`).
 
 ## Adding a New Screen
 
@@ -132,7 +153,22 @@ Access patterns: `AppConfig.get(key, default)`, `AppConfig.getDouble(key, defaul
 
 ## Backend API
 
-FastAPIClient talks to a FastAPI server (default `http://34.42.87.190:5715`). Auth is username/password POST → Bearer token. The MATLAB client uses **75 endpoints** across 9 categories (auth, projects, circuits, backends, benchmarks, predictions, jobs, reports, settings). Full endpoint contract is in `docs/fastapi_contract.md` and `docs/openapi.json`.
+FastAPIClient talks to a FastAPI server (default `http://34.42.87.190:5715`). Auth is username/password POST → Bearer token. The MATLAB client uses **~80 endpoints** across 10 categories (auth, projects, circuits, backends, benchmarks, predictions, jobs, qae, reports, settings). Full endpoint contract is in `docs/fastapi_contract.md` and `docs/openapi.json`.
+
+Notable flows:
+
+- **QAE async jobs** — `POST /api/circuits/{id}/qae/analyze` → `202 {job_id}`, then poll `GET /api/qae/jobs/{job_id}`; `DELETE` cancels. The legacy synchronous call is gone — every caller must poll.
+- **Calibration history** — every successful `GET /api/backends/{name}/calibration` writes through one row per qubit into the `calibration_history` Mongo collection (Bunnet `CalibrationHistoryDocument`, sync). `GET /api/backends/{name}/calibration_history?days=7&qubit_index=N` returns time-sorted (DESC) per-qubit samples within the lookback window (1-30 days). Mongo TTL index evicts records >7 days old. Consumed by the Backends screen's Telemetry tab strip (Per-Qubit heat-grid + History sparklines) — pre-fetched for every visible backend on tab refresh and cached on `app.CalibrationHistoryCache`.
+- **IBM execution log** — `GET /api/circuits/{id}/qae/ibm-log?fmt=json|jsonl` pulls counts + metadata from `QiskitRuntimeService.job(runtime_job_id)` for the cached QAE result; schema matches the hybrid-QMC notebook's `JSONLLogger`.
+- **Sort-by-submitted_at** — `GET /api/jobs` now returns newest first (backend `.sort("-submitted_at")` using the existing compound index); MATLAB re-sorts defensively in `JsonHelper.jobsToRows` as a second layer.
+- **Self-healing job list** — `list_jobs` lazy-refreshes up to 10 in-flight jobs per call from IBM Quantum so progress advances even when the Celery beat sweeper isn't deployed.
+- **Report PDF** — `POST /api/reports/generate` returns a `report_id`; `GET /api/reports/{id}/download` streams the PDF. QMC reports go through a dedicated builder with native ReportLab vector charts.
+
+## Nav-click loading overlay + auto-refresh
+
+`NavigationManager.autoLoadScreen` shows a `Loading {Screen}…` overlay for every screen whose cache is stale, and arms a 20-second safety timer (`armNavOverlayTimer`) that auto-dismisses the overlay if a VM forgets its own `hideLoading`. `OverlayManager.showLoading` / `hideLoading` both disarm the safety timer on entry so rapid navigation can't cross-fire. VMs that previously had the overlay gap (Circuits, Upload, Prediction, Settings) now call `hideLoading()` in their completion callbacks.
+
+The Jobs screen additionally runs a **5-second auto-refresh timer** (`JobsViewModel.startAutoRefresh`) while visible, polling `GET /api/jobs` silently (no overlay flash) so Status / Progress columns stay live. The timer self-terminates on the next tick after the user navigates away.
 
 ## Seed Scripts (14)
 
@@ -143,8 +179,8 @@ All seed scripts are in `scripts/` and use `seed_helpers.m` for authentication a
 | `seed_all.m` | Master orchestrator — runs all seed scripts in order |
 | `seed_projects.m` | 20 demo projects |
 | `seed_circuits.m` | 10 sample OpenQASM circuits (inline content) |
-| `seed_qasmbench.m` | 113+ QASMBench circuits from `samples/qasmbench/` |
-| `seed_qasmbench_invalid.m` | Re-upload 25 previously invalid QASMBench circuits |
+| `seed_qasmbench.m` | 113+ QTAUBench circuits from `samples/qasmbench/` |
+| `seed_qasmbench_invalid.m` | Re-upload 25 previously invalid QTAUBench circuits |
 | `seed_backends.m` | Backend selections per project |
 | `seed_benchmarks.m` | Benchmark configs and strategy comparisons |
 | `seed_predictions.m` | Fidelity predictions |
@@ -156,7 +192,8 @@ All seed scripts are in `scripts/` and use `seed_helpers.m` for authentication a
 ## Sample Circuits
 
 - `samples/*.qasm` — 12 hand-crafted OpenQASM 2.0 circuits (Bell state, GHZ, Grover, etc.)
-- `samples/qasmbench/` — 252 circuits from [PNNL QASMBench](https://github.com/pnnl/QASMBench)
+- `samples/qasmbench/` — 252 circuits ingested from [PNNL QASMBench](https://github.com/pnnl/QASMBench) but rebranded as **QTAUBench** in all UI labels and DB records (filesystem directory kept as `qasmbench/` for loader-stability). Running `scripts/migrate_rename_bench_sources.py` on the backend rewrites any legacy `QASMBench` / `MQTBench` source fields in Mongo to `QTAUBench`.
+- `samples/aqs-qmc/` — reference Quantum Monte Carlo notebook + `outputs_hybrid_mc_qdist_stable/` which pins the canonical IBM-exec-log JSONL schema that `GET /qae/ibm-log` matches.
   - `small/` — 85 files (2-10 qubits)
   - `medium/` — 47 files (11-27 qubits)
   - `large/` — 120 files (28+ qubits)

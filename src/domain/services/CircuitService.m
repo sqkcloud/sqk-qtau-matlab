@@ -5,7 +5,7 @@ classdef CircuitService < handle
     %   into MATLAB-friendly structs.  No UI logic lives here.
 
     properties (Access = private)
-        Client FastAPIClient
+        Client  % FastAPIClient instance (relaxed from typed property so tests can inject a StubFastAPIClient)
     end
 
     methods
@@ -36,9 +36,18 @@ classdef CircuitService < handle
 
         % List circuits accessible to the current user.
         function data = listCircuits(obj, token)
-            Logger.info('CircuitService', 'listCircuits → GET /api/circuits');
+            % GET /api/circuits with the server's max page size (limit=100,
+            % capped server-side) so the Analysis / Upload / Circuits
+            % dropdowns surface every circuit in projects that have grown
+            % past the legacy default of 20. Without the explicit limit
+            % the server defaulted to 20, which silently hid any newly
+            % uploaded circuit when the project already had 20+ entries.
+            % Belt-and-braces alongside the server-side `.sort("-created_at")`
+            % fix in MongoCircuitRepository.list_by_project.
+            ep = '/api/circuits?skip=0&limit=100';
+            Logger.info('CircuitService', 'listCircuits → GET %s', ep);
             try
-                data = obj.Client.getAuth('/api/circuits', token);
+                data = obj.Client.getAuth(ep, token);
                 Logger.info('CircuitService', 'listCircuits → response received');
             catch ME
                 Logger.error('CircuitService', 'listCircuits FAILED: %s', ME.message);
@@ -98,7 +107,7 @@ classdef CircuitService < handle
             end
         end
 
-        % Run QASMBench similarity matching for a circuit.
+        % Run QTAUBench similarity matching for a circuit.
         function data = matchBenchmarks(obj, circuitId, token)
             ep = sprintf('/api/circuits/%s/match-benchmarks', FastAPIClient.encodePathSegment(circuitId));
             Logger.info('CircuitService', 'matchBenchmarks → POST %s', ep);

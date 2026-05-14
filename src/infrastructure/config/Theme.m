@@ -1,10 +1,12 @@
 classdef Theme
     % Theme  Runtime-swappable color palette + layout constants.
     %
-    %   7 curated themes: light, dark, solarized_light, solarized_dark, nord,
-    %   dracula, high_contrast. The active palette is a module-level
-    %   persistent struct; switch with Theme.setActive(name). Changes survive
-    %   app restart via MATLAB's preference store ('QTAUWorkbench' group).
+    %   15 curated themes: light, dark, solarized_light, solarized_dark, nord,
+    %   dracula, high_contrast, classic_light, darcula, darcula_contrast,
+    %   github, islands_dark, monokai, twilight, warm_neon. The active palette
+    %   is a module-level persistent struct; switch with Theme.setActive(name).
+    %   Changes survive app restart via MATLAB's preference store
+    %   ('QTAUWorkbench' group).
     %
     %   Colors are exposed as zero-arg static methods so existing call sites
     %   like  panel.BackgroundColor = Theme.COLOR_BG  keep working unchanged
@@ -43,7 +45,15 @@ classdef Theme
             'solarized_dark',   'Solarized Dark'; ...
             'nord',             'Nord'; ...
             'dracula',          'Dracula'; ...
-            'high_contrast',    'High Contrast'};
+            'high_contrast',    'High Contrast'; ...
+            'classic_light',    'Classic Light'; ...
+            'darcula',          'Darcula'; ...
+            'darcula_contrast', 'Darcula Contrast'; ...
+            'github',           'Github'; ...
+            'islands_dark',     'Islands Dark'; ...
+            'monokai',          'Monokai'; ...
+            'twilight',         'Twilight'; ...
+            'warm_neon',        'WarmNeon'};
     end
 
     methods (Static)
@@ -118,8 +128,8 @@ classdef Theme
         end
 
         function name = loadPersisted()
-            % Returns the saved theme name, or 'light' if unset / invalid.
-            name = 'light';
+            % Returns the saved theme name, or 'dracula' if unset / invalid.
+            name = 'dracula';
             try
                 if ispref('QTAUWorkbench', 'theme')
                     candidate = getpref('QTAUWorkbench', 'theme');
@@ -178,10 +188,12 @@ classdef Theme
             % per-palette overrides can focus on the bits MATLAB doesn't
             % auto-theme (custom uihtml, nav sidebar, overlays).
             switch char(lower(paletteId))
-                case {'light', 'solarized_light'}
+                case {'light', 'solarized_light', 'classic_light', 'github'}
                     mode = 'light';
                 otherwise
-                    mode = 'dark';   % dark, solarized_dark, nord, dracula, high_contrast
+                    mode = 'dark';   % dark, solarized_dark, nord, dracula,
+                                     % high_contrast, darcula, darcula_contrast,
+                                     % islands_dark, monokai, twilight, warm_neon
             end
         end
 
@@ -220,8 +232,8 @@ classdef Theme
                 if nargin >= 2; storedName = newName; end
             end
             if isempty(storedPal)
-                storedPal  = Theme.loadPalette('light');
-                storedName = 'light';
+                storedName = Theme.loadPersisted();
+                storedPal  = Theme.loadPalette(storedName);
             end
             pal  = storedPal;
             name = storedName;
@@ -236,6 +248,14 @@ classdef Theme
                 case 'nord';             p = Theme.paletteNord();
                 case 'dracula';          p = Theme.paletteDracula();
                 case 'high_contrast';    p = Theme.paletteHighContrast();
+                case 'classic_light';    p = Theme.paletteClassicLight();
+                case 'darcula';          p = Theme.paletteDarcula();
+                case 'darcula_contrast'; p = Theme.paletteDarculaContrast();
+                case 'github';           p = Theme.paletteGithub();
+                case 'islands_dark';     p = Theme.paletteIslandsDark();
+                case 'monokai';          p = Theme.paletteMonokai();
+                case 'twilight';         p = Theme.paletteTwilight();
+                case 'warm_neon';        p = Theme.paletteWarmNeon();
                 otherwise;               p = Theme.paletteLight();
             end
         end
@@ -245,37 +265,42 @@ classdef Theme
         % render bright magenta (see Theme.get) so regressions are visible.
 
         function p = paletteLight()
+            % Modern Light theme — neutral grays for text (no blue cast),
+            % crisp near-black headings, Tailwind-style accent colors for a
+            % contemporary feel. Ghost-button bg matches page bg so ghost
+            % buttons visually float rather than merge with surrounding
+            % cards.
             p = struct();
-            p.bg            = [0.96 0.97 0.99];
-            p.cardBg        = [1.00 1.00 1.00];
-            p.divider       = [0.87 0.90 0.93];
-            p.heading       = [0.18 0.26 0.40];
-            p.label         = [0.28 0.36 0.48];
-            p.muted         = [0.38 0.46 0.58];
-            p.primary       = [0.18 0.45 0.82];
-            p.success       = [0.10 0.54 0.36];
-            p.danger        = [0.70 0.15 0.15];
-            p.warning       = [0.85 0.55 0.10];
-            p.purple        = [0.62 0.38 0.82];
-            p.amber         = [0.75 0.48 0.10];
-            p.accentBg      = [0.94 0.97 1.00];
-            p.btnBg         = [0.96 0.96 0.97];
-            p.btnFg         = [0.15 0.15 0.15];
-            p.btnBgSecondary= [0.96 0.96 0.97];
-            p.btnFgSecondary= [0.15 0.15 0.15];
-            p.btnBgGhost    = [0.96 0.96 0.97];
-            p.btnFgGhost    = [0.25 0.25 0.28];
+            p.bg            = [0.98 0.98 0.99];  % #FAFAFB — airy off-white
+            p.cardBg        = [1.00 1.00 1.00];  % pure white cards
+            p.divider       = [0.90 0.91 0.93];  % #E6E8ED neutral gray
+            p.heading       = [0.09 0.11 0.15];  % #172026 near-black, crisp
+            p.label         = [0.24 0.27 0.31];  % #3E454F charcoal
+            p.muted         = [0.45 0.48 0.53];  % #737A87 medium gray
+            p.primary       = [0.15 0.39 0.92];  % #2663EB Tailwind blue-600
+            p.success       = [0.08 0.50 0.24];  % #15803D green — WCAG AA on white
+            p.danger        = [0.82 0.16 0.20];  % #D12933 red — WCAG AA on white
+            p.warning       = [0.90 0.55 0.10];  % #E68C1A warm amber
+            p.purple        = [0.56 0.32 0.85];  % #8F52D9 vivid purple
+            p.amber         = [0.80 0.55 0.12];  % #CC8C1F
+            p.accentBg      = [0.93 0.96 1.00];  % #EDF4FF soft blue tint
+            p.btnBg         = [0.97 0.97 0.98];
+            p.btnFg         = [0.13 0.14 0.16];
+            p.btnBgSecondary= [0.97 0.97 0.98];
+            p.btnFgSecondary= [0.13 0.14 0.16];
+            p.btnBgGhost    = [0.98 0.98 0.99];  % match bg → true "ghost"
+            p.btnFgGhost    = [0.35 0.38 0.42];
             p.chartBg       = [1.00 1.00 1.00];
-            p.chartAxis     = [0.28 0.36 0.48];
-            p.chartGrid     = [0.82 0.86 0.92];
-            p.navBg         = [0.16 0.24 0.39];
-            p.navFg         = [0.92 0.96 1.00];
-            p.navHoverBg    = [0.20 0.31 0.48];
-            p.navActiveBg   = [0.29 0.49 0.82];
+            p.chartAxis     = [0.30 0.33 0.38];
+            p.chartGrid     = [0.90 0.91 0.93];
+            p.navBg         = [0.13 0.16 0.22];  % #21293A refined navy
+            p.navFg         = [0.90 0.92 0.96];
+            p.navHoverBg    = [0.19 0.23 0.30];
+            p.navActiveBg   = [0.15 0.39 0.92];  % matches primary
             p.navActiveFg   = [1.00 1.00 1.00];
             p.overlayBg     = [0.00 0.00 0.00];  % black, 70% alpha in CSS
-            p.overlayText   = [0.90 0.94 1.00];
-            p.overlayAccent = [0.38 0.65 0.98];
+            p.overlayText   = [0.95 0.97 1.00];
+            p.overlayAccent = [0.28 0.55 0.98];
         end
 
         function p = paletteDark()
@@ -431,7 +456,7 @@ classdef Theme
             p.warning       = [0.95 0.72 0.37];  % orange #FFB86C
             p.purple        = [0.74 0.58 0.98];
             p.amber         = [0.95 0.98 0.55];  % yellow #F1FA8C
-            p.accentBg      = [0.21 0.22 0.28];
+            p.accentBg      = [0.45 0.36 0.62];  % must stay != btnBgGhost so 'primary' chips/buttons read as selected
             p.btnBg         = [0.26 0.28 0.35];
             p.btnFg         = [0.97 0.97 0.95];
             p.btnBgSecondary= [0.26 0.28 0.35];
@@ -484,6 +509,288 @@ classdef Theme
             p.overlayBg     = [0.00 0.00 0.00];
             p.overlayText   = [1.00 1.00 1.00];
             p.overlayAccent = [1.00 1.00 0.00];
+        end
+
+        function p = paletteClassicLight()
+            % Neutral-gray light theme (no bluish tint like Light).
+            p = struct();
+            p.bg            = [0.96 0.96 0.96];
+            p.cardBg        = [1.00 1.00 1.00];
+            p.divider       = [0.86 0.86 0.86];
+            p.heading       = [0.13 0.13 0.13];
+            p.label         = [0.26 0.26 0.26];
+            p.muted         = [0.45 0.45 0.45];
+            p.primary       = [0.20 0.47 0.80];
+            p.success       = [0.16 0.58 0.33];
+            p.danger        = [0.76 0.21 0.22];
+            p.warning       = [0.85 0.55 0.10];
+            p.purple        = [0.50 0.35 0.78];
+            p.amber         = [0.75 0.48 0.10];
+            p.accentBg      = [0.93 0.93 0.93];
+            p.btnBg         = [0.94 0.94 0.94];
+            p.btnFg         = [0.13 0.13 0.13];
+            p.btnBgSecondary= [0.94 0.94 0.94];
+            p.btnFgSecondary= [0.13 0.13 0.13];
+            p.btnBgGhost    = [0.94 0.94 0.94];
+            p.btnFgGhost    = [0.26 0.26 0.26];
+            p.chartBg       = [1.00 1.00 1.00];
+            p.chartAxis     = [0.26 0.26 0.26];
+            p.chartGrid     = [0.82 0.82 0.82];
+            p.navBg         = [0.20 0.20 0.20];
+            p.navFg         = [0.94 0.94 0.94];
+            p.navHoverBg    = [0.27 0.27 0.27];
+            p.navActiveBg   = [0.42 0.42 0.42];
+            p.navActiveFg   = [1.00 1.00 1.00];
+            p.overlayBg     = [0.00 0.00 0.00];
+            p.overlayText   = [0.94 0.94 0.94];
+            p.overlayAccent = [0.20 0.47 0.80];
+        end
+
+        function p = paletteDarcula()
+            % JetBrains Darcula — distinct from Dracula (neutral grays,
+            % orange/green accents).
+            p = struct();
+            p.bg            = [0.17 0.17 0.17];  % #2B2B2B
+            p.cardBg        = [0.24 0.25 0.25];  % #3C3F41
+            p.divider       = [0.34 0.36 0.38];
+            p.heading       = [0.66 0.72 0.78];  % #A9B7C6
+            p.label         = [0.73 0.77 0.82];
+            p.muted         = [0.55 0.60 0.65];
+            p.primary       = [0.80 0.47 0.20];  % orange #CC7832
+            p.success       = [0.42 0.53 0.35];  % green #6A8759
+            p.danger        = [0.78 0.37 0.40];
+            p.warning       = [0.95 0.73 0.36];
+            p.purple        = [0.63 0.48 0.73];
+            p.amber         = [0.94 0.78 0.27];
+            p.accentBg      = [0.22 0.23 0.24];
+            p.btnBg         = [0.29 0.30 0.31];
+            p.btnFg         = [0.82 0.85 0.88];
+            p.btnBgSecondary= [0.29 0.30 0.31];
+            p.btnFgSecondary= [0.82 0.85 0.88];
+            p.btnBgGhost    = [0.20 0.21 0.22];
+            p.btnFgGhost    = [0.66 0.72 0.78];
+            p.chartBg       = [0.24 0.25 0.25];
+            p.chartAxis     = [0.73 0.77 0.82];
+            p.chartGrid     = [0.34 0.36 0.38];
+            p.navBg         = [0.13 0.14 0.14];
+            p.navFg         = [0.73 0.77 0.82];
+            p.navHoverBg    = [0.22 0.23 0.24];
+            p.navActiveBg   = [0.41 0.30 0.17];  % dim orange tint
+            p.navActiveFg   = [0.97 0.88 0.73];
+            p.overlayBg     = [0.09 0.09 0.09];
+            p.overlayText   = [0.82 0.85 0.88];
+            p.overlayAccent = [0.80 0.47 0.20];
+        end
+
+        function p = paletteDarculaContrast()
+            % Darcula Contrast — deeper blacks, same accent family as
+            % Darcula but pushed for sharper separation.
+            p = struct();
+            p.bg            = [0.08 0.08 0.09];
+            p.cardBg        = [0.14 0.14 0.16];
+            p.divider       = [0.28 0.30 0.32];
+            p.heading       = [0.90 0.92 0.94];
+            p.label         = [0.80 0.84 0.88];
+            p.muted         = [0.60 0.65 0.70];
+            p.primary       = [1.00 0.58 0.22];  % pushed orange
+            p.success       = [0.56 0.78 0.42];
+            p.danger        = [1.00 0.42 0.40];
+            p.warning       = [1.00 0.78 0.38];
+            p.purple        = [0.78 0.56 0.92];
+            p.amber         = [1.00 0.82 0.30];
+            p.accentBg      = [0.12 0.12 0.14];
+            p.btnBg         = [0.18 0.18 0.20];
+            p.btnFg         = [0.94 0.96 0.98];
+            p.btnBgSecondary= [0.18 0.18 0.20];
+            p.btnFgSecondary= [0.94 0.96 0.98];
+            p.btnBgGhost    = [0.10 0.10 0.12];
+            p.btnFgGhost    = [0.78 0.82 0.86];
+            p.chartBg       = [0.14 0.14 0.16];
+            p.chartAxis     = [0.80 0.84 0.88];
+            p.chartGrid     = [0.28 0.30 0.32];
+            p.navBg         = [0.03 0.03 0.04];
+            p.navFg         = [0.82 0.86 0.90];
+            p.navHoverBg    = [0.10 0.10 0.12];
+            p.navActiveBg   = [0.50 0.28 0.08];
+            p.navActiveFg   = [1.00 0.92 0.76];
+            p.overlayBg     = [0.00 0.00 0.00];
+            p.overlayText   = [0.94 0.96 0.98];
+            p.overlayAccent = [1.00 0.58 0.22];
+        end
+
+        function p = paletteGithub()
+            % GitHub Light — default github.com palette.
+            p = struct();
+            p.bg            = [1.00 1.00 1.00];
+            p.cardBg        = [0.96 0.97 0.98];  % #F6F8FA
+            p.divider       = [0.85 0.88 0.91];  % #D8DEE4
+            p.heading       = [0.14 0.16 0.18];  % #24292F
+            p.label         = [0.26 0.29 0.34];
+            p.muted         = [0.40 0.44 0.49];  % #656D76
+            p.primary       = [0.04 0.41 0.85];  % #0969DA
+            p.success       = [0.10 0.50 0.22];  % #1A7F37
+            p.danger        = [0.81 0.13 0.18];  % #CF222E
+            p.warning       = [0.60 0.42 0.00];  % #9A6700
+            p.purple        = [0.55 0.33 0.75];  % #8250DF
+            p.amber         = [0.75 0.55 0.00];
+            p.accentBg      = [0.92 0.96 1.00];  % #DDF4FF-ish
+            p.btnBg         = [0.96 0.97 0.98];
+            p.btnFg         = [0.14 0.16 0.18];
+            p.btnBgSecondary= [0.96 0.97 0.98];
+            p.btnFgSecondary= [0.14 0.16 0.18];
+            p.btnBgGhost    = [0.96 0.97 0.98];
+            p.btnFgGhost    = [0.26 0.29 0.34];
+            p.chartBg       = [1.00 1.00 1.00];
+            p.chartAxis     = [0.26 0.29 0.34];
+            p.chartGrid     = [0.85 0.88 0.91];
+            p.navBg         = [0.14 0.16 0.18];
+            p.navFg         = [0.92 0.94 0.96];
+            p.navHoverBg    = [0.20 0.22 0.25];
+            p.navActiveBg   = [0.04 0.41 0.85];
+            p.navActiveFg   = [1.00 1.00 1.00];
+            p.overlayBg     = [0.00 0.00 0.00];
+            p.overlayText   = [0.92 0.94 0.96];
+            p.overlayAccent = [0.04 0.41 0.85];
+        end
+
+        function p = paletteIslandsDark()
+            % Islands-style dark teal, inspired by JetBrains Islands.
+            p = struct();
+            p.bg            = [0.08 0.13 0.17];  % deep teal-ink
+            p.cardBg        = [0.11 0.17 0.22];
+            p.divider       = [0.18 0.27 0.34];
+            p.heading       = [0.73 0.78 0.82];  % #BAC7D0
+            p.label         = [0.82 0.86 0.89];
+            p.muted         = [0.55 0.64 0.70];
+            p.primary       = [0.42 0.76 0.92];  % bright cyan
+            p.success       = [0.45 0.85 0.62];
+            p.danger        = [0.95 0.45 0.48];
+            p.warning       = [0.98 0.76 0.38];
+            p.purple        = [0.62 0.56 0.92];
+            p.amber         = [0.93 0.84 0.48];
+            p.accentBg      = [0.12 0.20 0.26];
+            p.btnBg         = [0.15 0.22 0.28];
+            p.btnFg         = [0.88 0.92 0.95];
+            p.btnBgSecondary= [0.15 0.22 0.28];
+            p.btnFgSecondary= [0.88 0.92 0.95];
+            p.btnBgGhost    = [0.11 0.17 0.22];
+            p.btnFgGhost    = [0.70 0.78 0.84];
+            p.chartBg       = [0.11 0.17 0.22];
+            p.chartAxis     = [0.82 0.86 0.89];
+            p.chartGrid     = [0.18 0.27 0.34];
+            p.navBg         = [0.04 0.08 0.11];
+            p.navFg         = [0.82 0.86 0.89];
+            p.navHoverBg    = [0.11 0.17 0.22];
+            p.navActiveBg   = [0.22 0.55 0.70];
+            p.navActiveFg   = [1.00 1.00 1.00];
+            p.overlayBg     = [0.02 0.04 0.06];
+            p.overlayText   = [0.88 0.92 0.95];
+            p.overlayAccent = [0.42 0.76 0.92];
+        end
+
+        function p = paletteMonokai()
+            % Monokai classic — Wimer Hazenberg.
+            p = struct();
+            p.bg            = [0.15 0.16 0.13];  % #272822
+            p.cardBg        = [0.24 0.24 0.20];  % #3E3D32
+            p.divider       = [0.33 0.34 0.29];
+            p.heading       = [0.97 0.97 0.95];  % #F8F8F2
+            p.label         = [0.85 0.85 0.83];
+            p.muted         = [0.60 0.61 0.56];  % #75715E
+            p.primary       = [0.98 0.15 0.45];  % pink #F92672
+            p.success       = [0.65 0.89 0.18];  % green #A6E22E
+            p.danger        = [0.98 0.15 0.45];
+            p.warning       = [0.99 0.59 0.12];  % orange #FD971F
+            p.purple        = [0.68 0.51 1.00];  % #AE81FF
+            p.amber         = [0.90 0.86 0.45];  % yellow #E6DB74
+            p.accentBg      = [0.20 0.20 0.16];
+            p.btnBg         = [0.28 0.28 0.24];
+            p.btnFg         = [0.97 0.97 0.95];
+            p.btnBgSecondary= [0.28 0.28 0.24];
+            p.btnFgSecondary= [0.97 0.97 0.95];
+            p.btnBgGhost    = [0.20 0.20 0.16];
+            p.btnFgGhost    = [0.80 0.80 0.76];
+            p.chartBg       = [0.24 0.24 0.20];
+            p.chartAxis     = [0.85 0.85 0.83];
+            p.chartGrid     = [0.33 0.34 0.29];
+            p.navBg         = [0.11 0.12 0.10];
+            p.navFg         = [0.85 0.85 0.83];
+            p.navHoverBg    = [0.20 0.20 0.16];
+            p.navActiveBg   = [0.40 0.68 0.24];  % dimmed green
+            p.navActiveFg   = [0.15 0.16 0.13];
+            p.overlayBg     = [0.08 0.08 0.06];
+            p.overlayText   = [0.97 0.97 0.95];
+            p.overlayAccent = [0.98 0.15 0.45];
+        end
+
+        function p = paletteTwilight()
+            % TextMate Twilight — dark neutral w/ muted orange accent.
+            p = struct();
+            p.bg            = [0.08 0.08 0.08];
+            p.cardBg        = [0.14 0.14 0.14];
+            p.divider       = [0.25 0.25 0.25];
+            p.heading       = [0.94 0.94 0.94];
+            p.label         = [0.85 0.85 0.85];
+            p.muted         = [0.60 0.60 0.60];
+            p.primary       = [0.81 0.42 0.30];  % rust #CF6A4C
+            p.success       = [0.55 0.75 0.48];
+            p.danger        = [0.80 0.30 0.35];
+            p.warning       = [0.95 0.70 0.30];
+            p.purple        = [0.60 0.47 0.80];
+            p.amber         = [0.92 0.80 0.38];
+            p.accentBg      = [0.11 0.11 0.11];
+            p.btnBg         = [0.18 0.18 0.18];
+            p.btnFg         = [0.92 0.92 0.92];
+            p.btnBgSecondary= [0.18 0.18 0.18];
+            p.btnFgSecondary= [0.92 0.92 0.92];
+            p.btnBgGhost    = [0.11 0.11 0.11];
+            p.btnFgGhost    = [0.75 0.75 0.75];
+            p.chartBg       = [0.14 0.14 0.14];
+            p.chartAxis     = [0.85 0.85 0.85];
+            p.chartGrid     = [0.25 0.25 0.25];
+            p.navBg         = [0.04 0.04 0.04];
+            p.navFg         = [0.85 0.85 0.85];
+            p.navHoverBg    = [0.11 0.11 0.11];
+            p.navActiveBg   = [0.50 0.24 0.16];
+            p.navActiveFg   = [0.97 0.85 0.76];
+            p.overlayBg     = [0.00 0.00 0.00];
+            p.overlayText   = [0.92 0.92 0.92];
+            p.overlayAccent = [0.81 0.42 0.30];
+        end
+
+        function p = paletteWarmNeon()
+            % WarmNeon — warm dark backdrop with vibrant neon accents.
+            p = struct();
+            p.bg            = [0.11 0.08 0.06];
+            p.cardBg        = [0.17 0.12 0.10];
+            p.divider       = [0.35 0.25 0.22];
+            p.heading       = [1.00 0.90 0.76];  % bisque
+            p.label         = [0.95 0.85 0.72];
+            p.muted         = [0.70 0.62 0.55];
+            p.primary       = [1.00 0.00 0.78];  % neon magenta
+            p.success       = [0.00 0.98 0.62];  % neon mint
+            p.danger        = [1.00 0.22 0.42];  % hot pink
+            p.warning       = [1.00 0.68 0.00];
+            p.purple        = [0.78 0.40 1.00];
+            p.amber         = [1.00 0.82 0.00];
+            p.accentBg      = [0.18 0.13 0.10];
+            p.btnBg         = [0.22 0.16 0.13];
+            p.btnFg         = [1.00 0.92 0.80];
+            p.btnBgSecondary= [0.22 0.16 0.13];
+            p.btnFgSecondary= [1.00 0.92 0.80];
+            p.btnBgGhost    = [0.15 0.11 0.09];
+            p.btnFgGhost    = [0.88 0.78 0.65];
+            p.chartBg       = [0.17 0.12 0.10];
+            p.chartAxis     = [0.95 0.85 0.72];
+            p.chartGrid     = [0.35 0.25 0.22];
+            p.navBg         = [0.06 0.04 0.03];
+            p.navFg         = [0.95 0.85 0.72];
+            p.navHoverBg    = [0.15 0.11 0.09];
+            p.navActiveBg   = [1.00 0.00 0.78];
+            p.navActiveFg   = [0.11 0.08 0.06];
+            p.overlayBg     = [0.04 0.02 0.02];
+            p.overlayText   = [1.00 0.92 0.80];
+            p.overlayAccent = [0.00 0.98 0.62];
         end
     end
 end
