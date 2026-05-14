@@ -165,8 +165,14 @@ function DetailedAnalysisScreen(app)
     comparePanel.BackgroundColor = PW;
     cpg = uigridlayout(comparePanel, [1 1]);
     cpg.Padding = Theme.KPI_INNER_PAD; cpg.BackgroundColor = PW;
-    app.CompareAxes = uiaxes(cpg);
-    app.styleAxes(app.CompareAxes);
+    % Lazy uiaxes — VM paint methods materialise via app.ensureLazyAxes(...).
+    cmpPlaceholder = uilabel(cpg, ...
+        'Text', 'Measured vs ideal distribution appears here after a run.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.CompareGrid        = cpg;
+    app.ComparePlaceholder = cmpPlaceholder;
+    app.CompareAxes        = [];
 
     % ── Row 2, Col 2: Cross-Qubit Error Rate Heatmap (imagesc) ───────────────
     heatmapPanel = uipanel(g, 'Title', Labels.get('detailed_panel_heatmap'), ...
@@ -175,8 +181,14 @@ function DetailedAnalysisScreen(app)
     heatmapPanel.BackgroundColor = PW;
     hpg = uigridlayout(heatmapPanel, [1 1]);
     hpg.Padding = Theme.KPI_INNER_PAD; hpg.BackgroundColor = PW;
-    app.ErrorHeatmapAxes = uiaxes(hpg);
-    app.styleAxes(app.ErrorHeatmapAxes);
+    % Lazy uiaxes — see Compare note.
+    heatPlaceholder = uilabel(hpg, ...
+        'Text', 'Cross-qubit error rate heatmap appears here after a run.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.ErrorHeatmapGrid        = hpg;
+    app.ErrorHeatmapPlaceholder = heatPlaceholder;
+    app.ErrorHeatmapAxes        = [];
 
     % ── Row 2, Col 3: Temporal Stability with ±1σ Confidence Band ────────────
     temporalPanel = uipanel(g, 'Title', Labels.get('detailed_panel_temporal'), ...
@@ -185,8 +197,14 @@ function DetailedAnalysisScreen(app)
     temporalPanel.BackgroundColor = PW;
     tpg = uigridlayout(temporalPanel, [1 1]);
     tpg.Padding = Theme.KPI_INNER_PAD; tpg.BackgroundColor = PW;
-    app.TemporalAxes = uiaxes(tpg);
-    app.styleAxes(app.TemporalAxes);
+    % Lazy uiaxes — see Compare note.
+    tempPlaceholder = uilabel(tpg, ...
+        'Text', 'Temporal stability appears here after a run.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.TemporalGrid        = tpg;
+    app.TemporalPlaceholder = tempPlaceholder;
+    app.TemporalAxes        = [];
 
     % ═════════════════════════════════════════════════════════════════════════
     %  ROW 3 — Three moderate-height diagnostic charts
@@ -199,8 +217,14 @@ function DetailedAnalysisScreen(app)
     qubitPanel.BackgroundColor = PW;
     qpg = uigridlayout(qubitPanel, [1 1]);
     qpg.Padding = Theme.KPI_INNER_PAD; qpg.BackgroundColor = PW;
-    app.QubitAxes = uiaxes(qpg);
-    app.styleAxes(app.QubitAxes);
+    % Lazy uiaxes — see Compare note.
+    qubitPlaceholder = uilabel(qpg, ...
+        'Text', 'T1 vs T2 per-qubit scatter appears here after a run.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.QubitGrid        = qpg;
+    app.QubitPlaceholder = qubitPlaceholder;
+    app.QubitAxes        = [];
 
     % ── Row 3, Col 2: Randomized Benchmarking Decay Curve ────────────────────
     rbPanel = uipanel(g, 'Title', Labels.get('detailed_panel_rb'), ...
@@ -209,8 +233,14 @@ function DetailedAnalysisScreen(app)
     rbPanel.BackgroundColor = PW;
     rpg = uigridlayout(rbPanel, [1 1]);
     rpg.Padding = Theme.KPI_INNER_PAD; rpg.BackgroundColor = PW;
-    app.RBDecayAxes = uiaxes(rpg);
-    app.styleAxes(app.RBDecayAxes);
+    % Lazy uiaxes — see Compare note.
+    rbPlaceholder = uilabel(rpg, ...
+        'Text', 'Randomized benchmarking decay appears here after a run.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.RBDecayGrid        = rpg;
+    app.RBDecayPlaceholder = rbPlaceholder;
+    app.RBDecayAxes        = [];
 
     % ── Row 3, Col 3: Enhanced Interpretation & Diagnostics ──────────────────
     insightPanel = uipanel(g, 'Title', Labels.get('detailed_panel_insight'), ...

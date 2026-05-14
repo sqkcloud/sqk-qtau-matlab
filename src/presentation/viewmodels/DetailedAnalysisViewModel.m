@@ -118,6 +118,7 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function onPlotTemporalComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('TemporalAxes', 'TemporalGrid', 'TemporalPlaceholder')); return; end
             try
                 cla(app.TemporalAxes);
                 items = JsonHelper.extractList(data, 'trend');
@@ -197,6 +198,7 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function onPlotQubitComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('QubitAxes', 'QubitGrid', 'QubitPlaceholder')); return; end
             try
                 % Backend: qubit_metrics: [{qubit_index, readout_error, t1_us, t2_us, gate_error_1q, ...}]
                 items = JsonHelper.extractList(data, 'qubit_metrics');
@@ -285,6 +287,7 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function onPlotHeatmapComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('ErrorHeatmapAxes', 'ErrorHeatmapGrid', 'ErrorHeatmapPlaceholder')); return; end
             try
                 % Backend: fidelity_heatmap: list[list[float]] (2D grid)
                 mat = [];
@@ -357,6 +360,7 @@ classdef DetailedAnalysisViewModel < handle
         end
 
         function onPlotRBDecayComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('RBDecayAxes', 'RBDecayGrid', 'RBDecayPlaceholder')); return; end
             try
                 items = JsonHelper.extractList(data, 'rb_data');
                 if isempty(items); items = JsonHelper.asList(data); end
@@ -421,6 +425,7 @@ classdef DetailedAnalysisViewModel < handle
 
     methods (Access = private)
         function onPlotComparisonComplete(obj, app, data)
+            if isempty(app.ensureLazyAxes('CompareAxes', 'CompareGrid', 'ComparePlaceholder')); return; end
             obj.plotComparisonFromData(data);
             app.logEvent('API', 'Comparison plot updated from live data');
             app.State.logActivity('Detailed analysis — comparison plot', 'Success');

@@ -495,10 +495,20 @@ classdef QTAUWorkbenchApp < handle
     % ── Detailed Analysis tab ─────────────────────────────────────────────────
     properties
         CompareAxes
+        CompareGrid                   % parent grid for the lazy uiaxes
+        ComparePlaceholder            % uilabel placeholder until the uiaxes materialises
         ErrorHeatmapAxes
+        ErrorHeatmapGrid              % parent grid for the lazy uiaxes
+        ErrorHeatmapPlaceholder       % uilabel placeholder until the uiaxes materialises
         TemporalAxes
+        TemporalGrid                  % parent grid for the lazy uiaxes
+        TemporalPlaceholder           % uilabel placeholder until the uiaxes materialises
         QubitAxes
+        QubitGrid                     % parent grid for the lazy uiaxes
+        QubitPlaceholder              % uilabel placeholder until the uiaxes materialises
         RBDecayAxes
+        RBDecayGrid                   % parent grid for the lazy uiaxes
+        RBDecayPlaceholder            % uilabel placeholder until the uiaxes materialises
         DetailedInsightArea
         RefreshCompareButton
         RefreshHeatmapButton
