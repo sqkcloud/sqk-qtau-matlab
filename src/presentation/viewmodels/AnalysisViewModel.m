@@ -933,17 +933,18 @@ classdef AnalysisViewModel < handle
 
                 % ── Right: Match Profile side panel ────────────────────────
                 profilePanel = uipanel(dg, 'Title', 'Match Profile', ...
-                    'FontWeight', 'bold', 'BackgroundColor', Theme.COLOR_ACCENT_BG, ...
-                    'ForegroundColor', [0.20 0.28 0.45]);
+                    'FontWeight', 'bold', 'BackgroundColor', Theme.COLOR_CARD, ...
+                    'ForegroundColor', Theme.COLOR_HEADING);
                 profilePanel.Layout.Row = 2; profilePanel.Layout.Column = 2;
 
                 ppg = uigridlayout(profilePanel, [1 1]);
                 ppg.Padding = [12 10 12 10];
-                ppg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+                ppg.BackgroundColor = Theme.COLOR_CARD;
 
                 profileArea = uitextarea(ppg, 'Editable', 'off');
                 profileArea.FontSize = 12;
                 profileArea.FontColor = Theme.COLOR_HEADING;
+                profileArea.BackgroundColor = Theme.COLOR_CARD;
                 profileArea.Value = AnalysisViewModel.buildMatchProfileText( ...
                     curCircName, dispNames, sims, cats, notes, uniqueCats, topIdx);
 
