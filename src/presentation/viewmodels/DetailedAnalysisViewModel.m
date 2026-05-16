@@ -418,7 +418,20 @@ classdef DetailedAnalysisViewModel < handle
             app.hideLoading();
             app.logEvent('ERROR', sprintf('RB decay failed: %s', ME.message));
             obj.reportLiveError('RB Decay', ME);
-            obj.plotRBDecayDemo();
+            % Defensive: if the demo paint throws (e.g. the lazy axes
+            % couldn't be materialized because the panel was torn down,
+            % or the cached class was loaded before the lazy-axes guard
+            % shipped), swallow it here rather than let it cascade back
+            % up through AsyncRunner.pollFuture as the secondary
+            % "First argument must be an axes object." error that the
+            % user saw stacked on top of the original 404.
+            try
+                obj.plotRBDecayDemo();
+            catch demoME
+                Logger.warn('DetailedAnalysisViewModel', ...
+                    'plotRBDecayDemo (error fallback) raised: %s', ...
+                    demoME.message);
+            end
         end
 
     end
