@@ -1869,7 +1869,7 @@ classdef AnalysisViewModel < handle
                     else
                         app.QmcRunButton.Text   = [char(9883) ' Run QMC'];
                         app.QmcRunButton.Enable = 'on';
-                        app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
+                        app.QmcRunButton.Tooltip = 'Run Quantum Monte Carlo analysis on the active circuit';
                         app.QmcRunButton.ButtonPushedFcn = ...
                             @(~,~) app.AnalysisVm.onRunQmcAnalysis();
                     end
@@ -3084,7 +3084,7 @@ classdef AnalysisViewModel < handle
             % state is educational rather than mysterious.
             app = obj.App;
             if enable
-                onTip = 'Save /api/circuits/{id}/analysis to a .json file.';
+                onTip = 'Save the circuit analysis payload to a .json file.';
                 offTip = 'Run Analyze first; this saves the response as a .json file.';
                 pdfOn = 'Open Reports with the title pre-filled for the active circuit.';
                 pdfOff = 'Run Analyze first; this opens Reports with the title pre-filled.';

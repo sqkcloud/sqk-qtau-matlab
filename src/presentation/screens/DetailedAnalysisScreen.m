@@ -82,7 +82,7 @@ function DetailedAnalysisScreen(app)
     app.RefreshCompareButton.Layout.Row = 1; app.RefreshCompareButton.Layout.Column = 4;
     app.styleBtn(app.RefreshCompareButton, 'ghost');
     app.RefreshCompareButton.FontSize = 13;
-    app.RefreshCompareButton.Tooltip = 'GET /jobs/{id}/results/detailed — distribution comparison';
+    app.RefreshCompareButton.Tooltip = 'Refresh the distribution comparison';
 
     app.RefreshHeatmapButton = uibutton(toolbar, ...
         'Text', [char(9641) ' ' Labels.get('detailed_btn_refresh_heatmap')], ...
@@ -90,7 +90,7 @@ function DetailedAnalysisScreen(app)
     app.RefreshHeatmapButton.Layout.Row = 1; app.RefreshHeatmapButton.Layout.Column = 5;
     app.styleBtn(app.RefreshHeatmapButton, 'ghost');
     app.RefreshHeatmapButton.FontSize = 13;
-    app.RefreshHeatmapButton.Tooltip = 'GET /jobs/{id}/results/detailed — cross-qubit error matrix';
+    app.RefreshHeatmapButton.Tooltip = 'Refresh the cross-qubit error matrix';
 
     app.RefreshTemporalButton = uibutton(toolbar, ...
         'Text', [char(8987) ' ' Labels.get('detailed_btn_refresh_temporal')], ...
@@ -98,7 +98,7 @@ function DetailedAnalysisScreen(app)
     app.RefreshTemporalButton.Layout.Row = 1; app.RefreshTemporalButton.Layout.Column = 6;
     app.styleBtn(app.RefreshTemporalButton, 'ghost');
     app.RefreshTemporalButton.FontSize = 13;
-    app.RefreshTemporalButton.Tooltip = 'GET /jobs/{id}/error-trends — temporal stability';
+    app.RefreshTemporalButton.Tooltip = 'Refresh the temporal stability trend';
 
     app.RefreshQubitButton = uibutton(toolbar, ...
         'Text', [char(9898) ' ' Labels.get('detailed_btn_refresh_qubit')], ...
@@ -106,7 +106,7 @@ function DetailedAnalysisScreen(app)
     app.RefreshQubitButton.Layout.Row = 1; app.RefreshQubitButton.Layout.Column = 7;
     app.styleBtn(app.RefreshQubitButton, 'ghost');
     app.RefreshQubitButton.FontSize = 13;
-    app.RefreshQubitButton.Tooltip = 'GET /jobs/{id}/results/detailed — per-qubit T1/T2 coherence';
+    app.RefreshQubitButton.Tooltip = 'Refresh per-qubit T1 / T2 coherence';
 
     app.RefreshRBButton = uibutton(toolbar, ...
         'Text', [char(8600) ' ' Labels.get('detailed_btn_refresh_rb')], ...
@@ -114,7 +114,7 @@ function DetailedAnalysisScreen(app)
     app.RefreshRBButton.Layout.Row = 1; app.RefreshRBButton.Layout.Column = 8;
     app.styleBtn(app.RefreshRBButton, 'ghost');
     app.RefreshRBButton.FontSize = 13;
-    app.RefreshRBButton.Tooltip = 'GET /jobs/{id}/rb-decay — randomized benchmarking';
+    app.RefreshRBButton.Tooltip = 'Refresh the randomized-benchmarking decay';
 
     %  Download JSON / Generate Report / Reports navigation buttons
     %  removed per operator request — Detailed Analysis is a

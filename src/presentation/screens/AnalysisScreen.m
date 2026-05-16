@@ -69,7 +69,7 @@ function AnalysisScreen(app)
     app.AnalyzeButton.Layout.Row = 1; app.AnalyzeButton.Layout.Column = 4;
     app.styleBtn(app.AnalyzeButton, 'primary');
     app.AnalyzeButton.FontSize = 14;
-    app.AnalyzeButton.Tooltip = 'POST /api/circuits/{id}/analyze + match-benchmarks';
+    app.AnalyzeButton.Tooltip = 'Analyze the active circuit and match against QTAUBench';
 
     % Launcher for the Quantum Monte Carlo Simulation (Quantum Amplitude
     % Estimation) popup. The full control + plot UI lives in the modal

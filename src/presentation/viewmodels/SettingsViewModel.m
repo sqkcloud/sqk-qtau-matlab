@@ -94,7 +94,7 @@ classdef SettingsViewModel < handle
                 'Text', [char(10003) ' ' Labels.get('settings_btn_verify_ibm')], ...
                 'ButtonPushedFcn', @(~,~)obj.onVerifyIbm(dlg));
             app.VerifyIbmButton.Layout.Column = 2; app.styleBtn(app.VerifyIbmButton, 'secondary');
-            app.VerifyIbmButton.Tooltip = 'POST /api/settings/verify-ibm';
+            app.VerifyIbmButton.Tooltip = 'Verify the configured IBM Runtime token against the server';
 
             closeBtn = uibutton(footer, 'Text', Labels.get('settings_btn_close', 'Close'), ...
                 'ButtonPushedFcn', @(~,~)obj.closeIbmDialog(dlg));

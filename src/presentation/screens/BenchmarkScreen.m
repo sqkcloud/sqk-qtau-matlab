@@ -117,7 +117,7 @@ function BenchmarkScreen(app)
     app.BenchmarkSubmitButton.Layout.Row = 1; app.BenchmarkSubmitButton.Layout.Column = 2;
     app.styleBtn(app.BenchmarkSubmitButton, 'primary');
     app.BenchmarkSubmitButton.FontSize = 14;
-    app.BenchmarkSubmitButton.Tooltip = 'POST /api/jobs/submit — actually runs the benchmark circuit on IBM Quantum';
+    app.BenchmarkSubmitButton.Tooltip = 'Submit the benchmark circuit to IBM Quantum';
 
     % ── Execution Plan (right) ────────────────────────────────────────────────
     estimate = uipanel(g, 'Title', Labels.get('benchmark_panel_plan'), ...

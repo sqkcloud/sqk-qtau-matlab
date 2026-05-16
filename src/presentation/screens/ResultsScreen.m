@@ -268,7 +268,7 @@ function ResultsScreen(app)
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onRefreshResults());
     refreshBtn.Layout.Row = 1; refreshBtn.Layout.Column = 2;
     app.styleBtn(refreshBtn, 'primary');
-    refreshBtn.Tooltip = 'GET /api/jobs/{id}/results';
+    refreshBtn.Tooltip = 'Refresh measured results for the selected job';
     tmp = uibutton(bg, 'Text', [char(9986) ' ' ...
             Labels.get('results_btn_view_reconstruction', 'View Reconstruction')], ...
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onViewReconstruction());
@@ -283,7 +283,7 @@ function ResultsScreen(app)
     app.ResultsDownloadJsonBtn.Layout.Column = 5;
     app.styleBtn(app.ResultsDownloadJsonBtn, 'ghost');
     app.ResultsDownloadJsonBtn.Tooltip = ...
-        'Save /api/jobs/{id}/results to a .json file.';
+        'Save measured results for the selected job to a .json file.';
     app.ResultsGeneratePdfBtn = uibutton(bg, ...
         'Text', [char(9636) ' Generate Report'], ...                  % ▤ (BMP — char(128196) renders tofu on macOS)
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onGenerateRunReport());
