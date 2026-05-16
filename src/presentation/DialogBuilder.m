@@ -1321,11 +1321,18 @@ classdef DialogBuilder
                 topoRowHeight = 0;
             end
             cg = uigridlayout(card, [6 1]);
-            cg.RowHeight   = {62, 84, topoRowHeight, '1x', 1, 52};
+            % Body row switched from '1x' to 'fit' + Scrollable='on' so
+            % the dialog grows a vertical scrollbar when the summary
+            % content (long subcircuit lists, partition maps, etc.)
+            % exceeds the card's visible height — previously the '1x'
+            % body absorbed all remaining space and the bottom of the
+            % content was simply clipped on smaller windows.
+            cg.RowHeight   = {62, 84, topoRowHeight, 'fit', 1, 52};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [20 14 20 14];
             cg.RowSpacing  = 12;
             cg.BackgroundColor = cardBg;
+            cg.Scrollable  = 'on';
 
             % ── Header
             header = uigridlayout(cg, [2 1]);
