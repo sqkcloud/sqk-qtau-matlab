@@ -192,18 +192,34 @@ classdef LayoutBuilder
             headerPanel.Layout.Row = 1; headerPanel.Layout.Column = 1;
             headerPanel.BackgroundColor = Theme.COLOR_CARD;
             app.HeaderSectionPanel = headerPanel;
-            hg = uigridlayout(headerPanel, [2 1]);
-            hg.RowHeight = {28, 20}; hg.Padding = [16 10 16 10];
+            hg = uigridlayout(headerPanel, [2 2]);
+            hg.RowHeight = {28, 20}; hg.ColumnWidth = {'1x', 'fit'};
+            hg.Padding = [16 10 16 10]; hg.ColumnSpacing = 8;
             hg.BackgroundColor = Theme.COLOR_CARD;
             app.HeaderSectionGrid = hg;
             app.SectionTitleLabel = uilabel(hg, 'Text', 'Welcome');
             app.SectionTitleLabel.FontSize = 18; app.SectionTitleLabel.FontWeight = 'bold';
             app.SectionTitleLabel.FontColor = Theme.COLOR_HEADING;
             app.SectionTitleLabel.Layout.Row = 1; app.SectionTitleLabel.Layout.Column = 1;
+
+            % "?" help icon — click to open the per-screen help dialog.
+            % Tooltip on the button is the one-liner; the dialog body
+            % carries Purpose / What it does / Measurements / Formulas /
+            % Notes, sourced from HelpContent.bodyFor(<current key>).
+            app.SectionHelpButton = uibutton(hg, ...
+                'Text', '?', ...
+                'FontSize', 14, 'FontWeight', 'bold', ...
+                'Tooltip', 'Show help for this screen', ...
+                'BackgroundColor', Theme.COLOR_CARD, ...
+                'FontColor', Theme.COLOR_HEADING, ...
+                'ButtonPushedFcn', @(~,~) DialogBuilder.buildScreenHelpDialog( ...
+                    app, char(app.LastSectionKey)));
+            app.SectionHelpButton.Layout.Row = 1; app.SectionHelpButton.Layout.Column = 2;
+
             app.SectionSubtitleLabel = uilabel(hg, 'Text', 'Server authentication and project access');
             app.SectionSubtitleLabel.FontSize = 12;
             app.SectionSubtitleLabel.FontColor = Theme.COLOR_MUTED;
-            app.SectionSubtitleLabel.Layout.Row = 2; app.SectionSubtitleLabel.Layout.Column = 1;
+            app.SectionSubtitleLabel.Layout.Row = 2; app.SectionSubtitleLabel.Layout.Column = [1 2];
 
             sep = uipanel(shellGrid, 'Title', '');
             sep.Layout.Row = 2; sep.Layout.Column = 1;

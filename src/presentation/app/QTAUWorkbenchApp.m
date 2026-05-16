@@ -49,6 +49,7 @@ classdef QTAUWorkbenchApp < handle
         ContentContainer
         SectionTitleLabel
         SectionSubtitleLabel
+        SectionHelpButton              % "?" help icon next to SectionTitleLabel
 
         EventLog  = {}
         EventLogArea

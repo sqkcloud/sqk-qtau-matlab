@@ -2161,6 +2161,74 @@ classdef DialogBuilder
             Logger.info('DialogBuilder', ...
                 'Compatible Circuit Picker shown (ceiling = %dq)', round(qubitCeiling));
         end
+
+        % ----------------------------------------------------------------
+        % Per-screen help dialog
+        % ----------------------------------------------------------------
+        function buildScreenHelpDialog(app, key)
+            % buildScreenHelpDialog  Open a non-modal help dialog for the
+            %   currently-visible screen. Content (purpose / what it does
+            %   / measurements / formulas / notes) comes from
+            %   HelpContent.bodyFor(key); rendering uses uihtml so
+            %   bullet lists, formula blocks, and headings show with
+            %   proper formatting.
+            try
+                if nargin < 2 || isempty(key)
+                    try; key = char(app.LastSectionKey); catch; key = ''; end
+                end
+                key = char(key);
+                try
+                    displayName = NavigationManager.displayLabelFor(key);
+                catch
+                    displayName = key;
+                end
+                if isempty(displayName); displayName = key; end
+
+                body = HelpContent.bodyFor(key);
+
+                figW = 640; figH = 560;
+                try
+                    mainPos = app.UIFigure.Position;
+                    x = max(0, mainPos(1) + (mainPos(3) - figW) / 2);
+                    y = max(0, mainPos(2) + (mainPos(4) - figH) / 2);
+                catch
+                    x = 200; y = 200;
+                end
+
+                dlg = uifigure( ...
+                    'Name', sprintf('Help — %s', char(displayName)), ...
+                    'Position', [x y figW figH], ...
+                    'Resize', 'on');
+                try; dlg.Color = Theme.COLOR_CARD; catch; end
+
+                g = uigridlayout(dlg, [2 1]);
+                g.RowHeight   = {'1x', 44};
+                g.Padding     = [0 0 0 8];
+                g.RowSpacing  = 0;
+                try; g.BackgroundColor = Theme.COLOR_CARD; catch; end
+
+                html = uihtml(g);
+                html.Layout.Row = 1; html.Layout.Column = 1;
+                html.HTMLSource = HelpContent.renderHtml(displayName, body);
+
+                btnRow = uigridlayout(g, [1 2]);
+                btnRow.Layout.Row = 2; btnRow.Layout.Column = 1;
+                btnRow.ColumnWidth = {'1x', 120};
+                btnRow.Padding = [16 0 16 0];
+                try; btnRow.BackgroundColor = Theme.COLOR_CARD; catch; end
+
+                closeBtn = uibutton(btnRow, ...
+                    'Text', 'Close', ...
+                    'FontSize', 13, ...
+                    'ButtonPushedFcn', @(~,~) delete(dlg));
+                closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 2;
+
+                try; figure(dlg); catch; end
+            catch ME
+                try; Logger.warn('DialogBuilder', ...
+                    'buildScreenHelpDialog(%s): %s', char(key), ME.message); catch; end
+            end
+        end
     end
 end
 
