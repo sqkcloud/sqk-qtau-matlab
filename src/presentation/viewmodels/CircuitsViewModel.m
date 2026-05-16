@@ -84,7 +84,7 @@ classdef CircuitsViewModel < handle
             % already done) and prefetchCircuits (UI does not exist yet
             % — must NOT touch CircuitsTable / EmptyStateLabel).
             app = obj.App;
-            app.logEvent('API', sprintf('GET /api/circuits?skip=%d&limit=%d — project: %s', ...
+            app.logEvent('API', sprintf('Loading circuits (skip=%d limit=%d) — project: %s', ...
                 obj.PageSkip, obj.PageLimit, char(app.State.currentProjectId)));
             skip  = obj.PageSkip;
             limit = obj.PageLimit;

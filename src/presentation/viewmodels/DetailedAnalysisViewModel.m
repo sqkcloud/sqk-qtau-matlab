@@ -43,7 +43,7 @@ classdef DetailedAnalysisViewModel < handle
                     'Download JSON', 'Icon', 'info');
                 return;
             end
-            app.logEvent('API', sprintf('GET /api/jobs/%s/results/detailed (export)', jid));
+            app.logEvent('API', sprintf('Loading detailed results — job %s (export)', jid));
             app.showLoading('Fetching detailed results for export...');
             jobSvc = app.JobSvc;
             token  = app.State.authToken;
@@ -93,7 +93,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('Compare'); obj.plotComparisonDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed', jobId));
+            app.logEvent('API', sprintf('Loading distribution comparison — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -107,7 +107,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('Temporal'); obj.plotTemporalDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/error-trends', jobId));
+            app.logEvent('API', sprintf('Loading error trends — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -187,7 +187,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('Qubits'); obj.plotQubitDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (qubit)', jobId));
+            app.logEvent('API', sprintf('Loading per-qubit metrics — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -276,7 +276,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('Heatmap'); obj.plotHeatmapDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (heatmap)', jobId));
+            app.logEvent('API', sprintf('Loading error heatmap — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -349,7 +349,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('RB Decay'); obj.plotRBDecayDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/rb-decay', jobId));
+            app.logEvent('API', sprintf('Loading RB decay — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;

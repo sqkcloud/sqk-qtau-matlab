@@ -35,7 +35,7 @@ classdef JobsViewModel < handle
                 return;
             end
             if ~silent
-                app.logEvent('API', 'GET /api/jobs (+ /api/circuits for name lookup)');
+                app.logEvent('API', 'Refresh jobs list (with circuit-name lookup)');
                 app.showLoading(Labels.get('loading_jobs', 'Loading jobs...'));
             end
             obj.LastRefreshWasSilent = silent;
@@ -152,7 +152,7 @@ classdef JobsViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_no_job'), 'Cancel Job', 'Icon', 'warning'); return;
             end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('POST /api/jobs/%s/cancel', jobId));
+            app.logEvent('API', sprintf('Cancel job — id %s', jobId));
             app.showLoading(Labels.get('loading_cancelling', 'Cancelling job...'));
             svc = app.JobSvc;
             token = app.State.authToken;
@@ -181,7 +181,7 @@ classdef JobsViewModel < handle
                 % partial_results) so we can populate both the right-hand
                 % Live Monitor Notes panel and the bottom Detailed Job
                 % Logs panel in a single round-trip.
-                app.logEvent('API', sprintf('GET /api/jobs/%s', jobId));
+                app.logEvent('API', sprintf('Refresh job — id %s', jobId));
                 svc = app.JobSvc;
                 token = app.State.authToken;
                 AsyncRunner.run( ...
@@ -199,7 +199,7 @@ classdef JobsViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_no_job'), 'Pause Job', 'Icon', 'warning'); return;
             end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('POST /api/jobs/%s/pause', jobId));
+            app.logEvent('API', sprintf('Pause job — id %s', jobId));
             svc = app.JobSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...

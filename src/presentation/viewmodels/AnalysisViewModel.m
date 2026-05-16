@@ -15,7 +15,7 @@ classdef AnalysisViewModel < handle
             % Called when navigating to the Analysis screen — load circuits
             app = obj.App;
             if ~app.State.isAuthenticated(); return; end
-            app.logEvent('API', 'GET /api/circuits — loading circuit list for Analysis');
+            app.logEvent('API', 'Loading circuit list for Analysis');
             app.showLoading(Labels.get('loading_circuits', 'Loading circuits...'));
             circSvc = app.CircuitSvc;
             token   = app.State.authToken;
@@ -110,7 +110,7 @@ classdef AnalysisViewModel < handle
                 return;
             end
             cid = char(app.State.selectedCircuitId);
-            app.logEvent('API', sprintf('GET /api/circuits/%s/analysis (export)', cid));
+            app.logEvent('API', sprintf('Loading circuit analysis — circuit %s (export)', cid));
             app.showLoading('Fetching analysis for export...');
             circSvc = app.CircuitSvc;
             token   = app.State.authToken;
@@ -166,7 +166,7 @@ classdef AnalysisViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_no_circuit'), 'Analyze', 'Icon', 'warning'); return;
             end
             cid = app.State.selectedCircuitId;
-            app.logEvent('API', sprintf('POST /api/circuits/%s/analyze — circuit: %s  name: %s', ...
+            app.logEvent('API', sprintf('Analyze circuit — id: %s  circuit: %s  name: %s', ...
                 cid, cid, app.State.selectedCircuitName));
             app.showLoading(Labels.get('loading_analyzing', 'Analyzing circuit...'));
             circSvc = app.CircuitSvc;
@@ -470,7 +470,7 @@ classdef AnalysisViewModel < handle
             opts.compute_greeks = true;
 
             if isfield(opts,'mitigation'); mitLog = opts.mitigation; else; mitLog = 'none'; end
-            app.logEvent('API', sprintf('POST /api/circuits/%s/qae/analyze — mode=%s shots=%d mitig=%s', ...
+            app.logEvent('API', sprintf('Submit QMC analysis — circuit: %s  mode=%s shots=%d mitig=%s', ...
                 cid, mode, shots, mitLog));
             % Wipe every KPI / Greek / chart on the popup so the user sees
             % empty controls while the server is running rather than stale
@@ -635,7 +635,7 @@ classdef AnalysisViewModel < handle
             % subcircuit_id/backend/shots/status/job_id/counts/error.
             fmt      = 'jsonl';
             tmpPath  = fullfile(tempdir, sprintf('quantum_exec_log_%s.%s', runtimeJobId, fmt));
-            app.logEvent('API', sprintf('GET /api/circuits/%s/qae/ibm-log (job=%s)', cid, runtimeJobId));
+            app.logEvent('API', sprintf('Loading IBM execution log — circuit %s (job=%s)', cid, runtimeJobId));
             app.showLoading(Labels.get('loading_qmc_ibm_log', 'Fetching IBM Runtime log...'));
             AsyncRunner.run( ...
                 @() qaeSvc.downloadIbmLog(cid, token, fmt, tmpPath), ...

@@ -97,7 +97,7 @@ classdef PredictionViewModel < handle
             cid   = char(app.State.selectedCircuitId);
             shots = app.State.benchmarkShots;
             opt   = app.State.benchmarkOptLevel;
-            app.logEvent('API', sprintf('POST /api/predict — circuit: %s  backend: %s  shots: %d  opt: %d', ...
+            app.logEvent('API', sprintf('Run prediction — circuit: %s  backend: %s  shots: %d  opt: %d', ...
                 cid, backend, shots, opt));
             app.showLoading(Labels.get('loading_prediction', 'Running prediction...'));
             predSvc = app.PredictionSvc;
@@ -180,7 +180,7 @@ classdef PredictionViewModel < handle
             if ~isempty(mitig) && ~strcmp(mitig, 'none')
                 payload.error_mitigation = mitig;
             end
-            app.logEvent('API', sprintf('POST /api/jobs/submit — circuit: %s  backend: %s  shots: %d  opt: %d', ...
+            app.logEvent('API', sprintf('Submit job — circuit: %s  backend: %s  shots: %d  opt: %d', ...
                 cid, backend, shots, opt));
             app.showLoading(Labels.get('loading_submitting', 'Submitting job to IBM Quantum...'));
             jobSvc = app.JobSvc;

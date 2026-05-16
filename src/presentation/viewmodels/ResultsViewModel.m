@@ -29,7 +29,7 @@ classdef ResultsViewModel < handle
                     'Results', 'Icon', 'warning');
                 return;
             end
-            app.logEvent('API', 'GET /api/jobs — hunting for a completed job to display');
+            app.logEvent('API', 'Looking for a completed job to display');
             app.showLoading(Labels.get('loading_results', 'Loading results...'));
             jobSvc = app.JobSvc;
             token  = app.State.authToken;
@@ -114,7 +114,7 @@ classdef ResultsViewModel < handle
                     'Download JSON', 'Icon', 'info');
                 return;
             end
-            app.logEvent('API', sprintf('GET /api/jobs/%s/results (export)', jid));
+            app.logEvent('API', sprintf('Loading results — job %s (export)', jid));
             app.showLoading('Fetching results for export...');
             jobSvc = app.JobSvc;
             token  = app.State.authToken;
@@ -253,7 +253,7 @@ classdef ResultsViewModel < handle
                 app.State.selectedJobId = string(completedId);
             end
 
-            app.logEvent('API', sprintf('GET /api/jobs/%s/results', completedId));
+            app.logEvent('API', sprintf('Loading results — job %s', completedId));
             svc   = app.JobSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...

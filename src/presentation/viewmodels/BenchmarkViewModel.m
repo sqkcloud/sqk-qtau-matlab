@@ -91,7 +91,7 @@ classdef BenchmarkViewModel < handle
             token = app.State.authToken;
 
             app.showLoading(Labels.get('loading_benchmark', 'Running benchmark...'));
-            app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config', pid));
+            app.logEvent('API', sprintf('Save benchmark config — project %s', pid));
             ctx = struct('pid', pid, 'cid', circuitId, 'backend', backendName, ...
                 'shots', shots, 'opt', opt, 'mitig', mitig, 'strategy', strategy);
             projSvc = app.ProjectSvc;
@@ -106,7 +106,7 @@ classdef BenchmarkViewModel < handle
             app.logEvent('API', 'Benchmark config saved — execution plan displayed');
             % Step 2 — chained async: compare transpilation strategies
             strategies = obj.buildStrategiesList(ctx.strategy);
-            app.logEvent('API', sprintf('POST /api/projects/%s/benchmark-config/compare-strategies', ctx.pid));
+            app.logEvent('API', sprintf('Compare benchmark strategies — project %s', ctx.pid));
             projSvc = app.ProjectSvc;
             token   = app.State.authToken;
             AsyncRunner.run( ...
@@ -235,7 +235,7 @@ classdef BenchmarkViewModel < handle
             if isfield(payload, 'mitigation_level')
                 mitLogStr = sprintf('%s (level=%d)', mitig, payload.mitigation_level);
             end
-            app.logEvent('API', sprintf('POST /api/jobs/submit — circuit: %s  backend: %s  shots: %d  opt: %d  mitig: %s', ...
+            app.logEvent('API', sprintf('Submit benchmark job — circuit: %s  backend: %s  shots: %d  opt: %d  mitig: %s', ...
                 circuitId, backendName, shots, opt, mitLogStr));
             app.showLoading(Labels.get('loading_submitting_bench', ...
                 'Submitting benchmark to IBM Quantum...'));
