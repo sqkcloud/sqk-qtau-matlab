@@ -1878,13 +1878,20 @@ classdef AnalysisViewModel < handle
             end
         end
 
-        function cancelQmcJob(qmcSvc, jobId, app)
+        function cancelQmcJob(qmcSvc, jobId, app, taskId)
             % Best-effort server-side cancel for a QMC job. Wired as the
             % onCancel callback of the BackgroundTaskManager task so the
             % header indicator's Cancel button stops the IBM execution
             % instead of just dropping the local poll. Quiet on error —
             % the registry teardown happens whether or not the server
             % accepts the cancel.
+            %
+            % When taskId is the foreground binding (i.e. the modal
+            % overlay was tracking THIS task), also drop the overlay
+            % and clear the binding so the user sees the cancel
+            % reflected immediately. Other backgrounded tasks remain
+            % running.
+            if nargin < 4; taskId = ''; end
             try
                 token = '';
                 if ~isempty(app) && ~isempty(app.State)
@@ -1894,6 +1901,16 @@ classdef AnalysisViewModel < handle
             catch ME
                 Logger.debug('AnalysisViewModel', ...
                     'cancelQmcJob(%s) failed: %s', char(jobId), ME.message);
+            end
+            try
+                if ~isempty(taskId) && ~isempty(app) ...
+                        && ~isempty(app.QmcActiveTaskId) ...
+                        && strcmp(app.QmcActiveTaskId, taskId)
+                    try; app.hideLoading(); catch; end
+                    app.QmcActiveJobId  = '';
+                    app.QmcActiveTaskId = '';
+                end
+            catch
             end
         end
 
@@ -2255,26 +2272,39 @@ classdef AnalysisViewModel < handle
     end
 
     methods (Access = private)
-        function onQmcComplete(obj, app, data)
-            % Always hide overlay + cache result. The dialog widgets are
-            % only updated when the dialog is still up — if the user moved
-            % the task to the background and closed the dialog, the
-            % cached app.QmcLastResult is what onOpenQmcDialog renders
-            % when they click "View" on the completion toast.
+        function onQmcComplete(obj, app, data, taskId)
+            % Fired when a registered QMC BackgroundTask transitions to
+            % completed. `taskId` lets the callback distinguish this run
+            % from any other QMC tasks that may also be in flight (the
+            % user can have N concurrent QMC analyses backgrounded).
+            %
+            %   - The shared cache app.QmcLastResult and the dialog
+            %     widgets are mutated ONLY when this task is currently
+            %     bound to the overlay (== the foreground task). For
+            %     backgrounded tasks the result still lives on the task
+            %     struct (BackgroundTaskManager.findById(taskId).result)
+            %     and `openQmcForTask` restores it on demand from the
+            %     toast / indicator "View" link.
+            if nargin < 4; taskId = ''; end
             try; app.hideLoading(); catch; end
-            app.QmcLastResult = data;
+
+            isBoundToOverlay = ~isempty(taskId) && ...
+                ~isempty(app.QmcActiveTaskId) && ...
+                strcmp(app.QmcActiveTaskId, taskId);
+
+            if isBoundToOverlay || isempty(taskId)
+                app.QmcLastResult = data;
+            end
+
             dialogUp = false;
             try
                 dialogUp = ~isempty(app.QmcDialog) && isvalid(app.QmcDialog) ...
                     && strcmp(app.QmcDialog.Visible, 'on');
             catch
             end
-            if dialogUp
+            if dialogUp && (isBoundToOverlay || isempty(taskId))
                 try; obj.renderQmcResult(app, data); catch; end
                 try; AnalysisViewModel.toggleIbmLogButton(app, data); catch; end
-                % M9 — reveal the export trio now that a fresh result
-                % exists. resetQmcUi has already hidden them at the start
-                % of this run, so this is the symmetric re-reveal.
                 try; AnalysisViewModel.revealQmcResultButtons(app); catch; end
             end
             try
@@ -2286,14 +2316,46 @@ classdef AnalysisViewModel < handle
             end
         end
 
+        function openQmcForTask(obj, taskId)
+            % Toast / header-indicator "View" callback. Restores the
+            % specified task's payload into app.QmcLastResult and opens
+            % the QMC dialog (which calls renderQmcResult from cache).
+            % Multi-task safe: if two QMC tasks finish, clicking View on
+            % the second one's toast surfaces the second one's result
+            % without disturbing the first.
+            app = obj.App;
+            try
+                task = app.BackgroundTasks.findById(taskId);
+                if ~isempty(task) && ~isempty(task.result)
+                    app.QmcLastResult = task.result;
+                end
+            catch
+            end
+            try; obj.onOpenQmcDialog(); catch; end
+        end
+
         function startQmcPoll(obj, app, jobId)
-            % Register the polling job with BackgroundTaskManager and
-            % drive ticks via PollingRunner. The task survives dialog
-            % close — the user can hit "Run in background" on the
-            % overlay (or close the QMC popup outright) and the poll
-            % continues; the completion toast offers a "View" link that
-            % re-opens the dialog with the cached payload.
-            obj.stopQmcPoll(app);
+            % Register THIS submission as a NEW BackgroundTask, decoupled
+            % from any other QMC tasks that may also be in flight. The
+            % user can launch multiple QMC analyses against different
+            % circuits and each runs independently via its own
+            % PollingRunner ctx. The "overlay binding" pointers
+            % (QmcActiveJobId / QmcActiveTaskId) only mark which task
+            % the modal overlay is currently rendering for — they do
+            % NOT track every running task (that's the registry's job).
+
+            % Release the overlay binding from any previously-bound
+            % task. Crucially do NOT cancel the task itself — that
+            % would defeat the whole "Run in background" promise.
+            app.QmcActiveJobId  = '';
+            app.QmcActiveTaskId = '';
+            try
+                if ~isempty(app.QmcPollTimer) && isvalid(app.QmcPollTimer)
+                    stop(app.QmcPollTimer); delete(app.QmcPollTimer);
+                end
+            catch
+            end
+            app.QmcPollTimer = [];
 
             try
                 cName = char(app.State.selectedCircuitName);
@@ -2306,17 +2368,23 @@ classdef AnalysisViewModel < handle
             vm = obj;
             qmcSvc = app.QmcSvc;
 
+            % Register first with no taskId-bound closures so the
+            % registry hands us back an id we can capture.
             taskId = app.BackgroundTasks.register(struct( ...
                 'kind',        'qmc', ...
                 'displayName', displayName, ...
                 'status',      'queued', ...
                 'statusText',  'Queued — waiting for backend', ...
                 'progressPct', 0, ...
-                'onComplete',  @(result) vm.onQmcComplete(app, result), ...
-                'onCancel',    @() AnalysisViewModel.cancelQmcJob(qmcSvc, jobId, app), ...
-                'userData',    struct( ...
+                'userData',    struct('jobId', char(jobId))));
+
+            % Patch closures now that taskId is known.
+            app.BackgroundTasks.update(taskId, struct( ...
+                'onComplete', @(result) vm.onQmcComplete(app, result, taskId), ...
+                'onCancel',   @() AnalysisViewModel.cancelQmcJob(qmcSvc, jobId, app, taskId), ...
+                'userData',   struct( ...
                     'jobId',  char(jobId), ...
-                    'onView', @() vm.onOpenQmcDialog())));
+                    'onView', @() vm.openQmcForTask(taskId))));
 
             app.QmcActiveJobId  = jobId;
             app.QmcActiveTaskId = taskId;
