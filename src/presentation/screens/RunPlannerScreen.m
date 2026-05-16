@@ -61,7 +61,10 @@ function buildToolbar(parent, vm)
     panel.Layout.Row = 2; panel.Layout.Column = 1;
 
     g = uigridlayout(panel, [2 9]);
-    g.RowHeight   = {18, 30};
+    % Field row bumped from 30 -> 44 px so the Target-fidelity slider
+    % renders its tick labels (0.5 / 0.7 / 0.9) below the track without
+    % being clipped against the toolbar's bottom edge.
+    g.RowHeight   = {18, 44};
     g.ColumnWidth = {'fit', 220, 'fit', 200, 50, 'fit', 90, 110, '1x'};
     g.Padding     = [12 6 12 6];
     g.RowSpacing  = 2; g.ColumnSpacing = 8;
