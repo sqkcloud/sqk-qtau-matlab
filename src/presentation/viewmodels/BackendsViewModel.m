@@ -19,6 +19,19 @@ classdef BackendsViewModel < handle
     properties
         PageSkip  double = 0
         PageLimit double = 15
+
+        % Nav-aware cancellation bookkeeping. cancelInFlight bumps the
+        % generation and cancel()s tracked futures so nav-away mid-fetch
+        % stops the worker, frees the 50ms polling timer, and prevents
+        % stale done-callbacks from mutating a now-hidden panel.
+        %
+        % We track ONLY the two big "passive" fetches (onRefreshBackends
+        % + kickCalibrationHistoryBatch). User-initiated actions
+        % (submitPool, onCtxViewDetails, persistSelection) stay
+        % untracked so a quick nav-away after the user clicks them
+        % doesn't silently abort the work they just asked for.
+        NavGeneration   double = 0
+        InFlightFutures cell   = {}
     end
 
     methods
@@ -47,14 +60,39 @@ classdef BackendsViewModel < handle
             if app.State.hasCircuit()
                 cid = char(app.State.selectedCircuitId);
             end
-            app.showLoading(Labels.get('loading_backends', 'Loading backends...'));
+            % B2 skin-first: surface progress in the in-panel
+            % BackendStatusArea rather than as a full-screen overlay
+            % so the toolbar, pagination, and empty table stay
+            % visible while the fetch runs. The
+            % onRefreshBackendsComplete / onRefreshBackendsError
+            % handlers overwrite this status line with the terminal
+            % "Loaded N backends" / failure message.
+            try
+                app.setStatus(app.BackendStatusArea, ...
+                    {Labels.get('loading_backends', 'Loading backends...')});
+            catch
+            end
             backendSvc  = app.BackendSvc;
             circuitSvc  = app.CircuitSvc;
             token       = app.State.authToken;
-            AsyncRunner.run( ...
+            obj.NavGeneration = AsyncCancellation.bump(obj.NavGeneration);
+            fut = AsyncRunner.run( ...
                 @() BackendsViewModel.fetchBackends(backendSvc, circuitSvc, token, cid), ...
                 @(data) obj.onRefreshBackendsComplete(app, data), ...
                 @(ME)   obj.onRefreshBackendsError(app, ME));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, fut);
+        end
+
+        function cancelInFlight(obj)
+            % Called by NavigationManager when the user navs away. Stops
+            % the workers + frees their polling timers. The existing
+            % done/error callbacks already guard their UI writes with
+            % isvalid() checks, so a late-arriving result on a hidden
+            % panel is harmless — the cancel sweep just reclaims the
+            % HTTP/worker budget early.
+            obj.NavGeneration   = AsyncCancellation.bump(obj.NavGeneration);
+            obj.InFlightFutures = AsyncCancellation.cancelAll(obj.InFlightFutures);
         end
 
         function onRefreshBackendsComplete(obj, app, data)
@@ -126,10 +164,12 @@ classdef BackendsViewModel < handle
             end
             if k == 0; return; end
             names = names(1:k); works = works(1:k);
-            AsyncRunner.runMany(works, ...
+            futs = AsyncRunner.runMany(works, ...
                 @(results) obj.onCalibrationHistoryBatchLoaded(app, names, results), ...
                 @(ME) Logger.debug('BackendsViewModel', ...
                     'calibration-history batch: %s', ME.message));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, futs);
         end
 
         function onCalibrationHistoryBatchLoaded(obj, app, names, results)

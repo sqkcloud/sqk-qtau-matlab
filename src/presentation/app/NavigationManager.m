@@ -290,11 +290,16 @@ classdef NavigationManager
                         asyncStarted = true;
                     end
                 case 'Backends'
+                    % Skin-first: VM.onRefreshBackends drops a
+                    % "Loading backends..." line into the in-panel
+                    % BackendStatusArea while the async fetch runs.
+                    % The full-screen nav overlay is gone — the user
+                    % sees the toolbar, pagination, and empty backends
+                    % table immediately, and the table populates inline
+                    % as soon as /api/backends lands.
                     if ~isempty(app.BackendsVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.BackendsVm, ttl)
-                        NavigationManager.showNavLoading(app, 'Backends');
                         app.BackendsVm.onRefreshBackends();
-                        asyncStarted = true;
                     end
                 case 'Prediction'
                     if ~isempty(app.PredictionVm) && app.State.isAuthenticated() ...
@@ -384,11 +389,18 @@ classdef NavigationManager
                         asyncStarted = true;
                     end
                 case 'Circuit Cutting'
+                    % Skin-first: VM.onEnter fires loadCircuits /
+                    % loadPresets / loadBackendPool as parallel async
+                    % parfeval futures and writes operational hints to
+                    % the inline CuttingStatusLabel via refreshStatus.
+                    % The full-screen nav overlay is gone — the user
+                    % sees the mode tabs, the toolbar, and the empty
+                    % Cut Plan / Backend Assignments cards immediately,
+                    % and each card populates as its respective fetch
+                    % lands.
                     if ~isempty(app.CircuitCuttingVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.CircuitCuttingVm, ttl)
-                        NavigationManager.showNavLoading(app, 'Circuit Cutting');
                         app.CircuitCuttingVm.onEnter();
-                        asyncStarted = true;
                     end
                 case 'Settings'
                     if ~isempty(app.SettingsVm) && app.State.isAuthenticated() ...
