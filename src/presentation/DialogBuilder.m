@@ -523,9 +523,9 @@ classdef DialogBuilder
             cg.BackgroundColor = cardBg;
 
             % ── Header ─────────────────────────────────────────────────
-            headerRow = uigridlayout(cg, [1 1]);
+            headerRow = uigridlayout(cg, [1 2]);
             headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
-            headerRow.ColumnWidth = {'1x'};
+            headerRow.ColumnWidth = {'1x', 28};
             headerRow.Padding = [0 0 0 0]; headerRow.ColumnSpacing = 8;
             headerRow.BackgroundColor = cardBg;
 
@@ -534,6 +534,17 @@ classdef DialogBuilder
                 'FontSize', 16, 'FontWeight', 'bold', 'FontColor', titleColor, ...
                 'VerticalAlignment', 'center');
             titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
+
+            % "?" help icon — opens the per-dialog help body from
+            % HelpContent.bodyFor('AnalysisQmcDialog'). Same circular
+            % uihtml icon as the screen-title help affordance, palette-
+            % matched to the dialog's card background.
+            qmcHelpIcon = uihtml(headerRow);
+            qmcHelpIcon.Layout.Row = 1; qmcHelpIcon.Layout.Column = 2;
+            qmcHelpIcon.HTMLSource = LayoutBuilder.buildHelpIconHtml( ...
+                cardBg, titleColor);
+            qmcHelpIcon.DataChangedFcn = @(~,~) DialogBuilder.buildScreenHelpDialog( ...
+                app, 'AnalysisQmcDialog', 'Quantum Monte Carlo Simulation');
 
             % ── Viability banner (hidden by default) ───────────────────
             % Shown when the active circuit can't be analysed in any
@@ -889,9 +900,9 @@ classdef DialogBuilder
             cg.BackgroundColor = cardBg;
 
             % Header
-            headerRow = uigridlayout(cg, [1 1]);
+            headerRow = uigridlayout(cg, [1 2]);
             headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
-            headerRow.ColumnWidth = {'1x'};
+            headerRow.ColumnWidth = {'1x', 28};
             headerRow.Padding = [0 0 0 0]; headerRow.ColumnSpacing = 8;
             headerRow.BackgroundColor = cardBg;
 
@@ -901,6 +912,18 @@ classdef DialogBuilder
                 'FontSize', 16, 'FontWeight', 'bold', 'FontColor', titleColor, ...
                 'VerticalAlignment', 'center');
             titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
+
+            % "?" help icon — opens the per-dialog help body from
+            % HelpContent.bodyFor('AnalysisEmDialog'). Same circular
+            % uihtml icon as the QMC dialog and the screen-title help
+            % affordance, palette-matched to the dialog's card bg.
+            emHelpIcon = uihtml(headerRow);
+            emHelpIcon.Layout.Row = 1; emHelpIcon.Layout.Column = 2;
+            emHelpIcon.HTMLSource = LayoutBuilder.buildHelpIconHtml( ...
+                cardBg, titleColor);
+            emHelpIcon.DataChangedFcn = @(~,~) DialogBuilder.buildScreenHelpDialog( ...
+                app, 'AnalysisEmDialog', ...
+                Labels.get('analysis_em_dialog_title', 'Quantum Error Mitigation Analysis'));
 
             % Body: form (left) | charts (right)
             body = uigridlayout(cg, [1 2]);
@@ -2172,22 +2195,30 @@ classdef DialogBuilder
         % ----------------------------------------------------------------
         % Per-screen help dialog
         % ----------------------------------------------------------------
-        function buildScreenHelpDialog(app, key)
+        function buildScreenHelpDialog(app, key, displayName)
             % buildScreenHelpDialog  Open a non-modal help dialog for the
-            %   currently-visible screen. Content (purpose / what it does
-            %   / measurements / formulas / notes) comes from
-            %   HelpContent.bodyFor(key); rendering uses uihtml so
-            %   bullet lists, formula blocks, and headings show with
-            %   proper formatting.
+            %   currently-visible screen or for an in-app modal dialog.
+            %   Content (purpose / what it does / measurements /
+            %   formulas / notes) comes from HelpContent.bodyFor(key);
+            %   rendering uses uihtml so bullet lists, formula blocks,
+            %   and headings show with proper formatting.
+            %
+            %   Optional displayName overrides the dialog's title bar
+            %   for keys that don't map to a NavigationManager routing
+            %   entry (e.g. the QMC and EM modal dialogs which live
+            %   outside the sidebar — pass 'Quantum Monte Carlo
+            %   Simulation' / 'Quantum Error Mitigation Analysis').
             try
                 if nargin < 2 || isempty(key)
                     try; key = char(app.LastSectionKey); catch; key = ''; end
                 end
                 key = char(key);
-                try
-                    displayName = NavigationManager.displayLabelFor(key);
-                catch
-                    displayName = key;
+                if nargin < 3 || isempty(displayName)
+                    try
+                        displayName = NavigationManager.displayLabelFor(key);
+                    catch
+                        displayName = key;
+                    end
                 end
                 if isempty(displayName); displayName = key; end
 
