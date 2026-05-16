@@ -19,28 +19,48 @@ function JobsScreen(app)
     g.BackgroundColor = Theme.COLOR_BG;
 
     % ── Toolbar ──────────────────────────────────────────────────────────────
-    top = uigridlayout(g, [1 4]);
+    %   Layout (matches the Backends / Circuits / Projects / Reports
+    %   pattern): search field grows to fill the leftover space; the
+    %   Search button hugs it; Refresh / Cancel / Pause sit
+    %   right-aligned with fixed widths.
+    top = uigridlayout(g, [1 5]);
     top.Layout.Row = 1; top.Layout.Column = [1 2];
-    top.ColumnWidth = {'1x', 110, 110, 100};
-    top.Padding = [0 0 0 0]; top.BackgroundColor = Theme.COLOR_BG;
+    top.ColumnWidth = {'1x', 90, 110, 110, 100};
+    top.Padding = [0 0 0 0]; top.ColumnSpacing = 6;
+    top.BackgroundColor = Theme.COLOR_BG;
+
+    % Search field — filters the in-memory job list by Job ID or
+    % Circuit (case-insensitive substring match on column 1 + 2).
+    app.JobsSearchField = uieditfield(top, 'text', ...
+        'Placeholder', 'Search by Job ID or Circuit ID...', ...
+        'ValueChangedFcn', @(src,~)app.JobsVm.onSearch(src.Value));
+    app.JobsSearchField.Layout.Row = 1; app.JobsSearchField.Layout.Column = 1;
+    app.JobsSearchField.FontSize = 12;
+
+    % Search button — char(8981) is the same magnifying-glass glyph
+    % used by the Backends / Circuits search toolbars.
+    searchBtn = uibutton(top, 'Text', [char(8981) ' Search'], ...
+        'ButtonPushedFcn', @(~,~)app.JobsVm.onSearch(app.JobsSearchField.Value));
+    searchBtn.Layout.Row = 1; searchBtn.Layout.Column = 2;
+    app.styleBtn(searchBtn, 'ghost');
 
     app.JobsRefreshButton = uibutton(top, 'Text', [char(8635) ' ' Labels.get('jobs_btn_refresh')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onRefreshJobs());
-    app.JobsRefreshButton.Layout.Row = 1; app.JobsRefreshButton.Layout.Column = 2;
+    app.JobsRefreshButton.Layout.Row = 1; app.JobsRefreshButton.Layout.Column = 3;
     app.styleBtn(app.JobsRefreshButton, 'primary');
     app.JobsRefreshButton.FontSize = 14;
     app.JobsRefreshButton.Tooltip = 'Refresh the jobs list';
 
     app.CancelJobButton = uibutton(top, 'Text', [char(10005) ' ' Labels.get('jobs_btn_cancel')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onCancelJob());
-    app.CancelJobButton.Layout.Row = 1; app.CancelJobButton.Layout.Column = 3;
+    app.CancelJobButton.Layout.Row = 1; app.CancelJobButton.Layout.Column = 4;
     app.styleBtn(app.CancelJobButton, 'danger');
     app.CancelJobButton.FontSize = 14;
     app.CancelJobButton.Tooltip = 'Cancel the selected job';
 
     app.PauseJobButton = uibutton(top, 'Text', [char(9208) ' ' Labels.get('jobs_btn_pause')], ...
         'ButtonPushedFcn', @(~,~)app.JobsVm.onPauseJob());
-    app.PauseJobButton.Layout.Row = 1; app.PauseJobButton.Layout.Column = 4;
+    app.PauseJobButton.Layout.Row = 1; app.PauseJobButton.Layout.Column = 5;
     app.styleBtn(app.PauseJobButton, 'ghost');
     app.PauseJobButton.FontSize = 14;
     app.PauseJobButton.Tooltip = 'Pause the selected job';

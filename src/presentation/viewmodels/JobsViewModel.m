@@ -12,6 +12,11 @@ classdef JobsViewModel < handle
         CurrentPage = 1         % 1-indexed page index for the paginated job list
         PageSize = 10           % rows fetched per page — keeps initial load fast
         LastPageRowCount = 0    % rows returned on the most recent fetch — drives Next button enable
+        FullRows = {}           % unfiltered rows cached from the most recent refresh; the visible
+                                % JobsTable.Data may be a filtered subset of this when the search
+                                % field is non-empty.
+        CurrentQuery = ''       % active substring filter; applied against col 1 (Job ID) and col 2
+                                % (Circuit) of FullRows. '' = show every row.
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
@@ -19,6 +24,50 @@ classdef JobsViewModel < handle
     methods
         function obj = JobsViewModel(app)
             obj.App = app;
+        end
+
+        function onSearch(obj, query)
+            % onSearch  Update the active query string and repaint the
+            %   visible rows with the case-insensitive substring filter.
+            %   The unfiltered FullRows cache is preserved, so a later
+            %   auto-refresh tick re-applies the SAME filter without
+            %   the operator having to retype anything.
+            if nargin < 2; query = ''; end
+            obj.CurrentQuery = strtrim(char(query));
+            obj.applyFilter(obj.App);
+        end
+
+        function applyFilter(obj, app)
+            % applyFilter  Project FullRows through CurrentQuery and
+            %   write the resulting subset to app.JobsTable.Data.
+            %   Matches case-insensitive substrings of column 1
+            %   (Job ID) or column 2 (Circuit / Circuit ID).
+            try
+                if isempty(app) || isempty(app.JobsTable) || ~isvalid(app.JobsTable)
+                    return;
+                end
+            catch
+                return;
+            end
+            q = lower(char(obj.CurrentQuery));
+            if isempty(obj.FullRows)
+                app.JobsTable.Data = {};
+                return;
+            end
+            if isempty(q)
+                app.JobsTable.Data = obj.FullRows;
+                return;
+            end
+            n = size(obj.FullRows, 1);
+            keep = false(n, 1);
+            for i = 1:n
+                jobId   = lower(char(string(obj.FullRows{i, 1})));
+                circuit = lower(char(string(obj.FullRows{i, 2})));
+                if contains(jobId, q) || contains(circuit, q)
+                    keep(i) = true;
+                end
+            end
+            app.JobsTable.Data = obj.FullRows(keep, :);
         end
 
         function onRefreshJobs(obj, silent)
@@ -306,7 +355,10 @@ classdef JobsViewModel < handle
                 end
             end
             if ~isempty(rows)
-                app.JobsTable.Data = rows;
+                % Cache the unfiltered rows and let applyFilter render
+                % whichever subset matches the current search query.
+                obj.FullRows = rows;
+                obj.applyFilter(app);
                 firstId = string(rows{1,1});
                 firstStatus = char(rows{1,4});   % col 4 = Status
                 app.State.selectedJobId = firstId;
@@ -324,7 +376,8 @@ classdef JobsViewModel < handle
                     % Skipping hideLoading here used to leave the overlay
                     % stuck on "Loading jobs…" whenever the user re-entered
                     % the Jobs screen on the same first-row id/status.
-                    app.JobsTable.Data = rows;
+                    obj.FullRows = rows;
+                    obj.applyFilter(app);
                     obj.LastRefresh = tic;
                     app.hideLoading();
                     return;

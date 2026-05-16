@@ -442,6 +442,7 @@ classdef QTAUWorkbenchApp < handle
 
     % ── Jobs tab ──────────────────────────────────────────────────────────────
     properties
+        JobsSearchField              % uieditfield — Job ID / Circuit substring filter
         JobsRefreshButton
         JobsTable
         CancelJobButton
