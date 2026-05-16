@@ -57,17 +57,27 @@ classdef LayoutBuilder
              % same grid cell (column 2) so that hiding one never leaves a
              % ghost "fit" column behind. Their visibility is toggled by
              % updateHeaderAuthButtons based on authentication state.
-            headerRight = uigridlayout(app.HeaderGrid, [1 2]);
+            headerRight = uigridlayout(app.HeaderGrid, [1 3]);
             headerRight.Layout.Row = 1; headerRight.Layout.Column = 3;
-            headerRight.ColumnWidth = {'fit', 'fit'};
+            headerRight.ColumnWidth = {'fit', 'fit', 'fit'};
             headerRight.Padding = [0 0 4 0]; headerRight.ColumnSpacing = 10;
             headerRight.BackgroundColor = Theme.NAV_BG;
+
+            % Background-tasks badge — hidden while idle, shows a count
+            % + popover while long-running tasks (Run QMC, Circuit
+            % Cutting submit + poll, IBM job submit) are in flight.
+            try
+                app.TasksIndicator = BackgroundTasksIndicator(app, headerRight);
+            catch ME
+                try; Logger.warn('LayoutBuilder', ...
+                    'TasksIndicator init failed: %s', ME.message); catch; end
+            end
 
             userBadge = uilabel(headerRight, 'Text', 'SQK Admin Workspace');
             userBadge.FontSize = 13; userBadge.FontWeight = 'bold';
             userBadge.HorizontalAlignment = 'right';
             userBadge.FontColor = Theme.NAV_FG;
-            userBadge.Layout.Row = 1; userBadge.Layout.Column = 1;
+            userBadge.Layout.Row = 1; userBadge.Layout.Column = 2;
             userBadge.Tooltip = 'QTAU Connector v2026';
 
             app.HeaderLoginButton = uihyperlink(headerRight, ...
@@ -76,7 +86,7 @@ classdef LayoutBuilder
                 'HyperlinkClickedFcn', @(~,~)app.showLoginDialog(), ...
                 'FontSize', 14, 'FontWeight', 'bold', 'FontColor', Theme.NAV_FG, ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-            app.HeaderLoginButton.Layout.Row = 1; app.HeaderLoginButton.Layout.Column = 2;
+            app.HeaderLoginButton.Layout.Row = 1; app.HeaderLoginButton.Layout.Column = 3;
             app.HeaderLoginButton.VisitedColor = Theme.NAV_FG;
 
             app.HeaderUserLabel = uihyperlink(headerRight, ...
@@ -85,7 +95,7 @@ classdef LayoutBuilder
                 'HyperlinkClickedFcn', @(~,~)app.toggleHeaderUserMenu(), ...
                 'FontSize', 14, 'FontWeight', 'bold', 'FontColor', Theme.NAV_FG, ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 2;
+            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 3;
             app.HeaderUserLabel.Visible = 'off';
             app.HeaderUserLabel.VisitedColor = Theme.NAV_FG;
 

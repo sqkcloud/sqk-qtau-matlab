@@ -57,11 +57,15 @@ classdef QTAUWorkbenchApp < handle
 
         LoadingOverlay
         ActivityOverlay            % Reusable loading overlay for API calls
+        OverlayBgButton            % "Run in background" uibutton overlaid on ActivityOverlay
         NavOverlayTimer            % Safety-timer that auto-dismisses the nav loading overlay
         AuthOverlay                % Login-required overlay covering content area
         HeaderUserLabel            % Logged-in username button in header
         HeaderUserMenuPanel        % The popup panel container
         HeaderLoginButton          % Login button in header (shown when logged out)
+        BackgroundTasks            % BackgroundTaskManager — registry of long-running async tasks
+        Notifications              % NotificationCenter — toast surface for terminal tasks
+        TasksIndicator             % BackgroundTasksIndicator — header badge
     end
 
     % ── Shared services ───────────────────────────────────────────────────────
@@ -315,6 +319,7 @@ classdef QTAUWorkbenchApp < handle
         QmcNotionalField
         QmcLastResult = []   % struct cache of most recent QMC response
         QmcActiveJobId = ''  % job_id of the currently-polling async QMC job ('' when idle)
+        QmcActiveTaskId = '' % BackgroundTaskManager id for the in-flight QMC task ('' when idle)
         QmcPollTimer = []    % MATLAB timer driving QMC job polling (empty when idle)
         QmcBackendMeta = []  % struct array {name, num_qubits} for the loaded QMC backend dropdown — used by the runtime-mode pre-flight width check
         QmcBanner = []       % uigridlayout banner shown above the QMC body when the active circuit cannot run in any mode
@@ -808,10 +813,25 @@ classdef QTAUWorkbenchApp < handle
             % of buildUI is left in place as a no-op safety net.
             AsyncRunner.warmUp();
 
+            % BackgroundTaskManager has to exist BEFORE buildUI because
+            % LayoutBuilder.buildHeader mounts the TasksIndicator which
+            % addlisten's to its TasksChanged event.
+            app.BackgroundTasks = BackgroundTaskManager();
+
             Logger.info('QTAUWorkbenchApp', 'Services ready — creating WelcomeVm (lazy init for others)');
             app.WelcomeVm = WelcomeViewModel(app);
 
             app.buildUI();
+
+            % NotificationCenter parents its toast panel to app.UIFigure
+            % so it has to come up after buildUI created the figure.
+            try
+                app.Notifications = NotificationCenter(app);
+            catch ME
+                Logger.warn('QTAUWorkbenchApp', ...
+                    'NotificationCenter init failed: %s', ME.message);
+            end
+
             app.logEvent('UI', 'QTAUWorkbenchApp started');
             NavigationManager.forceInitialLayout(app);
             Logger.info('QTAUWorkbenchApp', '=== QTAUWorkbenchApp ready ===');
@@ -875,14 +895,37 @@ classdef QTAUWorkbenchApp < handle
         end
 
         % -- Overlays / logging (→ OverlayManager) ----------------------------
-        function showLoading(app, msg, showTimer)
+        function showLoading(app, msg, showTimer, bgTaskId)
             if nargin < 2; msg = 'Loading...'; end
             if nargin < 3; showTimer = false; end
-            OverlayManager.showLoading(app, msg, showTimer);
+            if nargin < 4; bgTaskId = ''; end
+            OverlayManager.showLoading(app, msg, showTimer, bgTaskId);
         end
 
         function hideLoading(app)
             OverlayManager.hideLoading(app);
+        end
+
+        % runInBackground  Dismiss the loading overlay while leaving the
+        %   underlying poll alive in app.BackgroundTasks. Wired as the
+        %   ButtonPushedFcn of the "Run in background" button rendered
+        %   over the overlay when a registered task is in flight. taskId
+        %   is informational — the polling timer is owned by
+        %   BackgroundTaskManager, so simply hiding the overlay does not
+        %   stop the underlying server-side job from progressing.
+        function runInBackground(app, taskId)
+            try; app.hideLoading(); catch; end
+            try
+                if ~isempty(taskId) && ~isempty(app.BackgroundTasks)
+                    t = app.BackgroundTasks.findById(taskId);
+                    if ~isempty(t)
+                        app.logEvent('TASK', sprintf( ...
+                            'Task %s (%s) moved to background', ...
+                            char(taskId), char(t.displayName)));
+                    end
+                end
+            catch
+            end
         end
 
         % runAsyncWithLoading  Standardized show + AsyncRunner + auto-hide.

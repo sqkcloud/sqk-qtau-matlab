@@ -52,9 +52,10 @@ classdef OverlayManager
 
     methods (Static)
 
-        function showLoading(app, msg, showTimer)
+        function showLoading(app, msg, showTimer, bgTaskId)
             if nargin < 2; msg = 'Loading...'; end
             if nargin < 3; showTimer = false; end
+            if nargin < 4; bgTaskId = ''; end
             % Any prior nav auto-dismiss timer is stale the moment a
             % fresh overlay is shown — clear it so it doesn't fire mid-
             % flight on this new overlay.
@@ -203,6 +204,12 @@ classdef OverlayManager
                         'lastMsg', char(msg), 'lastShowTimer', showTimer);
                 catch
                 end
+
+                % "Run in background" button — only shown when the caller
+                % registered a background task whose poll keeps running
+                % after the overlay is dismissed.
+                OverlayManager.ensureOverlayBgButton(app, host, bgTaskId, figW, figH);
+
                 drawnow();
             catch ME
                 Logger.debug('OverlayManager', 'showLoading: %s', ME.message);
@@ -224,9 +231,58 @@ classdef OverlayManager
                     % which is automatic.
                     app.ActivityOverlay.Visible = 'off';
                 end
+                try
+                    if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
+                        app.OverlayBgButton.Visible = 'off';
+                    end
+                catch
+                end
                 drawnow();
             catch ME
                 Logger.debug('OverlayManager', 'hideLoading: %s', ME.message);
+            end
+        end
+
+        function ensureOverlayBgButton(app, host, bgTaskId, figW, figH)
+            % Lazily create or reposition the "Run in background" uibutton
+            % sitting on top of the activity overlay. Hidden when bgTaskId
+            % is empty so non-background loads (the vast majority of
+            % showLoading sites) keep the original look.
+            try
+                if isempty(bgTaskId)
+                    if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
+                        app.OverlayBgButton.Visible = 'off';
+                    end
+                    return;
+                end
+                needCreate = isempty(app.OverlayBgButton) ...
+                    || ~isvalid(app.OverlayBgButton) ...
+                    || ~isequal(app.OverlayBgButton.Parent, host);
+                if needCreate
+                    if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
+                        try; delete(app.OverlayBgButton); catch; end
+                    end
+                    app.OverlayBgButton = uibutton(host, ...
+                        'Text', 'Run in background', ...
+                        'FontSize', 12, ...
+                        'FontWeight', 'bold');
+                    try
+                        app.OverlayBgButton.BackgroundColor = Theme.OVERLAY_ACCENT;
+                        app.OverlayBgButton.FontColor       = Theme.OVERLAY_TEXT;
+                    catch
+                    end
+                end
+                btnW = 180; btnH = 32;
+                btnX = max(8, (figW - btnW) / 2);
+                btnY = max(8, figH/2 - 86);
+                app.OverlayBgButton.Position = [btnX btnY btnW btnH];
+                app.OverlayBgButton.ButtonPushedFcn = ...
+                    @(~,~) app.runInBackground(char(bgTaskId));
+                app.OverlayBgButton.Visible = 'on';
+                try; uistack(app.OverlayBgButton, 'top'); catch; end
+            catch ME
+                Logger.debug('OverlayManager', ...
+                    'ensureOverlayBgButton: %s', ME.message);
             end
         end
 

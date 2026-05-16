@@ -503,14 +503,14 @@ classdef AnalysisViewModel < handle
         end
 
         function onCloseQmcDialog(obj)
-            % Teardown: stop polling timer, hide overlay, destroy dialog.
-            % The async QMC job (if any) is left running on the server;
-            % the user can reopen the popup and getLast will show the
-            % result when it completes.
+            % Teardown: hide overlay, destroy the dialog frame. The async
+            % QMC job stays running on the server AND in the client-side
+            % BackgroundTaskManager — the user can reopen the popup (or
+            % click "View" on the completion toast / header indicator)
+            % and the cached QmcLastResult will surface as soon as it
+            % lands. Only the dialog widgets are torn down here.
             app = obj.App;
-            try; obj.stopQmcPoll(app); catch; end
             try; app.hideLoading(); catch; end
-            app.QmcActiveJobId = '';
             try
                 if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
                     delete(app.QmcDialog);
@@ -1878,6 +1878,25 @@ classdef AnalysisViewModel < handle
             end
         end
 
+        function cancelQmcJob(qmcSvc, jobId, app)
+            % Best-effort server-side cancel for a QMC job. Wired as the
+            % onCancel callback of the BackgroundTaskManager task so the
+            % header indicator's Cancel button stops the IBM execution
+            % instead of just dropping the local poll. Quiet on error —
+            % the registry teardown happens whether or not the server
+            % accepts the cancel.
+            try
+                token = '';
+                if ~isempty(app) && ~isempty(app.State)
+                    token = app.State.authToken;
+                end
+                qmcSvc.cancelAnalyzeJob(jobId, token);
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'cancelQmcJob(%s) failed: %s', char(jobId), ME.message);
+            end
+        end
+
         function s = prettyJobStatus(status, serverMessage)
             % Convert a raw status+message into something user-friendly
             % for the loading overlay.
@@ -2237,39 +2256,102 @@ classdef AnalysisViewModel < handle
 
     methods (Access = private)
         function onQmcComplete(obj, app, data)
-            app.hideLoading();
+            % Always hide overlay + cache result. The dialog widgets are
+            % only updated when the dialog is still up — if the user moved
+            % the task to the background and closed the dialog, the
+            % cached app.QmcLastResult is what onOpenQmcDialog renders
+            % when they click "View" on the completion toast.
+            try; app.hideLoading(); catch; end
             app.QmcLastResult = data;
-            obj.renderQmcResult(app, data);
-            AnalysisViewModel.toggleIbmLogButton(app, data);
-            app.logEvent('API', sprintf('QMC complete — amp=%.4f speedup=%.1fx', ...
-                JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
-                JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
-            app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
-            % M9 — reveal the export trio now that a fresh result
-            % exists. resetQmcUi has already hidden them at the start
-            % of this run, so this is the symmetric re-reveal.
-            AnalysisViewModel.revealQmcResultButtons(app);
+            dialogUp = false;
+            try
+                dialogUp = ~isempty(app.QmcDialog) && isvalid(app.QmcDialog) ...
+                    && strcmp(app.QmcDialog.Visible, 'on');
+            catch
+            end
+            if dialogUp
+                try; obj.renderQmcResult(app, data); catch; end
+                try; AnalysisViewModel.toggleIbmLogButton(app, data); catch; end
+                % M9 — reveal the export trio now that a fresh result
+                % exists. resetQmcUi has already hidden them at the start
+                % of this run, so this is the symmetric re-reveal.
+                try; AnalysisViewModel.revealQmcResultButtons(app); catch; end
+            end
+            try
+                app.logEvent('API', sprintf('QMC complete — amp=%.4f speedup=%.1fx', ...
+                    JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
+                    JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
+                app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
+            catch
+            end
         end
 
         function startQmcPoll(obj, app, jobId)
-            % Kick off a 3s MATLAB timer that polls GET /api/qae/jobs/{id}
-            % until the job reaches a terminal state. UI work happens on
-            % the main thread so we don't need AsyncRunner here — each
-            % tick does one fast HTTP GET.
+            % Register the polling job with BackgroundTaskManager and
+            % drive ticks via PollingRunner. The task survives dialog
+            % close — the user can hit "Run in background" on the
+            % overlay (or close the QMC popup outright) and the poll
+            % continues; the completion toast offers a "View" link that
+            % re-opens the dialog with the cached payload.
             obj.stopQmcPoll(app);
-            app.showLoading(Labels.get('loading_qmc_queued', 'Queued — waiting for backend...'));
-            t = timer( ...
-                'ExecutionMode', 'fixedSpacing', ...
-                'Period',        3.0, ...
-                'StartDelay',    0.0, ...
-                'BusyMode',      'drop', ...
-                'Name',          ['QmcPoll-' char(jobId)], ...
-                'TimerFcn',      @(src,~) obj.onQmcPollTick(app, jobId, src));
-            app.QmcPollTimer = t;
-            start(t);
+
+            try
+                cName = char(app.State.selectedCircuitName);
+            catch
+                cName = '';
+            end
+            if isempty(cName); cName = 'circuit'; end
+            displayName = sprintf('Run QMC — %s', cName);
+
+            vm = obj;
+            qmcSvc = app.QmcSvc;
+
+            taskId = app.BackgroundTasks.register(struct( ...
+                'kind',        'qmc', ...
+                'displayName', displayName, ...
+                'status',      'queued', ...
+                'statusText',  'Queued — waiting for backend', ...
+                'progressPct', 0, ...
+                'onComplete',  @(result) vm.onQmcComplete(app, result), ...
+                'onCancel',    @() AnalysisViewModel.cancelQmcJob(qmcSvc, jobId, app), ...
+                'userData',    struct( ...
+                    'jobId',  char(jobId), ...
+                    'onView', @() vm.onOpenQmcDialog())));
+
+            app.QmcActiveJobId  = jobId;
+            app.QmcActiveTaskId = taskId;
+            app.showLoading( ...
+                Labels.get('loading_qmc_queued', 'Queued — waiting for backend...'), ...
+                false, taskId);
+
+            isTerminal = @(s) any(strcmp(lower(char(JsonHelper.pick(s, {'status'}, ''))), ...
+                {'completed','failed','cancelled'}));
+
+            ctx = PollingRunner.start(struct( ...
+                'pollFcn',     @() qmcSvc.getAnalyzeJob(jobId, app.State.authToken), ...
+                'isTerminal',  isTerminal, ...
+                'onProgress',  @(s) vm.onQmcProgress(app, taskId, s), ...
+                'onDone',      @(s) vm.onQmcTerminal(app, taskId, s), ...
+                'onError',     @(ME) vm.onQmcPollError(app, taskId, ME), ...
+                'intervalSec', 3, ...
+                'timeoutSec',  3600, ...
+                'name',        ['QmcPoll-' char(jobId)]));
+
+            app.BackgroundTasks.update(taskId, ...
+                struct('pollCtx', ctx, 'status', 'running'));
         end
 
         function stopQmcPoll(~, app)
+            % Cancel the active QMC task (poll + server-side cancel).
+            try
+                if ~isempty(app.QmcActiveTaskId)
+                    app.BackgroundTasks.cancel(app.QmcActiveTaskId);
+                end
+            catch
+            end
+            app.QmcActiveTaskId = '';
+            % Legacy timer cleanup — kept for back-compat in case anything
+            % outside this class ever wrote to QmcPollTimer.
             try
                 if ~isempty(app.QmcPollTimer) && isvalid(app.QmcPollTimer)
                     stop(app.QmcPollTimer);
@@ -2280,54 +2362,80 @@ classdef AnalysisViewModel < handle
             app.QmcPollTimer = [];
         end
 
-        function onQmcPollTick(obj, app, jobId, timerObj)
-            % One poll iteration. Swallows transient HTTP errors and
-            % lets the timer try again on the next tick.
-            if isempty(app.QmcActiveJobId) || ~strcmp(app.QmcActiveJobId, jobId)
-                % Job was superseded or cancelled; stop this timer.
-                try; stop(timerObj); delete(timerObj); catch; end
-                return;
-            end
+        function onQmcProgress(~, app, taskId, state)
+            % Update the BackgroundTask progress AND refresh the overlay
+            % message ONLY if it's still showing for this task.
             try
-                state = app.QmcSvc.getAnalyzeJob(jobId, app.State.authToken);
+                status   = lower(char(JsonHelper.pick(state, {'status'}, 'running')));
+                progress = JsonHelper.pickNumeric(state, 'progress_pct', 0);
+                msg      = char(JsonHelper.pick(state, {'message'}, ''));
+                pretty   = AnalysisViewModel.prettyJobStatus(status, msg);
+                displayMsg = sprintf('%s (%d%%)', pretty, round(progress));
+                if ~isempty(app.QmcActiveTaskId) && strcmp(app.QmcActiveTaskId, taskId)
+                    try; app.showLoading(displayMsg, false, taskId); catch; end
+                end
+                app.BackgroundTasks.update(taskId, struct( ...
+                    'progressPct', progress, ...
+                    'statusText',  pretty, ...
+                    'status',      'running'));
             catch ME
-                Logger.debug('AnalysisViewModel', 'QMC poll transient: %s', ME.message);
-                return;
+                Logger.debug('AnalysisViewModel', ...
+                    'onQmcProgress transient: %s', ME.message);
             end
-            status = lower(char(JsonHelper.pick(state, {'status'}, 'queued')));
-            progress = JsonHelper.pickNumeric(state, 'progress_pct', 0);
-            msg = char(JsonHelper.pick(state, {'message'}, ''));
-            % Refresh the loading overlay with the latest step.
-            displayMsg = sprintf('%s (%d%%)', AnalysisViewModel.prettyJobStatus(status, msg), round(progress));
-            try; app.showLoading(displayMsg); catch; end
+        end
 
-            switch status
-                case {'completed'}
-                    obj.stopQmcPoll(app);
-                    app.QmcActiveJobId = '';
+        function onQmcTerminal(obj, app, taskId, state)
+            % Terminal poll state — dispatch to complete / fail / cancel.
+            statusStr = lower(char(JsonHelper.pick(state, {'status'}, '')));
+            switch statusStr
+                case 'completed'
                     result = JsonHelper.pick(state, {'result'}, []);
                     if isempty(result)
-                        obj.onQmcError(app, MException('QTAU:QmcEmpty', ...
-                            'Job completed but server returned no result payload.'));
-                        return;
+                        ME = MException('QTAU:QmcEmpty', ...
+                            'Job completed but server returned no result payload.');
+                        app.BackgroundTasks.fail(taskId, ME);
+                        obj.onQmcError(app, ME);
+                    else
+                        app.BackgroundTasks.complete(taskId, result);
                     end
-                    obj.onQmcComplete(app, result);
-                case {'failed'}
-                    obj.stopQmcPoll(app);
-                    app.QmcActiveJobId = '';
+                case 'failed'
                     errMsg = char(JsonHelper.pick(state, {'error'}, ''));
-                    if isempty(errMsg); errMsg = msg; end
-                    if isempty(errMsg); errMsg = 'QMC job failed on the server.'; end
-                    obj.onQmcError(app, MException('QTAU:QmcFailed', '%s', errMsg));
-                case {'cancelled'}
-                    obj.stopQmcPoll(app);
-                    app.QmcActiveJobId = '';
-                    app.hideLoading();
-                    uialert(AnalysisViewModel.qmcAlertParent(app), ...
-                        'Quantum Monte Carlo job was cancelled.', ...
-                        'Quantum Monte Carlo', 'Icon', 'info');
-                otherwise
-                    % queued / running — keep polling.
+                    if isempty(errMsg)
+                        errMsg = char(JsonHelper.pick(state, {'message'}, ''));
+                    end
+                    if isempty(errMsg)
+                        errMsg = 'QMC job failed on the server.';
+                    end
+                    ME = MException('QTAU:QmcFailed', '%s', errMsg);
+                    app.BackgroundTasks.fail(taskId, ME);
+                    obj.onQmcError(app, ME);
+                case 'cancelled'
+                    app.BackgroundTasks.cancel(taskId);
+                    try; app.hideLoading(); catch; end
+                    try
+                        if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog) ...
+                                && strcmp(app.QmcDialog.Visible, 'on')
+                            uialert(AnalysisViewModel.qmcAlertParent(app), ...
+                                'Quantum Monte Carlo job was cancelled.', ...
+                                'Quantum Monte Carlo', 'Icon', 'info');
+                        end
+                    catch
+                    end
+            end
+            if ~isempty(app.QmcActiveTaskId) && strcmp(app.QmcActiveTaskId, taskId)
+                app.QmcActiveJobId  = '';
+                app.QmcActiveTaskId = '';
+            end
+        end
+
+        function onQmcPollError(obj, app, taskId, ME)
+            % Fatal poll-loop error (PollingRunner:Timeout, etc.). Treat
+            % as a task failure and surface via the standard error popup.
+            app.BackgroundTasks.fail(taskId, ME);
+            try; obj.onQmcError(app, ME); catch; end
+            if ~isempty(app.QmcActiveTaskId) && strcmp(app.QmcActiveTaskId, taskId)
+                app.QmcActiveJobId  = '';
+                app.QmcActiveTaskId = '';
             end
         end
 
