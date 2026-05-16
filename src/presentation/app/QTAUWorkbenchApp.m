@@ -64,6 +64,7 @@ classdef QTAUWorkbenchApp < handle
         HeaderUserLabel            % Logged-in username button in header
         HeaderUserMenuPanel        % The popup panel container
         HeaderLoginButton          % Login button in header (shown when logged out)
+        AppHelpButton              % "?" app-level help icon next to userBadge in the header
         BackgroundTasks            % BackgroundTaskManager — registry of long-running async tasks
         Notifications              % NotificationCenter — toast surface for terminal tasks
         TasksIndicator             % BackgroundTasksIndicator — header badge

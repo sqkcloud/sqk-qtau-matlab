@@ -57,9 +57,9 @@ classdef LayoutBuilder
              % same grid cell (column 2) so that hiding one never leaves a
              % ghost "fit" column behind. Their visibility is toggled by
              % updateHeaderAuthButtons based on authentication state.
-            headerRight = uigridlayout(app.HeaderGrid, [1 3]);
+            headerRight = uigridlayout(app.HeaderGrid, [1 4]);
             headerRight.Layout.Row = 1; headerRight.Layout.Column = 3;
-            headerRight.ColumnWidth = {'fit', 'fit', 'fit'};
+            headerRight.ColumnWidth = {'fit', 'fit', 28, 'fit'};
             headerRight.Padding = [0 0 4 0]; headerRight.ColumnSpacing = 10;
             headerRight.BackgroundColor = Theme.NAV_BG;
 
@@ -80,13 +80,25 @@ classdef LayoutBuilder
             userBadge.Layout.Row = 1; userBadge.Layout.Column = 2;
             userBadge.Tooltip = 'QTAU Connector v2026';
 
+            % App-level help icon — opens the application "About" dialog
+            % with end-user-oriented content (purpose, features,
+            % workflow, algorithms, tips). Themed for the dark navy
+            % header bar via the NAV_BG / NAV_FG palette so the icon
+            % stays legible against the header background.
+            app.AppHelpButton = uihtml(headerRight);
+            app.AppHelpButton.Layout.Row = 1; app.AppHelpButton.Layout.Column = 3;
+            app.AppHelpButton.HTMLSource = LayoutBuilder.buildHelpIconHtml( ...
+                Theme.NAV_BG, Theme.NAV_FG);
+            app.AppHelpButton.DataChangedFcn = @(~,~) ...
+                DialogBuilder.buildAppHelpDialog(app);
+
             app.HeaderLoginButton = uihyperlink(headerRight, ...
                 'Text', Labels.get('header_btn_login', 'Login'), ...
                 'URL', '', ...
                 'HyperlinkClickedFcn', @(~,~)app.showLoginDialog(), ...
                 'FontSize', 14, 'FontWeight', 'bold', 'FontColor', Theme.NAV_FG, ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-            app.HeaderLoginButton.Layout.Row = 1; app.HeaderLoginButton.Layout.Column = 3;
+            app.HeaderLoginButton.Layout.Row = 1; app.HeaderLoginButton.Layout.Column = 4;
             app.HeaderLoginButton.VisitedColor = Theme.NAV_FG;
 
             app.HeaderUserLabel = uihyperlink(headerRight, ...
@@ -95,7 +107,7 @@ classdef LayoutBuilder
                 'HyperlinkClickedFcn', @(~,~)app.toggleHeaderUserMenu(), ...
                 'FontSize', 14, 'FontWeight', 'bold', 'FontColor', Theme.NAV_FG, ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 3;
+            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 4;
             app.HeaderUserLabel.Visible = 'off';
             app.HeaderUserLabel.VisitedColor = Theme.NAV_FG;
 
@@ -425,19 +437,25 @@ classdef LayoutBuilder
             btn.ButtonPushedFcn = @(~,~)app.showLoginDialog();
         end
 
-        function html = buildHelpIconHtml()
-            % buildHelpIconHtml  Themed circular "?" icon for the screen-
-            %   help button next to SectionTitleLabel. Uses uihtml so the
-            %   shape is genuinely round (uibutton would be a rectangle).
-            %   The icon is a 22 px circle with a thin 1.5 px border at
-            %   60 % heading-color opacity over the transparent header
-            %   background, with a subtle background tint on hover and
-            %   full-opacity border at the same moment. Clicking the
-            %   circle calls setData on the htmlComponent which fires
+        function html = buildHelpIconHtml(bgColor, fgColor)
+            % buildHelpIconHtml  Themed circular "?" icon for the help
+            %   buttons. Uses uihtml so the shape is genuinely round
+            %   (uibutton would be a rectangle). The icon is a 22 px
+            %   circle with a 1.5 px stroke at 60 % fg opacity, a
+            %   transparent fill that lets the host's background show
+            %   through, a subtle bg + full-opacity border on hover, and
+            %   a JS click handler that sets htmlComponent.Data to fire
             %   DataChangedFcn on the MATLAB side.
+            %
+            %   Optional bgColor / fgColor let callers swap the palette
+            %   so the same renderer can drive both the screen-title
+            %   icon (Theme.COLOR_CARD / Theme.COLOR_HEADING) and the
+            %   header-bar app icon (Theme.NAV_BG / Theme.NAV_FG).
             try
-                bg     = Theme.toHex(Theme.COLOR_CARD);
-                fg     = Theme.toHex(Theme.COLOR_HEADING);
+                if nargin < 1 || isempty(bgColor); bgColor = Theme.COLOR_CARD; end
+                if nargin < 2 || isempty(fgColor); fgColor = Theme.COLOR_HEADING; end
+                bg = Theme.toHex(bgColor);
+                fg = Theme.toHex(fgColor);
             catch
                 bg = '#262B33'; fg = '#F2F4F7';
             end
