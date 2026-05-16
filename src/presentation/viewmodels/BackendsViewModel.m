@@ -804,10 +804,17 @@ classdef BackendsViewModel < handle
         end
 
         function fetchTopology(obj, backendName)
-            % Dispatch GET /api/backends/{name}/topology asynchronously.
+            % Dispatch the coupling-map fetch asynchronously. The
+            % previous build referenced app.Services.backendService —
+            % which does not exist on ServiceContainer (the field is
+            % BackendSvc, exposed app-wide as app.BackendSvc). The
+            % missing-property throw was eaten by the tab-changed
+            % callback so the user saw the placeholder forever. Match
+            % the access pattern used by onRefreshBackends (line 64
+            % above): pull the service handle off the app directly.
             obj.paintTopologyPlaceholder(Labels.get('backends_topology_loading'));
             app = obj.App;
-            svc = app.Services.backendService;
+            svc = app.BackendSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...
                 @() svc.getTopology(backendName, token), ...
