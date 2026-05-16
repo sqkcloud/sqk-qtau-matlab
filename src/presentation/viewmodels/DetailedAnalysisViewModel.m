@@ -929,6 +929,16 @@ classdef DetailedAnalysisViewModel < handle
 
         function plotRBDecayDemo(obj)
             app = obj.App;
+            % Without this guard, cla(app.RBDecayAxes) on an empty /
+            % invalid handle silently triggered the default-figure
+            % fallback — MATLAB opened a stray "Figure 1" window
+            % instead of rendering inside the embedded Randomized
+            % Benchmarking Decay panel on first visit. ensureLazyAxes
+            % materializes the uiaxes on demand the same way
+            % onPlotRBDecayComplete (line 363) does for the live-data
+            % path; the other four DetailedAnalysis plotters already
+            % had this guard since commit 85197fe.
+            if isempty(app.ensureLazyAxes('RBDecayAxes', 'RBDecayGrid', 'RBDecayPlaceholder')); return; end
             cla(app.RBDecayAxes);
             rs    = RandStream('twister', 'Seed', 1005);
             mPts  = [1 2 4 8 16 32 64 128 256];

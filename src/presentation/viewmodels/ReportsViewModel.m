@@ -507,8 +507,13 @@ classdef ReportsViewModel < handle
                     stamp = strrep(created(1:min(16, end)), 'T', ' ');
                 end
                 status = char(JsonHelper.pick(m, {'status'}, '—'));
-                data{i, 1} = sprintf('%s %s', ...
-                    ReportsViewModel.formatGlyph(fmt), upper(fmt));
+                % Format column: plain uppercase tag. The previous
+                % "<emoji> <FMT>" rendering surfaced as tofu boxes
+                % (missing-glyph fallback) because MATLAB's default
+                % uitable font lacks the supplementary-plane emoji
+                % codepoints (📄 / 🌐 / 📋). Dropping the glyph leaves
+                % a clean professional tag like "PDF" / "HTML" / "JSON".
+                data{i, 1} = upper(fmt);
                 data{i, 2} = title;
                 data{i, 3} = stamp;
                 data{i, 4} = status;
