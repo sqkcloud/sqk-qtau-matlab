@@ -193,7 +193,7 @@ classdef LayoutBuilder
             headerPanel.BackgroundColor = Theme.COLOR_CARD;
             app.HeaderSectionPanel = headerPanel;
             hg = uigridlayout(headerPanel, [2 2]);
-            hg.RowHeight = {28, 20}; hg.ColumnWidth = {'fit', 32};
+            hg.RowHeight = {28, 20}; hg.ColumnWidth = {'1x', 32};
             hg.Padding = [16 10 16 10]; hg.ColumnSpacing = 10;
             hg.BackgroundColor = Theme.COLOR_CARD;
             app.HeaderSectionGrid = hg;

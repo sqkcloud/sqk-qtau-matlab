@@ -2186,7 +2186,7 @@ classdef DialogBuilder
 
                 body = HelpContent.bodyFor(key);
 
-                figW = 640; figH = 560;
+                figW = 720; figH = 620;
                 try
                     mainPos = app.UIFigure.Position;
                     x = max(0, mainPos(1) + (mainPos(3) - figW) / 2);
@@ -2201,9 +2201,9 @@ classdef DialogBuilder
                     'Resize', 'on');
                 try; dlg.Color = Theme.COLOR_CARD; catch; end
 
-                g = uigridlayout(dlg, [2 1]);
-                g.RowHeight   = {'1x', 44};
-                g.Padding     = [0 0 0 8];
+                g = uigridlayout(dlg, [3 1]);
+                g.RowHeight   = {'1x', 1, 56};
+                g.Padding     = [0 0 0 0];
                 g.RowSpacing  = 0;
                 try; g.BackgroundColor = Theme.COLOR_CARD; catch; end
 
@@ -2211,17 +2211,26 @@ classdef DialogBuilder
                 html.Layout.Row = 1; html.Layout.Column = 1;
                 html.HTMLSource = HelpContent.renderHtml(displayName, body);
 
+                % Hairline divider above the footer so the Close button
+                % feels like a proper footer instead of floating below
+                % the body.
+                divider = uipanel(g, 'BorderType', 'none');
+                divider.Layout.Row = 2; divider.Layout.Column = 1;
+                try; divider.BackgroundColor = Theme.COLOR_DIVIDER; catch; end
+
                 btnRow = uigridlayout(g, [1 2]);
-                btnRow.Layout.Row = 2; btnRow.Layout.Column = 1;
+                btnRow.Layout.Row = 3; btnRow.Layout.Column = 1;
                 btnRow.ColumnWidth = {'1x', 120};
-                btnRow.Padding = [16 0 16 0];
+                btnRow.RowHeight   = {'1x'};
+                btnRow.Padding     = [20 10 20 12];
                 try; btnRow.BackgroundColor = Theme.COLOR_CARD; catch; end
 
                 closeBtn = uibutton(btnRow, ...
                     'Text', 'Close', ...
-                    'FontSize', 13, ...
+                    'FontSize', 13, 'FontWeight', 'bold', ...
                     'ButtonPushedFcn', @(~,~) delete(dlg));
                 closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 2;
+                try; StyleHelper.styleBtn(closeBtn, 'primary'); catch; end
 
                 try; figure(dlg); catch; end
             catch ME
