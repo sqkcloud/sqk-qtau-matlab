@@ -502,8 +502,9 @@ classdef ComposerViewModel < handle
                     obj.drawCtrl(ax, x, g.qubits(2));
                     obj.drawTargetCircle(ax, x, g.qubits(3));
                     qs = sort(g.qubits);
+                    s = ComposerViewModel.gateStyle();
                     line(ax, [x x], [qs(1) qs(end)], ...
-                        'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.2, ...
+                        'Color', s.Border, 'LineWidth', 1.2, ...
                         'HitTest', 'off', 'PickableParts', 'none');
                 case 'measure'
                     obj.drawBox(ax, x, g.qubits(1), 'M');
@@ -516,45 +517,56 @@ classdef ComposerViewModel < handle
         end
 
         function drawBox(~, ax, x, q, label)
+            % Blue gate palette matches the SVG circuit renderer
+            % (CircuitDiagram.drawSvgDiagram) used by Circuit Preview
+            % and the QTAUBench Similarity Circuit Diagram tab, so the
+            % Composer canvas reads as the same visual language as the
+            % other circuit-render surfaces instead of the previous
+            % theme-driven purple variant.
+            s = ComposerViewModel.gateStyle();
             w = 0.7; h = 0.55;
             rectangle(ax, 'Position', [x - w/2, q - h/2, w, h], ...
-                'FaceColor', Theme.COLOR_ACCENT_BG, ...
-                'EdgeColor', Theme.COLOR_PRIMARY, 'LineWidth', 1.2, ...
-                'Curvature', 0.15);
+                'FaceColor', s.Fill, ...
+                'EdgeColor', s.Border, 'LineWidth', 1.2, ...
+                'Curvature', 0.3);
             text(ax, x, q, char(label), ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
                 'FontWeight', 'bold', 'FontSize', 11, ...
-                'Color', Theme.COLOR_HEADING, ...
+                'Color', s.Text, ...
                 'HitTest', 'off', 'PickableParts', 'none');
         end
 
         function drawCtrl(~, ax, x, q)
+            s = ComposerViewModel.gateStyle();
             r = 0.13;
             rectangle(ax, 'Position', [x-r, q-r, 2*r, 2*r], ...
-                'FaceColor', Theme.COLOR_PRIMARY, ...
-                'EdgeColor', Theme.COLOR_PRIMARY, 'Curvature', 1.0);
+                'FaceColor', s.Border, ...
+                'EdgeColor', s.Border, 'Curvature', 1.0);
         end
 
         function drawTargetCircle(~, ax, x, q)
+            s = ComposerViewModel.gateStyle();
             r = 0.22;
             rectangle(ax, 'Position', [x-r, q-r, 2*r, 2*r], ...
-                'FaceColor', 'none', 'EdgeColor', Theme.COLOR_PRIMARY, ...
+                'FaceColor', s.TargetFill, 'EdgeColor', s.Border, ...
                 'LineWidth', 1.4, 'Curvature', 1.0);
-            line(ax, [x-r, x+r], [q q], 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.4, ...
+            line(ax, [x-r, x+r], [q q], 'Color', s.Text, 'LineWidth', 1.4, ...
                 'HitTest', 'off', 'PickableParts', 'none');
-            line(ax, [x x], [q-r, q+r], 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.4, ...
+            line(ax, [x x], [q-r, q+r], 'Color', s.Text, 'LineWidth', 1.4, ...
                 'HitTest', 'off', 'PickableParts', 'none');
         end
 
         function drawSwapMark(~, ax, x, q)
+            s = ComposerViewModel.gateStyle();
             r = 0.16;
-            line(ax, [x-r, x+r], [q-r, q+r], 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.6);
-            line(ax, [x-r, x+r], [q+r, q-r], 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.6);
+            line(ax, [x-r, x+r], [q-r, q+r], 'Color', s.Border, 'LineWidth', 1.6);
+            line(ax, [x-r, x+r], [q+r, q-r], 'Color', s.Border, 'LineWidth', 1.6);
         end
 
         function drawConnector(~, ax, x, q1, q2)
+            s = ComposerViewModel.gateStyle();
             line(ax, [x x], [min(q1,q2), max(q1,q2)], ...
-                'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.2, ...
+                'Color', s.Border, 'LineWidth', 1.2, ...
                 'HitTest', 'off', 'PickableParts', 'none');
         end
 
@@ -1324,6 +1336,30 @@ classdef ComposerViewModel < handle
             obj.InspectStepIdx = obj.InspectStepIdx + 1;
             obj.InspectSlider.Value = obj.InspectStepIdx - 1;
             obj.paintInspectStep();
+        end
+    end
+
+    methods (Static, Access = private)
+        function s = gateStyle()
+            % gateStyle  Single source of truth for the Composer's gate
+            %   colour palette. Matches the SVG circuit renderer
+            %   (CircuitDiagram.drawSvgDiagram + Circuit Preview) so
+            %   the Composer canvas, the QTAUBench Similarity Circuit
+            %   Diagram, and the Circuit Preview all read as the same
+            %   visual language — a unified blue treatment rather than
+            %   the previous theme-driven purple on the Composer side.
+            %
+            %   Hex values mirror the Tailwind blue ramp used by the
+            %   SVG renderer:
+            %     Fill        = #1D4ED8  (blue-700, single-qubit + measure box)
+            %     TargetFill  = #2563EB  (blue-600, CNOT / CCX target circle)
+            %     Border      = #3B82F6  (blue-500, gate border + connector + control dot)
+            %     Text        = #FFFFFF  (white, gate label + target cross)
+            s = struct( ...
+                'Fill',       [29/255 78/255 216/255],   ... % #1D4ED8
+                'TargetFill', [37/255 99/255 235/255],   ... % #2563EB
+                'Border',     [59/255 130/255 246/255],  ... % #3B82F6
+                'Text',       [1 1 1]);                       % #FFFFFF
         end
     end
 end
