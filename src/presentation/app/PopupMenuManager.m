@@ -181,6 +181,21 @@ classdef PopupMenuManager
         function hideBackendsPopup(app)
             if ~isempty(app.BackendsPopupPanel) && isvalid(app.BackendsPopupPanel)
                 app.BackendsPopupPanel.Visible = 'off';
+                % Move the hidden panel off-screen — same R2025b
+                % uifigure workaround we already use for the
+                % ActivityOverlay. Visible='off' alone is NOT
+                % sufficient on some R2025b builds: the still-alive
+                % uipanel can keep capturing pointer hit-tests over
+                % its last Position rectangle, swallowing the next
+                % right-click before it reaches WindowButtonDownFcn
+                % — that's the "first right-click works, second one
+                % doesn't" symptom. showBackendsPopup re-assigns
+                % Position = [px py popW popH] on the next open, so
+                % this is self-restoring.
+                try
+                    app.BackendsPopupPanel.Position = [-99999 -99999 1 1];
+                catch
+                end
             end
         end
 

@@ -123,8 +123,21 @@ classdef OverlayManager
                         delete(app.ActivityOverlay);
                     end
                     app.ActivityOverlay = uihtml(host);
+                    % Park the freshly-built overlay off-screen until we
+                    % decide to actually show it. A new uihtml() spans
+                    % its default rectangle and could swallow CEF clicks
+                    % for a tick before we paint.
+                    try
+                        app.ActivityOverlay.Position = [-99999 -99999 1 1];
+                    catch
+                    end
                 end
-                app.ActivityOverlay.Position = [0 0 figW figH];
+                % DELIBERATELY do NOT set Position to [0 0 figW figH] here.
+                % It is assigned immediately before Visible='on' below,
+                % so an exception or the idempotent fast-path return
+                % cannot leave a zombie full-figure overlay with
+                % Visible='off' — the prior failure mode that swallowed
+                % uibutton / uitable / sidebar clicks on R2025b macOS.
 
                 % ── Idempotent fast path ─────────────────────────────────
                 % If the overlay is already visible with the same message
@@ -194,6 +207,10 @@ classdef OverlayManager
                     '<p class="msg">' char(msg) '</p>' ...
                     timerHtml ...
                     '</div></div></body></html>'];
+                % Size to full figure ONLY at the moment we are about
+                % to flip Visible='on'. Pairs with the deferred-assign
+                % comment above.
+                app.ActivityOverlay.Position = [0 0 figW figH];
                 app.ActivityOverlay.Visible = 'on';
                 uistack(app.ActivityOverlay, 'top');
                 % Persist (msg, showTimer) so the next showLoading call with
@@ -230,10 +247,40 @@ classdef OverlayManager
                     % torn down only when the host figure itself is closed,
                     % which is automatic.
                     app.ActivityOverlay.Visible = 'off';
+                    % Move the still-alive uihtml off-screen. Visible='off'
+                    % alone is NOT sufficient on R2025b uifigure (macOS
+                    % especially): a hidden uihtml sitting at top of the
+                    % Z-order with a full-figure Position still owns the
+                    % CEF pointer hit-test rectangle and silently
+                    % swallows uibutton / uieditfield clicks, the
+                    % figure-level WindowButtonDownFcn, and uitable
+                    % SelectionChangedFcn for everything underneath.
+                    % We can't uistack(...,'bottom') because that
+                    % triggers a CEF refresh across every HTML-backed
+                    % component (the uitable rendered rows empty out)
+                    % and we can't delete the component because the
+                    % peerEvent bridge races with delete() (see the
+                    % singleton-overlay comment in showLoading). The
+                    % off-screen Position is the only safe escape: keeps
+                    % the component alive for the peerEvent bridge,
+                    % doesn't trigger any CEF refresh, and is physically
+                    % incapable of capturing clicks. showLoading
+                    % reassigns Position = [0 0 figW figH] on the next
+                    % show (see line above), so this is self-restoring.
+                    try
+                        app.ActivityOverlay.Position = [-99999 -99999 1 1];
+                    catch
+                    end
                 end
                 try
                     if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
                         app.OverlayBgButton.Visible = 'off';
+                        % Same off-screen escape — ensureOverlayBgButton
+                        % repositions on next show.
+                        try
+                            app.OverlayBgButton.Position = [-99999 -99999 1 1];
+                        catch
+                        end
                     end
                 catch
                 end

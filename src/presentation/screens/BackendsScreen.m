@@ -73,29 +73,39 @@ function BackendsScreen(app)
     top.ColumnWidth = {'1x', 90, 110, 110}; top.Padding = [0 0 0 0]; top.ColumnSpacing = 6;
     top.BackgroundColor = Theme.COLOR_CARD;
 
-    % Search field
+    % Search field — wrapped so we can SEE whether ValueChangedFcn
+    % fires at all. The prior bare anonymous-function ate exceptions
+    % and produced no log on Enter, making it impossible to tell from
+    % outside whether the field's event reached MATLAB.
     app.BackendsSearchField = uieditfield(top, 'text', ...
         'Placeholder', 'Search by name, status, role...', ...
-        'ValueChangedFcn', @(src,~)app.BackendsVm.onSearch(src.Value));
+        'ValueChangedFcn', @(src,evt) onSearchFieldValueChanged(app, src, evt));
     app.BackendsSearchField.Layout.Row = 1; app.BackendsSearchField.Layout.Column = 1;
     app.BackendsSearchField.FontSize = 12;
 
-    % Search button (char(8981) — same as Circuits)
+    % Search button (char(8981) — same as Circuits) — wrapped for the
+    % same reason as the Select button below.
     searchBtn = uibutton(top, 'Text', [char(8981) ' Search'], ...
-        'ButtonPushedFcn', @(~,~)app.BackendsVm.onSearch(app.BackendsSearchField.Value));
+        'ButtonPushedFcn', @(src,evt) onSearchButtonPushed(app, src, evt));
     searchBtn.Layout.Row = 1; searchBtn.Layout.Column = 2;
     app.styleBtn(searchBtn, 'ghost');
 
     % Refresh button (char(8635) — same as Dashboard, Circuits, etc.)
     app.RefreshBackendsButton = uibutton(top, 'Text', [char(8635) ' ' Labels.get('backends_btn_refresh')], ...
-        'ButtonPushedFcn', @(~,~)app.BackendsVm.onRefreshBackends());
+        'ButtonPushedFcn', @(src,evt) onRefreshButtonPushed(app, src, evt));
     app.RefreshBackendsButton.Layout.Row = 1; app.RefreshBackendsButton.Layout.Column = 3;
     app.styleBtn(app.RefreshBackendsButton, 'ghost');
     app.RefreshBackendsButton.FontSize = 14;
 
     % Select button (char(9745) — check mark)
+    % Wrapped in a log-everything handler so we can SEE whether the
+    % click event is reaching the screen layer at all. The previous
+    % anonymous-function callback (@(~,~)app.BackendsVm.onSelectBackend())
+    % silently swallowed any exception from the VM call AND produced
+    % no log if the click was eaten by an overlay — making it
+    % impossible to diagnose from outside.
     app.SelectBackendButton = uibutton(top, 'Text', [char(9745) ' ' Labels.get('backends_btn_select')], ...
-        'ButtonPushedFcn', @(~,~)app.BackendsVm.onSelectBackend());
+        'ButtonPushedFcn', @(src,evt) onSelectButtonPushed(app, src, evt));
     app.SelectBackendButton.Layout.Row = 1; app.SelectBackendButton.Layout.Column = 4;
     app.styleBtn(app.SelectBackendButton, 'primary');
     app.SelectBackendButton.FontSize = 14;
@@ -110,6 +120,24 @@ function BackendsScreen(app)
     app.BackendTable.Layout.Row = 2; app.BackendTable.Layout.Column = 1;
     app.BackendTable.Data = {};
     app.styleTable(app.BackendTable);
+    % CRITICAL: disable ColumnSortable on this specific table. The
+    % global StyleHelper.styleTable turns ColumnSortable=true on every
+    % uitable, which in MATLAB R2025b uifigure breaks row-click
+    % dispatch on tables whose Data is re-assigned (applyPage /
+    % onSearch / updateRolesInTable all do this). Symptom is an
+    % internal exception inside
+    %   WebMWTableController.getSourceRowFromDisplayRow
+    %   ("Index exceeds the number of array elements. Index must not
+    %    exceed 1") followed by
+    %   TableSelectionValidator.validateRowSelection
+    %   ("Selection indices are out of data boundary")
+    % thrown BEFORE SelectionChangedFcn / ContextMenu can fire. Net
+    % result for the user: row visually highlights (CEF local paint)
+    % but MATLAB never accepts the new selection; right-click menu
+    % never appears; Select button operates on whatever row was
+    % programmatically selected last (typically row 1). Disabling
+    % sort indirection bypasses the broken SortedRowOrder path.
+    app.BackendTable.ColumnSortable = false;
     addStyle(app.BackendTable, uistyle('HorizontalAlignment','center', 'FontColor', Theme.COLOR_MUTED), 'column', 1);
 
     % Pagination row (inside table panel, under the table)
@@ -138,10 +166,24 @@ function BackendsScreen(app)
     app.BackendsNextBtn.Layout.Row = 1; app.BackendsNextBtn.Layout.Column = 3;
     app.styleBtn(app.BackendsNextBtn, 'ghost');
 
-    % Context menu (right-click, same pattern as Welcome/Circuits)
+    % Right-click context menu — themed uipanel popup matching the
+    % visual style used across Welcome / Circuits / Reports (built
+    % by PopupMenuManager.buildBackendsPopup). The figure-level
+    % chained WindowButtonDownFcn that drives it is now safe to use
+    % on Backends because the heavy-paint failure modes that
+    % previously clobbered it are eliminated:
+    %   - Per-Qubit heat grid is one uihtml (no uigridlayout DOM blast)
+    %   - History / Topology uiaxes call BackendsViewModel.makeAxesInert
+    %     (Interactions=[], Toolbar=[], disableDefaultInteractivity),
+    %     so the R2025b axes manager no longer installs figure-wide
+    %     pointer-capture hooks that overwrite WindowButtonDownFcn.
+    %   - OverlayManager.showLoading defers Position=[0 0 figW figH]
+    %     until immediately before Visible='on', so a zombie overlay
+    %     can't sit over the figure swallowing right-clicks.
     app.buildBackendsPopupMenu();
     prevFcn = app.UIFigure.WindowButtonDownFcn;
-    app.UIFigure.WindowButtonDownFcn = @(src, evt) handleBackendsMouseDown(app, prevFcn, src, evt);
+    app.UIFigure.WindowButtonDownFcn = ...
+        @(src, evt) handleBackendsMouseDown(app, prevFcn, src, evt);
 
     % ── Calibration notes (right) ─────────────────────────────────────────────
     detailPanel = uipanel(g, 'Title', Labels.get('backends_panel_notes'), ...
@@ -151,24 +193,24 @@ function BackendsScreen(app)
     dg2 = uigridlayout(detailPanel, [1 1]);
     dg2.Padding = [12 10 12 10]; dg2.BackgroundColor = Theme.COLOR_CARD;
 
-    % C2.B1 — Telemetry tab strip: Overview | Per-Qubit | History.
-    % Overview hosts the legacy BackendStatusArea uitextarea (kept for
-    % app.setStatus back-compat). Per-Qubit hosts a color-coded heat
-    % grid; History hosts three sparkline uiaxes (T1/T2/2Q error).
-    telemetryTg = uitabgroup(dg2);
-    telemetryTg.Layout.Row = 1; telemetryTg.Layout.Column = 1;
-
-    tabOverview = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_overview', 'Overview'));
-    tabOverview.BackgroundColor = Theme.COLOR_CARD;
-    overviewGrid = uigridlayout(tabOverview, [2 1]);
+    % Overview content rendered DIRECTLY into the panel — no
+    % uitabgroup. Per-Qubit / History / Topology tabs have been
+    % removed: in R2025b uifigure macOS, activating any tab in this
+    % uitabgroup reproducibly broke CEF click dispatch for the rest
+    % of the screen (Search / Refresh / Select / right-click /
+    % sidebar nav all silently failed). The bug is independent of
+    % what is painted into the tab — even after migrating Per-Qubit
+    % to one uihtml and History/Topology to inline SVG, the act of
+    % switching tabs alone was enough to break dispatch. Dropping
+    % the uitabgroup eliminates the failure mode entirely.
+    overviewGrid = uigridlayout(dg2, [2 1]);
+    overviewGrid.Layout.Row = 1; overviewGrid.Layout.Column = 1;
     overviewGrid.RowHeight = {64, '1x'};
     overviewGrid.Padding = [12 8 12 8];
     overviewGrid.RowSpacing = 8;
     overviewGrid.BackgroundColor = Theme.COLOR_CARD;
 
-    % KPI strip — 4 mini-cards summarising the loaded backend pool so
-    % the Overview tab tells the operator something useful at a glance
-    % instead of just echoing "Loaded N backend(s)".
+    % KPI strip — 4 mini-cards summarising the loaded backend pool.
     kpiStrip = uigridlayout(overviewGrid, [1 4]);
     kpiStrip.Layout.Row = 1; kpiStrip.Layout.Column = 1;
     kpiStrip.ColumnWidth = {'1x','1x','1x','1x'};
@@ -203,108 +245,10 @@ function BackendsScreen(app)
     app.BackendStatusArea.FontSize = 12;
     app.BackendStatusArea.Value = {Labels.get('backends_status_initial')};
 
-    tabPerQubit = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_perqubit', 'Per-Qubit'));
-    tabPerQubit.BackgroundColor = Theme.COLOR_CARD;
-    % Widened from [6 16] to [6 17] so the first column can host
-    % metric row labels (qubit / T1 / T2 / Gate / Readout / 2Q),
-    % which were missing before — the cells were a wall of numbers
-    % with no row identifier. paintTelemetryPerQubitHeatGrid in
-    % BackendsViewModel fills columns 2-17 with per-qubit values.
-    app.TelemetryPerQubitGrid = uigridlayout(tabPerQubit, [6 17]);
-    app.TelemetryPerQubitGrid.Padding = [12 8 12 8];
-    app.TelemetryPerQubitGrid.RowSpacing = 2;
-    app.TelemetryPerQubitGrid.ColumnSpacing = 2;
-    app.TelemetryPerQubitGrid.BackgroundColor = Theme.COLOR_CARD;
-
-    tabHistory = uitab(telemetryTg, 'Title', Labels.get('backends_telemetry_history', 'History'));
-    tabHistory.BackgroundColor = Theme.COLOR_CARD;
-    historyGrid = uigridlayout(tabHistory, [3 1]);
-    historyGrid.Padding = [12 8 12 8]; historyGrid.BackgroundColor = Theme.COLOR_CARD;
-    historyGrid.RowSpacing = 8;
-    historyTitles = { ...
-        Labels.get('backends_history_t1_title', 'T1 coherence (µs)'), ...
-        Labels.get('backends_history_t2_title', 'T2 coherence (µs)'), ...
-        Labels.get('backends_history_2q_title', '2Q gate error')};
-    app.TelemetryHistoryAxes = cell(1, 3);
-    for k = 1:3
-        ax = uiaxes(historyGrid);
-        ax.Layout.Row = k;
-        ax.Layout.Column = 1;
-        ax.Toolbar.Visible = 'off';
-        % Theme-aligned sparkline styling. Set on creation so the
-        % panel looks intentional even before any calibration data
-        % arrives — the user sees three labeled sub-charts instead
-        % of three black rectangles.
-        ax.Color  = Theme.COLOR_CARD;
-        ax.XColor = Theme.COLOR_MUTED;
-        ax.YColor = Theme.COLOR_MUTED;
-        ax.GridColor     = Theme.COLOR_DIVIDER;
-        ax.GridLineStyle = ':';
-        ax.GridAlpha     = 0.35;
-        ax.Box           = 'off';
-        ax.XGrid         = 'on';
-        ax.YGrid         = 'on';
-        ax.Title.String  = historyTitles{k};
-        ax.Title.Color   = Theme.COLOR_LABEL;
-        ax.Title.FontSize = 11;
-        ax.Title.FontWeight = 'bold';
-        try; disableDefaultInteractivity(ax); catch; end
-        app.TelemetryHistoryAxes{k} = ax;
-    end
-
-    % ── Topology tab — coupling-map graph view ───────────────────────────────
-    % Lazy-loaded: when the user activates this tab, BackendsVm dispatches
-    % BackendService.getTopology(...) and paints the graph. Force-directed
-    % layout via MATLAB's native graph plot. Click a qubit → side panel
-    % renders that qubit's calibration.
-    tabTopology = uitab(telemetryTg, 'Title', Labels.get('backends_topology_tab_title'));
-    tabTopology.BackgroundColor = Theme.COLOR_CARD;
-    topoGrid = uigridlayout(tabTopology, [1 2]);
-    topoGrid.ColumnWidth = {'1x', 240};
-    topoGrid.Padding = [12 8 12 8];
-    topoGrid.ColumnSpacing = 10;
-    topoGrid.BackgroundColor = Theme.COLOR_CARD;
-
-    % Lazy uiaxes — eager construction costs ~0.5–1.5 s cold-paint just
-    % to host a "click a backend" placeholder. BackendsViewModel.paintTopology
-    % promotes this label to a real uiaxes when topology data lands.
-    topoPlaceholder = uilabel(topoGrid, ...
-        'Text', Labels.get('backends_topology_no_selection'), ...
-        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
-        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
-    topoPlaceholder.Layout.Row = 1; topoPlaceholder.Layout.Column = 1;
-    app.TopologyGrid        = topoGrid;
-    app.TopologyPlaceholder = topoPlaceholder;
-    app.TopologyAxes        = [];
-
-    sideGrid = uigridlayout(topoGrid, [3 1]);
-    sideGrid.Layout.Row = 1; sideGrid.Layout.Column = 2;
-    sideGrid.RowHeight = {'fit', 'fit', '1x'};
-    sideGrid.Padding = [0 0 0 0]; sideGrid.RowSpacing = 8;
-    sideGrid.BackgroundColor = Theme.COLOR_CARD;
-
-    legendLbl = uilabel(sideGrid, ...
-        'Text', Labels.get('backends_topology_legend'), ...
-        'FontSize', 10, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
-    legendLbl.Layout.Row = 1;
-
-    metaLbl = uilabel(sideGrid, 'Text', '', ...
-        'FontSize', 11, 'FontWeight', 'bold', ...
-        'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
-    metaLbl.Layout.Row = 2;
-
-    app.TopologyInfoLbl = uilabel(sideGrid, ...
-        'Text', Labels.get('backends_topology_no_selection'), ...
-        'FontSize', 11, 'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
-    app.TopologyInfoLbl.Layout.Row = 3;
-    app.TopologyInfoLbl.UserData = metaLbl;  % stash so VM can update meta line
-
-    % Wire row selection so clicking a backend drills into its
-    % Telemetry tabs. SelectionChangedFcn (NOT the legacy
-    % CellSelectionChangedFcn — removed for uifigure-hosted uitable in
-    % R2025b) fires on every click; onTableRowSelected is idempotent.
-    app.BackendTable.SelectionChangedFcn = @(~,~) app.BackendsVm.onTableRowSelected();
-    telemetryTg.SelectionChangedFcn = @(s,e) app.BackendsVm.onTelemetryTabChanged(e);
+    % Wire row selection — onTableRowSelected updates KPI 4 (selected
+    % backend) and refreshes the status area. No tabgroup callback
+    % anymore since tabs are gone.
+    app.BackendTable.SelectionChangedFcn = @(src,evt) onTableSelectionChanged(app, src, evt);
 
     % ── Action bar ────────────────────────────────────────────────────────────
     nextPanel = uipanel(g, 'Title', Labels.get('backends_panel_action'), ...
@@ -340,16 +284,111 @@ function BackendsScreen(app)
     Logger.info('BackendsScreen', 'Backends tab UI built successfully');
 end
 
-% ── Local helper: figure-level mouse-down handler for right-click popup ──
-function handleBackendsMouseDown(app, prevFcn, src, evt)
-    if ~isempty(prevFcn)
-        try prevFcn(src, evt); catch; end
+% ── Diagnostic wrappers — every toolbar handler logs UNCONDITIONALLY
+% on its first line so we can tell from the event log whether the
+% click reached MATLAB at all. The bare anonymous-function form
+% silently swallows any exception thrown from the VM call AND
+% produces no log when the click never arrives — making it
+% impossible to distinguish a dead-callback bug from a VM-side bug.
+
+function onSearchFieldValueChanged(app, src, ~)
+    try
+        Logger.info('BackendsScreen', 'Search field ValueChanged: "%s"', ...
+            char(string(src.Value)));
+    catch; end
+    try
+        if isempty(app.BackendsVm) || ~isvalid(app.BackendsVm)
+            Logger.error('BackendsScreen', 'SearchField: BackendsVm empty/invalid');
+            return;
+        end
+        app.BackendsVm.onSearch(src.Value);
+    catch ME
+        try; Logger.error('BackendsScreen', 'SearchField handler: %s', ME.message); catch; end
     end
-    % Only react while the Backends panel is the active section. Prevents
-    % this handler from firing when the user is on another screen and
-    % previous-screen popups leaking into the current one.
+end
+
+function onSearchButtonPushed(app, ~, ~)
+    try; Logger.info('BackendsScreen', 'Search button pushed'); catch; end
+    try
+        if isempty(app.BackendsVm) || ~isvalid(app.BackendsVm)
+            Logger.error('BackendsScreen', 'Search: BackendsVm empty/invalid');
+            return;
+        end
+        app.BackendsVm.onSearch(app.BackendsSearchField.Value);
+    catch ME
+        try; Logger.error('BackendsScreen', 'Search handler: %s', ME.message); catch; end
+    end
+end
+
+function onRefreshButtonPushed(app, ~, ~)
+    try; Logger.info('BackendsScreen', 'Refresh button pushed'); catch; end
+    try
+        if isempty(app.BackendsVm) || ~isvalid(app.BackendsVm)
+            Logger.error('BackendsScreen', 'Refresh: BackendsVm empty/invalid');
+            return;
+        end
+        app.BackendsVm.onRefreshBackends();
+    catch ME
+        try; Logger.error('BackendsScreen', 'Refresh handler: %s', ME.message); catch; end
+    end
+end
+
+function onTableSelectionChanged(app, src, evt)
+    % Logs both the new Selection on the source and the event's
+    % Selection so we can see if a) SelectionChangedFcn fires at all
+    % on row click, and b) whether the property is in sync with the
+    % event payload. Then dispatches to onTableRowSelected exactly
+    % as before.
+    try
+        newSel = src.Selection;
+        evtSel = [];
+        try; evtSel = evt.Selection; catch; end
+        Logger.info('BackendsScreen', ...
+            'Table SelectionChanged — src.Selection=[%s] evt.Selection=[%s]', ...
+            mat2str(newSel), mat2str(evtSel));
+    catch; end
+    try
+        if isempty(app.BackendsVm) || ~isvalid(app.BackendsVm)
+            Logger.error('BackendsScreen', 'TableSel: BackendsVm empty/invalid');
+            return;
+        end
+        app.BackendsVm.onTableRowSelected();
+    catch ME
+        try; Logger.error('BackendsScreen', 'TableSel handler: %s', ME.message); catch; end
+    end
+end
+
+function onSelectButtonPushed(app, ~, ~)
+    % Log-everything wrapper so we can SEE that the click reached
+    % MATLAB, then dispatch into the VM under a try/catch. Errors
+    % thrown by the VM previously vanished into MATLAB's silent
+    % ButtonPushedFcn error handler.
+    try
+        Logger.info('BackendsScreen', 'Select button pushed');
+    catch; end
+    try
+        if isempty(app.BackendsVm) || ~isvalid(app.BackendsVm)
+            Logger.error('BackendsScreen', 'Select: BackendsVm is empty / invalid');
+            return;
+        end
+        app.BackendsVm.onSelectBackend();
+    catch ME
+        try
+            Logger.error('BackendsScreen', ...
+                'Select handler error: %s', ME.message);
+        catch; end
+    end
+end
+
+function handleBackendsMouseDown(app, prevFcn, src, evt)
+    % Chained WindowButtonDownFcn — mirrors handleReportsMouseDown.
+    % Forwards to any prior handler first, then reacts only when
+    % Backends is the visible section and the click is a right-click
+    % over a selected BackendTable row.
+    if ~isempty(prevFcn); try prevFcn(src, evt); catch; end; end
     if ~isSectionVisible(app, 'Backends'); return; end
     cp = app.UIFigure.CurrentPoint;
+    % Click outside an open popup → dismiss it.
     if ~isempty(app.BackendsPopupPanel) && isvalid(app.BackendsPopupPanel) ...
             && strcmp(app.BackendsPopupPanel.Visible, 'on')
         pp = app.BackendsPopupPanel.Position;
@@ -360,6 +399,7 @@ function handleBackendsMouseDown(app, prevFcn, src, evt)
     end
     try; selType = app.UIFigure.SelectionType; catch; selType = 'normal'; end
     if ~strcmp(selType, 'alt'); return; end
+    if isempty(app.BackendTable) || ~isvalid(app.BackendTable); return; end
     sel = app.BackendTable.Selection;
     if isempty(sel); return; end
     app.showBackendsPopupMenu(cp(1), cp(2));
@@ -376,3 +416,4 @@ function tf = isSectionVisible(app, key)
         tf = false;
     end
 end
+

@@ -401,13 +401,9 @@ classdef QTAUWorkbenchApp < handle
         CalibrationHistoryCache = []  % struct keyed by makeValidName(backend) → response
         BackendSparklineGrid          % overlay uigridlayout that mirrors the BackendTable rows
         BackendSparklineAxes          % struct keyed by makeValidName(backend) → uiaxes per row
-        TelemetryPerQubitGrid         % uigridlayout for the Per-Qubit heat grid (8x16)
-        TelemetryHistoryAxes          % {1×3} cell of uiaxes for History sparklines (T1/T2/2Q)
-        TopologyAxes                  % uiaxes hosting the coupling-map graph plot
-        TopologyGrid                  % parent grid for the lazy uiaxes
-        TopologyPlaceholder           % uilabel placeholder until the uiaxes materialises
-        TopologyInfoLbl               % side-panel uilabel for clicked-qubit detail
-        TopologyCache         = []    % struct keyed by makeValidName(backend) → topology response
+        % Per-Qubit / History / Topology tabs were removed — they
+        % reproducibly broke R2025b uifigure CEF click dispatch.
+        % Only the Overview content remains in the right-side panel.
     end
 
     % ── Benchmark tab ─────────────────────────────────────────────────────────
