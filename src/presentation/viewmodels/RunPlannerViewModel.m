@@ -236,9 +236,40 @@ classdef RunPlannerViewModel < handle
                 end
             end
             shots = max(1, round(obj.ShotsField.Value));
-            backendNames = arrayfun(@(b) RunPlannerViewModel.safeField(b, 'name', ''), ...
-                obj.Backends, 'UniformOutput', false);
-            backendNames = backendNames(~cellfun(@isempty, backendNames));
+            circuitId  = RunPlannerViewModel.resolveCircuitId(obj);
+            % Look up the circuit's actual width (from AppState or the
+            % cached circuit list). Filter out backends that physically
+            % cannot run a circuit this wide — the server-side predict
+            % and mitigation estimators return NaN for those, leaving
+            % the Pareto panel showing Cost/Shots/Runtime as NaN with
+            % no actionable signal.
+            cQubits = RunPlannerViewModel.circuitQubitsFor(obj, circuitId);
+            backendPairs = struct('name', {}, 'q', {});
+            for bi = 1:numel(obj.Backends)
+                nm = char(string(RunPlannerViewModel.safeField( ...
+                    obj.Backends(bi), 'name', '')));
+                if isempty(nm); continue; end
+                bq = double(RunPlannerViewModel.safeField( ...
+                    obj.Backends(bi), 'num_qubits', 0));
+                if ~isfinite(bq); bq = 0; end
+                backendPairs(end+1) = struct('name', nm, 'q', bq); %#ok<AGROW>
+            end
+            if cQubits > 0
+                fit = arrayfun(@(p) p.q == 0 || p.q >= cQubits, backendPairs);
+                if ~any(fit)
+                    obj.Phase = 'error';
+                    widestQ = 0;
+                    if ~isempty(backendPairs); widestQ = max([backendPairs.q]); end
+                    obj.flashStatus(sprintf( ...
+                        ['No backend in your project supports this %d-qubit circuit. ' ...
+                         'Widest available is %d qubits — pick a smaller circuit ' ...
+                         'or add a wider backend.'], ...
+                        round(cQubits), round(widestQ)), 'danger');
+                    return;
+                end
+                backendPairs = backendPairs(fit);
+            end
+            backendNames = arrayfun(@(p) {p.name}, backendPairs);
             if isempty(backendNames) || isempty(obj.Levels)
                 obj.flashStatus(sprintf(Labels.get('run_planner_status_err'), ...
                     'no backends or strategies available'), 'danger');
@@ -252,8 +283,14 @@ classdef RunPlannerViewModel < handle
             tokenLocal = obj.App.State.authToken;
             mitSvc     = obj.App.Services.MitigationSvc;
             predSvc    = obj.App.Services.PredictionSvc;
-            circuitId  = RunPlannerViewModel.resolveCircuitId(obj);
-            qProxy     = RunPlannerViewModel.maxBackendQubits(obj.Backends);
+            % Use the actual circuit width when known; otherwise fall
+            % back to the legacy max-backend proxy so estimators still
+            % get a non-zero value.
+            if cQubits > 0
+                qForEstimate = cQubits;
+            else
+                qForEstimate = RunPlannerViewModel.maxBackendQubits(obj.Backends);
+            end
 
             % One runMany batch covers (1 predict + N mitigation estimate)
             % fetches. The pre-refactor pattern spawned (N+1) independent
@@ -279,7 +316,7 @@ classdef RunPlannerViewModel < handle
                     'primitive',                'sampler', ...
                     'backend_name',             char(string(backendNames{1})), ...
                     'base_shots',               int32(shots), ...
-                    'circuit_qubits',           int32(qProxy), ...
+                    'circuit_qubits',           int32(qForEstimate), ...
                     'cutting_overhead_qubits',  int32(0));
                 works{i+1} = @() RunPlannerViewModel.safeEstimate(mitSvc, body, tokenLocal);
             end
@@ -319,7 +356,17 @@ classdef RunPlannerViewModel < handle
                         'estimate failed (%s): %s', lid, r.qtauFetchErr);
                     costsByStrategy.(safeKey) = struct('lvl', lvl, 'cost', []);
                 else
-                    costsByStrategy.(safeKey) = struct('lvl', lvl, 'cost', r);
+                    % Unwrap the outer envelope. /api/mitigation/estimate
+                    % returns {plan, cost, summary}; the actual CostEstimate
+                    % lives inside r.cost. Reading r directly would search
+                    % for cost fields at the top level and miss every one,
+                    % so the planner used to bake NaN into every config.
+                    if isstruct(r) && isfield(r, 'cost') && ~isempty(r.cost)
+                        costEst = r.cost;
+                    else
+                        costEst = r;
+                    end
+                    costsByStrategy.(safeKey) = struct('lvl', lvl, 'cost', costEst);
                 end
             end
 
@@ -375,7 +422,14 @@ classdef RunPlannerViewModel < handle
                             msg = sprintf(Labels.get('run_planner_status_no_target'), ...
                                 target, obj.Optimal.point.fidelity, obj.Optimal.point.cost);
                         else
-                            msg = sprintf(Labels.get('run_planner_status_no_target'), target, NaN, NaN);
+                            % pickOptimal returned empty point — every
+                            % candidate failed cost estimation. Show an
+                            % actionable message instead of formatting
+                            % NaNs into the no-target template.
+                            msg = Labels.get('run_planner_status_no_viable', ...
+                                ['No viable configuration — every candidate backend ' ...
+                                 'failed cost estimation. The circuit may be too wide ' ...
+                                 'for any backend in your project.']);
                         end
                         col = Theme.COLOR_WARNING;
                     end
@@ -398,7 +452,7 @@ classdef RunPlannerViewModel < handle
                 return;
             end
             for i = 1:numel(obj.Circuits)
-                cid = RunPlannerViewModel.safeField(obj.Circuits(i), 'id', '');
+                cid = RunPlannerViewModel.pickCircuitId(obj.Circuits(i));
                 if strcmp(cid, v)
                     qasm = RunPlannerViewModel.safeField(obj.Circuits(i), 'raw_content', '');
                     if ~isempty(qasm)
@@ -421,9 +475,9 @@ classdef RunPlannerViewModel < handle
                 c = obj.Circuits(i);
                 name = RunPlannerViewModel.safeField(c, 'name', '?');
                 nq   = RunPlannerViewModel.safeField(c, 'num_qubits', 0);
-                cid  = RunPlannerViewModel.safeField(c, 'id', '');
+                cid  = RunPlannerViewModel.pickCircuitId(c);
                 items{end+1} = sprintf('%s (%dq)', char(string(name)), double(nq)); %#ok<AGROW>
-                ids{end+1}   = char(string(cid)); %#ok<AGROW>
+                ids{end+1}   = cid; %#ok<AGROW>
             end
             obj.CircuitDropdown.Items     = items;
             obj.CircuitDropdown.ItemsData = ids;
@@ -451,9 +505,17 @@ classdef RunPlannerViewModel < handle
                     lbl = RunPlannerViewModel.safeField(lvl, 'label', ...
                           RunPlannerViewModel.safeField(lvl, 'name', lid));
                     if isempty(entry.cost); continue; end
-                    cost = RunPlannerViewModel.pickCostField(entry.cost, 'estimated_cost_iqp', NaN);
-                    rt   = RunPlannerViewModel.pickCostField(entry.cost, 'estimated_runtime_seconds', NaN);
-                    tot  = RunPlannerViewModel.pickCostField(entry.cost, 'total_shots', NaN);
+                    % Field names match CostEstimate.to_dict() in
+                    % src/qdash/api/services/mitigation_service.py. The
+                    % older names (estimated_cost_iqp / estimated_runtime_seconds
+                    % / total_shots) never existed on the wire — the same
+                    % bug MitigationCompareViewModel fixed earlier (see
+                    % its line ~583 comment). Without these correct
+                    % names every Plan click silently produced NaN cost
+                    % / runtime / shots regardless of circuit width.
+                    cost = RunPlannerViewModel.pickCostField(entry.cost, 'est_iqp_units', NaN);
+                    rt   = RunPlannerViewModel.pickCostField(entry.cost, 'est_wall_seconds', NaN);
+                    tot  = RunPlannerViewModel.pickCostField(entry.cost, 'effective_shots', NaN);
                     mult = RunPlannerViewModel.pickCostField(entry.cost, 'shot_multiplier', 1.0);
                     fidM = RunPlannerService.applyMitigationFactor(baseFid, lid);
                     points(end+1) = RunPlannerService.makePoint( ...
@@ -511,8 +573,29 @@ classdef RunPlannerViewModel < handle
                     'MarkerSize', 6, 'LineWidth', 1.4);
             end
             target = obj.TargetSlider.Value;
-            xLim = [min(costs)*0.9, max(costs)*1.1];
-            if xLim(1) >= xLim(2); xLim = [0, max(1, max(costs))]; end
+            % Sanitize costs/fidelities before computing axis limits.
+            % Prediction can return NaN/Inf for backends that fail to
+            % transpile a given circuit, and a planner run can produce
+            % all-zero costs for very small / cached configurations.
+            % Without filtering those out min/max propagate NaN into
+            % XLim/YLim and MATLAB throws "Value must be a 1x2 vector
+            % … second element greater than the first or Inf".
+            finCosts = costs(isfinite(costs));
+            finFids  = fids(isfinite(fids));
+            if isempty(finCosts)
+                xLim = [0, 1];
+            else
+                xMin = min(finCosts);
+                xMax = max(finCosts);
+                xLim = [xMin*0.9, xMax*1.1];
+                if ~(xLim(1) < xLim(2))
+                    pad  = max(1e-6, abs(xMax) * 0.1);
+                    xLim = [xMin - pad, xMax + pad];
+                    if ~(xLim(1) < xLim(2))
+                        xLim = [0, max(1, xMax + 1)];
+                    end
+                end
+            end
             line(ax, xLim, [target target], 'Color', Theme.COLOR_WARNING, ...
                 'LineStyle', '--', 'LineWidth', 1.0);
             text(ax, xLim(2), target, sprintf(' target %.2f', target), ...
@@ -528,7 +611,14 @@ classdef RunPlannerViewModel < handle
             ax.XLabel.String = Labels.get('run_planner_chart_xlabel');
             ax.YLabel.String = Labels.get('run_planner_chart_ylabel');
             ax.Title.String  = Labels.get('run_planner_chart_title');
-            ax.XLim = xLim; ax.YLim = [max(0, min(fids)-0.05), 1.0];
+            if isempty(finFids)
+                yLim = [0, 1];
+            else
+                yLow = max(0, min(finFids) - 0.05);
+                yLim = [yLow, 1.0];
+                if ~(yLim(1) < yLim(2)); yLim = [0, 1]; end
+            end
+            ax.XLim = xLim; ax.YLim = yLim;
         end
 
         function repaintCard(obj)
@@ -636,6 +726,40 @@ classdef RunPlannerViewModel < handle
             catch
             end
             if isempty(v); v = def; end
+        end
+
+        function id = pickCircuitId(c)
+            % /api/circuits items expose the identifier under either
+            % `circuit_id` (current FastAPI shape, used by every other
+            % ViewModel) or the legacy `id` field. Without this fallback
+            % chain the planner's dropdown bound every entry's
+            % ItemsData to '' and the project-circuit Plan path bailed
+            % with "Compose at least one gate before planning." even
+            % when the operator picked a real circuit.
+            id = char(string(RunPlannerViewModel.safeField(c, 'circuit_id', '')));
+            if isempty(id)
+                id = char(string(RunPlannerViewModel.safeField(c, 'id', '')));
+            end
+        end
+
+        function q = circuitQubitsFor(obj, cid)
+            % Best-effort circuit width lookup. Tries AppState (set on
+            % Analysis nav) first, then the cached circuit list. Returns
+            % 0 when unknown so the caller can skip the width filter.
+            q = 0;
+            try
+                v = double(obj.App.State.selectedCircuitQubits);
+                if isfinite(v) && v > 0; q = v; return; end
+            catch
+            end
+            for i = 1:numel(obj.Circuits)
+                if strcmp(RunPlannerViewModel.pickCircuitId(obj.Circuits(i)), cid)
+                    v = double(RunPlannerViewModel.safeField( ...
+                        obj.Circuits(i), 'num_qubits', 0));
+                    if ~isfinite(v); v = 0; end
+                    q = v; return;
+                end
+            end
         end
 
         function n = parseLevelId(idChar)

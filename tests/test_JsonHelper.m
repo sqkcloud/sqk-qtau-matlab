@@ -59,6 +59,41 @@ classdef test_JsonHelper < matlab.unittest.TestCase
                 'pick should decode a JSON string input');
         end
 
+        % ── pickNumeric tests ────────────────────────────────────────────
+        function testPickNumericSinglePath(testCase)
+            data = struct('shots', 4096);
+            val = JsonHelper.pickNumeric(data, 'shots', NaN);
+            testCase.verifyEqual(val, 4096, ...
+                'pickNumeric should resolve a simple numeric field');
+        end
+
+        function testPickNumericFallbackChain(testCase)
+            data = struct('measured_fidelity', 0.97);
+            val = JsonHelper.pickNumeric(data, ...
+                {'estimated_fidelity','measured_fidelity','fidelity'}, NaN);
+            testCase.verifyEqual(val, 0.97, ...
+                'pickNumeric should fall through to the first matching path');
+        end
+
+        function testPickNumericMixedDotFallbackDoesNotError(testCase)
+            % Regression: previously split(["a","features.b"], '.') threw
+            % "Element 2 of the text contains 1 matches while the previous
+            % elements have 0", aborting ResultsViewModel.applyHeroAndKpis.
+            data = struct('features', struct('two_qubit_error_impact', 0.123));
+            val = JsonHelper.pickNumeric(data, ...
+                {'two_qubit_error_impact','features.two_qubit_error_impact'}, NaN);
+            testCase.verifyEqual(val, 0.123, ...
+                'pickNumeric must walk a dotted fallback path without crashing on mixed-dot chains');
+        end
+
+        function testPickNumericMissingReturnsDefault(testCase)
+            data = struct('foo', 'bar');
+            val = JsonHelper.pickNumeric(data, ...
+                {'nonexistent','also_missing'}, -1);
+            testCase.verifyEqual(val, -1, ...
+                'pickNumeric should return the supplied default when no path matches');
+        end
+
         % ── pickOne tests ────────────────────────────────────────────────
 
         function testPickOneSimple(testCase)

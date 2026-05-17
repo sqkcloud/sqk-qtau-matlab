@@ -808,7 +808,7 @@ classdef AnalysisViewModel < handle
                 dlgW = 1100; dlgH = 650;
                 dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
                 dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
-                dlg = uifigure('Name', 'QTAUBench Similarity Visualization', ...
+                dlg = uifigure('Name', 'Circuit Visualization', ...
                     'Position', [dlgX dlgY dlgW dlgH], ...
                     'Resize', 'on', 'Color', Theme.COLOR_BG);
                 Theme.applyFigureMode(dlg, Theme.activeName());
@@ -823,14 +823,43 @@ classdef AnalysisViewModel < handle
                 tg.Layout.Row = 1; tg.Layout.Column = 1;
 
                 % ══════════════════════════════════════════════════════════════
-                % Tab 1: QTAUBench Similarity Visualization
+                % Tab 1: Circuit Diagram (default-active — created first so
+                %   MATLAB selects it on initial paint).
+                % ══════════════════════════════════════════════════════════════
+                tabDiagram = uitab(tg, 'Title', 'Circuit Diagram');
+                tabDiagram.BackgroundColor = Theme.COLOR_CARD;
+
+                tabDiagramGrid = uigridlayout(tabDiagram, [1 1]);
+                tabDiagramGrid.Padding = [16 14 16 10];
+                tabDiagramGrid.BackgroundColor = Theme.COLOR_CARD;
+                diagramHtml = uihtml(tabDiagramGrid);
+                diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
+
+                % Async circuit-diagram fetch — walks a server-SVG →
+                % getCircuit fallback chain on the background pool;
+                % final HTMLSource lands from one of four main-thread
+                % callbacks (server-success, fallback-success, empty,
+                % failed).
+                svgContent = '<p style="color:#888;font-family:sans-serif">Loading circuit diagram...</p>';
+                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
+                if app.State.hasCircuit() && app.State.isAuthenticated()
+                    AnalysisViewModel.dispatchSimilarityDiagram( ...
+                        diagramHtml, app.CircuitSvc, ...
+                        char(app.State.selectedCircuitId), app.State.authToken);
+                else
+                    diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
+                        '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>');
+                end
+
+                % ══════════════════════════════════════════════════════════════
+                % Tab 2: Circuit Similarity
                 %   Single focused ranked-bar chart with auto-scaled X axis
                 %   (tight similarity bands of 97–98% become visually
                 %   differentiated) + a Match Profile side panel that
                 %   surfaces the current circuit, category breakdown, and
                 %   a calibrated interpretation of the top match.
                 % ══════════════════════════════════════════════════════════════
-                tab1 = uitab(tg, 'Title', 'QTAUBench Similarity Visualization');
+                tab1 = uitab(tg, 'Title', 'Circuit Similarity');
                 tab1.BackgroundColor = Theme.COLOR_CARD;
 
                 dg = uigridlayout(tab1, [2 2]);
@@ -947,35 +976,6 @@ classdef AnalysisViewModel < handle
                 profileArea.BackgroundColor = Theme.COLOR_CARD;
                 profileArea.Value = AnalysisViewModel.buildMatchProfileText( ...
                     curCircName, dispNames, sims, cats, notes, uniqueCats, topIdx);
-
-                % ══════════════════════════════════════════════════════════════
-                % Tab 2: Circuit Diagram
-                % ══════════════════════════════════════════════════════════════
-                tab2 = uitab(tg, 'Title', 'Circuit Diagram');
-                tab2.BackgroundColor = Theme.COLOR_CARD;
-
-                tab2Grid = uigridlayout(tab2, [1 1]);
-                tab2Grid.Padding = [16 14 16 10]; tab2Grid.BackgroundColor = Theme.COLOR_CARD;
-                diagramHtml = uihtml(tab2Grid);
-                diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
-
-                % Async circuit-diagram fetch — was a chained sync
-                % round-trip (server SVG → fallback getCircuit) that
-                % froze the dialog while the placeholder text was up.
-                % The dispatcher walks the same fallback chain on the
-                % background pool; final HTMLSource lands from one of
-                % four main-thread callbacks (server-success, fallback-
-                % success, fallback-empty, fallback-failed).
-                svgContent = '<p style="color:#888;font-family:sans-serif">Loading circuit diagram...</p>';
-                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
-                if app.State.hasCircuit() && app.State.isAuthenticated()
-                    AnalysisViewModel.dispatchSimilarityDiagram( ...
-                        diagramHtml, app.CircuitSvc, ...
-                        char(app.State.selectedCircuitId), app.State.authToken);
-                else
-                    diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
-                        '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>');
-                end
 
                 % ── Separator line ─────────────────────────────────────────
                 sep = uipanel(rootGrid, 'Title', '', 'BorderType', 'none');

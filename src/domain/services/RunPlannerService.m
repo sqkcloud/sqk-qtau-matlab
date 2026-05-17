@@ -112,9 +112,27 @@ classdef RunPlannerService
                 end
             end
             % Target not met — fall back to highest-fidelity overall.
-            allFids = [points.fidelity];
-            [~, idx] = max(allFids);
-            r.point     = points(idx);
+            % Keep the symmetry with computeParetoFrontier: only consider
+            % points with finite cost AND finite fidelity. Without this
+            % guard, when every backend failed cost estimation (e.g. the
+            % circuit is wider than every available backend) we'd hand
+            % back a point with NaN cost / runtime / shots and the
+            % Recommended card would render NaN everywhere, defeating
+            % the whole purpose of the planner. With the guard, point
+            % stays empty when nothing is feasible — the consumer's
+            % repaintCard already shows '—' for the empty case.
+            if isempty(points); return; end
+            costs = [points.cost];
+            fids  = [points.fidelity];
+            valid = isfinite(costs) & isfinite(fids);
+            if ~any(valid)
+                r.reason = 'no candidate with finite cost — circuit may be too wide for every available backend';
+                return;
+            end
+            cand = points(valid);
+            candFids = [cand.fidelity];
+            [~, idx] = max(candFids);
+            r.point     = cand(idx);
             r.metTarget = false;
             r.reason    = 'target not reachable; highest-fidelity option';
         end

@@ -49,6 +49,14 @@ classdef AppState < handle
 
         % ── Job context ───────────────────────────────────────────────────────
         selectedJobId string = ""
+        % Pinned job id set by an explicit operator gesture on the Jobs
+        % screen (right-click → View Results, or double-click a
+        % terminal row). ResultsViewModel.onRefreshResults consumes
+        % and clears this on render, bypassing its default
+        % "first-completed in /api/jobs" autodiscovery so the operator
+        % sees the exact job they picked even when the queue has
+        % several completed siblings.
+        pinnedJobId   string = ""
 
         % ── Prediction context ────────────────────────────────────────────────
         predictionId string = ""
@@ -215,6 +223,7 @@ classdef AppState < handle
             obj.selectedBackend       = "";
             obj.backupBackend       = "";
             obj.selectedJobId       = "";
+            obj.pinnedJobId         = "";
             obj.predictionId        = "";
             obj.reportId            = "";
         end

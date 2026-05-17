@@ -16,6 +16,13 @@ classdef ResultsViewModel < handle
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
+        % Memo of the row currently right-clicked on the Cutting Batches
+        % table. Set in onBatchContextMenuOpening so the menu handlers
+        % know which row they apply to even if Selection drifts between
+        % the open event and the user picking an item. Cheap: 2 char
+        % assignments, no I/O.
+        BatchContextRowId = ''
+        BatchContextRowStatus = ''
     end
     methods
         function obj = ResultsViewModel(app)
@@ -27,6 +34,28 @@ classdef ResultsViewModel < handle
             if ~app.State.isAuthenticated()
                 uialert(app.UIFigure, Labels.get('error_not_authenticated'), ...
                     'Results', 'Icon', 'warning');
+                return;
+            end
+            % Pinned-job fast path — an explicit operator gesture on the
+            % Jobs screen (right-click → View Results, double-click a
+            % terminal row) writes app.State.pinnedJobId. Honour it once,
+            % then clear so a later visit re-enters autodiscovery. Also
+            % mirror to selectedJobId so Download JSON / Generate Report
+            % / Detailed Analysis pick up the same context.
+            pinned = char(strtrim(app.State.pinnedJobId));
+            if ~isempty(pinned)
+                app.State.pinnedJobId   = "";
+                app.State.selectedJobId = string(pinned);
+                app.logEvent('API', sprintf( ...
+                    'Loading results for pinned job %s', pinned));
+                app.showLoading(Labels.get('loading_results', 'Loading results...'));
+                jobSvc = app.JobSvc;
+                token  = app.State.authToken;
+                AsyncRunner.run( ...
+                    @() jobSvc.getResults(pinned, token), ...
+                    @(data) obj.onRefreshResultsComplete(app, pinned, data), ...
+                    @(ME)   obj.onRefreshResultsError(app, pinned, ME));
+                obj.loadCuttingBatches();
                 return;
             end
             app.logEvent('API', 'Looking for a completed job to display');
@@ -85,7 +114,7 @@ classdef ResultsViewModel < handle
                 return;
             end
             app.logEvent('API', sprintf( ...
-                'GET /api/cutting/batches/%s/result', bid));
+                'Load reconstruction — batch %s', bid));
             app.showLoading(Labels.get('loading_results', 'Loading results...'));
             svc   = app.CuttingSvc;
             token = app.State.authToken;
@@ -215,6 +244,92 @@ classdef ResultsViewModel < handle
                 @() svc.getBatchResult(target, token), ...
                 @(data) obj.onReconstructionLoaded(app, target, data), ...
                 @(ME)   obj.onReconstructionError(app, target, ME));
+        end
+
+        % ── Cutting Batches context menu handlers ──────────────────────
+        %   Right-click on a Circuit Cutting Batches row opens a
+        %   uicontextmenu mirroring the bottom action bar (View
+        %   Reconstruction / Detailed Analysis / Download JSON /
+        %   Generate Report). The opening handler memos the clicked
+        %   row's batch_id + Status and toggles enable for the two
+        %   items that require a COMPLETED batch (Reconstruction and
+        %   Download JSON). Pure-nav items (Detailed Analysis,
+        %   Generate Report) stay always-enabled.
+
+        function onBatchContextMenuOpening(obj, ~, ~)
+            app = obj.App;
+            bid = '';
+            status = '';
+            try
+                tbl = app.CuttingBatchesTable;
+                if ~isempty(tbl) && isvalid(tbl) && ~isempty(tbl.Selection)
+                    row = tbl.Selection(1);
+                    d = tbl.Data;
+                    if ~isempty(d) && row >= 1 && row <= size(d, 1)
+                        bid = char(string(d{row, 1}));
+                        if size(d, 2) >= 6
+                            status = upper(char(string(d{row, 6})));
+                        end
+                    end
+                end
+            catch ME
+                Logger.debug('ResultsViewModel', ...
+                    'onBatchContextMenuOpening read failed: %s', ME.message);
+            end
+            obj.BatchContextRowId     = bid;
+            obj.BatchContextRowStatus = status;
+
+            terminalSet = {'COMPLETED','DONE','SUCCESS'};
+            isTerminal  = any(strcmp(status, terminalSet));
+            hasId       = ~isempty(strtrim(bid));
+
+            try
+                ResultsViewModel.setEnable(app, 'BatchesCtx_ViewReconstruction', hasId && isTerminal);
+                ResultsViewModel.setEnable(app, 'BatchesCtx_DownloadJson',       hasId && isTerminal);
+                ResultsViewModel.setEnable(app, 'BatchesCtx_DetailedAnalysis',   true);
+                ResultsViewModel.setEnable(app, 'BatchesCtx_GenerateReport',     true);
+            catch ME
+                Logger.debug('ResultsViewModel', ...
+                    'onBatchContextMenuOpening enable update failed: %s', ME.message);
+            end
+        end
+
+        function onBatchContextViewReconstruction(obj)
+            % Reuse the existing onViewReconstruction handler. Right-click
+            % already selected the row (triggering CellSelectionCallback
+            % → SelectedBatchId), but write the memoed id again
+            % defensively so the action targets the exact row the
+            % operator right-clicked.
+            bid = strtrim(obj.BatchContextRowId);
+            if isempty(bid); return; end
+            obj.App.SelectedBatchId = string(bid);
+            obj.onViewReconstruction();
+        end
+
+        function onBatchContextDownloadJson(obj)
+            % Download the cutting batch's reconstruction JSON (the
+            % BatchResultResponse payload) — distinct from the bottom
+            % action bar's Download JSON which targets the selected
+            % job's /api/jobs/{id}/results. Same Exporter pipeline,
+            % different service call. One HTTP fetch on user demand.
+            app = obj.App;
+            bid = strtrim(obj.BatchContextRowId);
+            if isempty(bid); return; end
+            if ~app.State.isAuthenticated()
+                uialert(app.UIFigure, ...
+                    Labels.get('error_not_authenticated'), ...
+                    'Download JSON', 'Icon', 'warning');
+                return;
+            end
+            app.logEvent('API', sprintf( ...
+                'Load reconstruction — batch %s (export)', bid));
+            app.showLoading('Fetching reconstruction for export...');
+            svc   = app.CuttingSvc;
+            token = app.State.authToken;
+            AsyncRunner.run( ...
+                @() svc.getBatchResult(bid, token), ...
+                @(data) ResultsViewModel.onBatchJsonExportReady(app, data, bid), ...
+                @(ME)   ResultsViewModel.onBatchJsonExportError(app, ME));
         end
     end
 
@@ -407,8 +522,22 @@ classdef ResultsViewModel < handle
                     'onBatchesLoaded: parse failed: %s', ME.message);
                 items = {};
             end
-            obj.CuttingBatches = items;
             nameMap = ResultsViewModel.buildCircuitNameMap(circList);
+
+            % Filter to cutting batches whose circuit matches the
+            % currently-displayed job's circuit. Without this, the
+            % Results screen lists every batch in the entire project
+            % regardless of which job the operator is inspecting — so
+            % a wstate_n76 job's Results panel would show a leftover
+            % qugan_n71 batch and confuse the operator into thinking
+            % the two are related.
+            target = strtrim(char(app.State.selectedCircuitName));
+            if ~isempty(target) && ~isempty(items)
+                keep = cellfun(@(b) ResultsViewModel.batchMatchesCircuit( ...
+                    b, nameMap, target), items);
+                items = items(keep);
+            end
+            obj.CuttingBatches = items;
 
             tbl = app.CuttingBatchesTable;
             if isempty(tbl) || ~isvalid(tbl); return; end
@@ -570,6 +699,48 @@ classdef ResultsViewModel < handle
     end
 
     methods (Static, Access = private)
+        function setEnable(app, propName, on)
+            % Defensive uimenu enable update — gracefully degrades when
+            % the property doesn't exist yet (e.g. tests without the
+            % full UI tree). Mirrors the helper in JobsViewModel.
+            try
+                if isprop(app, propName)
+                    h = app.(propName);
+                    if ~isempty(h) && isvalid(h)
+                        if on
+                            h.Enable = 'on';
+                        else
+                            h.Enable = 'off';
+                        end
+                    end
+                end
+            catch
+            end
+        end
+
+        function onBatchJsonExportReady(app, data, bid)
+            app.hideLoading();
+            % Filename pattern: Reconstruction_<batchId>_<minuteStamp>.json
+            % so it's distinct from job-results downloads (Results_…).
+            fname = Exporter.suggestFilename('Reconstruction', { ...
+                bid, Exporter.minuteStamp()});
+            ok = Exporter.toJsonFile(data, fname, app.UIFigure);
+            if ok
+                app.logEvent('FILE', sprintf( ...
+                    'Reconstruction JSON saved (batch %s)', bid));
+                app.State.logActivity( ...
+                    sprintf('Download Reconstruction JSON — batch %s', bid), ...
+                    'Success');
+            end
+        end
+
+        function onBatchJsonExportError(app, ME)
+            app.hideLoading();
+            app.logEvent('ERROR', sprintf( ...
+                'Reconstruction JSON export FAILED: %s', ME.message));
+            app.showError('Download JSON', ME);
+        end
+
         function out = fetchBatchesAndCircuits(cutSvc, circSvc, token)
             % Pull cutting batches (required) and circuits (best-effort)
             % so the row formatter can resolve circuit_id → name. A
@@ -582,6 +753,29 @@ classdef ResultsViewModel < handle
             catch ME
                 Logger.warn('ResultsViewModel', ...
                     'Circuit list fetch failed (batches still shown): %s', ME.message);
+            end
+        end
+
+        function tf = batchMatchesCircuit(batch, nameMap, targetName)
+            % True when a cutting batch's circuit (resolved via
+            % nameMap when the batch only carries circuit_id) matches
+            % the currently-displayed job's circuit name. Used to
+            % scope the Results screen's Cutting Batches table to the
+            % job under inspection. Falls back to a substring match
+            % so cutting-child labels like "qugan_n71.qasm (s2)" still
+            % associate with their parent.
+            tf = false;
+            try
+                cid = char(string(JsonHelper.pick(batch, {'circuit_id'}, '')));
+                cname = cid;
+                if ~isempty(cid) && isKey(nameMap, cid)
+                    cname = nameMap(cid);
+                end
+                cname = strtrim(char(cname));
+                if isempty(cname); return; end
+                tf = strcmpi(cname, targetName) ...
+                    || ~isempty(regexpi(cname, ['^' regexptranslate('escape', targetName) '($|\W)'], 'once'));
+            catch
             end
         end
 
@@ -849,14 +1043,35 @@ classdef ResultsViewModel < handle
                 return;
             end
             s = lower(strtrim(char(statusStr)));
+            % The Results endpoint returns `validation_status` ∈
+            % {pass, marginal, fail} — a *quality verdict* on measured
+            % fidelity vs the ideal-overlap threshold. That's distinct
+            % from the *execution lifecycle* status returned by the Jobs
+            % endpoint ({queued, running, completed, cancelled, failed}).
+            % The two share the word "fail" but mean very different
+            % things: validation "fail" = the job ran fine but the
+            % measured fidelity is below threshold (very common on
+            % noisy 70+ qubit hardware), execution "failed" = the job
+            % itself crashed. Rendering both as red "FAIL" makes
+            % operators think a completed job actually crashed.
+            %
+            %   validation 'fail'    → amber  "LOW FIDELITY"
+            %   lifecycle  'failed'  → red    "FAILED"
+            %   lifecycle  'cancelled' → red  "CANCELLED"
+            %   lifecycle  'error'   → red    "ERROR"
             switch s
                 case {'pass','success','completed','done'}
                     bg = Theme.COLOR_SUCCESS;
                     txt = upper(s);
+                case 'fail'
+                    % Validation verdict only — execution succeeded.
+                    bg = Theme.COLOR_AMBER;
+                    txt = 'LOW FIDELITY';
                 case {'marginal','warning','warn'}
                     bg = Theme.COLOR_AMBER;
                     txt = upper(s);
-                case {'fail','failed','error','cancelled'}
+                case {'failed','error','cancelled'}
+                    % Real lifecycle failure (the job did not complete).
                     bg = Theme.COLOR_DANGER;
                     txt = upper(s);
                 case {'queued','pending','running','executing'}

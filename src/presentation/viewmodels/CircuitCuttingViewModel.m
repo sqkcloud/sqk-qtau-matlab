@@ -540,7 +540,7 @@ classdef CircuitCuttingViewModel < handle
                 return;
             end
             app.logEvent('API', sprintf( ...
-                'GET /api/cutting/batches/%s/result', bid));
+                'Load reconstruction — batch %s', bid));
             % Async — this fetch was a 0.5-2 s freeze when the operator
             % clicked "View Reconstruction" to open the Reconstruction
             % Summary popup. Dialog construction now happens in the

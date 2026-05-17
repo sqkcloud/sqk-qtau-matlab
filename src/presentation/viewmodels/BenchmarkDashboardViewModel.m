@@ -246,10 +246,19 @@ classdef BenchmarkDashboardViewModel < handle
                     app.BenchmarkKpiLabels{k}.Text = '--';
                 end
             end
-            try cla(app.VolumetricAxes);   catch; end
-            try cla(app.ScorecardAxes);    catch; end
-            try cla(app.CalibrationAxes);  catch; end
-            try cla(app.RegressionAxes);   catch; end
+            % CRITICAL: `cla([])` does NOT error — it silently falls
+            % through to `cla(gca)`, and `gca` then SPAWNS a top-level
+            % Figure window with a default Cartesian axes when no
+            % current figure exists. That was the blank "Figures"
+            % window operators saw on every Benchmark Dashboard nav,
+            % BEFORE any lazy uiaxes had been materialised. The
+            % previous try/catch was useless because no exception
+            % fired — the figure-spawn is a side effect of gca().
+            % Only clear axes that actually exist.
+            BenchmarkDashboardViewModel.safeCla(app.VolumetricAxes);
+            BenchmarkDashboardViewModel.safeCla(app.ScorecardAxes);
+            BenchmarkDashboardViewModel.safeCla(app.CalibrationAxes);
+            BenchmarkDashboardViewModel.safeCla(app.RegressionAxes);
         end
 
         % ── System Metrics ───────────────────────────────────────────────
@@ -369,7 +378,14 @@ classdef BenchmarkDashboardViewModel < handle
                     {'width','depth','fidelity'}, [1 1 0]);
                 scatter(ax, depths, widths, 50, fids, 'filled');
                 colormap(ax, parula);
-                colorbar(ax);
+                % colorbar(ax) intentionally omitted — on MATLAB R2025b
+                % uifigure with the uiaxes inside a uigridlayout cell,
+                % colorbar() can't find room for the colorbar widget and
+                % silently spawns a new top-level Figure window to host
+                % it. The parula colormap + clim([0 1]) below already
+                % conveys the fidelity scale (blue = low, yellow = high)
+                % without the extra widget; the title makes the colour
+                % meaning explicit.
                 clim(ax, [0 1]);
                 title(ax, 'Volumetric Fidelity Map', 'Interpreter', 'none');
                 xlabel(ax, 'Circuit Depth', 'Interpreter', 'none');
@@ -382,7 +398,24 @@ classdef BenchmarkDashboardViewModel < handle
 
         % ── Backend Scorecard (Radar Chart) ──────────────────────────────
         function applyScorecard(obj, app, backendName, data)
+            % Lazy polaraxes — build on first apply with the explicit
+            % 'Parent' property syntax so MATLAB R2025b parents it
+            % cleanly to the uigridlayout instead of silently spawning
+            % a top-level Figure window (the blank "Figures" window
+            % operators saw the moment they clicked Benchmark
+            % Dashboard).
             ax = app.ScorecardAxes;
+            if isempty(ax) || ~isvalid(ax)
+                if isempty(app.ScorecardGrid) || ~isvalid(app.ScorecardGrid)
+                    return;
+                end
+                if ~isempty(app.ScorecardPlaceholder) && isvalid(app.ScorecardPlaceholder)
+                    delete(app.ScorecardPlaceholder);
+                    app.ScorecardPlaceholder = [];
+                end
+                ax = polaraxes('Parent', app.ScorecardGrid);
+                app.ScorecardAxes = ax;
+            end
             cla(ax);
             ax.ThetaTick = [0 90 180 270];
             ax.ThetaTickLabel = {'Capacity','Scalability','Accuracy','Runtime'};
@@ -732,6 +765,19 @@ classdef BenchmarkDashboardViewModel < handle
     end
 
     methods (Static, Access = private)
+
+        function safeCla(ax)
+            % cla() with an empty/invalid handle silently falls through
+            % to cla(gca) — and gca() SPAWNS a top-level Figure window
+            % when no current figure exists. This helper guards the
+            % call so resetAllPanels never accidentally triggers a
+            % figure-spawn before the lazy axes have been built.
+            if isempty(ax); return; end
+            try
+                if isvalid(ax); cla(ax); end
+            catch
+            end
+        end
 
         % ── Data fetching (runs off UI thread) ───────────────────────────
 

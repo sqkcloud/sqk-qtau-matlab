@@ -20,6 +20,23 @@ classdef JobsViewModel < handle
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
+        % Cache of ibm_job_id keyed by local job id. Populated on every
+        % getJob detail response (auto-fetched first row + explicit row
+        % click). Read by the context menu's "Copy IBM Job ID" and
+        % "Open in IBM Quantum" items so they don't have to re-fetch.
+        IbmJobIdByJobId = containers.Map('KeyType','char','ValueType','char')
+        % Job id whose row is currently right-clicked / double-clicked.
+        % Set by onContextMenuOpening and onDoubleClickJob so menu items
+        % know which row they apply to even if Selection has shifted by
+        % the time the user picks an item.
+        ContextRowJobId = ''
+        ContextRowStatus = ''
+        % Cleaned circuit-name string for the right-clicked row, used
+        % when pinning a job to Results / Detailed Analysis so the
+        % hero subtitle ("<circuit> · <backend> · <shots>") shows the
+        % matching circuit instead of whichever one happened to be in
+        % AppState.selectedCircuitName from a prior screen.
+        ContextRowCircuit = ''
     end
     methods
         function obj = JobsViewModel(app)
@@ -256,6 +273,214 @@ classdef JobsViewModel < handle
                 @(~) obj.onPauseJobComplete(app, jobId), ...
                 @(ME) obj.onPauseJobError(app, jobId, ME));
         end
+
+        % ── Context menu + double-click handlers ─────────────────────────
+        %   The Jobs table sprouts a right-click menu that bridges to
+        %   Results / Detailed Analysis for a chosen row, plus utility
+        %   actions (cancel, copy ids, open in IBM Quantum). Each item's
+        %   visibility/enable state is computed in onContextMenuOpening
+        %   based on the right-clicked row's status. A double-click on a
+        %   terminal row is a shortcut for "View Results".
+
+        function onContextMenuOpening(obj, ~, ~)
+            app = obj.App;
+            jobId = '';
+            statusStr = '';
+            circuit  = '';
+            try
+                tbl = app.JobsTable;
+                if ~isempty(tbl) && isvalid(tbl) && ~isempty(tbl.Selection)
+                    row = tbl.Selection(1);
+                    d = tbl.Data;
+                    if ~isempty(d) && row >= 1 && row <= size(d, 1)
+                        jobId     = char(string(d{row, 1}));
+                        if size(d, 2) >= 2
+                            circuit = JobsViewModel.stripCuttingPrefix( ...
+                                char(string(d{row, 2})));
+                        end
+                        if size(d, 2) >= 4
+                            statusStr = upper(char(string(d{row, 4})));
+                        end
+                    end
+                end
+            catch ME
+                Logger.debug('JobsViewModel', ...
+                    'onContextMenuOpening read failed: %s', ME.message);
+            end
+            obj.ContextRowJobId   = jobId;
+            obj.ContextRowStatus  = statusStr;
+            obj.ContextRowCircuit = circuit;
+
+            terminalSet = {'COMPLETED','DONE','SUCCESS'};
+            cancelSet   = {'QUEUED','RUNNING','PENDING','SUBMITTED'};
+            isTerminal  = any(strcmp(statusStr, terminalSet));
+            isCancel    = any(strcmp(statusStr, cancelSet));
+            hasId       = ~isempty(strtrim(jobId));
+            hasIbmId    = hasId && obj.IbmJobIdByJobId.isKey(jobId) ...
+                && ~isempty(strtrim(obj.IbmJobIdByJobId(jobId)));
+
+            try
+                JobsViewModel.setEnable(app, 'JobsCtx_ViewResults',       isTerminal);
+                JobsViewModel.setEnable(app, 'JobsCtx_DetailedAnalysis',  isTerminal);
+                JobsViewModel.setEnable(app, 'JobsCtx_Cancel',            isCancel);
+                JobsViewModel.setEnable(app, 'JobsCtx_CopyJobId',         hasId);
+                JobsViewModel.setEnable(app, 'JobsCtx_CopyIbmJobId',      hasIbmId);
+                JobsViewModel.setEnable(app, 'JobsCtx_OpenIbm',           hasIbmId);
+            catch ME
+                Logger.debug('JobsViewModel', ...
+                    'onContextMenuOpening enable update failed: %s', ME.message);
+            end
+        end
+
+        function onContextMenuViewResults(obj)
+            app = obj.App;
+            jobId = strtrim(obj.ContextRowJobId);
+            if isempty(jobId); return; end
+            terminalSet = {'COMPLETED','DONE','SUCCESS'};
+            if ~any(strcmp(obj.ContextRowStatus, terminalSet))
+                uialert(app.UIFigure, ...
+                    Labels.get('jobs_dbl_click_not_ready', ...
+                        ['Job is still running. Results will appear ' ...
+                         'when status = completed.']), ...
+                    Labels.get('jobs_ctx_view_results', 'View Results'), ...
+                    'Icon', 'info');
+                return;
+            end
+            app.State.pinnedJobId   = string(jobId);
+            app.State.selectedJobId = string(jobId);
+            if ~isempty(obj.ContextRowCircuit)
+                app.State.selectedCircuitName = string(obj.ContextRowCircuit);
+            end
+            app.logEvent('NAV', sprintf( ...
+                'Jobs → Results (pinned job %s)', jobId));
+            app.onSelectSection('Results');
+        end
+
+        function onContextMenuDetailedAnalysis(obj)
+            app = obj.App;
+            jobId = strtrim(obj.ContextRowJobId);
+            if isempty(jobId); return; end
+            terminalSet = {'COMPLETED','DONE','SUCCESS'};
+            if ~any(strcmp(obj.ContextRowStatus, terminalSet))
+                uialert(app.UIFigure, ...
+                    Labels.get('jobs_dbl_click_not_ready', ...
+                        ['Job is still running. Results will appear ' ...
+                         'when status = completed.']), ...
+                    Labels.get('jobs_ctx_detailed_analysis', 'Detailed Analysis'), ...
+                    'Icon', 'info');
+                return;
+            end
+            app.State.pinnedJobId   = string(jobId);
+            app.State.selectedJobId = string(jobId);
+            if ~isempty(obj.ContextRowCircuit)
+                app.State.selectedCircuitName = string(obj.ContextRowCircuit);
+            end
+            app.logEvent('NAV', sprintf( ...
+                'Jobs → Detailed Analysis (pinned job %s)', jobId));
+            app.onSelectSection('Detailed Analysis');
+        end
+
+        function onContextMenuCancel(obj)
+            jobId = strtrim(obj.ContextRowJobId);
+            if isempty(jobId); return; end
+            obj.App.State.selectedJobId = string(jobId);
+            obj.onCancelJob();
+        end
+
+        function onContextMenuCopyJobId(obj)
+            jobId = strtrim(obj.ContextRowJobId);
+            if isempty(jobId); return; end
+            try
+                clipboard('copy', jobId);
+                obj.App.logEvent('UI', sprintf( ...
+                    'Copied Job ID to clipboard: %s', jobId));
+            catch ME
+                Logger.warn('JobsViewModel', ...
+                    'clipboard copy failed: %s', ME.message);
+            end
+        end
+
+        function onContextMenuCopyIbmJobId(obj)
+            jobId = strtrim(obj.ContextRowJobId);
+            if isempty(jobId); return; end
+            if ~obj.IbmJobIdByJobId.isKey(jobId); return; end
+            ibmId = strtrim(obj.IbmJobIdByJobId(jobId));
+            if isempty(ibmId); return; end
+            try
+                clipboard('copy', ibmId);
+                obj.App.logEvent('UI', sprintf( ...
+                    'Copied IBM Job ID to clipboard: %s', ibmId));
+            catch ME
+                Logger.warn('JobsViewModel', ...
+                    'clipboard copy failed: %s', ME.message);
+            end
+        end
+
+        function onContextMenuOpenIbm(obj)
+            app = obj.App;
+            jobId = strtrim(obj.ContextRowJobId);
+            if isempty(jobId); return; end
+            if ~obj.IbmJobIdByJobId.isKey(jobId); return; end
+            ibmId = strtrim(obj.IbmJobIdByJobId(jobId));
+            if isempty(ibmId); return; end
+            url = ['https://quantum.ibm.com/jobs/' ibmId];
+            try
+                web(url, '-browser');
+                app.logEvent('UI', sprintf( ...
+                    'Opened IBM Quantum dashboard: %s', url));
+            catch ME
+                Logger.warn('JobsViewModel', ...
+                    'web() open failed: %s', ME.message);
+                uialert(app.UIFigure, ...
+                    sprintf('Could not open default browser. URL: %s', url), ...
+                    'Open in IBM Quantum', 'Icon', 'warning');
+            end
+        end
+
+        function onDoubleClickJob(obj, src, ~)
+            app = obj.App;
+            jobId = '';
+            statusStr = '';
+            circuit = '';
+            try
+                if ~isempty(src.Selection)
+                    row = src.Selection(1);
+                    d = src.Data;
+                    if ~isempty(d) && row >= 1 && row <= size(d, 1)
+                        jobId = char(string(d{row, 1}));
+                        if size(d, 2) >= 2
+                            circuit = JobsViewModel.stripCuttingPrefix( ...
+                                char(string(d{row, 2})));
+                        end
+                        if size(d, 2) >= 4
+                            statusStr = upper(char(string(d{row, 4})));
+                        end
+                    end
+                end
+            catch ME
+                Logger.debug('JobsViewModel', ...
+                    'onDoubleClickJob read failed: %s', ME.message);
+                return;
+            end
+            if isempty(strtrim(jobId)); return; end
+            terminalSet = {'COMPLETED','DONE','SUCCESS'};
+            if ~any(strcmp(statusStr, terminalSet))
+                uialert(app.UIFigure, ...
+                    Labels.get('jobs_dbl_click_not_ready', ...
+                        ['Job is still running. Results will appear ' ...
+                         'when status = completed.']), ...
+                    'View Results', 'Icon', 'info');
+                return;
+            end
+            app.State.pinnedJobId   = string(jobId);
+            app.State.selectedJobId = string(jobId);
+            if ~isempty(circuit)
+                app.State.selectedCircuitName = string(circuit);
+            end
+            app.logEvent('NAV', sprintf( ...
+                'Jobs double-click → Results (pinned job %s)', jobId));
+            app.onSelectSection('Results');
+        end
     end
 
     methods (Access = private)
@@ -359,10 +584,33 @@ classdef JobsViewModel < handle
                 % whichever subset matches the current search query.
                 obj.FullRows = rows;
                 obj.applyFilter(app);
-                firstId = string(rows{1,1});
-                firstStatus = char(rows{1,4});   % col 4 = Status
-                app.State.selectedJobId = firstId;
-                app.logEvent('UI', sprintf('Auto-selected first job: %s', firstId));
+                % Honour an explicit operator selection across the 5s
+                % auto-refresh tick: if the previously selected job is
+                % still present in the freshly-loaded page, keep it
+                % selected instead of snapping back to row 1. Falls
+                % back to row 1 only when the selection is empty or
+                % the previously-selected job has rolled off the page.
+                ids = string(rows(:, 1));
+                priorId = string(app.State.selectedJobId);
+                keepIdx = [];
+                if strlength(strtrim(priorId)) > 0
+                    keepIdx = find(ids == priorId, 1, 'first');
+                end
+                if ~isempty(keepIdx)
+                    firstId = priorId;
+                    firstStatus = char(rows{keepIdx, 4});
+                    try
+                        if ~isempty(app.JobsTable) && isvalid(app.JobsTable)
+                            app.JobsTable.Selection = keepIdx;
+                        end
+                    catch
+                    end
+                else
+                    firstId = string(rows{1,1});
+                    firstStatus = char(rows{1,4});   % col 4 = Status
+                    app.State.selectedJobId = firstId;
+                    app.logEvent('UI', sprintf('Auto-selected first job: %s', firstId));
+                end
 
                 % Auto-fetch the first job's detail so the Detailed Job
                 % Logs panel is populated without the user having to
@@ -431,7 +679,7 @@ classdef JobsViewModel < handle
             app.showError('Cancel Job', ME);
         end
 
-        function onSelectJobComplete(~, app, jobId, job)
+        function onSelectJobComplete(obj, app, jobId, job)
             % Right panel: Live Monitor Notes (concise status).
             statusStr  = upper(char(JsonHelper.pick(job, {'status','job_status'}, '')));
             progress   = JsonHelper.pickNumeric(job, 'progress_pct', NaN);
@@ -439,6 +687,17 @@ classdef JobsViewModel < handle
             backendStr = char(JsonHelper.pick(job, {'backend_name','backend'}, ''));
             shots      = JsonHelper.pickNumeric(job, 'shots', NaN);
             ibmJobId   = char(JsonHelper.pick(job, {'ibm_job_id'}, ''));
+
+            % Cache ibm_job_id so the context menu's "Copy IBM Job ID"
+            % and "Open in IBM Quantum" items work without re-fetching.
+            try
+                if ~isempty(strtrim(ibmJobId))
+                    obj.IbmJobIdByJobId(char(jobId)) = ibmJobId;
+                end
+            catch ME
+                Logger.debug('JobsViewModel', ...
+                    'IBM id cache write failed: %s', ME.message);
+            end
             circuitId  = char(JsonHelper.pick(job, {'circuit_id'}, ''));
             submitted  = char(JsonHelper.pick(job, {'submitted_at','created_at'}, ''));
             completed  = char(JsonHelper.pick(job, {'completed_at'}, ''));
@@ -575,6 +834,38 @@ classdef JobsViewModel < handle
     end
 
     methods (Static, Access = private)
+        function out = stripCuttingPrefix(s)
+            % Strip the "✂ " (char(9986) + space) decoration that
+            % jobsToRows prepends to cutting sub-job rows so the cleaned
+            % circuit name is suitable for AppState.selectedCircuitName
+            % (which flows into Reports titles and Download-JSON file
+            % names). Returns the input unchanged when no prefix.
+            out = char(s);
+            prefix = [char(9986) ' '];
+            if numel(out) >= numel(prefix) && strcmp(out(1:numel(prefix)), prefix)
+                out = out(numel(prefix)+1:end);
+            end
+        end
+
+        function setEnable(app, propName, on)
+            % Defensive uimenu enable update — gracefully degrades when
+            % the property doesn't exist yet (e.g. tests that don't
+            % build the full UI tree).
+            try
+                if isprop(app, propName)
+                    h = app.(propName);
+                    if ~isempty(h) && isvalid(h)
+                        if on
+                            h.Enable = 'on';
+                        else
+                            h.Enable = 'off';
+                        end
+                    end
+                end
+            catch
+            end
+        end
+
         function out = safeListCircuits(circSvc, token)
             % Wraps circSvc.listCircuits in try/catch so a circuits-API
             % failure does NOT poison the parallel batch. The job list

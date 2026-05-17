@@ -119,7 +119,10 @@ end
 function buildBody(parent, vm)
     g = uigridlayout(parent, [1 2]);
     g.Layout.Row = 3; g.Layout.Column = 1;
-    g.ColumnWidth = {'1x', 320}; g.ColumnSpacing = 10;
+    % Right column hosts the Recommended card. Widened from 320 to 365
+    % so labels like "Custom (advanced) (level 1)" render in full
+    % instead of clipping to "Custom (advanced) (leve…".
+    g.ColumnWidth = {'1x', 365}; g.ColumnSpacing = 10;
     g.Padding = [0 0 0 0];
     g.BackgroundColor = Theme.COLOR_BG;
 

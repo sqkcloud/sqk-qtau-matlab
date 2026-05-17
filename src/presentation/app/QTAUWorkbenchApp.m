@@ -448,6 +448,16 @@ classdef QTAUWorkbenchApp < handle
         JobsPrevButton          % Pagination: previous page
         JobsNextButton          % Pagination: next page
         JobsPageLabel           % Pagination footer text
+        % Right-click context menu on JobsTable. Built in JobsScreen,
+        % enable/disable driven by JobsViewModel.onContextMenuOpening
+        % from the right-clicked row's Status column.
+        JobsContextMenu
+        JobsCtx_ViewResults
+        JobsCtx_DetailedAnalysis
+        JobsCtx_Cancel
+        JobsCtx_CopyJobId
+        JobsCtx_CopyIbmJobId
+        JobsCtx_OpenIbm
     end
 
     % ── Results tab ───────────────────────────────────────────────────────────
@@ -463,6 +473,15 @@ classdef QTAUWorkbenchApp < handle
         ResultsRawToggleBtn          % right half
         CuttingBatchesTable    % Cutting Batches list on the Results screen
         SelectedBatchId = ""   % Most recently picked cutting batch row
+        % Right-click context menu on CuttingBatchesTable. Built in
+        % ResultsScreen, enable/disable driven by
+        % ResultsViewModel.onBatchContextMenuOpening from the row's
+        % Status column.
+        BatchesContextMenu
+        BatchesCtx_ViewReconstruction
+        BatchesCtx_DetailedAnalysis
+        BatchesCtx_DownloadJson
+        BatchesCtx_GenerateReport
         % Tier B exports — Download JSON dumps /api/jobs/{id}/results
         % via Exporter.toJsonFile; Generate Report bridges to the
         % Reports screen whose loadReportsList → seedReportTitle
@@ -555,6 +574,8 @@ classdef QTAUWorkbenchApp < handle
         VolumetricGrid                 % parent grid for the lazy uiaxes
         VolumetricPlaceholder          % uilabel placeholder until the uiaxes materialises
         ScorecardAxes
+        ScorecardGrid                  % parent grid for the lazy polaraxes
+        ScorecardPlaceholder           % uilabel placeholder until the polaraxes materialises
         CalibrationAxes
         CalibrationGrid                % parent grid for the lazy uiaxes
         CalibrationPlaceholder         % uilabel placeholder until the uiaxes materialises
@@ -914,6 +935,23 @@ classdef QTAUWorkbenchApp < handle
         %   stop the underlying server-side job from progressing.
         function runInBackground(app, taskId)
             try; app.hideLoading(); catch; end
+            % Release the QMC overlay binding when the backgrounded task
+            % matches the active QMC binding. Without this, the QMC
+            % PollingRunner's onQmcProgress tick (every 3 s) sees
+            % QmcActiveTaskId == taskId, passes its strcmp gate, and
+            % re-calls app.showLoading(...) — which re-pops the modal
+            % overlay seconds after the operator clicked "Run in
+            % background". The poll itself stays alive (managed by
+            % BackgroundTasks); only the overlay binding is dropped,
+            % fulfilling the run-in-background promise.
+            try
+                if ~isempty(taskId) && ~isempty(app.QmcActiveTaskId) ...
+                        && strcmp(char(app.QmcActiveTaskId), char(taskId))
+                    app.QmcActiveJobId  = '';
+                    app.QmcActiveTaskId = '';
+                end
+            catch
+            end
             try
                 if ~isempty(taskId) && ~isempty(app.BackgroundTasks)
                     t = app.BackgroundTasks.findById(taskId);

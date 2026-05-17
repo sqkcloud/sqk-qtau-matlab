@@ -107,25 +107,44 @@ classdef JsonHelper
         %   convertible. Handles struct/char/string/numeric values uniformly so
         %   ViewModels can read JSON fields that webread may decode as any of
         %   these types.
+        %
+        %   `path` may be a single char/string OR a cell/string array of
+        %   fallback paths (first found wins) — mirrors the contract of
+        %   JsonHelper.pick so callers like ResultsViewModel can resolve
+        %   {'two_qubit_error_impact','features.two_qubit_error_impact'}
+        %   in one call. Without the fallback-chain support split(string,
+        %   '.') errors when the cell mixes dotted and non-dotted paths,
+        %   which used to abort applyHeroAndKpis and leave the Results
+        %   screen rendering blank tiles + a placeholder histogram.
         function value = pickNumeric(data, path, default)
             if nargin < 3; default = NaN; end
-            [found, raw] = JsonHelper.pickRawOne(JsonHelper.decodeIfJson(data), string(path));
-            if ~found
-                value = default; return;
+            if ischar(path)
+                paths = {path};
+            elseif isstring(path)
+                paths = cellstr(path);
+            elseif iscell(path)
+                paths = path;
+            else
+                paths = {char(string(path))};
             end
-            try
-                if isnumeric(raw) || islogical(raw)
-                    if isempty(raw); value = default; return; end
-                    value = double(raw(1));
-                elseif ischar(raw) || isstring(raw)
-                    v = str2double(char(raw));
-                    if isnan(v); value = default; else; value = v; end
-                else
-                    value = default;
+            decoded = JsonHelper.decodeIfJson(data);
+            for i = 1:numel(paths)
+                [found, raw] = JsonHelper.pickRawOne(decoded, string(paths{i}));
+                if ~found; continue; end
+                try
+                    if isnumeric(raw) || islogical(raw)
+                        if isempty(raw); continue; end
+                        value = double(raw(1));
+                        return;
+                    elseif ischar(raw) || isstring(raw)
+                        v = str2double(char(raw));
+                        if ~isnan(v); value = v; return; end
+                    end
+                catch
+                    % Fall through to next path / default.
                 end
-            catch
-                value = default;
             end
+            value = default;
         end
 
         % pickRawOne  Navigate a single dotted path, return (found, raw).

@@ -245,7 +245,7 @@ classdef DialogBuilder
         function buildNewProjectDialog(app)
             % Create modal New Project dialog — modern card layout
             figPos = app.UIFigure.Position;
-            dlgW = 480; dlgH = 520;
+            dlgW = 480; dlgH = 420;
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
 
@@ -279,8 +279,8 @@ classdef DialogBuilder
                 'BorderColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            cg = uigridlayout(card, [12 1]);
-            cg.RowHeight = {28, 18, 10, 16, 34, 16, 90, 16, 34, 14, 42, 20};
+            cg = uigridlayout(card, [14 1]);
+            cg.RowHeight = {28, 18, 10, 16, 34, 16, 90, 16, 34, 8, 1, 8, 36, 20};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [36 24 36 20];
             cg.RowSpacing  = 2;
@@ -330,26 +330,40 @@ classdef DialogBuilder
                 'FontSize', 13);
             app.NewProjTagsField.Layout.Row = 9; app.NewProjTagsField.Layout.Column = 1;
 
-            btnBar = uigridlayout(cg, [1 2]);
-            btnBar.Layout.Row = 11; btnBar.Layout.Column = 1;
-            btnBar.ColumnWidth = {'1x', '1x'};
-            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
+            % Hairline divider between content and footer — same pattern
+            % every Composer dialog uses (uipanel with Theme.COLOR_DIVIDER
+            % background, no border, parked in a 1-px row).
+            divider = uipanel(cg, 'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_DIVIDER); %#ok<NASGU>
+            divider.Layout.Row = 11; divider.Layout.Column = 1;
+
+            % Footer: invisible left spacer + Cancel (100 px) + Create (150 px).
+            % Matches the canonical right-aligned action-button layout used
+            % across Composer / QMC / EM dialogs instead of the prior
+            % stretch-to-fill 50/50 layout.
+            btnBar = uigridlayout(cg, [1 3]);
+            btnBar.Layout.Row = 13; btnBar.Layout.Column = 1;
+            btnBar.ColumnWidth = {'1x', 100, 150};
+            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 8;
             btnBar.BackgroundColor = cardBg;
+
+            btnSpacer = uilabel(btnBar, 'Text', ''); %#ok<NASGU>
+            btnSpacer.Layout.Row = 1; btnSpacer.Layout.Column = 1;
 
             cancelBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_cancel', 'Cancel'), ...
                 'ButtonPushedFcn', @(~,~)delete(app.NewProjectDialog));
-            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 2;
             app.styleBtn(cancelBtn, 'ghost');
 
             createBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_create', 'Create'), ...
                 'ButtonPushedFcn', @(~,~)app.WelcomeVm.onCreateProject());
-            createBtn.Layout.Row = 1; createBtn.Layout.Column = 2;
+            createBtn.Layout.Row = 1; createBtn.Layout.Column = 3;
             app.styleBtn(createBtn, 'primary');
 
             app.NewProjStatusLabel = uilabel(cg, 'Text', '', ...
                 'FontSize', 11, 'FontColor', errorRed, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.NewProjStatusLabel.Layout.Row = 12; app.NewProjStatusLabel.Layout.Column = 1;
+            app.NewProjStatusLabel.Layout.Row = 14; app.NewProjStatusLabel.Layout.Column = 1;
 
             Logger.info('DialogBuilder', 'New Project dialog shown');
         end
@@ -358,7 +372,7 @@ classdef DialogBuilder
             % Create modal Edit Project dialog pre-filled with existing data
             app.EditProjId = projectId;
             figPos = app.UIFigure.Position;
-            dlgW = 480; dlgH = 520;
+            dlgW = 480; dlgH = 420;
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
 
@@ -392,8 +406,8 @@ classdef DialogBuilder
                 'BorderColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            cg = uigridlayout(card, [12 1]);
-            cg.RowHeight = {28, 18, 10, 16, 34, 16, 90, 16, 34, 14, 42, 20};
+            cg = uigridlayout(card, [14 1]);
+            cg.RowHeight = {28, 18, 10, 16, 34, 16, 90, 16, 34, 8, 1, 8, 36, 20};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [36 24 36 20];
             cg.RowSpacing  = 2;
@@ -440,26 +454,39 @@ classdef DialogBuilder
                 'FontSize', 13);
             app.EditProjTagsField.Layout.Row = 9; app.EditProjTagsField.Layout.Column = 1;
 
-            btnBar = uigridlayout(cg, [1 2]);
-            btnBar.Layout.Row = 11; btnBar.Layout.Column = 1;
-            btnBar.ColumnWidth = {'1x', '1x'};
-            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
+            % Hairline divider between content and footer — matches the
+            % Composer/QMC/EM dialog pattern: uipanel with Theme.COLOR_DIVIDER
+            % background, no border, parked in a 1-px row.
+            divider = uipanel(cg, 'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_DIVIDER); %#ok<NASGU>
+            divider.Layout.Row = 11; divider.Layout.Column = 1;
+
+            % Footer: invisible left spacer + Cancel (100 px) + Save (150 px).
+            % Same canonical right-aligned action-button layout used
+            % across Composer / QMC / EM dialogs.
+            btnBar = uigridlayout(cg, [1 3]);
+            btnBar.Layout.Row = 13; btnBar.Layout.Column = 1;
+            btnBar.ColumnWidth = {'1x', 100, 150};
+            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 8;
             btnBar.BackgroundColor = cardBg;
 
-            cancelBtn = uibutton(btnBar, 'Text', [char(10006) ' ' Labels.get('edit_proj_btn_cancel', 'Cancel')], ...
+            btnSpacer = uilabel(btnBar, 'Text', ''); %#ok<NASGU>
+            btnSpacer.Layout.Row = 1; btnSpacer.Layout.Column = 1;
+
+            cancelBtn = uibutton(btnBar, 'Text', Labels.get('edit_proj_btn_cancel', 'Cancel'), ...
                 'ButtonPushedFcn', @(~,~)delete(app.EditProjectDialog));
-            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 2;
             app.styleBtn(cancelBtn, 'ghost');
 
-            saveBtn = uibutton(btnBar, 'Text', [char(10004) ' ' Labels.get('edit_proj_btn_save', 'Save')], ...
+            saveBtn = uibutton(btnBar, 'Text', Labels.get('edit_proj_btn_save', 'Save'), ...
                 'ButtonPushedFcn', @(~,~)app.WelcomeVm.onSaveProject());
-            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 2;
+            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 3;
             app.styleBtn(saveBtn, 'primary');
 
             app.EditProjStatusLabel = uilabel(cg, 'Text', '', ...
                 'FontSize', 11, 'FontColor', errorRed, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.EditProjStatusLabel.Layout.Row = 12; app.EditProjStatusLabel.Layout.Column = 1;
+            app.EditProjStatusLabel.Layout.Row = 14; app.EditProjStatusLabel.Layout.Column = 1;
 
             Logger.info('DialogBuilder', 'Edit Project dialog shown for: %s', char(projectId));
         end
@@ -1436,10 +1463,16 @@ classdef DialogBuilder
             % ── Body: table + (optional) diagnostic
             body = uigridlayout(cg, [2 1]);
             body.Layout.Row = 4; body.Layout.Column = 1;
+            % Row 1 (Expectation values panel) was previously '1x' inside
+            % an outer 'fit' parent row, which collapsed the table to its
+            % minimal intrinsic height (header + 1 blank row). Fixed at
+            % 100 px so the operator sees several rows of expectation
+            % data without resizing the dialog (+~50 px over the prior
+            % visible height).
             if nNaN > 0
-                body.RowHeight = {'1x', 96};
+                body.RowHeight = {100, 96};
             else
-                body.RowHeight = {'1x', 0};
+                body.RowHeight = {100, 0};
             end
             body.RowSpacing = 10; body.Padding = [0 0 0 0];
             body.BackgroundColor = cardBg;
@@ -1454,7 +1487,11 @@ classdef DialogBuilder
 
             tbl = uitable(tg);
             tbl.ColumnName  = {'#', 'Observable', 'Value', 'Std err', 'Status'};
-            tbl.ColumnWidth = {40, 460, 120, 110, 90};
+            % Observable column flexes ('1x') so the table fills the
+            % full panel width out to the outline border instead of
+            % stopping short with a black void on the right. Other
+            % columns keep fixed pixel widths for predictable layout.
+            tbl.ColumnWidth = {40, '1x', 120, 110, 90};
             tbl.RowName     = {};
             tbl.Data        = DialogBuilder.expectationsToRows(items);
             try; StyleHelper.styleTable(tbl); catch; end

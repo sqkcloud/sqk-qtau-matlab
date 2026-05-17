@@ -5,6 +5,22 @@ classdef BenchmarkViewModel < handle
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
+        % Pre-flight cache: backend name (char) → num_qubits (double).
+        % Populated when the backend dropdown is filled so
+        % onSubmitBenchmarkToIbm can reject e.g. a 380-qubit circuit
+        % against a 156-qubit backend before sending it to
+        % /api/jobs/submit (which would otherwise come back as an
+        % opaque 502 Bad Gateway after IBM's coupling-map validator
+        % rejects the job server-side).
+        BackendQubitsByName = containers.Map('KeyType','char','ValueType','double')
+        % Parallel pre-flight cache: circuit_id → num_qubits.
+        % AppState.selectedCircuitQubits is only set when the operator
+        % goes through the Analysis flow; if they jump straight to
+        % Benchmark and pick a circuit from the dropdown, that field
+        % stays 0. Capturing num_qubits at dropdown-populate time gives
+        % the pre-flight a fallback so width validation works regardless
+        % of nav order.
+        CircuitQubitsById = containers.Map('KeyType','char','ValueType','double')
     end
     methods
         function obj = BenchmarkViewModel(app)
@@ -197,6 +213,58 @@ classdef BenchmarkViewModel < handle
                     return;
                 end
             end
+            % Pre-flight qubit-width check — fail fast with a clear
+            % message instead of letting IBM's coupling_map validator
+            % reject a 380-qubit circuit on a 156-qubit backend and
+            % surface as a confusing 502 Bad Gateway. Mirrors the QMC
+            % dialog's pre-flight (AnalysisViewModel.lookupBackendQubits
+            % + evaluateQmcViability). Skips silently when either side
+            % is unknown (cached metadata cold-start or older API
+            % response missing num_qubits) so a missing field never
+            % blocks an otherwise-valid submit.
+            try
+                cQubits = double(app.State.selectedCircuitQubits);
+            catch
+                cQubits = 0;
+            end
+            if ~isfinite(cQubits); cQubits = 0; end
+            % Fall back to the dropdown-populate map when AppState wasn't
+            % primed (e.g. operator jumped to Benchmark without visiting
+            % Analysis).
+            if cQubits <= 0
+                try
+                    if obj.CircuitQubitsById.isKey(circuitId)
+                        cQubits = double(obj.CircuitQubitsById(circuitId));
+                    end
+                catch
+                end
+            end
+            bQubits = 0;
+            try
+                if obj.BackendQubitsByName.isKey(backendName)
+                    bQubits = double(obj.BackendQubitsByName(backendName));
+                end
+            catch
+                bQubits = 0;
+            end
+            if cQubits > 0 && bQubits > 0 && cQubits > bQubits
+                cName = char(app.State.selectedCircuitName);
+                if isempty(cName); cName = circuitId; end
+                msg = sprintf( ...
+                    ['Cannot submit: circuit "%s" has %d qubits but ' ...
+                     'backend "%s" only supports %d. ' newline newline ...
+                     'Pick a backend with at least %d qubits, or load ' ...
+                     'a smaller circuit.'], ...
+                    cName, round(cQubits), backendName, round(bQubits), ...
+                    round(cQubits));
+                app.logEvent('WARN', sprintf( ...
+                    'Pre-flight rejected submit — circuit %dq > backend %s %dq', ...
+                    round(cQubits), backendName, round(bQubits)));
+                uialert(app.UIFigure, msg, ...
+                    'Submit Benchmark to IBM', 'Icon', 'error');
+                return;
+            end
+
             shots = round(app.BenchmarkShotsField.Value);
             opt   = round(app.BenchmarkOptField.Value);
             mitig = char(app.BenchmarkMitigationDropdown.Value);
@@ -458,11 +526,24 @@ classdef BenchmarkViewModel < handle
             end
             names = cell(1, n);
             ids   = cell(1, n);
+            % Rebuild the pre-flight circuit-qubits map alongside the
+            % dropdown so submit-time width checks work even if the
+            % operator never visits Analysis to set selectedCircuitQubits.
+            obj.CircuitQubitsById = containers.Map( ...
+                'KeyType','char','ValueType','double');
             for i = 1:n
                 ids{i}   = char(JsonHelper.pick(items(i), {'circuit_id','id'}));
                 names{i} = char(JsonHelper.pick(items(i), {'name','circuit_name','filename'}));
                 if isempty(names{i}) || strlength(names{i}) == 0
                     names{i} = ids{i};
+                end
+                try
+                    nq = JsonHelper.pickNumeric(items(i), ...
+                        {'num_qubits','qubits','width'}, NaN);
+                    if isfinite(nq) && nq > 0 && ~isempty(ids{i})
+                        obj.CircuitQubitsById(ids{i}) = double(nq);
+                    end
+                catch
                 end
             end
             app.BenchmarkCircuitDropdown.Items     = names;
@@ -572,8 +653,20 @@ classdef BenchmarkViewModel < handle
             if isempty(items); items = JsonHelper.asList(data); end
             n = numel(items);
             names = cell(1, n);
+            % Rebuild the pre-flight map alongside the dropdown items so
+            % submit-time width checks see the freshest backend metadata.
+            obj.BackendQubitsByName = containers.Map( ...
+                'KeyType','char','ValueType','double');
             for i = 1:n
-                names{i} = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+                bname = char(JsonHelper.pick(items(i), {'name','backend_name'}));
+                names{i} = bname;
+                try
+                    nq = JsonHelper.pickNumeric(items(i), 'num_qubits', NaN);
+                    if isfinite(nq) && nq > 0 && ~isempty(bname)
+                        obj.BackendQubitsByName(bname) = double(nq);
+                    end
+                catch
+                end
             end
             app.BenchmarkBackendSelect.Items     = names;
             app.BenchmarkBackendSelect.ItemsData = names;
