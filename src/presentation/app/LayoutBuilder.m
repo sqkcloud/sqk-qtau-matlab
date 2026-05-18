@@ -59,7 +59,13 @@ classdef LayoutBuilder
              % updateHeaderAuthButtons based on authentication state.
             headerRight = uigridlayout(app.HeaderGrid, [1 4]);
             headerRight.Layout.Row = 1; headerRight.Layout.Column = 3;
-            headerRight.ColumnWidth = {'fit', 'fit', 28, 'fit'};
+            % Column 1: Background Tasks indicator (uihtml badge, needs
+            %   a fixed pixel width — 'fit' is unreliable for uihtml
+            %   which has no intrinsic size). 48 px accommodates the
+            %   pill-state count up to ~99 active tasks while leaving
+            %   the empty-state circle visually centered.
+            % Column 3: AppHelpButton (28 px circular uihtml).
+            headerRight.ColumnWidth = {48, 'fit', 28, 'fit'};
             headerRight.Padding = [0 0 4 0]; headerRight.ColumnSpacing = 10;
             headerRight.BackgroundColor = Theme.NAV_BG;
 

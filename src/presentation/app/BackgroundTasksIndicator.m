@@ -8,33 +8,23 @@ classdef BackgroundTasksIndicator < handle
 
     properties (Access = private)
         App
-        Button             % uibutton — the badge
+        Button             % uihtml — the badge (circular outline, ghost style)
         Popover            % uifigure (created lazily)
         PopoverList        % uigridlayout inside the popover
-        AccentColor
-        TextColor
     end
 
     methods
 
         function obj = BackgroundTasksIndicator(app, parent)
             obj.App = app;
-            try
-                obj.AccentColor = Theme.OVERLAY_ACCENT;
-                obj.TextColor   = Theme.NAV_FG;
-            catch
-                obj.AccentColor = [0.45 0.36 0.62];
-                obj.TextColor   = [0.97 0.97 0.95];
-            end
-            obj.Button = uibutton(parent, ...
-                'Text', '', ...
-                'FontSize', 12, ...
-                'FontWeight', 'bold', ...
-                'FontColor', obj.TextColor, ...
-                'BackgroundColor', obj.AccentColor, ...
-                'Tooltip', 'Background tasks', ...
-                'ButtonPushedFcn', @(~,~) obj.togglePopover(), ...
-                'Visible', 'off');
+            % Styled as a uihtml ghost badge to mirror LayoutBuilder's
+            % buildHelpIconHtml — circular outline, transparent fill,
+            % white border, subtle hover. Pill-shaped when a count is
+            % visible, perfect circle when empty.
+            obj.Button = uihtml(parent);
+            obj.Button.Layout.Column = 1;
+            obj.Button.HTMLSource = BackgroundTasksIndicator.buildBadgeHtml(0);
+            obj.Button.DataChangedFcn = @(~,~) obj.togglePopover();
             try
                 addlistener(app.BackgroundTasks, 'TasksChanged', ...
                     @(~,~) obj.refresh());
@@ -46,15 +36,14 @@ classdef BackgroundTasksIndicator < handle
         function refresh(obj)
             try
                 n = obj.App.BackgroundTasks.countActive();
-                if n <= 0
-                    obj.Button.Visible = 'off';
-                    if ~isempty(obj.Popover) && isvalid(obj.Popover)
-                        obj.renderPopoverList();
-                    end
-                    return;
+                % Keep the badge visible at all times — operators
+                % rely on its constant placement in the top toolbar
+                % as a tray entry-point. Empty state shows just the
+                % refresh glyph (no count); active state shows the
+                % glyph + integer count in a pill.
+                if ~isempty(obj.Button) && isvalid(obj.Button)
+                    obj.Button.HTMLSource = BackgroundTasksIndicator.buildBadgeHtml(n);
                 end
-                obj.Button.Text = sprintf('%s  %d', char(8635), n); % ⟳ N
-                obj.Button.Visible = 'on';
                 if ~isempty(obj.Popover) && isvalid(obj.Popover)
                     obj.renderPopoverList();
                 end
@@ -249,6 +238,54 @@ classdef BackgroundTasksIndicator < handle
     end
 
     methods (Static, Access = private)
+
+        function html = buildBadgeHtml(count)
+            % buildBadgeHtml  Themed circular/pill badge for the
+            %   background-tasks indicator. Mirrors the visual style of
+            %   LayoutBuilder.buildHelpIconHtml (the (?) help icon) —
+            %   transparent fill, 1.5 px white outline, subtle hover bg.
+            %   Renders a perfect circle when count == 0 (just the
+            %   refresh glyph), expanding to a pill when a count is
+            %   visible.
+            try
+                bg = Theme.toHex(Theme.NAV_BG);
+                fg = Theme.toHex(Theme.NAV_FG);
+            catch
+                bg = '#1A1F26'; fg = '#F2F4F7';
+            end
+            if count <= 0
+                label = char(8635);              % ⟳ glyph alone
+            else
+                label = sprintf('%s %d', char(8635), count);
+            end
+            html = [ ...
+                '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' ...
+                'html,body{margin:0;padding:0;width:100%;height:100%;' ...
+                'background:' bg ';display:flex;align-items:center;' ...
+                'justify-content:center;font-family:-apple-system,' ...
+                '"Segoe UI",Helvetica,Arial,sans-serif;}' ...
+                '.tasks{height:22px;min-width:22px;width:auto;padding:0 8px;' ...
+                'box-sizing:border-box;border-radius:11px;' ...
+                'border:1.5px solid ' fg '99;color:' fg ';' ...
+                'display:flex;align-items:center;justify-content:center;' ...
+                'font-size:12px;font-weight:700;line-height:1;cursor:pointer;' ...
+                'background:transparent;user-select:none;white-space:nowrap;' ...
+                'transition:background 120ms ease, border-color 120ms ease;}' ...
+                '.tasks:hover{background:' fg '22;border-color:' fg ';}' ...
+                '.tasks:active{background:' fg '33;}' ...
+                '</style></head><body>' ...
+                '<div class="tasks" id="b" title="Background Tasks">' label '</div>' ...
+                '<script>' ...
+                'function setup(htmlComponent){' ...
+                ' var b=document.getElementById("b");' ...
+                ' if(!b)return;' ...
+                ' b.addEventListener("click",function(){' ...
+                '  htmlComponent.Data=Date.now();' ...
+                ' });' ...
+                '}' ...
+                '</script>' ...
+                '</body></html>'];
+        end
 
         function invokeView(obj, viewFn)
             try
