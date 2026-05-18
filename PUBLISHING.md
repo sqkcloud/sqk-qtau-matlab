@@ -111,13 +111,23 @@ The MathWorks doc requires the toolbox image to live **inside the project folder
 
 ### 2.3. How to render
 
-**Option A — macOS Preview**:
+**Option A (RECOMMENDED) — Python generator script** (already in the repo):
+
+```bash
+python3 scripts/build_icon.py
+```
+
+Produces `resources/toolbox-icon.png` from scratch via PIL — no SVG→PNG conversion needed because the script composes a purpose-built square icon (STIX Bold "QTAU" wordmark + "SQK CLOUD" subtitle on a dark navy rounded card, matching the (?) help-icon ghost style and the app's `Theme.NAV_BG`). Reproducible across machines, tunable via the design-parameter block at the top of the script. Requires only Python 3 + Pillow.
+
+Skip the remaining options unless you need to refresh the icon with a different design.
+
+**Option B — macOS Preview**:
 
 1. Double-click the SVG → opens in Preview.
 2. **File → Export...** → format: PNG → resolution: 144 dpi → save as `resources/toolbox-icon.png`.
 3. If the result isn't 256×256, open the PNG and *Tools → Adjust Size* → Width 256, Height 256, Resolution 144 dpi.
 
-**Option B — Inkscape (cross-platform)**:
+**Option C — Inkscape (cross-platform)**:
 
 ```bash
 inkscape resources/sqk-logo-kokkos-white1-reordered.svg \
@@ -127,7 +137,7 @@ inkscape resources/sqk-logo-kokkos-white1-reordered.svg \
   --export-filename=resources/toolbox-icon.png
 ```
 
-**Option C — ImageMagick (if installed)**:
+**Option D — ImageMagick (if installed)**:
 
 ```bash
 magick convert -background none -resize 256x256 \
