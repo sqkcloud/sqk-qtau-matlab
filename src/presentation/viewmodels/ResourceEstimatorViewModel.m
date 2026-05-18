@@ -50,10 +50,25 @@ classdef ResourceEstimatorViewModel < handle
         Circuits      = []
         LastResult    = []
         LastModel     = []
+
+        % Nav-aware cancellation bookkeeping. cancelInFlight bumps the
+        % generation and cancel()s tracked futures so nav-away mid-fetch
+        % stops the worker + frees the polling timer.
+        NavGeneration   double = 0
+        InFlightFutures cell   = {}
     end
 
     properties (Access = private)
         App
+
+        % Parsed-CircuitModel cache keyed by circuit_id. Avoids the
+        % CircuitModel.fromQasm re-parse on every Estimate click for
+        % the same circuit — for big (~5000-gate) QASMBench entries
+        % the parse alone is ~50-200 ms, which the user perceived as a
+        % brief freeze on what feels like a pure-compute button. The
+        % cache lives for VM lifetime; circuits are immutable inside
+        % a session so no invalidation is needed.
+        ParsedModelCache = []
     end
 
     methods
@@ -76,10 +91,26 @@ classdef ResourceEstimatorViewModel < handle
             obj.flashStatus('Loading circuits…', 'info');
             token = state.authToken;
             circSvc = obj.App.Services.CircuitSvc;
-            AsyncRunner.run( ...
+            obj.NavGeneration = AsyncCancellation.bump(obj.NavGeneration);
+            fut = AsyncRunner.run( ...
                 @() circSvc.listCircuits(token), ...
-                @(r) obj.onCircuitsLoaded(r), ...
-                @(ME) obj.flashStatus(sprintf('Failed to load circuits: %s', ME.message), 'danger'));
+                @(r)  obj.onCircuitsLoaded(r), ...
+                @(ME) obj.onCircuitsLoadError(ME));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, fut);
+        end
+
+        function onCircuitsLoadError(obj, ME)
+            % Suppress the cancellation error popup — nav-away just
+            % stopped the load mid-flight, no user action needed.
+            if AsyncCancellation.isCancellation(ME); return; end
+            obj.flashStatus(sprintf('Failed to load circuits: %s', ME.message), 'danger');
+        end
+
+        function cancelInFlight(obj)
+            % Called by NavigationManager when the user navs away.
+            obj.NavGeneration   = AsyncCancellation.bump(obj.NavGeneration);
+            obj.InFlightFutures = AsyncCancellation.cancelAll(obj.InFlightFutures);
         end
 
         function onCircuitsLoaded(obj, raw)
@@ -105,23 +136,45 @@ classdef ResourceEstimatorViewModel < handle
                 obj.flashStatus(Labels.get('resource_estimator_status_steane'), 'danger');
                 return;
             end
-            try
-                obj.LastResult = ResourceEstimatorService.estimate(model, params);
-                obj.LastModel  = model;
-                obj.repaintCards();
-                obj.repaintPie();
-                obj.repaintInsights();
-                obj.flashStatus(sprintf( ...
-                    Labels.get('resource_estimator_status_done_fmt'), ...
-                    numel(model.Gates), obj.LastResult.distance, obj.LastResult.totalPhysical), ...
-                    'success');
-                obj.App.logEvent('FT-EST', sprintf( ...
-                    'Estimated %dq → d=%d → %d phys', ...
-                    obj.LastResult.logicalQubits, obj.LastResult.distance, ...
-                    obj.LastResult.totalPhysical));
-            catch ME
-                obj.flashStatus(ME.message, 'danger');
-            end
+            % Dispatch the FT compute to a parfeval worker. For small
+            % circuits this is overkill (compute is <50 ms); for big
+            % QASMBench entries with Solovay-Kitaev T-state synthesis
+            % over many arbitrary rotations it can be 200-1000 ms — the
+            % UI thread used to freeze for that span on every click.
+            % The worker has no UI access; repaint runs on the main
+            % thread inside onEstimateDone.
+            obj.flashStatus(Labels.get('resource_estimator_status_computing', ...
+                'Computing fault-tolerant overhead…'), 'info');
+            gen = AsyncCancellation.bump(obj.NavGeneration);
+            obj.NavGeneration = gen;
+            fut = AsyncRunner.run( ...
+                @() ResourceEstimatorService.estimate(model, params), ...
+                @(result) obj.onEstimateDone(gen, model, result), ...
+                @(ME)     obj.onEstimateError(gen, ME));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, fut);
+        end
+
+        function onEstimateDone(obj, gen, model, result)
+            if gen ~= obj.NavGeneration; return; end
+            obj.LastResult = result;
+            obj.LastModel  = model;
+            obj.repaintCards();
+            obj.repaintPie();
+            obj.repaintInsights();
+            obj.flashStatus(sprintf( ...
+                Labels.get('resource_estimator_status_done_fmt'), ...
+                numel(model.Gates), result.distance, result.totalPhysical), ...
+                'success');
+            obj.App.logEvent('FT-EST', sprintf( ...
+                'Estimated %dq → d=%d → %d phys', ...
+                result.logicalQubits, result.distance, result.totalPhysical));
+        end
+
+        function onEstimateError(obj, gen, ME)
+            if gen ~= obj.NavGeneration; return; end
+            if AsyncCancellation.isCancellation(ME); return; end
+            obj.flashStatus(ME.message, 'danger');
         end
     end
 
@@ -131,26 +184,42 @@ classdef ResourceEstimatorViewModel < handle
             if isempty(obj.CircuitDropdown) || ~isvalid(obj.CircuitDropdown); return; end
             v = obj.CircuitDropdown.Value;
             if isequal(v, '__composer__')
+                % Live composer model — no caching (the user can mutate
+                % it between Estimate clicks via gate placement).
                 if ~isempty(obj.App.ComposerVm) && ~isempty(obj.App.ComposerVm.Model)
                     model = obj.App.ComposerVm.Model;
                 end
                 return;
             end
+            % Cache hit: skip the CircuitModel.fromQasm re-parse cost
+            % on repeat clicks. Lazy-init the Map so the empty default
+            % from the property declaration upgrades on first use.
+            cid = char(string(v));
+            if isempty(obj.ParsedModelCache) || ~isa(obj.ParsedModelCache, 'containers.Map')
+                obj.ParsedModelCache = containers.Map('KeyType','char','ValueType','any');
+            end
+            if isKey(obj.ParsedModelCache, cid)
+                model = obj.ParsedModelCache(cid);
+                return;
+            end
+            % Cache miss: locate the circuit record, parse the QASM,
+            % stash the CircuitModel for next time.
             for i = 1:numel(obj.Circuits)
-                cid = ResourceEstimatorViewModel.safeField(obj.Circuits(i), 'id', '');
-                if strcmp(cid, v)
+                cIdx = ResourceEstimatorViewModel.safeField(obj.Circuits(i), 'id', '');
+                if strcmp(cIdx, cid)
                     qasm = ResourceEstimatorViewModel.safeField(obj.Circuits(i), 'raw_content', '');
                     if isempty(qasm)
                         nq = ResourceEstimatorViewModel.safeField(obj.Circuits(i), 'num_qubits', 1);
                         model = CircuitModel(double(nq));
-                        return;
+                    else
+                        try
+                            model = CircuitModel.fromQasm(qasm);
+                        catch
+                            nq = ResourceEstimatorViewModel.safeField(obj.Circuits(i), 'num_qubits', 1);
+                            model = CircuitModel(double(nq));
+                        end
                     end
-                    try
-                        model = CircuitModel.fromQasm(qasm);
-                    catch
-                        nq = ResourceEstimatorViewModel.safeField(obj.Circuits(i), 'num_qubits', 1);
-                        model = CircuitModel(double(nq));
-                    end
+                    obj.ParsedModelCache(cid) = model;
                     return;
                 end
             end

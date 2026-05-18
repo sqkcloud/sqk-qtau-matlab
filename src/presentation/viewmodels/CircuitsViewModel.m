@@ -240,14 +240,15 @@ classdef CircuitsViewModel < handle
                 'BorderColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            cg = uigridlayout(card, [14 1]);
+            cg = uigridlayout(card, [17 1]);
             cg.RowHeight = {28, 18, 10, ...
                             16, 34, ...
                             16, 34, ...
                             16, 34, ...
                             28, ...
                             16, '1x', ...
-                            42, 18};
+                            8, 1, 8, ...
+                            36, 18};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [36 24 36 20];
             cg.RowSpacing  = 2;
@@ -335,30 +336,44 @@ classdef CircuitsViewModel < handle
                 'FontSize', 12, 'FontName', 'Courier New');
             contentField.Layout.Row = 12;
 
-            % Button bar
-            btnBar = uigridlayout(cg, [1 2]);
-            btnBar.Layout.Row = 13;
-            btnBar.ColumnWidth = {'1x', '1x'};
-            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
+            % Hairline divider above the footer — same pattern Composer
+            % and the Project dialogs use (uipanel with Theme.COLOR_DIVIDER
+            % background, no border, parked in a 1-px row with 8-px gaps
+            % on either side).
+            divider = uipanel(cg, 'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_DIVIDER); %#ok<NASGU>
+            divider.Layout.Row = 14;
+
+            % Footer — invisible left spacer + Cancel (100 px) + Save (150 px).
+            % Same canonical right-aligned action-button layout used
+            % across Composer / QMC / Project dialogs (replaces the prior
+            % stretch-to-fill 50/50 layout with icon-prefixed labels).
+            btnBar = uigridlayout(cg, [1 3]);
+            btnBar.Layout.Row = 16;
+            btnBar.ColumnWidth = {'1x', 100, 150};
+            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 8;
             btnBar.BackgroundColor = cardBg;
 
-            cancelBtn = uibutton(btnBar, 'Text', [char(10006) ' Cancel'], ...
+            btnSpacer = uilabel(btnBar, 'Text', ''); %#ok<NASGU>
+            btnSpacer.Layout.Row = 1; btnSpacer.Layout.Column = 1;
+
+            cancelBtn = uibutton(btnBar, 'Text', 'Cancel', ...
                 'ButtonPushedFcn', @(~,~)delete(dlg));
-            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 2;
             app.styleBtn(cancelBtn, 'ghost');
 
-            saveBtn = uibutton(btnBar, 'Text', [char(10004) ' Save'], ...
+            saveBtn = uibutton(btnBar, 'Text', 'Save', ...
                 'ButtonPushedFcn', @(~,~)obj.doSaveCircuit( ...
                     dlg, statusLbl, cid, nameField, catField, srcField, ...
                     fmtField, contentField, row));
-            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 2;
+            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 3;
             app.styleBtn(saveBtn, 'primary');
 
             % Status label
             statusLbl = uilabel(cg, 'Text', '', ...
                 'FontSize', 11, 'FontColor', Theme.COLOR_DANGER, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            statusLbl.Layout.Row = 14;
+            statusLbl.Layout.Row = 17;
 
             % Async raw_content fetch — dialog is fully built, so the
             % contentField handle is safe to capture. The success
