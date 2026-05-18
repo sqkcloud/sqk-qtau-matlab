@@ -84,7 +84,7 @@ In the new project, the **Project Files** view should list:
 
 - `QTAUWorkbenchLauncher.m`
 - All current files under `src/` (about 50 `.m` files)
-- All files under `resources/`, `samples/`, `doc/`, `docs/`, `tests/`, `scripts/`
+- All files under `resources/`, `samples/`, `doc/`, `tests/`, `scripts/`
 
 If any of the OLD pre-refactor paths still show up as "missing files" warnings, right-click → **Remove from Project**.
 
@@ -214,7 +214,7 @@ If a toolbox task already exists from a prior attempt, it will reopen instead of
 1. Verify the **Toolbox Folder** field shows the repo root (e.g. `/Users/.../sqk-qtau-matlab`).
 2. If empty, click **Add Toolbox Folder** and select the repo root.
 3. The **preview** below shows every file MATLAB will include. Scroll through — confirm:
-   - `src/`, `resources/`, `samples/`, `doc/`, `docs/` are listed.
+   - `src/`, `resources/`, `samples/`, `doc/` are listed.
    - `LICENSE`, `NOTICE`, `README.md`, `QTAUWorkbenchLauncher.m` are listed.
 4. Click **Edit Exclusions** and paste this verbatim into the text file:
 
@@ -235,7 +235,7 @@ If a toolbox task already exists from a prior attempt, it will reopen instead of
    output
    scripts
    tests
-   docs/keys.txt
+   doc/keys.txt
    *.mex*
    *.token
    .env
@@ -290,7 +290,7 @@ Click **Manage Project Path** (or directly edit the path list). Add **these 11 e
 
 These match exactly what `QTAUWorkbenchLauncher.m` adds at runtime (lines 48-59), so the install-time path and the launcher's runtime path are idempotent.
 
-**Do NOT add** `tests/`, `scripts/`, `resources/`, `samples/`, `doc/`, `docs/`, `output/`. They're bundled in the toolbox folder and accessed via relative paths from code — they don't need to be on the user's MATLAB path.
+**Do NOT add** `tests/`, `scripts/`, `resources/`, `samples/`, `doc/`, `output/`. They're bundled in the toolbox folder and accessed via relative paths from code — they don't need to be on the user's MATLAB path.
 
 #### Java Classpath
 

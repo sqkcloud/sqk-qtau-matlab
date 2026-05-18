@@ -198,7 +198,7 @@ sqk-qtau-matlab/
 │   ├── seed.properties.example       ← Seed credentials template
 │   └── sqk-logo-*.svg               ← Application logo
 │
-├── docs/                             ← API documentation
+├── doc/                             ← API documentation
 │   ├── fastapi_contract.md           ← Endpoint contract with request/response examples
 │   └── openapi.json                  ← OpenAPI 3.0 specification
 │
@@ -321,13 +321,13 @@ The client communicates with the FastAPI backend across **~80 endpoints** organi
 | **Reports** | `/api/reports/generate` (dedicated QMC builder when `qae` data is present), `.../{id}/download`, `.../{id}/share` | GET, POST |
 | **Settings** | `/api/settings`, `/api/settings/preferences`, `/api/settings/verify-ibm` | GET, POST, DELETE |
 
-Full contract with request/response examples: [`docs/fastapi_contract.md`](docs/fastapi_contract.md)
+Full contract with request/response examples: [`doc/fastapi_contract.md`](doc/fastapi_contract.md)
 
 ### Further reading
 
-- [`docs/architecture.md`](docs/architecture.md) — layering, data flow (where Results come from), caching, navigation internals, uihtml pitfalls.
-- [`docs/development_guide.md`](docs/development_guide.md) — recipes for adding / changing screens, services, dialogs, timers; testing patterns; things to avoid.
-- [`docs/fastapi_contract.md`](docs/fastapi_contract.md) — REST endpoint contract.
+- [`doc/architecture.md`](doc/architecture.md) — layering, data flow (where Results come from), caching, navigation internals, uihtml pitfalls.
+- [`doc/development_guide.md`](doc/development_guide.md) — recipes for adding / changing screens, services, dialogs, timers; testing patterns; things to avoid.
+- [`doc/fastapi_contract.md`](doc/fastapi_contract.md) — REST endpoint contract.
 
 ---
 
@@ -392,7 +392,7 @@ This repo is source code. To build a distributable `QTAUConnectorWorkbench.mltbx
    output
    scripts
    tests
-   docs/keys.txt
+   doc/keys.txt
    *.mex*
    *.token
    .env
@@ -419,7 +419,7 @@ This repo is source code. To build a distributable `QTAUConnectorWorkbench.mltbx
      <toolbox root>/src/infrastructure/http
      <toolbox root>/src/infrastructure/config
      ```
-     This matches exactly what `QTAUWorkbenchLauncher.m` does at runtime (lines 48-59) and makes the install-time addpath idempotent with the launcher's. Do NOT add `tests/`, `scripts/`, `resources/`, `samples/`, `doc/`, `docs/`, or `output/` — those are accessed via relative paths from the code, not via MATLAB Path lookup.
+     This matches exactly what `QTAUWorkbenchLauncher.m` does at runtime (lines 48-59) and makes the install-time addpath idempotent with the launcher's. Do NOT add `tests/`, `scripts/`, `resources/`, `samples/`, `doc/`, `doc/`, or `output/` — those are accessed via relative paths from the code, not via MATLAB Path lookup.
    - **Java Classpath**: empty.
    - **Apps**: empty (no `.mlapp` files in the repo).
    - **Getting Started Guide**: `doc/GettingStarted.mlx` (convert from `doc/GettingStarted.m` first — see prerequisites above).
