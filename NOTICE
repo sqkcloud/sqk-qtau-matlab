@@ -1,0 +1,38 @@
+QTAU Connector Workbench
+Copyright 2026 SQK Cloud Inc.
+
+This product includes software developed by SQK Cloud Inc.
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+---------------------------------------------------------------------
+Third-party content bundled with this distribution
+---------------------------------------------------------------------
+
+1. QASMBench (displayed as "QTAUBench" in UI labels)
+   Bundled under: samples/qasmbench/
+   Upstream: https://github.com/pnnl/QASMBench
+   Author:   Pacific Northwest National Laboratory (PNNL)
+   License:  BSD 3-Clause "New" or "Revised" License
+
+   The OpenQASM benchmark suite under samples/qasmbench/ (small/,
+   medium/, large/) is redistributed unmodified from the PNNL
+   QASMBench project. UI labels in this workbench display the
+   collection as "QTAUBench" for product consistency; the underlying
+   files and their PNNL authorship are unchanged. See the upstream
+   repository for the original BSD 3-Clause license text.
+
+2. MATLAB(R) and its toolboxes
+   Trademark and copyright: The MathWorks, Inc.
+   This software requires MATLAB R2025a or later to run. MATLAB is
+   not redistributed with this toolbox; end users must hold a valid
+   MATLAB license. See https://www.mathworks.com/ for terms.
+
+---------------------------------------------------------------------
+Trademark notice
+---------------------------------------------------------------------
+
+"QTAU", "QTAU Connector", "QTAU Connector Workbench", and the SQK Cloud
+logo are trademarks of SQK Cloud Inc. "IBM Quantum" is a trademark of
+International Business Machines Corporation. "MATLAB" is a registered
+trademark of The MathWorks, Inc. All other trademarks are the property
+of their respective owners.

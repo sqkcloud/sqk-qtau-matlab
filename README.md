@@ -1,11 +1,29 @@
 # QTAU Connector Workbench
 
-A professional **MATLAB R2025b** desktop application for managing quantum circuit experiments through a FastAPI backend (QTAU Connector).
-Built with clean three-layer architecture (presentation / domain / infrastructure), externalized configuration, and structured logging. Includes a Quantum Monte Carlo simulation popup with async IBM Runtime job execution, zero-noise extrapolation, vector-chart PDF reports, and IBM execution-log download.
+A professional **MATLAB R2025a+** desktop client for managing quantum-circuit experiments through the QTAU FastAPI backend. The toolbox is the client only — your data lives on whichever QTAU server you connect to. Built with clean three-layer architecture (presentation / domain / infrastructure), externalised configuration, and structured logging. Includes a Quantum Monte Carlo simulation popup with async IBM Runtime job execution, zero-noise extrapolation, vector-chart PDF reports, and IBM execution-log download.
+
+Copyright © 2026 SQK Cloud Inc. Licensed under the Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ---
 
-## Quick Start
+## For end users — install from a `.mltbx`
+
+1. **Install MATLAB R2025a or later.**
+2. Download `QTAUConnectorWorkbench.mltbx` (from your QTAU admin or MATLAB Central File Exchange) and **double-click it inside MATLAB**. MATLAB registers the toolbox and adds it to the path.
+3. From the MATLAB prompt, type:
+   ```matlab
+   QTAUWorkbenchLauncher
+   ```
+4. The Login dialog appears. **On first launch the Base URL is blank — set it to your QTAU server URL** (e.g. `https://qtau.example.com:5715` or `http://localhost:5715` if you self-host).
+5. Enter your username + password and sign in.
+
+The **Getting Started** guide is registered with the toolbox install and accessible via *Add-Ons → Manage Add-Ons → QTAU Connector Workbench → Options → Getting Started*. It walks you through a 5-minute tour of the main screens.
+
+> The toolbox does **not** ship the FastAPI backend. You need either access to a hosted QTAU server (ask your admin) or a self-hosted instance. See the upstream QTAU FastAPI repository for backend setup.
+
+---
+
+## For developers — work directly from source
 
 ### Option 1 — Open via Project Manager (recommended)
 
@@ -32,21 +50,24 @@ run('QTAUWorkbenchLauncher.m')
 
 ## Configuration
 
-All settings live in `resources/` — no source code changes needed.
+All runtime settings live in `resources/` — no source-code edits needed.
 
 | File | Purpose |
 |---|---|
 | `resources/app.properties` | API endpoint, timeout, app metadata, QEC defaults |
-| `resources/labels.properties` | All UI text strings (600+) |
-| `resources/seed.properties` | Seed script credentials (copy from `.example`) |
+| `resources/labels.properties` | All UI text strings (1000+) |
+| `resources/seed.properties` | Seed-script credentials (copy from `.example` — gitignored) |
 
-To change the backend URL, edit `resources/app.properties`:
+**The shipped toolbox uses an empty `base_url`** so end-users are forced to pick a server on first launch via the Login dialog. For local development you can override this locally without committing the change:
 
 ```properties
-base_url=http://34.42.87.190:5715
+# resources/app.properties (local override — do not commit)
+base_url=http://localhost:5715
 login_path=/api/auth/login
 http_timeout=30
 ```
+
+When `base_url` is blank, `AppState` falls back to `http://localhost:5715`.
 
 ### Login returns HTTP 401
 
@@ -323,10 +344,100 @@ Full contract with request/response examples: [`docs/fastapi_contract.md`](docs/
 
 ---
 
-## Packaging as a Toolbox
+## Packaging as a Toolbox (`.mltbx`)
 
-This is source code, not a compiled `.mltbx`. To package:
+> **For the full publishing runbook (90 min step-by-step including File Exchange submission), see [`PUBLISHING.md`](PUBLISHING.md).** The section below is a fast checklist.
 
-1. Open the project via the `.prj` file
-2. Go to **Home > Add-Ons > Package Toolbox**
-3. Set entry point to `src/presentation/app/QTAUWorkbenchApp.m`
+This repo is source code. To build a distributable `QTAUConnectorWorkbench.mltbx` (for MathWorks File Exchange or direct distribution):
+
+### Prerequisites
+- MATLAB **R2025a or later** (R2025a introduced project-integrated toolbox packaging).
+- The repo opens cleanly via `sqk-qtau-matlab.prj`.
+- `LICENSE` + `NOTICE` files at repo root (Apache 2.0, © SQK Cloud Inc., with PNNL QASMBench attribution).
+- `doc/GettingStarted.m` converted to `doc/GettingStarted.mlx` (open it in MATLAB Live Editor and save as `.mlx`).
+- A toolbox image — render a 64×64 (or 256×256) PNG from `resources/sqk-logo-kokkos-white1-reordered.svg` and place at e.g. `resources/toolbox-icon.png`.
+
+### Steps
+
+> **First refresh the `.prj` file.** The committed `sqk-qtau-matlab.prj` is R2025b schema but its `<ProjectFile>` list points at pre-refactor paths (`src/QTAUWorkbenchApp.m`, `src/tabs/*Tab.m`, etc.). This is **not** a pre-R2025a toolbox file (the upgrade flow in the MathWorks doc page 5 only applies to those), it's just stale metadata. To refresh: in MATLAB, **File → Close Project**, delete `sqk-qtau-matlab.prj` on disk, then **Home → New → Project → From Folder** pointed at the repo root. MATLAB scans the folder and writes a fresh `.prj` listing the current files.
+
+1. **Open the project** in MATLAB R2025a+:
+   ```matlab
+   matlab.project.openProject('sqk-qtau-matlab.prj')
+   ```
+2. From the **Project** toolstrip, click **Package Toolbox**. MATLAB creates a toolbox task in the project.
+3. **Toolbox Folder**: the project root (everything is gated by the Exclusions list below).
+4. **Toolbox Information**:
+   - Name: `QTAU Connector Workbench`
+   - Version: `1.0.0.0` (`major.minor.bug.build`)
+   - Author / Email / Company: SQK Cloud Inc. + maintainer email
+   - Toolbox image: `resources/toolbox-icon.png`
+   - Summary: *MATLAB desktop client for managing IBM Quantum experiments through the QTAU FastAPI backend.*
+   - Description: copy from the top of this README.
+5. **Exclusions** — paste this into the *Edit Exclusions* dialog:
+   ```
+   .git
+   .github
+   .gitignore
+   .gitattributes
+   .claude
+   .serena
+   .DS_Store
+   resources/seed.properties
+   EmAnalysis_*.json
+   Report_*.pdf
+   ExecLog_*.jsonl
+   Results_*.json
+   Reconstruction_*.json
+   output
+   scripts
+   tests
+   docs/keys.txt
+   *.mex*
+   *.token
+   .env
+   release
+   *.mltbx
+   CLAUDE.md
+   ```
+   Notes: `scripts/` is excluded as a whole (the seed scripts reference `seed_helpers.m`, so partial exclusion would break the rest); `tests/` excluded because end-users rarely run unit tests and the StubFastAPIClient is a dev-only helper; `output/` excluded because it's a runtime scratch directory; `CLAUDE.md` excluded because it's a developer-oriented AI-pair-programming guide, not end-user documentation.
+
+6. **Toolbox Requirements** — let MATLAB auto-detect. *Required Add-Ons* should be empty (this app uses base MATLAB only); *Discovered Requirements* should not list anything outside the toolbox folder. Click **View Analysis** to confirm.
+
+7. **Install Actions**:
+   - **MATLAB Path**: add **the repo root** (so `QTAUWorkbenchLauncher.m` is callable at the prompt) **plus the 10 source folders** that the launcher itself adds:
+     ```
+     <toolbox root>
+     <toolbox root>/src/presentation
+     <toolbox root>/src/presentation/app
+     <toolbox root>/src/presentation/screens
+     <toolbox root>/src/presentation/viewmodels
+     <toolbox root>/src/domain
+     <toolbox root>/src/domain/models
+     <toolbox root>/src/domain/services
+     <toolbox root>/src/infrastructure
+     <toolbox root>/src/infrastructure/http
+     <toolbox root>/src/infrastructure/config
+     ```
+     This matches exactly what `QTAUWorkbenchLauncher.m` does at runtime (lines 48-59) and makes the install-time addpath idempotent with the launcher's. Do NOT add `tests/`, `scripts/`, `resources/`, `samples/`, `doc/`, `docs/`, or `output/` — those are accessed via relative paths from the code, not via MATLAB Path lookup.
+   - **Java Classpath**: empty.
+   - **Apps**: empty (no `.mlapp` files in the repo).
+   - **Getting Started Guide**: `doc/GettingStarted.mlx` (convert from `doc/GettingStarted.m` first — see prerequisites above).
+8. **Toolbox Portability**:
+   - Supported Platforms: Windows, macOS, Linux, MATLAB Online.
+   - Release Compatibility: R2025a or later.
+9. **Output Settings**: leave default (`release/QTAUConnectorWorkbench.mltbx`).
+10. Click **Reanalyze** → **Package Toolbox**. The `.mltbx` lands in the `release/` folder (gitignored).
+
+### Test on a clean machine
+Before distribution, install the `.mltbx` on a fresh MATLAB instance:
+1. Double-click `QTAUConnectorWorkbench.mltbx` — MATLAB registers it.
+2. Run `QTAUWorkbenchLauncher` at the prompt — Login dialog should appear with an empty Base URL.
+3. Set Base URL to a known QTAU server, log in, smoke-test Dashboard → Circuits → Analysis.
+4. Open the Getting Started guide via *Add-Ons → your toolbox → Options → Getting Started* — it should render.
+5. Uninstall via *Add-Ons → Manage Add-Ons → Uninstall* — verify clean removal.
+
+### Publishing on MATLAB Central File Exchange
+- **Allowed**: data files, images, `.m`/`.mlx`. Pure MATLAB code is welcome.
+- **Not allowed**: MEX, DLL, ActiveX controls (per the MathWorks "Create and Share Toolboxes" doc). This toolbox is pure MATLAB so the restriction doesn't apply.
+- File Exchange accepts Apache 2.0 with an explicit attribution in the submission form.
