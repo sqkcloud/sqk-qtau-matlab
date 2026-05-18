@@ -21,14 +21,14 @@ classdef FastAPIClient < handle
     % ── Constructor / config ──────────────────────────────────────────────────
     methods
         function obj = FastAPIClient(baseUrl)
-            url = strtrim(string(baseUrl));
+            url = FastAPIClient.normalizeBaseUrl(baseUrl);
             FastAPIClient.assertSafeBaseUrl(url);
             obj.BaseUrl = url;
             Logger.info('FastAPIClient', 'Initialized — BaseUrl: %s', char(obj.BaseUrl));
         end
 
         function setBaseUrl(obj, baseUrl)
-            url = strtrim(string(baseUrl));
+            url = FastAPIClient.normalizeBaseUrl(baseUrl);
             FastAPIClient.assertSafeBaseUrl(url);
             old = char(obj.BaseUrl);
             obj.BaseUrl = url;
@@ -330,6 +330,22 @@ classdef FastAPIClient < handle
 
     % ── Public static helpers ─────────────────────────────────────────────────
     methods (Static)
+        function url = normalizeBaseUrl(raw)
+            % normalizeBaseUrl  Strip surrounding whitespace AND any
+            %   trailing slashes from a base URL. End users pasting a
+            %   URL from a browser commonly include a trailing '/';
+            %   concatenating with a leading-slash endpoint like
+            %   '/api/auth/login' would produce '//api/auth/login',
+            %   which FastAPI's router does not match and returns
+            %   HTTP 404. Normalising at the FastAPIClient boundary
+            %   means every endpoint composition stays canonical no
+            %   matter how the operator entered the URL.
+            url = strtrim(string(raw));
+            if strlength(url) == 0; return; end
+            % Strip one OR MORE trailing forward slashes.
+            url = string(regexprep(char(url), '/+$', ''));
+        end
+
         function assertSafeBaseUrl(url)
             % assertSafeBaseUrl  Reject base URLs that would send credentials
             %   over an insecure transport.  HTTPS is always allowed; plain
