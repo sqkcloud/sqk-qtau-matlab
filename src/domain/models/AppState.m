@@ -130,7 +130,18 @@ classdef AppState < handle
             % base_url= line doesn't hard-code any specific server.
             % End-users override via Settings → Connection or via
             % the URL field on the Login dialog.
-            obj.baseUrl = string(AppConfig.get('base_url', 'http://localhost:5715'));
+            %
+            % AppConfig.get's 2-arg default only fires when the key is
+            % MISSING from the file. When the key exists with an empty
+            % value (e.g. shipped toolbox with `base_url=`), it returns
+            % '' and FastAPIClient.assertSafeBaseUrl would reject the
+            % empty URL before the Login dialog can appear. The empty-
+            % string guard below catches that case too.
+            configured = strtrim(char(AppConfig.get('base_url', '')));
+            if isempty(configured)
+                configured = 'http://localhost:5715';
+            end
+            obj.baseUrl = string(configured);
             fprintf('[AppState] Base URL loaded from config: %s\n', char(obj.baseUrl));
         end
 
