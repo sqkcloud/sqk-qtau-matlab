@@ -591,46 +591,65 @@ This is the **expected** Option C behaviour. The user must set the Base URL on t
 
 ---
 
-## 11. Programmatic packaging (optional follow-up)
+## 11. Programmatic packaging (replaces Step 4 + Step 5)
 
-For future releases, automate Steps 4-5 via a script. Create `scripts/package_release.m`:
+Steps 4-5 (configure the toolbox task → reanalyze → package) can be reduced to a single command using the included **`scripts/package_release.m`** helper. It uses `matlab.addons.toolbox.ToolboxOptions` (R2023a+) and `matlab.addons.toolbox.packageToolbox` to do exactly what the GUI does, with every value pre-populated from this guide.
+
+### Usage
+
+After Steps 0-3 are complete (icon PNG, GettingStarted.mlx, blank `base_url`):
 
 ```matlab
-function package_release()
-    % package_release  Re-build the .mltbx from the current project state.
-    %   Intended to be run from a CI pipeline or one-button local release.
-    %
-    %   Pre-condition: project is open and the toolbox task is already
-    %   configured (run the GUI flow once first to populate metadata).
-
-    proj = matlab.project.rootProject;
-    if isempty(proj)
-        error('package_release:NoProject', ...
-            'Open the project (matlab.project.openProject) before running.');
-    end
-
-    % Locate the toolbox task (created by the GUI flow).
-    tasks = [proj.Tasks];
-    pkgTask = tasks(arrayfun(@(t) strcmp(t.Type, 'ToolboxPackagingTask'), tasks));
-    if isempty(pkgTask)
-        error('package_release:NoTask', ...
-            'No toolbox-packaging task found. Run the GUI flow first.');
-    end
-
-    % Bump build number from the current Project version.
-    currentVer = pkgTask.ToolboxVersion;
-    fprintf('Packaging QTAU Connector Workbench v%s\n', currentVer);
-
-    % Trigger the package action.
-    matlab.addons.toolbox.packageToolbox(pkgTask);
-
-    fprintf('Done. Output: release/QTAUConnectorWorkbench.mltbx\n');
-end
+>> run('scripts/package_release.m')
 ```
 
-Then a one-line release: `package_release()`.
+Expected output:
 
-This is purely a nice-to-have — the GUI flow is enough for v1.0.0.
+```
+Project root: /Users/.../sqk-qtau-matlab
+Filtering files (start: ~1200)... end: ~250 (~950 excluded)
+
+Packaging QTAU Connector Workbench v1.0.0
+  Identifier:   d4f2a8e9-3c1b-4e5d-9a6c-7b3d2f8e1a4c
+  Files:        ~250
+  Path entries: 11
+  Min release:  R2025a
+  Output:       /Users/.../release/QTAUConnectorWorkbench.mltbx
+  Running matlab.addons.toolbox.packageToolbox...
+
+Done — 4.32 MB at /Users/.../release/QTAUConnectorWorkbench.mltbx
+Next: smoke-test on a clean MATLAB (PUBLISHING.md Section 6).
+```
+
+Now jump to [Section 6](#6-smoke-test-on-a-clean-matlab-instance).
+
+### What the script does
+
+- Verifies the four pre-requisites (icon PNG / GettingStarted.mlx / blank `base_url` / LICENSE+NOTICE) and errors with an actionable message if any are missing.
+- Auto-discovers every file under the project root via `ToolboxOptions(projectRoot, identifier)`.
+- Filters the file list against the same exclusion rules as Section 4.3 (dir prefixes / exact matches / root-level artifact prefixes / suffix patterns) — see the `iShouldExclude` local function for the source of truth.
+- Sets all Toolbox Information fields (name, version, author, summary, description, image).
+- Adds the 11 MATLAB Path entries that match `QTAUWorkbenchLauncher.m`'s runtime addpath set.
+- Registers `doc/GettingStarted.mlx` as the Getting Started Guide.
+- Declares portability: Windows / macOS / Linux / MATLAB Online, R2025a minimum.
+- Writes `release/QTAUConnectorWorkbench.mltbx` and prints its size.
+
+### Editing the script
+
+Update these values inside `scripts/package_release.m` when:
+
+- **Releasing a new version**: change `opts.ToolboxVersion`. Follow semver (Section 9.4).
+- **Maintainer changes**: change `opts.AuthorEmail`. (Default placeholder is `engineering@sqkcloud.com`.)
+- **Description updates**: edit the multi-line `opts.Description = sprintf([...])` block.
+- **Adding new install actions**: e.g. when you ship the App Designer wrapper from Section 6 of the appendix, populate `opts.AppGalleryFiles`.
+
+**Never change** the `TOOLBOX_IDENTIFIER` constant. The same UUID across releases is what tells MATLAB "this is an updated version of the same toolbox" — change it and existing installs will not see updates, and File Exchange would treat it as a new submission.
+
+### When the script is NOT enough
+
+The GUI flow (Section 4) is still useful for first-time exploration of MathWorks' toolbox task options or for verifying the auto-discovered files manually. After that, the script is the source of truth and the GUI flow can be skipped.
+
+A bare-minimum GUI fallback (no `ToolboxOptions` API) is sketched in [Section 4](#4-configure-the-toolbox-task).
 
 ---
 
