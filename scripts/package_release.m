@@ -44,10 +44,20 @@ function outFile = package_release()
             'Missing toolbox icon at %s.\nRender resources/sqk-logo-*.svg to PNG first — see PUBLISHING.md Step 2.', iconPath);
     end
 
+    % Prefer the .mlx Live Editor version (richer rendering with output
+    % panels), fall back to the .m script if the .mlx hasn't been
+    % generated yet. MATLAB's ToolboxOptions accepts either.
     gettingStartedPath = fullfile(projectRoot, 'doc', 'GettingStarted.mlx');
     if ~isfile(gettingStartedPath)
-        error('package_release:NoGettingStarted', ...
-            'Missing %s.\nOpen doc/GettingStarted.m in MATLAB Live Editor and Save As .mlx — see PUBLISHING.md Step 3.', gettingStartedPath);
+        gettingStartedPath = fullfile(projectRoot, 'doc', 'GettingStarted.m');
+        if ~isfile(gettingStartedPath)
+            error('package_release:NoGettingStarted', ...
+                ['Missing doc/GettingStarted.mlx AND doc/GettingStarted.m.\n' ...
+                 'Open doc/GettingStarted.m in MATLAB Live Editor and Save As .mlx,\n' ...
+                 'or restore the .m script — see PUBLISHING.md Step 3.']);
+        end
+        fprintf('Note: using doc/GettingStarted.m (no .mlx present).\n');
+        fprintf('      Convert to .mlx for richer rendering — see 1.1.0 roadmap.\n');
     end
 
     appProps = fullfile(projectRoot, 'resources', 'app.properties');
@@ -219,10 +229,13 @@ function tf = iShouldExclude(absPath, projectRoot)
         if endsWith(rel, suffixExcludes{i}); tf = true; return; end
     end
 
-    % doc/ — ship ONLY GettingStarted.m; everything else under doc/ is
-    % internal dev material (architecture notes, OpenAPI dump, dev guide,
-    % notebooks, superpowers/, features/, etc.).
-    if startsWith(rel, 'doc/') && ~strcmp(rel, 'doc/GettingStarted.m')
+    % doc/ — ship ONLY the Getting Started guide (.mlx preferred, .m
+    % fallback); everything else under doc/ is internal dev material
+    % (architecture notes, OpenAPI dump, dev guide, notebooks,
+    % superpowers/, features/, etc.).
+    if startsWith(rel, 'doc/') ...
+            && ~strcmp(rel, 'doc/GettingStarted.m') ...
+            && ~strcmp(rel, 'doc/GettingStarted.mlx')
         tf = true; return;
     end
 
