@@ -65,7 +65,11 @@ function outFile = package_release()
         error('package_release:NoAppProps', 'Missing %s.', appProps);
     end
     propsText = fileread(appProps);
-    if ~isempty(regexp(propsText, '^\s*base_url\s*=\s*\S', 'lineanchors', 'once'))
+    % \h (horizontal whitespace: space + tab) instead of \s so the
+    % match can't span across newlines onto the next key's line. The
+    % old \s-based regex falsely fired on `base_url=\nlogin_path=...`
+    % because \s* swallowed the newline and \S landed on the `l`.
+    if ~isempty(regexp(propsText, '^\h*base_url\h*=\h*\S', 'lineanchors', 'once'))
         warning('package_release:BaseUrlNotEmpty', ...
             ['resources/app.properties has a non-empty base_url=. ' ...
              'The shipped toolbox would hard-code that URL for every install. ' ...
