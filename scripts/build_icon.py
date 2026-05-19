@@ -8,20 +8,24 @@ Why a script and not a static PNG checked in?
   * Tunability: design parameters (colors, sizes, fonts) live in
     code so a brand refresh is a 5-line diff.
 
-Design rationale (v2 — quantum-themed)
-  * The icon needs to read as "quantum computing" at a glance. The
-    visual language convergence across IBM Quantum, Qiskit, Azure
-    Quantum, etc. is a Q-monogram with an orbital ring through it
-    (the electron-orbit / Saturn-ring metaphor). This icon adopts
-    that pattern, customised for QTAU:
-      - A bold serif "Q" sits as the brand monogram (nucleus).
-      - A tilted elliptical orbit encircles the Q (the electron path).
-      - A glowing cyan dot rides the orbit — the qubit state.
-        Cyan (#5EEAFF) matches the IBM Quantum / Quantinuum colour
-        family, signalling "quantum tech" at first glance.
-  * Below the symbol sits the typographic lockup: a thin divider
-    rule, the "QTAU" wordmark, and the "SQK CLOUD" tagline with
-    spec-sheet tracking — a classic logo-lockup pattern.
+Design rationale (v3 — quantum-hardware silhouette)
+  * The icon depicts a stylised dilution refrigerator — the iconic
+    "quantum chandelier" photographed in every IBM Quantum / Google
+    Quantum AI press shot. This is the universally recognisable image
+    of quantum-computing HARDWARE (vs. the abstract physics orbital,
+    which is used by every other quantum SDK icon).
+  * Vertical tapered stack of horizontal cooling plates (discs),
+    connected by fanning wire bundles — the visual signature of the
+    real instrument. Top disc is warmest (room-temperature interface,
+    rendered in gold #D4A847), lower stages cool down through silver
+    tones, and the chip platform at the bottom hosts the qubit glow.
+  * A cyan (#5EEAFF) qubit emits a Gaussian-blurred halo at the
+    bottom of the stack — semantically meaningful: that is literally
+    where qubits live (~15 millikelvin, the coldest engineered point
+    in the universe).
+  * Below the silhouette: a thin divider rule, the prominent QTAU
+    wordmark (carrying the brand letter the symbol now sheds), and
+    the SQK CLOUD tagline with spec-sheet tracking.
   * Background uses a vertical gradient (lifted top, deep bottom)
     plus a subtle top inner highlight to give the card depth.
 
@@ -59,59 +63,74 @@ HIGHLIGHT_COLOR = (255, 255, 255, 32)          # ~12% alpha white
 HIGHLIGHT_INSET = 4                            # inset from card edge
 HIGHLIGHT_W     = 2
 
-# ── Symbol: Q monogram + orbital ring + glowing qubit ────────────────────
+# ── Symbol: stylised dilution-refrigerator chandelier ────────────────────
+#
+# Composition (top → bottom of the symbol):
+#   • 4 horizontal cooling plates ("discs") tapering inward
+#   • Wire bundles fanning between each adjacent disc pair
+#   • A cyan qubit glow centred below the lowest plate
+#
+# All discs share the canvas centre column. Each tier's geometry
+# (y-position, half-width, stroke colour, wire count) is kept in a
+# DISCS list so the silhouette is one edit away from rebalancing.
 
 SYMBOL_CX       = CANVAS_SIZE // 2             # always horizontally centred
-SYMBOL_CY       = 92                           # vertical centre of Q + orbit
 
-# "Q" letterform — the brand monogram, primary visual anchor (the "nucleus").
-Q_TEXT          = "Q"
-Q_COLOR         = (255, 255, 255, 255)
-Q_FIT_RATIO     = 0.40                         # Q width spans this fraction of inner card
-Q_MAX_SIZE      = 180
-Q_MIN_SIZE      = 80
+# Discs — (y_center, half_width, ellipse_height, stroke_color, stroke_w).
+# Ordered top to bottom. Top disc carries the warm gold (room-temperature
+# interface); lower discs fade to cool silver as the cryostat cools.
+GOLD_RGB        = (212, 168, 71)               # #D4A847 (warm gold)
+DISC_TOP        = (46,  72, 12, (*GOLD_RGB, 220), 2)
+DISC_2          = (84,  52,  9, (255, 255, 255, 150), 2)
+DISC_3          = (118, 36,  6, (255, 255, 255, 130), 2)
+DISC_CHIP       = (140, 20,  4, (255, 255, 255, 165), 2)
 
-# Orbital ring — encircles the Q, Saturn-ring style.
-ORBIT_A         = 96                           # semi-major axis (unrotated)
-ORBIT_B         = 34                           # semi-minor axis (unrotated)
-ORBIT_TILT_DEG  = 20                           # CCW rotation in degrees
-ORBIT_STROKE_W  = 2
-ORBIT_COLOR     = (255, 255, 255, 140)         # ~55% alpha white — recedes behind the Q
+# Optional thin gold highlight along the bottom of the TOP disc — gives
+# the "warm metal lip" of the room-temperature flange.
+TOP_HIGHLIGHT_ALPHA = 80
 
-# Glowing cyan qubit on the orbit.
+# Wire bundles — (y_start, y_end, x_half_start, x_half_end, count, color).
+# x_half is the half-width of the bundle's lateral spread at that y.
+# count is the number of parallel wires; they fan inward as the bundle
+# descends so the silhouette tapers like the real chandelier.
+WIRE_COLOR_TOP    = (255, 222, 160, 130)       # warm gold-tinted, recedes
+WIRE_COLOR_MID    = (255, 255, 255,  90)       # cooler down the stack
+WIRE_COLOR_BOT    = (255, 255, 255,  75)
+BUNDLE_1          = (46, 84,  60, 44, 16, WIRE_COLOR_TOP)
+BUNDLE_2          = (84, 118, 44, 30, 12, WIRE_COLOR_MID)
+BUNDLE_3          = (118, 140, 30, 16,  8, WIRE_COLOR_BOT)
+
+# Qubit chip glow — the coldest point of the cryostat, where qubits live.
+CHIP_GLOW_CY    = 158
 DOT_ACCENT_RGB  = (94, 234, 255)               # cyan #5EEAFF (IBM Quantum family)
-DOT_CORE_R      = 6                            # bright core radius
-DOT_HALO_R      = 16                           # halo input radius (gets blurred)
-DOT_HALO_ALPHA  = 165                          # ~65% alpha cyan glow before blur
-DOT_BLUR_RADIUS = 5                            # Gaussian blur strength for halo
-DOT_RING_R      = 9                            # mid-radius "shell" between core and halo
-DOT_RING_ALPHA  = 200
-# Parametric angle on the UNROTATED ellipse (PIL convention: 0° = east).
-# After the orbit's CCW tilt is applied, the dot lands in the upper-right
-# quadrant of the icon — a striking "particle at the top of its trajectory".
-DOT_ANGLE_DEG   = 10
+DOT_CORE_R      = 6
+DOT_RING_R      = 10
+DOT_HALO_R      = 18
+DOT_HALO_ALPHA  = 175
+DOT_RING_ALPHA  = 210
+DOT_BLUR_RADIUS = 6
 
 # ── Lockup: divider + wordmark + tagline (bottom strip) ──────────────────
 
 DIVIDER_COLOR   = (255, 255, 255, 70)          # ~27% alpha white
 DIVIDER_WIDTH   = 1
-DIVIDER_RATIO   = 0.36                         # fraction of inner card width
-DIVIDER_Y       = 170                          # absolute y in canvas
+DIVIDER_RATIO   = 0.38                         # fraction of inner card width
+DIVIDER_Y       = 184                          # absolute y in canvas
 
 TITLE_TEXT      = "QTAU"
-TITLE_COLOR     = (255, 255, 255, 240)
-TITLE_FIT_RATIO = 0.30                         # wordmark is SECONDARY to the Q symbol
-TITLE_MAX_SIZE  = 36
-TITLE_MIN_SIZE  = 14
+TITLE_COLOR     = (255, 255, 255, 245)
+TITLE_FIT_RATIO = 0.36                         # larger now: wordmark carries the brand letter
+TITLE_MAX_SIZE  = 44
+TITLE_MIN_SIZE  = 16
 DIV_TO_TITLE    = 8                            # gap between divider and title top
 
 SUBTITLE_TEXT   = "SQK CLOUD"
-SUB_COLOR       = (255, 255, 255, 175)         # quieter than wordmark — supporting role
+SUB_COLOR       = (255, 255, 255, 180)
 SUB_FIT_RATIO   = 0.42
 SUB_MAX_SIZE    = 16
 SUB_MIN_SIZE    = 9
 SUB_LETTERSPACE = 5
-TITLE_TO_SUB    = 6                            # gap between title bottom and subtitle top
+TITLE_TO_SUB    = 5                            # gap between title bottom and subtitle top
 
 
 # ---- Font discovery -----------------------------------------------------
@@ -184,36 +203,43 @@ def _autofit_font(draw: ImageDraw.ImageDraw, font_path: str, target_w: int,
     return best
 
 
-def _point_on_tilted_ellipse(angle_deg: float, a: float, b: float,
-                             tilt_deg: float, cx: float, cy: float) -> tuple[float, float]:
-    """Return image-coord (x, y) of a point on an axis-aligned ellipse of
-    semi-axes (a, b) at parametric angle `angle_deg`, then rotated CCW
-    by `tilt_deg` around (cx, cy).
+def _draw_disc(draw: ImageDraw.ImageDraw, disc) -> None:
+    """Draw a horizontal cooling plate (ellipse outline)."""
+    cy, half_w, ell_h, color, stroke_w = disc
+    draw.ellipse(
+        [SYMBOL_CX - half_w, cy - ell_h / 2,
+         SYMBOL_CX + half_w, cy + ell_h / 2],
+        outline=color,
+        width=stroke_w,
+    )
 
-    Matches PIL's `Image.rotate(positive_angle)` which appears CCW
-    on screen even though image-coord y increases downward.
+
+def _draw_wire_bundle(draw: ImageDraw.ImageDraw, bundle) -> None:
+    """Draw `count` parallel-ish wires fanning from (cx ± x_half_start)
+    at y_start to (cx ± x_half_end) at y_end. The wires tilt inward
+    as the bundle descends, building the chandelier's tapered cage.
     """
-    t = math.radians(angle_deg)
-    px = a * math.cos(t)
-    py = b * math.sin(t)
-    phi = math.radians(tilt_deg)
-    rx =  px * math.cos(phi) + py * math.sin(phi)
-    ry = -px * math.sin(phi) + py * math.cos(phi)
-    return (cx + rx, cy + ry)
+    y_start, y_end, x_half_start, x_half_end, count, color = bundle
+    if count <= 0:
+        return
+    for i in range(count):
+        t = i / (count - 1) if count > 1 else 0.5
+        # Map t∈[0,1] linearly to x∈[-half, +half] for both ends.
+        x_top = SYMBOL_CX + (-x_half_start + 2 * x_half_start * t)
+        x_bot = SYMBOL_CX + (-x_half_end   + 2 * x_half_end   * t)
+        draw.line([(x_top, y_start), (x_bot, y_end)], fill=color, width=1)
 
 
-def _make_orbit_layer(draw_fn) -> Image.Image:
-    """Render a transparent canvas-sized layer using `draw_fn(draw)`,
-    then rotate it CCW by ORBIT_TILT_DEG around the symbol centre.
-    Used to draw the back arc, front arc, or any orbit fragment with
-    a single tilt applied at the end (cheap and crisp).
-    """
-    layer = Image.new("RGBA", (CANVAS_SIZE, CANVAS_SIZE), (0, 0, 0, 0))
-    draw_fn(ImageDraw.Draw(layer))
-    return layer.rotate(
-        ORBIT_TILT_DEG,
-        resample=Image.BICUBIC,
-        center=(SYMBOL_CX, SYMBOL_CY),
+def _draw_top_disc_highlight(draw: ImageDraw.ImageDraw) -> None:
+    """A faint gold under-curve along the bottom of the top disc —
+    the warm-metal lip of the room-temperature flange."""
+    cy, half_w, ell_h, _color, _stroke = DISC_TOP
+    draw.arc(
+        [SYMBOL_CX - half_w + 2, cy - ell_h / 2 + 1,
+         SYMBOL_CX + half_w - 2, cy + ell_h / 2 + 4],
+        start=10, end=170,
+        fill=(*GOLD_RGB, TOP_HIGHLIGHT_ALPHA),
+        width=1,
     )
 
 
@@ -267,80 +293,52 @@ def main() -> int:
 
     inner_w = CANVAS_SIZE - 2 * CARD_PADDING
 
-    # ── 5. Symbol: orbital BACK arc → Q glyph → orbital FRONT arc → glow ──
+    # ── 5. Symbol: stylised quantum chandelier ────────────────────────────
     #
-    # The Saturn-ring effect needs three passes so the Q sits "inside" the
-    # orbit visually:
-    #   (a) Draw the back half of the orbit (upper arc of the unrotated
-    #       ellipse, PIL angles 180→360). After rotation, this is the portion
-    #       "behind" the Q.
-    #   (b) Draw the Q letterform. The Q occludes the back arc where they
-    #       overlap.
-    #   (c) Draw the front half of the orbit (lower arc, PIL angles 0→180).
-    #       This restores visibility of the orbit in front of the Q,
-    #       completing the through-Q ring effect.
+    # Draw order (back → front, so each layer occludes the one beneath):
+    #   (a) Wire bundles between successive discs (so wire ends are tucked
+    #       behind the disc rims drawn next).
+    #   (b) Disc outlines (top warm gold, lower stages cool silver).
+    #   (c) Faint gold under-curve along the top disc (the "warm flange").
+    #   (d) Cyan qubit glow at CHIP_GLOW_CY: blurred halo, mid shell, core.
 
-    orbit_bbox = [
-        SYMBOL_CX - ORBIT_A, SYMBOL_CY - ORBIT_B,
-        SYMBOL_CX + ORBIT_A, SYMBOL_CY + ORBIT_B,
-    ]
+    # (a) Wire bundles
+    for bundle in (BUNDLE_1, BUNDLE_2, BUNDLE_3):
+        _draw_wire_bundle(draw, bundle)
 
-    # (a) Back arc — drawn on a rotated layer, composited first.
-    back_layer = _make_orbit_layer(
-        lambda d: d.arc(orbit_bbox, start=180, end=360,
-                        fill=ORBIT_COLOR, width=ORBIT_STROKE_W)
-    )
-    canvas.alpha_composite(back_layer)
+    # (b) Discs (top to bottom)
+    for disc in (DISC_TOP, DISC_2, DISC_3, DISC_CHIP):
+        _draw_disc(draw, disc)
 
-    # (b) Q glyph — auto-fitted serif Q centred on the symbol point.
-    q_target = int(inner_w * Q_FIT_RATIO)
-    def _q_w(f: ImageFont.FreeTypeFont) -> int:
-        bb = _measure_text(draw, Q_TEXT, f)
-        return bb[2] - bb[0]
-    q_font = _autofit_font(draw, title_font_path, q_target,
-                           Q_MIN_SIZE, Q_MAX_SIZE, _q_w)
-    qbox = _measure_text(draw, Q_TEXT, q_font)
-    q_w = qbox[2] - qbox[0]
-    q_h = qbox[3] - qbox[1]
-    qx = SYMBOL_CX - q_w / 2 - qbox[0]
-    qy = SYMBOL_CY - q_h / 2 - qbox[1]
-    draw.text((qx, qy), Q_TEXT, font=q_font, fill=Q_COLOR)
-    print(f"  Q     size: {q_font.size}pt -> {q_w}x{q_h}px")
+    # (c) Warm gold lip below the top disc
+    _draw_top_disc_highlight(draw)
 
-    # (c) Front arc — drawn on a rotated layer, composited on top of the Q.
-    front_layer = _make_orbit_layer(
-        lambda d: d.arc(orbit_bbox, start=0, end=180,
-                        fill=ORBIT_COLOR, width=ORBIT_STROKE_W)
-    )
-    canvas.alpha_composite(front_layer)
+    # (d) Qubit glow — the coldest point of the cryostat
+    glow_x = SYMBOL_CX
+    glow_y = CHIP_GLOW_CY
+    print(f"  chip  pos:  ({glow_x}, {glow_y})")
 
-    # ── 6. Glowing cyan qubit on the orbit ────────────────────────────────
-    dot_x, dot_y = _point_on_tilted_ellipse(
-        DOT_ANGLE_DEG, ORBIT_A, ORBIT_B, ORBIT_TILT_DEG, SYMBOL_CX, SYMBOL_CY
-    )
-    print(f"  dot   pos:  ({dot_x:.1f}, {dot_y:.1f})  (angle={DOT_ANGLE_DEG}°)")
-
-    # Soft halo — blurred large cyan circle, drawn under the core.
+    # Soft halo (blurred cyan disc) sits behind the core.
     halo_layer = Image.new("RGBA", (CANVAS_SIZE, CANVAS_SIZE), (0, 0, 0, 0))
     ImageDraw.Draw(halo_layer).ellipse(
-        [dot_x - DOT_HALO_R, dot_y - DOT_HALO_R,
-         dot_x + DOT_HALO_R, dot_y + DOT_HALO_R],
+        [glow_x - DOT_HALO_R, glow_y - DOT_HALO_R,
+         glow_x + DOT_HALO_R, glow_y + DOT_HALO_R],
         fill=(*DOT_ACCENT_RGB, DOT_HALO_ALPHA),
     )
     halo_layer = halo_layer.filter(ImageFilter.GaussianBlur(radius=DOT_BLUR_RADIUS))
     canvas.alpha_composite(halo_layer)
 
-    # Mid-radius "shell" — gives the qubit a tiny gradient feel.
+    # Mid-radius shell adds a tiny gradient feel.
     draw.ellipse(
-        [dot_x - DOT_RING_R, dot_y - DOT_RING_R,
-         dot_x + DOT_RING_R, dot_y + DOT_RING_R],
+        [glow_x - DOT_RING_R, glow_y - DOT_RING_R,
+         glow_x + DOT_RING_R, glow_y + DOT_RING_R],
         fill=(*DOT_ACCENT_RGB, DOT_RING_ALPHA),
     )
 
     # Bright core — solid cyan disc on top.
     draw.ellipse(
-        [dot_x - DOT_CORE_R, dot_y - DOT_CORE_R,
-         dot_x + DOT_CORE_R, dot_y + DOT_CORE_R],
+        [glow_x - DOT_CORE_R, glow_y - DOT_CORE_R,
+         glow_x + DOT_CORE_R, glow_y + DOT_CORE_R],
         fill=(*DOT_ACCENT_RGB, 255),
     )
 
@@ -387,25 +385,39 @@ def main() -> int:
                   font=sub_font, fill=SUB_COLOR)
         cursor += cw + SUB_LETTERSPACE
 
-    # Output
-    out_path = os.path.join(
+    # ── Output: master 256x256 plus high-quality downscaled variants ─────
+    #
+    # MATLAB's Add-Ons UI displays the toolbox image at 64x64; File
+    # Exchange uses 256x256 for the listing hero; 160x160 covers the
+    # in-between "medium" surfaces. We render the design once at 256x256
+    # (the resolution the typography and chandelier were tuned for) and
+    # produce the smaller assets via LANCZOS downscaling — the same
+    # resampling kernel MATLAB uses internally.
+
+    resources_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "resources",
-        "toolbox-icon.png",
     )
-    canvas.save(out_path, "PNG", optimize=True)
 
-    # Sanity check
-    chk = Image.open(out_path)
-    assert chk.mode == "RGBA",      f"Expected RGBA, got {chk.mode}"
-    assert chk.size == (256, 256),  f"Expected 256x256, got {chk.size}"
-    nz = sum(1 for x in range(chk.width)
-                for y in range(chk.height)
-                if chk.getpixel((x, y))[3] > 0)
-    trans = chk.width * chk.height - nz
-    print(f"  written: {out_path}")
-    print(f"  size:    {chk.size}, mode={chk.mode}")
-    print(f"  pixels:  {nz} opaque, {trans} transparent")
+    outputs = [
+        (256, "toolbox-icon.png"),
+        (160, "toolbox-icon-160.png"),
+        ( 64, "toolbox-icon-64.png"),
+    ]
+
+    for size, fname in outputs:
+        out_path = os.path.join(resources_dir, fname)
+        if size == CANVAS_SIZE:
+            img = canvas
+        else:
+            img = canvas.resize((size, size), resample=Image.LANCZOS)
+        img.save(out_path, "PNG", optimize=True)
+
+        chk = Image.open(out_path)
+        assert chk.mode == "RGBA",        f"Expected RGBA, got {chk.mode}"
+        assert chk.size == (size, size),  f"Expected {size}x{size}, got {chk.size}"
+        print(f"  written: {out_path}  ({chk.size})")
+
     return 0
 
 
