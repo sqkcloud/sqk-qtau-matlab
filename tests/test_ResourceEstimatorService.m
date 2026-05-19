@@ -19,10 +19,14 @@ end
 
 % ── codeDistance ─────────────────────────────────────────────────────────────
 function test_distance_default_thresholds(testCase)
-    % p=1e-3, eps=1e-15: ratio = log(1e-15/0.03)/log(1e-3/1e-2) ≈ 7.85
-    % d_raw = 2*7.85 - 1 = 14.7 → ceil = 15 (already odd)
+    % Fowler inverse: ratio = log(eps/0.03) / log(p/pth)
+    %   = log(1e-15/0.03) / log(1e-3/1e-2)
+    %   = log10(3.33e-14) / log10(0.1)
+    %   ≈ -13.48 / -1
+    %   ≈ 13.48
+    % d_raw = 2·13.48 - 1 = 25.96 → ceil = 26 → +1 (force odd) = 27
     d = ResourceEstimatorService.codeDistance(1e-3, 1e-15);
-    testCase.assertEqual(d, 15);
+    testCase.assertEqual(d, 27);
 end
 
 function test_distance_lower_target_grows(testCase)
@@ -105,8 +109,8 @@ function test_bell_state_estimate(testCase)
     testCase.assertEqual(out.logicalQubits, 2);
     testCase.assertTrue(out.cliffordOnly);
     testCase.assertEqual(out.tFactories, 0);
-    testCase.assertEqual(out.distance, 15);
-    testCase.assertEqual(out.physicalPerLogical, 2*15^2 + 1);
+    testCase.assertEqual(out.distance, 27);
+    testCase.assertEqual(out.physicalPerLogical, 2*27^2 + 1);
     testCase.assertGreaterThan(out.totalPhysical, out.dataQubits);
 end
 

@@ -164,7 +164,10 @@ classdef CircuitModel < handle
                     opLines{end+1} = sprintf('    %s,', line); %#ok<AGROW>
                 end
             end
-            lines = [lines, opLines, {'])'}];
+            % opLines grows as a row (1xN) via opLines{end+1}=...; the
+            % surrounding `lines` cell is a column (6x1). Force both to
+            % column form before vertical concat — horzcat would mismatch.
+            lines = [lines; opLines(:); {'])'}];
             txt = strjoin(lines, sprintf('\n'));
         end
 
@@ -355,10 +358,16 @@ classdef CircuitModel < handle
 
         function s = formatThetaPython(theta)
             % Like formatTheta, but emits np.pi instead of bare pi for
-            % Python-target ecosystems. Reuses the symbolic-rational
-            % detection so common multiples of pi stay readable.
+            % Python-target ecosystems. Uses literal token replacement so
+            % no regex \b dependency (some MATLAB regex flavors treat
+            % the word-boundary differently around adjacent operators).
             s = CircuitModel.formatTheta(theta);
-            s = regexprep(s, '\bpi\b', 'np.pi');
+            % Replace standalone "pi", "pi/", "pi*", "-pi", "*pi", "pi),
+            % "pi]", "pi " — anywhere "pi" appears as a token rather than
+            % part of a longer identifier. The piRationalString outputs
+            % are limited to: 'pi', '-pi', 'N*pi', 'pi/Q', '-pi/Q',
+            % 'P*pi/Q' — so a single strrep covers them all.
+            s = strrep(s, 'pi', 'np.pi');
         end
 
         function s = piRationalString(p, q)
