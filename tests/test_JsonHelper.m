@@ -349,8 +349,11 @@ classdef test_JsonHelper < matlab.unittest.TestCase
             rows = JsonHelper.benchmarkStrategyToRows(data);
             testCase.verifyEqual(size(rows, 1), 2);
             testCase.verifyEqual(rows{1, 1}, 'level1_sabre');
-            testCase.verifyEqual(rows{1, 2}, 100);
-            testCase.verifyEqual(rows{1, 3}, 40);
+            % Depth + 2Q-gate counts are int32 by design (see
+            % JsonHelper.benchmarkStrategyToRows comments: uitable
+            % otherwise renders '100' as '100.0000'). Match the class.
+            testCase.verifyEqual(rows{1, 2}, int32(100));
+            testCase.verifyEqual(rows{1, 3}, int32(40));
             testCase.verifyEqual(rows{2, 1}, 'level3_sabre');
             testCase.verifyEqual(rows{2, 4}, 0.96);
         end
@@ -367,8 +370,8 @@ classdef test_JsonHelper < matlab.unittest.TestCase
                 'circuit_id', 'c1', 'backend_name', 'b1');
             rows = JsonHelper.benchmarkStrategyToRows(data);
             testCase.verifyEqual(rows{1, 1}, 'level2_sabre');
-            testCase.verifyEqual(rows{1, 2}, 85);
-            testCase.verifyEqual(rows{1, 3}, 34);
+            testCase.verifyEqual(rows{1, 2}, int32(85));
+            testCase.verifyEqual(rows{1, 3}, int32(34));
         end
 
         function testPredictionToLinesEmpty(testCase)

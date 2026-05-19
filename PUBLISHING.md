@@ -236,7 +236,11 @@ If a toolbox task already exists from a prior attempt, it will reopen instead of
    .claude
    .serena
    .DS_Store
+   **/.DS_Store
    resources/seed.properties
+   resources/file-exchange-listing.png
+   resources/sqk-logo-kokkos-white1-reordered.svg
+   samples/aqs-qmc
    EmAnalysis_*.json
    Report_*.pdf
    ExecLog_*.jsonl
@@ -252,6 +256,9 @@ If a toolbox task already exists from a prior attempt, it will reopen instead of
    release
    *.mltbx
    CLAUDE.md
+   PUBLISHING.md
+   CONTRIBUTING.md
+   SECURITY.md
    ```
 
    Save the file. The toolbox-folder preview refreshes — those entries should now be greyed out / removed.

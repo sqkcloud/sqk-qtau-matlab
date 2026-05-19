@@ -806,8 +806,11 @@ classdef MitigationCompareViewModel < handle
         end
 
         function n = parseLevelId(idChar)
+            % Always returns int32 so callers that assign the result into
+            % a JSON body field (e.g. mitigation_level) get integer wire
+            % encoding even on the invalid -1 sentinel.
             v = str2double(idChar);
-            if isnan(v); n = -1; else; n = int32(v); end
+            if isnan(v); n = int32(-1); else; n = int32(v); end
         end
 
         function lbl = circLabel(c)

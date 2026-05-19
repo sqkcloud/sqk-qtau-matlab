@@ -277,7 +277,7 @@ sqk-qtau-matlab/
 ## Running Tests
 
 ```matlab
-% Run all 20 tests
+% Run the full suite (31 test files)
 runtests('tests')
 
 % Run a single test file

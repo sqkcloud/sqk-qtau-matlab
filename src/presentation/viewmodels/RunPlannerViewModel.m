@@ -763,8 +763,11 @@ classdef RunPlannerViewModel < handle
         end
 
         function n = parseLevelId(idChar)
+            % Always returns int32 so the result is wire-correct when
+            % assigned into the mitigation_level JSON body field (same
+            % rationale as MitigationCompareViewModel.parseLevelId).
             v = str2double(idChar);
-            if isnan(v); n = -1; else; n = int32(v); end
+            if isnan(v); n = int32(-1); else; n = int32(v); end
         end
 
         function q = maxBackendQubits(backends)

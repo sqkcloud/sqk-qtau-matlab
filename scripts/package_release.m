@@ -111,7 +111,9 @@ function outFile = package_release()
         '  * A running QTAU FastAPI server you can reach (the toolbox does not include the backend). ' ...
         'On first launch the Base URL field is blank — set it via the Login dialog or Settings -> Connection.\n\n' ...
         'Getting started: after install, type QTAUWorkbenchLauncher at the MATLAB prompt. ' ...
-        'See the bundled Getting Started guide via Add-Ons -> Manage Add-Ons -> Options.']);
+        'See the bundled Getting Started guide via Add-Ons -> Manage Add-Ons -> Options.\n\n' ...
+        'Source code, issue tracker, and backend setup notes: ' ...
+        'https://github.com/sqkcloud/sqk-qtau-matlab']);
     opts.ToolboxImageFile = iconPath;
 
     % File inclusion — start from the auto-discovered file list, drop
@@ -199,19 +201,29 @@ function tf = iShouldExclude(absPath, projectRoot)
     rel = strrep(absPath, [projectRoot filesep], '');
     rel = strrep(rel, '\', '/');
 
+    % Apple metadata anywhere in the tree (root or nested). The old
+    % exact-match list only caught the root .DS_Store; nested copies
+    % like samples/.DS_Store leaked into the .mltbx and tripped FEX's
+    % auto-scan on macOS-built packages.
+    if endsWith(rel, '.DS_Store'); tf = true; return; end
+
     % Whole-directory excludes (anywhere)
     dirPrefixes = { ...
         '.git/', '.github/', '.claude/', '.serena/', ...
-        'tests/', 'scripts/', 'output/', 'release/'};
+        'tests/', 'scripts/', 'output/', 'release/', ...
+        'samples/aqs-qmc/'};
     for i = 1:numel(dirPrefixes)
         if startsWith(rel, dirPrefixes{i}); tf = true; return; end
     end
 
     % Exact path matches
     exactExcludes = { ...
-        '.gitignore', '.gitattributes', '.DS_Store', ...
+        '.gitignore', '.gitattributes', ...
         'CLAUDE.md', 'PUBLISHING.md', ...
+        'CONTRIBUTING.md', 'SECURITY.md', ...
         'resources/seed.properties', ...
+        'resources/file-exchange-listing.png', ...
+        'resources/sqk-logo-kokkos-white1-reordered.svg', ...
         'doc/keys.txt'};
     for i = 1:numel(exactExcludes)
         if strcmp(rel, exactExcludes{i}); tf = true; return; end
@@ -227,8 +239,14 @@ function tf = iShouldExclude(absPath, projectRoot)
         end
     end
 
-    % File-extension excludes
-    suffixExcludes = {'.mex', '.token', '.env', '.mltbx'};
+    % File-extension excludes. MEX uses platform-specific extensions
+    % (.mexa64 / .mexmaci64 / .mexmaca64 / .mexw64 / .mexw32 / .mexglx);
+    % match the family with a regex instead of the literal '.mex' that
+    % missed every real binary.
+    if ~isempty(regexp(rel, '\.mex[a-zA-Z0-9]*$', 'once'))
+        tf = true; return;
+    end
+    suffixExcludes = {'.token', '.env', '.mltbx'};
     for i = 1:numel(suffixExcludes)
         if endsWith(rel, suffixExcludes{i}); tf = true; return; end
     end

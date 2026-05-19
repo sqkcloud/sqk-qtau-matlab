@@ -15,7 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Cost-aware Run Planner that surfaces the cheapest *backend × mitigation × shots* configuration meeting a target fidelity, via a Pareto frontier.
 - Reproducibility Bundle export (QASM + Qiskit / Cirq / Braket Python + manifest with SHA-256 checksums).
 - Externalised configuration through `resources/app.properties` and `resources/labels.properties` (600+ UI strings, runtime-reloadable).
-- 20 unit-test files covering services, infrastructure, and configuration utilities.
+- 31 unit-test files covering services, infrastructure, viewmodels, and configuration utilities.
 - Apache 2.0 license, with PNNL QASMBench attribution in `NOTICE`.
 
 ### Requirements
@@ -31,18 +31,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Re-enable the **Notes** screen in the sidebar (currently hidden behind a feature flag).
 - Pre-rendered `.mlx` live examples under `doc/examples/` surfaced in **Help → Examples**.
 
-### Known issues (test-only, no end-user impact)
+### Known limitations
 
-These five tests fail in 1.0.0 against the current MATLAB runtime but the affected production code paths work correctly in the app. Scheduled for resolution in 1.0.1:
-
-- `test_JsonHelper/testBenchmarkStrategyToRows*` (2 tests) — `int32` vs `double` class assertion mismatch from a newer MATLAB JSON decoder behavior. Benchmark data still renders correctly on screen.
-- `test_MitigationCompareViewModel/test_parseLevelId_invalid_returns_minus_one` — same `int32` vs `double` class mismatch.
-- `test_AsyncRunner/testRunReturnsScalarResult` — async dispatch timing flake (the other AsyncRunner tests all pass; production code is fine).
-- `test_Logger/testLogOutputUppercasesLevel` — log-level case-format test that doesn't match the current output format. All other logger tests pass.
-- `test_ReportService/testGenerateReportPayload` — payload struct field shape (`cell` vs `char`) — endpoint still receives the right data.
-
-### Investigation needed
-
-- `test_QecEngineService/testDepolarizingNoNoisePerfectFidelity` — at noise probability 0 with the 3-qubit bit-flip code under a depolarizing channel, fidelity returns 0.5 instead of the expected ≥0.99. The matched-noise cases (bitflip+bitflip, phaseflip+phaseflip) pass, so the core QEC simulation works; this is a cross-channel edge case in the simulation pipeline.
+- **3-qubit bit-flip code decoder approximation.** `QecEngineService.traceOutBitFlip3` uses a literal partial trace where a proper decoder would apply the inverse encoding circuit (CNOT₁₂, CNOT₁₃) before tracing out the ancillas. For product-state logical inputs (`|0⟩`, `|1⟩`) the two approaches coincide and fidelity is reported correctly. For superposition inputs (`|+⟩`, `|-⟩`, …) the encoded GHZ-3 state partial-traces to the maximally mixed state and fidelity caps at 0.5 even under a perfect identity channel. The decoder upgrade is scheduled for 1.1.0; until then, callers that need superposition-state simulation should use Shor-9 / Steane-7 / Perfect-5, whose `projectLogical` decoder handles superpositions correctly.
 
 [1.0.0]: https://github.com/sqkcloud/sqk-qtau-matlab/releases/tag/v1.0.0

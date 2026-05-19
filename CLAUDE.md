@@ -14,7 +14,7 @@ run('QTAUWorkbenchLauncher.m')
 % Or via MATLAB Project Manager:
 matlab.project.openProject('sqk-qtau-matlab.prj')
 
-% Run all tests (20 test files)
+% Run all tests (31 test files)
 runtests('tests')
 
 % Run a single test file
@@ -220,7 +220,7 @@ All seed scripts are in `scripts/` and use `seed_helpers.m` for authentication a
 
 ## Testing
 
-20 unit test files in `tests/` covering all services, infrastructure, and config utilities. Tests use `StubFastAPIClient.m` as a mock HTTP client for isolated testing without a live backend.
+31 unit-test files in `tests/` covering services, infrastructure, viewmodels, and config utilities. Tests use `StubFastAPIClient.m` as a mock HTTP client for isolated testing without a live backend.
 
 ```matlab
 runtests('tests')                    % Run all
