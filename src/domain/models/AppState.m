@@ -12,7 +12,7 @@ classdef AppState < handle
     properties
         % ── Network ──────────────────────────────────────────────────────────
         % Loaded from resources/app.properties key "base_url".
-        % Fallback: http://34.42.87.190:5715
+        % Fallback: http://localhost:5715
         baseUrl string = ""
 
         % ── Authentication ───────────────────────────────────────────────────

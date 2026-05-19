@@ -649,7 +649,7 @@ Now jump to [Section 6](#6-smoke-test-on-a-clean-matlab-instance).
 Update these values inside `scripts/package_release.m` when:
 
 - **Releasing a new version**: change `opts.ToolboxVersion`. Follow semver (Section 9.4).
-- **Maintainer changes**: change `opts.AuthorEmail`. (Default placeholder is `engineering@sqkcloud.com`.)
+- **Maintainer changes**: change `opts.AuthorEmail`. (Default is `contact@sqkcloud.com`.)
 - **Description updates**: edit the multi-line `opts.Description = sprintf([...])` block.
 - **Adding new install actions**: e.g. when you ship the App Designer wrapper from Section 6 of the appendix, populate `opts.AppGalleryFiles`.
 
@@ -665,7 +665,7 @@ A bare-minimum GUI fallback (no `ToolboxOptions` API) is sketched in [Section 4]
 
 ## Appendix — what NOT to do
 
-- **Don't** publish with `base_url=http://34.42.87.190:5715` in `app.properties`. Every File Exchange installer would hit your dev server.
+- **Don't** publish with an internal/private `base_url` filled in inside `app.properties`. Ship it empty (`base_url=`) so each installer is prompted on first launch — otherwise every install would hit your dev server.
 - **Don't** include `resources/seed.properties` in the package. It contains real credentials.
 - **Don't** include the `.git/` folder. Wastes File Exchange storage and may leak commit metadata.
 - **Don't** use a personal MathWorks account for the SQK Cloud Inc. submission. If you leave the company the listing becomes hard to manage.

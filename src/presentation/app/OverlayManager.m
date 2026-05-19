@@ -373,7 +373,7 @@ classdef OverlayManager
             % address never reaches the popup. MATLAB's webservices
             % errors look like:
             %   "... in response to the request to URL
-            %    http://34.42.87.190:5715/api/circuits/.../cutting/batches"
+            %    https://qtau.example.com/api/circuits/.../cutting/batches"
             % After sanitization:
             %   "... in response to the request to URL
             %    /api/circuits/.../cutting/batches"

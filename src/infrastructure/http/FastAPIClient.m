@@ -349,9 +349,8 @@ classdef FastAPIClient < handle
         function assertSafeBaseUrl(url)
             % assertSafeBaseUrl  Reject base URLs that would send credentials
             %   over an insecure transport.  HTTPS is always allowed; plain
-            %   HTTP is allowed only for the loopback interface and for the
-            %   shared QTAU API server at 34.42.87.190 (internal-network
-            %   development/staging).  All other plain-HTTP URLs throw.
+            %   HTTP is permitted only for the loopback interface (development
+            %   convenience).  All other plain-HTTP URLs throw.
             s = char(string(url));
             if isempty(s)
                 error('FastAPIClient:invalidBaseUrl', 'Base URL is empty.');
@@ -359,17 +358,16 @@ classdef FastAPIClient < handle
             if startsWith(s, 'https://', 'IgnoreCase', true)
                 return;
             end
-            if startsWith(s, 'http://localhost',    'IgnoreCase', true) || ...
-               startsWith(s, 'http://127.0.0.1',    'IgnoreCase', true) || ...
-               startsWith(s, 'http://[::1]',        'IgnoreCase', true) || ...
-               startsWith(s, 'http://34.42.87.190', 'IgnoreCase', true)
+            if startsWith(s, 'http://localhost', 'IgnoreCase', true) || ...
+               startsWith(s, 'http://127.0.0.1', 'IgnoreCase', true) || ...
+               startsWith(s, 'http://[::1]',     'IgnoreCase', true)
                 Logger.warn('FastAPIClient', ...
-                    'Plain HTTP allowed for loopback / shared QTAU dev server only: %s', s);
+                    'Plain HTTP allowed for loopback only: %s', s);
                 return;
             end
             error('FastAPIClient:insecureBaseUrl', ...
                 ['Refusing non-HTTPS base URL: %s. ' ...
-                 'Use https:// (or http://34.42.87.190 / http://localhost for internal development).'], s);
+                 'Use https:// (or http://localhost for local development).'], s);
         end
 
         function s = encodePathSegment(seg)
