@@ -1,5 +1,5 @@
 QTAU Connector Workbench
-Copyright 2026 SQK Cloud Inc.
+Copyright 2026 SQK Cloud Inc
 
 This product includes software developed by SQK Cloud Inc.
 Licensed under the Apache License, Version 2.0 (see LICENSE).
@@ -23,7 +23,7 @@ Third-party content bundled with this distribution
 
 2. MATLAB(R) and its toolboxes
    Trademark and copyright: The MathWorks, Inc.
-   This software requires MATLAB R2025a or later to run. MATLAB is
+   This software requires MATLAB R2025b or later to run. MATLAB is
    not redistributed with this toolbox; end users must hold a valid
    MATLAB license. See https://www.mathworks.com/ for terms.
 

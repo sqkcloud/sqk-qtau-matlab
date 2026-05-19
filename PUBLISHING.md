@@ -30,7 +30,7 @@ Before opening MATLAB, verify these are all true. If any one is **NO**, fix it f
 - [ ] Working tree is clean (`git status` shows only files you intend to ship).
 - [ ] All tests pass: `runtests('tests')` returns zero failures.
 - [ ] App launches end-to-end against the dev backend: `QTAUWorkbenchLauncher` → Login → Dashboard.
-- [ ] `LICENSE` and `NOTICE` exist at the repo root and have the correct copyright year (© 2026 SQK Cloud Inc.).
+- [ ] `LICENSE` and `NOTICE` exist at the repo root and have the correct copyright year (© 2026 SQK Cloud Inc).
 - [ ] `resources/app.properties` has `base_url=` (empty).
 - [ ] `src/domain/models/AppState.m` line 130 falls back to `http://localhost:5715`, not the dev IP.
 - [ ] `resources/seed.properties` is **not** tracked (`git ls-files resources/seed.properties` returns nothing).
@@ -266,7 +266,7 @@ Fill in exactly:
 | **Version** | `1.0.0` (use `1.0.0.0` if MATLAB requires 4 segments) |
 | **Author name** | Your name |
 | **Author email** | Your maintainer email |
-| **Company** | `SQK Cloud Inc.` |
+| **Company** | `SQK Cloud Inc` |
 | **Toolbox image** | Click **Browse** → `resources/toolbox-icon.png` |
 | **Summary** | `MATLAB desktop client for managing IBM Quantum experiments through the QTAU FastAPI backend. Includes circuit composer, Quantum Monte Carlo simulator, error mitigation cost planner, and cost-aware run optimiser.` |
 | **Description** | Paste from `README.md` top section. Keep under 4000 characters. |
@@ -463,17 +463,17 @@ If all eight steps pass, you're ready to publish.
 
 ### 7.1. Account
 
-Go to https://www.mathworks.com/login. Sign in with the MathWorks account that should own the File Exchange submission (e.g. an account belonging to SQK Cloud Inc., not a personal account).
+Go to https://www.mathworks.com/login. Sign in with the MathWorks account that should own the File Exchange submission (e.g. an account belonging to SQK Cloud Inc, not a personal account).
 
-If you don't have an SQK Cloud Inc. account, create one at https://www.mathworks.com/mwaccount/account/create. Use a company email.
+If you don't have an SQK Cloud Inc account, create one at https://www.mathworks.com/mwaccount/account/create. Use a company email.
 
 ### 7.2. Author profile
 
 Go to https://www.mathworks.com/matlabcentral/profile. Make sure your profile has:
 
-- **Display name**: `SQK Cloud Inc.` (or your name as maintainer)
-- **Bio**: one paragraph about SQK Cloud Inc. and what the toolbox does
-- **Affiliation**: SQK Cloud Inc.
+- **Display name**: `SQK Cloud Inc` (or your name as maintainer)
+- **Bio**: one paragraph about SQK Cloud Inc and what the toolbox does
+- **Affiliation**: SQK Cloud Inc
 - **Website**: company URL
 - **Avatar**: company logo or your headshot
 
@@ -668,7 +668,7 @@ A bare-minimum GUI fallback (no `ToolboxOptions` API) is sketched in [Section 4]
 - **Don't** publish with an internal/private `base_url` filled in inside `app.properties`. Ship it empty (`base_url=`) so each installer is prompted on first launch — otherwise every install would hit your dev server.
 - **Don't** include `resources/seed.properties` in the package. It contains real credentials.
 - **Don't** include the `.git/` folder. Wastes File Exchange storage and may leak commit metadata.
-- **Don't** use a personal MathWorks account for the SQK Cloud Inc. submission. If you leave the company the listing becomes hard to manage.
+- **Don't** use a personal MathWorks account for the SQK Cloud Inc submission. If you leave the company the listing becomes hard to manage.
 - **Don't** rely on screenshots that include real backend URLs in your File Exchange description. Use placeholders like `qtau.example.com`.
 - **Don't** forget to bump the version when publishing updates. File Exchange's "Update" workflow requires a new version number.
 - **Don't** skip the smoke test (Section 6). Catches 80% of packaging bugs.
@@ -679,7 +679,7 @@ A bare-minimum GUI fallback (no `ToolboxOptions` API) is sketched in [Section 4]
 
 | Path | Purpose |
 |---|---|
-| `LICENSE` | Apache 2.0 declaration, © SQK Cloud Inc. 2026 |
+| `LICENSE` | Apache 2.0 declaration, © SQK Cloud Inc 2026 |
 | `NOTICE` | Third-party attribution (PNNL QASMBench BSD-3 + MathWorks trademarks) |
 | `README.md` | Top section = end-user install; bottom section = packaging checklist (this doc supersedes for the publishing flow) |
 | `doc/GettingStarted.mlx` | Live-script Getting Started guide, registered in Install Actions |

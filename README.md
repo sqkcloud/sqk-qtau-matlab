@@ -353,7 +353,7 @@ This repo is source code. To build a distributable `QTAUConnectorWorkbench.mltbx
 ### Prerequisites
 - MATLAB **R2025b or later**.
 - The repo opens cleanly via `sqk-qtau-matlab.prj`.
-- `LICENSE` + `NOTICE` files at repo root (Apache 2.0, © SQK Cloud Inc., with PNNL QASMBench attribution).
+- `LICENSE` + `NOTICE` files at repo root (Apache 2.0, © SQK Cloud Inc, with PNNL QASMBench attribution).
 - `doc/GettingStarted.m` converted to `doc/GettingStarted.mlx` (open it in MATLAB Live Editor and save as `.mlx`).
 - A toolbox image — render a 64×64 (or 256×256) PNG from `resources/sqk-logo-kokkos-white1-reordered.svg` and place at e.g. `resources/toolbox-icon.png`.
 
@@ -370,7 +370,7 @@ This repo is source code. To build a distributable `QTAUConnectorWorkbench.mltbx
 4. **Toolbox Information**:
    - Name: `QTAU Connector Workbench`
    - Version: `1.0.0.0` (`major.minor.bug.build`)
-   - Author / Email / Company: SQK Cloud Inc. + maintainer email
+   - Author / Email / Company: SQK Cloud Inc + maintainer email
    - Toolbox image: `resources/toolbox-icon.png`
    - Summary: *MATLAB desktop client for managing IBM Quantum experiments through the QTAU FastAPI backend.*
    - Description: copy from the top of this README.
