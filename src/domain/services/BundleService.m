@@ -121,8 +121,13 @@ classdef BundleService
             files{end+1} = 'manifest.json';
 
             % ── ZIP ────
-            absFiles = cellfun(@(f) fullfile(tmpDir, f), files, 'UniformOutput', false);
-            zip(opts.savePath, absFiles, tmpDir);
+            % MATLAB's zip(zipfile, files, rootfolder) expects `files`
+            % to be RELATIVE paths. The `files` cell already holds
+            % project-relative names like 'circuit/original.qasm' —
+            % pass them as-is so the zip preserves the directory
+            % structure. Passing absolute paths here would silently
+            % flatten subdirectories.
+            zip(opts.savePath, files, tmpDir);
             savedPath = opts.savePath;
 
             delete(cleanupObj);

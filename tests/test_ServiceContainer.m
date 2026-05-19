@@ -15,6 +15,7 @@ classdef test_ServiceContainer < matlab.unittest.TestCase
             addpath(fullfile(projectRoot, 'src', 'infrastructure', 'config'));
             addpath(fullfile(projectRoot, 'src', 'infrastructure', 'http'));
             addpath(fullfile(projectRoot, 'src', 'infrastructure'));
+            addpath(fullfile(projectRoot, 'src', 'domain'));          % ServiceContainer.m lives here
             addpath(fullfile(projectRoot, 'src', 'domain', 'services'));
             addpath(fullfile(projectRoot, 'src', 'domain', 'models'));
             AppConfig.reload();
