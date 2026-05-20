@@ -52,7 +52,16 @@ function ResultsScreen(app)
     %  instantiated below (so ResultsViewModel.applyHeroAndKpis can
     %  keep writing to them without crashing) but the kpis grid itself
     %  is set Visible='off' so nothing paints.
-    g.RowHeight     = {0, 0, 165, 130, 210, 72};
+    % Row 1 (81 px) — hero identity strip re-enabled so the operator
+    %   can confirm which job's results they're looking at after
+    %   right-click → View Results or double-click on the Jobs screen.
+    %   Sized to fit all three stacked lines (title 22 + subtitle 18 +
+    %   job/IBM/run line 14) plus padding — the previous 66 px clipped
+    %   the third line on Mac CEF.
+    % Row 2 (0 px) — KPI strip stays collapsed per the operator's prior
+    %   preference (data is duplicated in the Distribution Review table
+    %   on Row 3 and on the generated PDF cover).
+    g.RowHeight     = {81, 0, 165, 130, 210, 72};
     g.ColumnWidth   = {'1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -74,11 +83,13 @@ function ResultsScreen(app)
         'BorderColor', Theme.COLOR_DIVIDER, ...
         'BackgroundColor', Theme.COLOR_CARD);
     heroPanel.Layout.Row = 1; heroPanel.Layout.Column = 1;
-    %  Hidden per operator request — see the row-1 collapse comment
-    %  at the outer grid above. Visible='off' here is belt-and-braces
-    %  on top of RowHeight=0 to guarantee zero rendering even on
-    %  MATLAB versions where 0-height rows produce a 1-px sliver.
-    heroPanel.Visible = 'off';
+    %  Re-enabled — operators arriving via Jobs → right-click View
+    %  Results need an identity confirmation strip at the top of the
+    %  screen ("Quantum Run Report · <circuit> · <backend> · <shots>"
+    %  + Job ID + IBM Job ID + run timestamp + status pill on the
+    %  right). Without it the operator can't tell which job they
+    %  pinned, which made the screen feel blank.
+    heroPanel.Visible = 'on';
     %  3-col grid: title + subtitle stack (left) | status pill (mid) |
     %  Mitigated/Raw toggle (right, hidden until sibling exists).
     hg = uigridlayout(heroPanel, [1 3]);
@@ -212,7 +223,17 @@ function ResultsScreen(app)
     app.ResultsDistTable = uitable(cg);
     app.ResultsDistTable.ColumnName = ...
         Labels.cols('results_table_cols_dist', {'State','Measured','Predicted','Ideal'});
-    app.ResultsDistTable.ColumnWidth = {180, 'auto', 'auto', 'auto'};
+    %  Explicit pixel widths so the columns sum to ~890 px and the
+    %  table surfaces a horizontal scrollbar whenever the panel is
+    %  narrower (same pattern as JobsTable in JobsScreen.m). With the
+    %  previous 'auto' widths the State column was being squeezed and
+    %  bitstrings beyond ~25 chars clipped off-screen — visible for the
+    %  76-qubit Distribution Review the operator was inspecting. Fixed
+    %  widths also engage uitable's built-in vertical scrollbar once
+    %  the row count exceeds the visible area.
+    %    State 560 (~76-char bitstring), Measured 110, Predicted 110,
+    %    Ideal 110.
+    app.ResultsDistTable.ColumnWidth = {560, 110, 110, 110};
     app.ResultsDistTable.Data = {};
     app.styleTable(app.ResultsDistTable);
 
@@ -252,6 +273,32 @@ function ResultsScreen(app)
         @(src, evt) app.ResultsVm.onCuttingBatchSelected(src, evt);
     app.styleTable(app.CuttingBatchesTable);
 
+    % ── Right-click context menu on Cutting Batches ────────────────────────
+    %   Mirrors the bottom action bar (View Reconstruction / Detailed
+    %   Analysis / Download JSON / Generate Report) so the operator can
+    %   act on the right-clicked row without leaving the table.
+    %   Plain-text labels (no glyphs) match the convention used by the
+    %   Dashboard activity table and the Jobs context menu.
+    app.BatchesContextMenu = uicontextmenu(app.UIFigure);
+    app.BatchesContextMenu.ContextMenuOpeningFcn = ...
+        @(src,evt) app.ResultsVm.onBatchContextMenuOpening(src, evt);
+
+    app.BatchesCtx_ViewReconstruction = uimenu(app.BatchesContextMenu, ...
+        'Text', Labels.get('results_ctx_view_reconstruction', 'View Reconstruction'), ...
+        'MenuSelectedFcn', @(~,~) app.ResultsVm.onBatchContextViewReconstruction());
+    app.BatchesCtx_DetailedAnalysis = uimenu(app.BatchesContextMenu, ...
+        'Text', Labels.get('results_ctx_detailed_analysis', 'Detailed Analysis'), ...
+        'MenuSelectedFcn', @(~,~) app.onSelectSection('Detailed Analysis'));
+    app.BatchesCtx_DownloadJson = uimenu(app.BatchesContextMenu, ...
+        'Text', Labels.get('results_ctx_download_json', 'Download JSON'), ...
+        'Separator', 'on', ...
+        'MenuSelectedFcn', @(~,~) app.ResultsVm.onBatchContextDownloadJson());
+    app.BatchesCtx_GenerateReport = uimenu(app.BatchesContextMenu, ...
+        'Text', Labels.get('results_ctx_generate_report', 'Generate Report'), ...
+        'MenuSelectedFcn', @(~,~) app.ResultsVm.onGenerateRunReport());
+
+    app.CuttingBatchesTable.ContextMenu = app.BatchesContextMenu;
+
     % ── Row 6: Action bar (existing — Tier B exports already present) ──────
     bottom = uipanel(g, 'Title', Labels.get('results_panel_action'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
@@ -268,7 +315,7 @@ function ResultsScreen(app)
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onRefreshResults());
     refreshBtn.Layout.Row = 1; refreshBtn.Layout.Column = 2;
     app.styleBtn(refreshBtn, 'primary');
-    refreshBtn.Tooltip = 'GET /api/jobs/{id}/results';
+    refreshBtn.Tooltip = 'Refresh measured results for the selected job';
     tmp = uibutton(bg, 'Text', [char(9986) ' ' ...
             Labels.get('results_btn_view_reconstruction', 'View Reconstruction')], ...
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onViewReconstruction());
@@ -283,7 +330,7 @@ function ResultsScreen(app)
     app.ResultsDownloadJsonBtn.Layout.Column = 5;
     app.styleBtn(app.ResultsDownloadJsonBtn, 'ghost');
     app.ResultsDownloadJsonBtn.Tooltip = ...
-        'Save /api/jobs/{id}/results to a .json file.';
+        'Save measured results for the selected job to a .json file.';
     app.ResultsGeneratePdfBtn = uibutton(bg, ...
         'Text', [char(9636) ' Generate Report'], ...                  % ▤ (BMP — char(128196) renders tofu on macOS)
         'ButtonPushedFcn', @(~,~)app.ResultsVm.onGenerateRunReport());

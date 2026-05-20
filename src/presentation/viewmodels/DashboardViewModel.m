@@ -41,7 +41,7 @@ classdef DashboardViewModel < handle
             obj.startAutoRefresh(30);
             if app.State.isAuthenticated() && app.State.hasProject()
                 pid = app.State.currentProjectId;
-                app.logEvent('API', sprintf('GET /api/projects/%s/dashboard', pid));
+                app.logEvent('API', sprintf('Loading dashboard — project %s', pid));
                 if ~silent
                     app.showLoading(Labels.get('loading_dashboard', 'Loading dashboard...'));
                 end

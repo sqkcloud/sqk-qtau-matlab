@@ -54,6 +54,11 @@ classdef test_AppState < matlab.unittest.TestCase
             testCase.verifyEqual(strlength(strtrim(testCase.State.selectedJobId)), 0);
         end
 
+        function testDefaultPinnedJobIdEmpty(testCase)
+            testCase.verifyEqual(strlength(strtrim(testCase.State.pinnedJobId)), 0, ...
+                'pinnedJobId should default to empty');
+        end
+
         function testDefaultShots(testCase)
             testCase.verifyEqual(testCase.State.defaultShots, 4096);
         end
@@ -150,6 +155,7 @@ classdef test_AppState < matlab.unittest.TestCase
             testCase.State.selectedBackend    = "ibm_boston";
             testCase.State.backupBackend      = "ibm_kingston";
             testCase.State.selectedJobId      = "j1";
+            testCase.State.pinnedJobId        = "j1";
             testCase.State.predictionId       = "pred1";
             testCase.State.reportId           = "rep1";
 
@@ -168,6 +174,8 @@ classdef test_AppState < matlab.unittest.TestCase
             testCase.verifyEqual(strlength(strtrim(testCase.State.selectedBackend)), 0);
             testCase.verifyEqual(strlength(strtrim(testCase.State.backupBackend)), 0);
             testCase.verifyEqual(strlength(strtrim(testCase.State.selectedJobId)), 0);
+            testCase.verifyEqual(strlength(strtrim(testCase.State.pinnedJobId)), 0, ...
+                'resetPipeline should clear pinnedJobId');
             testCase.verifyEqual(strlength(strtrim(testCase.State.predictionId)), 0);
             testCase.verifyEqual(strlength(strtrim(testCase.State.reportId)), 0);
         end

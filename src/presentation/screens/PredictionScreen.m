@@ -56,7 +56,7 @@ function PredictionScreen(app)
     app.PredictButton.Layout.Row = 1; app.PredictButton.Layout.Column = 6;
     app.styleBtn(app.PredictButton, 'primary');
     app.PredictButton.FontSize = 14;
-    app.PredictButton.Tooltip = 'POST /api/predict with current circuit + backend + benchmark config';
+    app.PredictButton.Tooltip = 'Run prediction with current circuit + backend + benchmark config';
 
     % ── Row 2: Headline recommendation callout ───────────────────────────────
     app.PredictionHeadlineLabel = uilabel(g, ...
@@ -149,7 +149,7 @@ function PredictionScreen(app)
     app.SubmitJobButton.Layout.Row = 1; app.SubmitJobButton.Layout.Column = 2;
     app.styleBtn(app.SubmitJobButton, 'primary');
     app.SubmitJobButton.FontSize = 14;
-    app.SubmitJobButton.Tooltip = 'POST /api/jobs/submit — runs on IBM Quantum backend';
+    app.SubmitJobButton.Tooltip = 'Submit this run to the IBM Quantum backend';
 
     tmp = uibutton(sg, 'Text', [char(9635) ' Jobs'], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Jobs'));

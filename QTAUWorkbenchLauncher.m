@@ -1,14 +1,19 @@
-% QTAUWorkbenchLauncher.m ──────────────────────────────────────────────────────
-% Single-command launcher for QDash Workbench.
+% QTAUWorkbenchLauncher  Single-command launcher for QTAU Connector Workbench.
 %
-%   This script is used in two ways:
-%Can
-%   1. Automatically — the Project Manager runs it when you open the .prj file.
-%   2. Manually     — run it directly from the MATL
-%         >> run('QTAUWorkbenchLauncher.m')
+%   Adds every src/ folder to the MATLAB search path and starts the
+%   QTAUWorkbenchApp main window.
 %
-% It adds all source folders to the MATLAB search path and then starts the app.
-% ──────────────────────────────────────────────────────────────────────────────
+%   This script runs in two ways:
+%     1. Automatically — the MATLAB Project Manager runs it when you open
+%        the sqk-qtau-matlab.prj file.
+%     2. Manually — invoke it from the MATLAB command line:
+%           >> run('QTAUWorkbenchLauncher.m')
+%
+%   Environment variables:
+%     QTAU_DEV=1   Force `clear classes` on launch (slower cold start;
+%                  useful when iterating on classdef property changes).
+%
+%   See also: QTAUWorkbenchApp, AppConfig, Labels.
 
 % Close any existing app window so live objects are destroyed before
 % clearing class definitions.  Without this, MATLAB warns that it cannot

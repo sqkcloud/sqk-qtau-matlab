@@ -153,7 +153,7 @@ function SettingsScreen(app)
     cacheBtn = uibutton(abg, 'Text', [char(10005) ' ' Labels.get('settings_btn_clear_cache')], ...
         'ButtonPushedFcn', @(~,~)app.SettingsVm.onClearServerCache());
     cacheBtn.Layout.Row = 1; cacheBtn.Layout.Column = 3; app.styleBtn(cacheBtn, 'secondary');
-    cacheBtn.Tooltip = 'DELETE /api/settings/cache';
+    cacheBtn.Tooltip = 'Clear locally cached data';
 
     Logger.info('SettingsScreen', 'Settings tab UI built successfully');
 end

@@ -52,9 +52,10 @@ classdef OverlayManager
 
     methods (Static)
 
-        function showLoading(app, msg, showTimer)
+        function showLoading(app, msg, showTimer, bgTaskId)
             if nargin < 2; msg = 'Loading...'; end
             if nargin < 3; showTimer = false; end
+            if nargin < 4; bgTaskId = ''; end
             % Any prior nav auto-dismiss timer is stale the moment a
             % fresh overlay is shown — clear it so it doesn't fire mid-
             % flight on this new overlay.
@@ -122,8 +123,21 @@ classdef OverlayManager
                         delete(app.ActivityOverlay);
                     end
                     app.ActivityOverlay = uihtml(host);
+                    % Park the freshly-built overlay off-screen until we
+                    % decide to actually show it. A new uihtml() spans
+                    % its default rectangle and could swallow CEF clicks
+                    % for a tick before we paint.
+                    try
+                        app.ActivityOverlay.Position = [-99999 -99999 1 1];
+                    catch
+                    end
                 end
-                app.ActivityOverlay.Position = [0 0 figW figH];
+                % DELIBERATELY do NOT set Position to [0 0 figW figH] here.
+                % It is assigned immediately before Visible='on' below,
+                % so an exception or the idempotent fast-path return
+                % cannot leave a zombie full-figure overlay with
+                % Visible='off' — the prior failure mode that swallowed
+                % uibutton / uitable / sidebar clicks on R2025b macOS.
 
                 % ── Idempotent fast path ─────────────────────────────────
                 % If the overlay is already visible with the same message
@@ -193,6 +207,10 @@ classdef OverlayManager
                     '<p class="msg">' char(msg) '</p>' ...
                     timerHtml ...
                     '</div></div></body></html>'];
+                % Size to full figure ONLY at the moment we are about
+                % to flip Visible='on'. Pairs with the deferred-assign
+                % comment above.
+                app.ActivityOverlay.Position = [0 0 figW figH];
                 app.ActivityOverlay.Visible = 'on';
                 uistack(app.ActivityOverlay, 'top');
                 % Persist (msg, showTimer) so the next showLoading call with
@@ -203,6 +221,12 @@ classdef OverlayManager
                         'lastMsg', char(msg), 'lastShowTimer', showTimer);
                 catch
                 end
+
+                % "Run in background" button — only shown when the caller
+                % registered a background task whose poll keeps running
+                % after the overlay is dismissed.
+                OverlayManager.ensureOverlayBgButton(app, host, bgTaskId, figW, figH);
+
                 drawnow();
             catch ME
                 Logger.debug('OverlayManager', 'showLoading: %s', ME.message);
@@ -223,10 +247,89 @@ classdef OverlayManager
                     % torn down only when the host figure itself is closed,
                     % which is automatic.
                     app.ActivityOverlay.Visible = 'off';
+                    % Move the still-alive uihtml off-screen. Visible='off'
+                    % alone is NOT sufficient on R2025b uifigure (macOS
+                    % especially): a hidden uihtml sitting at top of the
+                    % Z-order with a full-figure Position still owns the
+                    % CEF pointer hit-test rectangle and silently
+                    % swallows uibutton / uieditfield clicks, the
+                    % figure-level WindowButtonDownFcn, and uitable
+                    % SelectionChangedFcn for everything underneath.
+                    % We can't uistack(...,'bottom') because that
+                    % triggers a CEF refresh across every HTML-backed
+                    % component (the uitable rendered rows empty out)
+                    % and we can't delete the component because the
+                    % peerEvent bridge races with delete() (see the
+                    % singleton-overlay comment in showLoading). The
+                    % off-screen Position is the only safe escape: keeps
+                    % the component alive for the peerEvent bridge,
+                    % doesn't trigger any CEF refresh, and is physically
+                    % incapable of capturing clicks. showLoading
+                    % reassigns Position = [0 0 figW figH] on the next
+                    % show (see line above), so this is self-restoring.
+                    try
+                        app.ActivityOverlay.Position = [-99999 -99999 1 1];
+                    catch
+                    end
+                end
+                try
+                    if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
+                        app.OverlayBgButton.Visible = 'off';
+                        % Same off-screen escape — ensureOverlayBgButton
+                        % repositions on next show.
+                        try
+                            app.OverlayBgButton.Position = [-99999 -99999 1 1];
+                        catch
+                        end
+                    end
+                catch
                 end
                 drawnow();
             catch ME
                 Logger.debug('OverlayManager', 'hideLoading: %s', ME.message);
+            end
+        end
+
+        function ensureOverlayBgButton(app, host, bgTaskId, figW, figH)
+            % Lazily create or reposition the "Run in background" uibutton
+            % sitting on top of the activity overlay. Hidden when bgTaskId
+            % is empty so non-background loads (the vast majority of
+            % showLoading sites) keep the original look.
+            try
+                if isempty(bgTaskId)
+                    if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
+                        app.OverlayBgButton.Visible = 'off';
+                    end
+                    return;
+                end
+                needCreate = isempty(app.OverlayBgButton) ...
+                    || ~isvalid(app.OverlayBgButton) ...
+                    || ~isequal(app.OverlayBgButton.Parent, host);
+                if needCreate
+                    if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
+                        try; delete(app.OverlayBgButton); catch; end
+                    end
+                    app.OverlayBgButton = uibutton(host, ...
+                        'Text', 'Run in background', ...
+                        'FontSize', 12, ...
+                        'FontWeight', 'bold');
+                    try
+                        app.OverlayBgButton.BackgroundColor = Theme.OVERLAY_ACCENT;
+                        app.OverlayBgButton.FontColor       = Theme.OVERLAY_TEXT;
+                    catch
+                    end
+                end
+                btnW = 180; btnH = 32;
+                btnX = max(8, (figW - btnW) / 2);
+                btnY = max(8, figH/2 - 86);
+                app.OverlayBgButton.Position = [btnX btnY btnW btnH];
+                app.OverlayBgButton.ButtonPushedFcn = ...
+                    @(~,~) app.runInBackground(char(bgTaskId));
+                app.OverlayBgButton.Visible = 'on';
+                try; uistack(app.OverlayBgButton, 'top'); catch; end
+            catch ME
+                Logger.debug('OverlayManager', ...
+                    'ensureOverlayBgButton: %s', ME.message);
             end
         end
 
@@ -270,7 +373,7 @@ classdef OverlayManager
             % address never reaches the popup. MATLAB's webservices
             % errors look like:
             %   "... in response to the request to URL
-            %    http://34.42.87.190:5715/api/circuits/.../cutting/batches"
+            %    https://qtau.example.com/api/circuits/.../cutting/batches"
             % After sanitization:
             %   "... in response to the request to URL
             %    /api/circuits/.../cutting/batches"

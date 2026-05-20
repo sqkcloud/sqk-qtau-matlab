@@ -21,14 +21,14 @@ classdef FastAPIClient < handle
     % ── Constructor / config ──────────────────────────────────────────────────
     methods
         function obj = FastAPIClient(baseUrl)
-            url = strtrim(string(baseUrl));
+            url = FastAPIClient.normalizeBaseUrl(baseUrl);
             FastAPIClient.assertSafeBaseUrl(url);
             obj.BaseUrl = url;
             Logger.info('FastAPIClient', 'Initialized — BaseUrl: %s', char(obj.BaseUrl));
         end
 
         function setBaseUrl(obj, baseUrl)
-            url = strtrim(string(baseUrl));
+            url = FastAPIClient.normalizeBaseUrl(baseUrl);
             FastAPIClient.assertSafeBaseUrl(url);
             old = char(obj.BaseUrl);
             obj.BaseUrl = url;
@@ -330,12 +330,27 @@ classdef FastAPIClient < handle
 
     % ── Public static helpers ─────────────────────────────────────────────────
     methods (Static)
+        function url = normalizeBaseUrl(raw)
+            % normalizeBaseUrl  Strip surrounding whitespace AND any
+            %   trailing slashes from a base URL. End users pasting a
+            %   URL from a browser commonly include a trailing '/';
+            %   concatenating with a leading-slash endpoint like
+            %   '/api/auth/login' would produce '//api/auth/login',
+            %   which FastAPI's router does not match and returns
+            %   HTTP 404. Normalising at the FastAPIClient boundary
+            %   means every endpoint composition stays canonical no
+            %   matter how the operator entered the URL.
+            url = strtrim(string(raw));
+            if strlength(url) == 0; return; end
+            % Strip one OR MORE trailing forward slashes.
+            url = string(regexprep(char(url), '/+$', ''));
+        end
+
         function assertSafeBaseUrl(url)
             % assertSafeBaseUrl  Reject base URLs that would send credentials
             %   over an insecure transport.  HTTPS is always allowed; plain
-            %   HTTP is allowed only for the loopback interface and for the
-            %   shared QTAU API server at 34.42.87.190 (internal-network
-            %   development/staging).  All other plain-HTTP URLs throw.
+            %   HTTP is permitted only for the loopback interface (development
+            %   convenience).  All other plain-HTTP URLs throw.
             s = char(string(url));
             if isempty(s)
                 error('FastAPIClient:invalidBaseUrl', 'Base URL is empty.');
@@ -343,17 +358,16 @@ classdef FastAPIClient < handle
             if startsWith(s, 'https://', 'IgnoreCase', true)
                 return;
             end
-            if startsWith(s, 'http://localhost',    'IgnoreCase', true) || ...
-               startsWith(s, 'http://127.0.0.1',    'IgnoreCase', true) || ...
-               startsWith(s, 'http://[::1]',        'IgnoreCase', true) || ...
-               startsWith(s, 'http://34.42.87.190', 'IgnoreCase', true)
+            if startsWith(s, 'http://localhost', 'IgnoreCase', true) || ...
+               startsWith(s, 'http://127.0.0.1', 'IgnoreCase', true) || ...
+               startsWith(s, 'http://[::1]',     'IgnoreCase', true)
                 Logger.warn('FastAPIClient', ...
-                    'Plain HTTP allowed for loopback / shared QTAU dev server only: %s', s);
+                    'Plain HTTP allowed for loopback only: %s', s);
                 return;
             end
             error('FastAPIClient:insecureBaseUrl', ...
                 ['Refusing non-HTTPS base URL: %s. ' ...
-                 'Use https:// (or http://34.42.87.190 / http://localhost for internal development).'], s);
+                 'Use https:// (or http://localhost for local development).'], s);
         end
 
         function s = encodePathSegment(seg)

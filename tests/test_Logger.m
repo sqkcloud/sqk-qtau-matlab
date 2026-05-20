@@ -12,6 +12,17 @@ classdef test_Logger < matlab.unittest.TestCase
         end
     end
 
+    methods (TestMethodSetup)
+        function resetLogLevel(~)
+            % Logger.currentLevel is a persistent — state leaks between
+            % tests. Without this reset, alphabetically-earlier tests
+            % that raise the level (e.g. testDebugSuppressedAtInfoLevel
+            % → INFO) silently suppress later tests that exercise
+            % Logger.debug output (e.g. testLogOutputUppercasesLevel).
+            Logger.setLevel('DEBUG');
+        end
+    end
+
     methods (Test)
 
         % ── Core log method ──────────────────────────────────────────────

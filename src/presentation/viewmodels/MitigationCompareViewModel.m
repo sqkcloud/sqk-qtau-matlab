@@ -50,6 +50,13 @@ classdef MitigationCompareViewModel < handle
         Pending       = 0
         StartTic      = []
         Failures      = 0
+
+        % Nav-aware cancellation bookkeeping. Every async batch (onEnter
+        % runMany, onEstimate runMany) captures the current NavGeneration
+        % in its callback closure; cancelInFlight bumps the counter so any
+        % still-queued callback bails before mutating the panel.
+        NavGeneration   double = 0
+        InFlightFutures cell   = {}
     end
 
     properties (Access = private)
@@ -78,87 +85,142 @@ classdef MitigationCompareViewModel < handle
             mitSvc  = obj.App.Services.MitigationSvc;
             ttl     = AppConfig.getDouble('shared_cache_ttl', 120);
 
-            results = struct('circuits', [], 'backends', [], 'levels', [], ...
-                'circDone', false, 'backDone', false, 'levelDone', false, ...
-                'errors', {{}});
-            done = @() finalize();
+            % Cache hits land synchronously; misses are collected into a
+            % single AsyncRunner.runMany batch so one shared 50ms poller
+            % covers all of them. The pre-refactor pattern spawned up to
+            % three independent AsyncRunner.run dispatches — each with
+            % its own 50ms timer — and re-implemented runMany's all-done
+            % bookkeeping via a nested onPart counter.
+            cached = struct('circuits', [], 'backends', [], 'levels', []);
+            works  = {};
+            keys   = {};
 
-            % Each of the 3 lookups uses the shared session cache when
-            % fresh — saves a cross-continent round-trip per nav across
-            % Mitigation Compare / Run Planner / Resource Estimator.
             if state.isCircuitsListCacheFresh(ttl)
-                results.circuits = state.CircuitListCache;
-                results.circDone = true;
+                cached.circuits = state.CircuitListCache;
             else
-                AsyncRunner.run(@() circSvc.listCircuits(token), ...
-                    @(r) onPart('circ', r), @(ME) onPart('circ', ME));
+                works{end+1} = @() MitigationCompareViewModel.safeListFetch( ...
+                    @() circSvc.listCircuits(token));
+                keys{end+1}  = 'circ';
             end
             if state.isBackendsListCacheFresh(ttl)
-                results.backends = state.BackendListCache;
-                results.backDone = true;
+                cached.backends = state.BackendListCache;
             else
-                AsyncRunner.run(@() backSvc.listBackends(token, ''), ...
-                    @(r) onPart('back', r), @(ME) onPart('back', ME));
+                works{end+1} = @() MitigationCompareViewModel.safeListFetch( ...
+                    @() backSvc.listBackends(token, ''));
+                keys{end+1}  = 'back';
             end
             if state.isMitigationLevelsCacheFresh(ttl)
-                results.levels = state.MitigationLevelsCache;
-                results.levelDone = true;
+                cached.levels = state.MitigationLevelsCache;
             else
-                AsyncRunner.run(@() mitSvc.listLevels(token), ...
-                    @(r) onPart('lvl',  r), @(ME) onPart('lvl',  ME));
+                works{end+1} = @() MitigationCompareViewModel.safeListFetch( ...
+                    @() mitSvc.listLevels(token));
+                keys{end+1}  = 'lvl';
             end
 
-            % All three hit the cache — finalize synchronously.
-            if results.circDone && results.backDone && results.levelDone
-                done();
+            % All three hit the cache — finalize synchronously, no
+            % parfeval round-trip.
+            if isempty(works)
+                obj.finalizeLoading(cached);
                 return;
             end
 
-            function onPart(which, r)
-                if isa(r, 'MException')
-                    results.errors{end+1} = sprintf('%s: %s', which, r.message);
-                else
-                    switch which
-                        case 'circ'
-                            results.circuits = r;
-                            state.setCircuitsListCache(r);
-                        case 'back'
-                            results.backends = r;
-                            state.setBackendsListCache(r);
-                        case 'lvl'
-                            results.levels = r;
-                            state.setMitigationLevelsCache(r);
-                    end
+            gen = AsyncCancellation.bump(obj.NavGeneration);
+            obj.NavGeneration = gen;
+            fut = AsyncRunner.runMany(works, ...
+                @(results) obj.onLoadBatchDone(gen, cached, keys, results), ...
+                @(ME)      obj.onLoadBatchError(gen, ME));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, fut);
+        end
+
+        function onLoadBatchDone(obj, gen, cached, keys, results)
+            % Generation guard: drop the result silently if the user
+            % already navigated away (cancelInFlight bumped the gen).
+            if gen ~= obj.NavGeneration; return; end
+            state = obj.App.State;
+            for i = 1:numel(keys)
+                r = results{i};
+                isErr = MitigationCompareViewModel.isFetchError(r);
+                if isErr
+                    Logger.debug('MitigationCompareViewModel', ...
+                        'partial fetch failed (%s): %s', keys{i}, r.qtauFetchErr);
                 end
-                switch which
-                    case 'circ'; results.circDone  = true;
-                    case 'back'; results.backDone  = true;
-                    case 'lvl';  results.levelDone = true;
-                end
-                if results.circDone && results.backDone && results.levelDone
-                    done();
+                switch keys{i}
+                    case 'circ'
+                        cached.circuits = r;
+                        if ~isErr; state.setCircuitsListCache(r); end
+                    case 'back'
+                        cached.backends = r;
+                        if ~isErr; state.setBackendsListCache(r); end
+                    case 'lvl'
+                        cached.levels = r;
+                        if ~isErr; state.setMitigationLevelsCache(r); end
                 end
             end
+            obj.finalizeLoading(cached);
+        end
 
-            function finalize()
-                if ~isempty(results.errors) && ...
-                        (isempty(results.circuits) || isempty(results.backends) || isempty(results.levels))
-                    obj.Phase = 'error';
-                    obj.flashStatus(sprintf( ...
-                        Labels.get('mitigation_compare_status_failed'), ...
-                        strjoin(results.errors, '; ')), 'danger');
-                    return;
-                end
-                obj.Circuits = MitigationCompareViewModel.normalizeList(results.circuits);
-                obj.Backends = MitigationCompareViewModel.normalizeList(results.backends);
-                obj.Levels   = MitigationCompareViewModel.normalizeLevels(results.levels);
-                obj.populateDropdowns();
-                obj.populateChips();
-                obj.SelectedChips = obj.intersectChips({'0','1','2','3'});
-                obj.repaintChips();
-                obj.Phase = 'ready';
-                obj.LastRefresh = tic;
-                obj.refreshStatus();
+        function onLoadBatchError(obj, gen, ME)
+            if gen ~= obj.NavGeneration; return; end
+            if AsyncCancellation.isCancellation(ME); return; end
+            obj.Phase = 'error';
+            obj.flashStatus(sprintf( ...
+                Labels.get('mitigation_compare_status_failed'), ME.message), 'danger');
+        end
+
+        function finalizeLoading(obj, cached)
+            % Surface per-fetch errors, but tolerate partial success so a
+            % single missing list (e.g. levels endpoint hiccup) doesn't
+            % blank the whole screen — the user still gets circuits +
+            % backends populated.
+            errs = {};
+            circuits = cached.circuits;
+            backends = cached.backends;
+            levels   = cached.levels;
+            if MitigationCompareViewModel.isFetchError(circuits)
+                errs{end+1} = sprintf('circuits: %s', circuits.qtauFetchErr);
+                circuits = [];
+            end
+            if MitigationCompareViewModel.isFetchError(backends)
+                errs{end+1} = sprintf('backends: %s', backends.qtauFetchErr);
+                backends = [];
+            end
+            if MitigationCompareViewModel.isFetchError(levels)
+                errs{end+1} = sprintf('levels: %s', levels.qtauFetchErr);
+                levels = [];
+            end
+            if ~isempty(errs) && (isempty(circuits) || isempty(backends) || isempty(levels))
+                obj.Phase = 'error';
+                obj.flashStatus(sprintf( ...
+                    Labels.get('mitigation_compare_status_failed'), ...
+                    strjoin(errs, '; ')), 'danger');
+                return;
+            end
+            obj.Circuits = MitigationCompareViewModel.normalizeList(circuits);
+            obj.Backends = MitigationCompareViewModel.normalizeList(backends);
+            obj.Levels   = MitigationCompareViewModel.normalizeLevels(levels);
+            obj.populateDropdowns();
+            obj.populateChips();
+            obj.SelectedChips = obj.intersectChips({'0','1','2','3'});
+            obj.repaintChips();
+            obj.Phase = 'ready';
+            obj.LastRefresh = tic;
+            obj.refreshStatus();
+        end
+
+        function cancelInFlight(obj)
+            % Called by NavigationManager when the user navs away. Three
+            % effects: bump generation (in-flight callbacks bail silently),
+            % cancel still-queued/running parfeval workers (free worker +
+            % timer), and roll back any transient Phase so a quick return
+            % doesn't render a stuck-spinner state.
+            obj.NavGeneration   = AsyncCancellation.bump(obj.NavGeneration);
+            obj.InFlightFutures = AsyncCancellation.cancelAll(obj.InFlightFutures);
+            if strcmp(obj.Phase, 'estimating')
+                obj.Phase   = 'ready';
+                obj.Pending = 0;
+            elseif strcmp(obj.Phase, 'loading')
+                obj.Phase = 'idle';
             end
         end
 
@@ -188,19 +250,34 @@ classdef MitigationCompareViewModel < handle
             obj.refreshStatus();
             obj.paintCardsLoading();
 
-            body = obj.buildBaseBody();
+            body   = obj.buildBaseBody();
             mitSvc = obj.App.Services.MitigationSvc;
-            token = obj.App.State.authToken;
+            token  = obj.App.State.authToken;
 
-            for i = 1:numel(obj.SelectedChips)
-                levelId = obj.SelectedChips{i};
-                bodyI = body;
+            % One AsyncRunner.runMany batch covers all N strategies. The
+            % pre-refactor pattern spawned N independent AsyncRunner.run
+            % dispatches — each with its own 50ms polling timer — and
+            % tracked completion via a Pending counter inside per-strategy
+            % callbacks. runMany delivers all results atomically; partial
+            % failures are surfaced per-card via the qtauFetchErr sentinel.
+            n        = numel(obj.SelectedChips);
+            works    = cell(1, n);
+            levelIds = cell(1, n);
+            for i = 1:n
+                levelId     = obj.SelectedChips{i};
+                levelIds{i} = levelId;
+                bodyI       = body;
                 bodyI.mitigation_level = MitigationCompareViewModel.parseLevelId(levelId);
-                AsyncRunner.run( ...
-                    @() mitSvc.estimate(bodyI, token), ...
-                    @(r)  obj.onEstimateDone(levelId, r), ...
-                    @(ME) obj.onEstimateError(levelId, ME));
+                works{i} = @() MitigationCompareViewModel.safeEstimate(mitSvc, bodyI, token);
             end
+
+            gen = AsyncCancellation.bump(obj.NavGeneration);
+            obj.NavGeneration = gen;
+            fut = AsyncRunner.runMany(works, ...
+                @(results) obj.onEstimateBatchDone(gen, levelIds, results), ...
+                @(ME)      obj.onEstimateBatchError(gen, ME));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, fut);
         end
 
         function onRefresh(obj)
@@ -213,25 +290,37 @@ classdef MitigationCompareViewModel < handle
         end
 
         % ── Estimate callbacks ───────────────────────────────────────────
-        function onEstimateDone(obj, levelId, r)
-            obj.Estimates(levelId) = struct( ...
-                'levelId',    levelId, ...
-                'summary',    MitigationCompareViewModel.safeField(r, 'summary', ''), ...
-                'cost',       MitigationCompareViewModel.safeField(r, 'cost', struct()), ...
-                'plan',       MitigationCompareViewModel.safeField(r, 'plan', struct()), ...
-                'errored',    false, ...
-                'err',        '');
-            obj.Pending = obj.Pending - 1;
-            if obj.Pending <= 0; obj.finalizeRun(); end
+        function onEstimateBatchDone(obj, gen, levelIds, results)
+            if gen ~= obj.NavGeneration; return; end
+            for i = 1:numel(levelIds)
+                lid = levelIds{i};
+                r   = results{i};
+                if MitigationCompareViewModel.isFetchError(r)
+                    obj.Estimates(lid) = struct( ...
+                        'levelId', lid, 'summary', '', 'cost', struct(), ...
+                        'plan', struct(), 'errored', true, 'err', r.qtauFetchErr);
+                    obj.Failures = obj.Failures + 1;
+                else
+                    obj.Estimates(lid) = struct( ...
+                        'levelId',    lid, ...
+                        'summary',    MitigationCompareViewModel.safeField(r, 'summary', ''), ...
+                        'cost',       MitigationCompareViewModel.safeField(r, 'cost', struct()), ...
+                        'plan',       MitigationCompareViewModel.safeField(r, 'plan', struct()), ...
+                        'errored',    false, ...
+                        'err',        '');
+                end
+            end
+            obj.Pending = 0;
+            obj.finalizeRun();
         end
 
-        function onEstimateError(obj, levelId, ME)
-            obj.Estimates(levelId) = struct( ...
-                'levelId', levelId, 'summary', '', 'cost', struct(), ...
-                'plan', struct(), 'errored', true, 'err', ME.message);
-            obj.Pending = obj.Pending - 1;
-            obj.Failures = obj.Failures + 1;
-            if obj.Pending <= 0; obj.finalizeRun(); end
+        function onEstimateBatchError(obj, gen, ME)
+            if gen ~= obj.NavGeneration; return; end
+            if AsyncCancellation.isCancellation(ME); return; end
+            obj.Phase = 'error';
+            obj.Pending = 0;
+            obj.flashStatus(sprintf( ...
+                Labels.get('mitigation_compare_status_failed'), ME.message), 'danger');
         end
 
         function refreshStatus(obj)
@@ -630,6 +719,38 @@ classdef MitigationCompareViewModel < handle
     end
 
     methods (Static)
+        function out = safeListFetch(workFcn)
+            % safeListFetch  Run a list-endpoint fetch in a try/catch so a
+            %   single endpoint failure inside an AsyncRunner.runMany
+            %   batch returns a sentinel struct instead of propagating
+            %   into AsyncRunner.pollFutures (which would surface only
+            %   the first error and discard the other lists). Callers
+            %   classify the result via isFetchError before consuming.
+            try
+                out = workFcn();
+            catch ME
+                out = struct('qtauFetchErr', ME.message);
+            end
+        end
+
+        function out = safeEstimate(mitSvc, body, token)
+            % safeEstimate  Per-strategy /mitigation/estimate wrapper for
+            %   the runMany batch. Same partial-failure semantics as
+            %   safeListFetch above.
+            try
+                out = mitSvc.estimate(body, token);
+            catch ME
+                out = struct('qtauFetchErr', ME.message);
+            end
+        end
+
+        function tf = isFetchError(r)
+            % isFetchError  Sentinel detector for the qtauFetchErr struct
+            %   returned by safeListFetch / safeEstimate on a failed
+            %   per-element fetch inside a batch.
+            tf = isstruct(r) && isscalar(r) && isfield(r, 'qtauFetchErr');
+        end
+
         function arr = normalizeList(raw)
             % Accepts three FastAPI response shapes:
             %   1. envelope struct {circuits|backends|levels|items|data: [...]}
@@ -685,8 +806,11 @@ classdef MitigationCompareViewModel < handle
         end
 
         function n = parseLevelId(idChar)
+            % Always returns int32 so callers that assign the result into
+            % a JSON body field (e.g. mitigation_level) get integer wire
+            % encoding even on the invalid -1 sentinel.
             v = str2double(idChar);
-            if isnan(v); n = -1; else; n = int32(v); end
+            if isnan(v); n = int32(-1); else; n = int32(v); end
         end
 
         function lbl = circLabel(c)

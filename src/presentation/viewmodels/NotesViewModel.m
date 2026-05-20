@@ -20,7 +20,7 @@ classdef NotesViewModel < handle
             end
             content = strjoin(app.NotesArea.Value, newline);
             pid     = app.State.currentProjectId;
-            app.logEvent('API', sprintf('PUT /api/projects/%s/notes (%d chars)', pid, numel(content)));
+            app.logEvent('API', sprintf('Saving notes — project %s (%d chars)', pid, numel(content)));
             app.showLoading(Labels.get('loading_saving_notes', 'Saving notes...'));
             svc   = app.ProjectSvc;
             token = app.State.authToken;
@@ -37,7 +37,7 @@ classdef NotesViewModel < handle
                 return;
             end
             pid = app.State.currentProjectId;
-            app.logEvent('API', sprintf('GET /api/projects/%s/notes', pid));
+            app.logEvent('API', sprintf('Loading notes — project %s', pid));
             app.showLoading(Labels.get('loading_notes', 'Loading notes...'));
             svc   = app.ProjectSvc;
             token = app.State.authToken;

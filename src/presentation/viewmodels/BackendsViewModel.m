@@ -19,6 +19,19 @@ classdef BackendsViewModel < handle
     properties
         PageSkip  double = 0
         PageLimit double = 15
+
+        % Nav-aware cancellation bookkeeping. cancelInFlight bumps the
+        % generation and cancel()s tracked futures so nav-away mid-fetch
+        % stops the worker, frees the 50ms polling timer, and prevents
+        % stale done-callbacks from mutating a now-hidden panel.
+        %
+        % We track ONLY the two big "passive" fetches (onRefreshBackends
+        % + kickCalibrationHistoryBatch). User-initiated actions
+        % (submitPool, onCtxViewDetails, persistSelection) stay
+        % untracked so a quick nav-away after the user clicks them
+        % doesn't silently abort the work they just asked for.
+        NavGeneration   double = 0
+        InFlightFutures cell   = {}
     end
 
     methods
@@ -47,14 +60,39 @@ classdef BackendsViewModel < handle
             if app.State.hasCircuit()
                 cid = char(app.State.selectedCircuitId);
             end
-            app.showLoading(Labels.get('loading_backends', 'Loading backends...'));
+            % B2 skin-first: surface progress in the in-panel
+            % BackendStatusArea rather than as a full-screen overlay
+            % so the toolbar, pagination, and empty table stay
+            % visible while the fetch runs. The
+            % onRefreshBackendsComplete / onRefreshBackendsError
+            % handlers overwrite this status line with the terminal
+            % "Loaded N backends" / failure message.
+            try
+                app.setStatus(app.BackendStatusArea, ...
+                    {Labels.get('loading_backends', 'Loading backends...')});
+            catch
+            end
             backendSvc  = app.BackendSvc;
             circuitSvc  = app.CircuitSvc;
             token       = app.State.authToken;
-            AsyncRunner.run( ...
+            obj.NavGeneration = AsyncCancellation.bump(obj.NavGeneration);
+            fut = AsyncRunner.run( ...
                 @() BackendsViewModel.fetchBackends(backendSvc, circuitSvc, token, cid), ...
                 @(data) obj.onRefreshBackendsComplete(app, data), ...
                 @(ME)   obj.onRefreshBackendsError(app, ME));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, fut);
+        end
+
+        function cancelInFlight(obj)
+            % Called by NavigationManager when the user navs away. Stops
+            % the workers + frees their polling timers. The existing
+            % done/error callbacks already guard their UI writes with
+            % isvalid() checks, so a late-arriving result on a hidden
+            % panel is harmless — the cancel sweep just reclaims the
+            % HTTP/worker budget early.
+            obj.NavGeneration   = AsyncCancellation.bump(obj.NavGeneration);
+            obj.InFlightFutures = AsyncCancellation.cancelAll(obj.InFlightFutures);
         end
 
         function onRefreshBackendsComplete(obj, app, data)
@@ -71,22 +109,48 @@ classdef BackendsViewModel < handle
             obj.LastRefresh = tic;
             app.hideLoading();
 
-            % Auto-select the first backend row so the Telemetry sub-tabs
-            % (Per-Qubit / History / Topology) paint with data immediately
-            % on screen entry. Before this, the three tabs sat empty until
-            % the user clicked a table row — which made the whole panel
-            % look broken on first nav. SelectionChangedFcn may not fire
-            % on a programmatic Selection write across MATLAB releases,
-            % so we invoke onTableRowSelected explicitly.
+            % Resolve row-1's backend name without writing to
+            % app.BackendTable.Selection. The programmatic Selection
+            % write was corrupting WebMWTableController.SortedRowOrder
+            % in MATLAB R2025b (it lands while the controller is still
+            % mid-rebuild after applyPage's Data write, freezing
+            % SortedRowOrder at length 1 — which breaks EVERY
+            % subsequent user row-click with "Index must not exceed 1"
+            % inside getSourceRowFromDisplayRow). The Telemetry panel
+            % is still painted for row 1 by the eager
+            % populateTelemetryPanel(app, row1Name) call below, so the
+            % UX of "Telemetry already shows useful data on screen
+            % entry" is preserved — we just don't visually highlight a
+            % row until the user clicks one themselves.
+            row1Name = '';
             try
                 if size(rows, 1) > 0 && ~isempty(app.BackendTable) ...
                         && isvalid(app.BackendTable)
-                    app.BackendTable.Selection = 1;
-                    obj.onTableRowSelected();
+                    try
+                        row1Name = char(string(app.BackendTable.Data{1, 2}));
+                    catch
+                    end
                 end
             catch ME
                 Logger.debug('BackendsViewModel', ...
-                    'auto-select row 1: %s', ME.message);
+                    'auto-resolve row 1 name: %s', ME.message);
+            end
+
+            % Eager paint of the Telemetry panel for row 1. Calls
+            % populateTelemetryPanel directly so the empty-state
+            % messages ("No per-qubit calibration data available" /
+            % "No calibration history available") appear immediately
+            % on screen entry — even if the auto-select chain didn't
+            % fire and even if the /calibration_history endpoint
+            % later returns empty / errors. Subsequent async arrivals
+            % overwrite the empty state with real data.
+            if ~isempty(row1Name)
+                try
+                    obj.populateTelemetryPanel(app, row1Name);
+                catch ME
+                    Logger.debug('BackendsViewModel', ...
+                        'eager populateTelemetryPanel: %s', ME.message);
+                end
             end
 
             % C2.B1 — Pre-fetch calibration history for every backend so
@@ -126,10 +190,12 @@ classdef BackendsViewModel < handle
             end
             if k == 0; return; end
             names = names(1:k); works = works(1:k);
-            AsyncRunner.runMany(works, ...
+            futs = AsyncRunner.runMany(works, ...
                 @(results) obj.onCalibrationHistoryBatchLoaded(app, names, results), ...
                 @(ME) Logger.debug('BackendsViewModel', ...
                     'calibration-history batch: %s', ME.message));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, futs);
         end
 
         function onCalibrationHistoryBatchLoaded(obj, app, names, results)
@@ -147,12 +213,32 @@ classdef BackendsViewModel < handle
             end
             try
                 row = obj.getSelectedRow();
-                if row > 0
-                    selName = char(string(app.BackendTable.Data{row, 2}));
-                    safeKey = matlab.lang.makeValidName(selName);
-                    if isfield(app.CalibrationHistoryCache, safeKey)
-                        obj.populateTelemetryPanel(app, selName);
+                if row == 0
+                    % Paint row 1's Telemetry by NAME, without writing
+                    % to BackendTable.Selection. Programmatic Selection
+                    % writes after Data has settled risk re-corrupting
+                    % WebMWTableController.SortedRowOrder in R2025b
+                    % (the exact pathology that broke user row-clicks).
+                    % Resolve the name and call populateTelemetryPanel
+                    % directly — the panel renders for whoever's named,
+                    % independent of the visual table selection.
+                    if ~isempty(app.BackendTable) && isvalid(app.BackendTable) ...
+                            && size(app.BackendTable.Data, 1) > 0
+                        try
+                            row1Name = char(string(app.BackendTable.Data{1, 2}));
+                            safeKey = matlab.lang.makeValidName(row1Name);
+                            if isfield(app.CalibrationHistoryCache, safeKey)
+                                obj.populateTelemetryPanel(app, row1Name);
+                            end
+                        catch
+                        end
                     end
+                    return;
+                end
+                selName = char(string(app.BackendTable.Data{row, 2}));
+                safeKey = matlab.lang.makeValidName(selName);
+                if isfield(app.CalibrationHistoryCache, safeKey)
+                    obj.populateTelemetryPanel(app, selName);
                 end
             catch ME
                 Logger.debug('BackendsViewModel', ...
@@ -190,8 +276,25 @@ classdef BackendsViewModel < handle
             safeKey = matlab.lang.makeValidName(char(backendName));
             app.CalibrationHistoryCache.(safeKey) = data;
             % If this is the currently-selected backend, repaint now.
+            % Auto-select fallback: if no row is selected and the
+            % response is for row-1's backend, paint anyway so the
+            % first calibration arrival lights up the panel even when
+            % the programmatic Selection write on backends-load
+            % silently failed.
             try
                 row = obj.getSelectedRow();
+                if row == 0 && ~isempty(app.BackendTable) ...
+                        && isvalid(app.BackendTable) ...
+                        && size(app.BackendTable.Data, 1) > 0
+                    row1Name = char(string(app.BackendTable.Data{1, 2}));
+                    if strcmp(row1Name, char(backendName))
+                        % Paint by name only — do NOT write
+                        % BackendTable.Selection here; that programmatic
+                        % write was corrupting SortedRowOrder in R2025b.
+                        obj.populateTelemetryPanel(app, backendName);
+                        return;
+                    end
+                end
                 if row > 0
                     selName = char(string(app.BackendTable.Data{row, 2}));
                     if strcmp(selName, char(backendName))
@@ -253,16 +356,24 @@ classdef BackendsViewModel < handle
             n = size(rows, 1);
             operational = 0;
             maxQubits = 0;
+            % JsonHelper.backendsToRows column layout (the un-indexed
+            % shape passed by onRefreshBackendsComplete):
+            %   1: name   2: num_qubits (int32)   3: status (UPPER)
+            %   4: predicted_fidelity (double)    5: queue   6: role
+            % The previous indexing read col 3 (status string) as
+            % qubits and col 4 (pred-fidelity double) as status,
+            % producing "Operational 0/6" / "Top width 0" on screens
+            % with live data.
             for r = 1:n
                 try
-                    qb = rows{r, 3};   % col 3 = num_qubits per JsonHelper.backendsToRows
+                    qb = rows{r, 2};
                     if isnumeric(qb) && isfinite(qb) && qb > maxQubits
                         maxQubits = qb;
                     elseif ischar(qb) || isstring(qb)
                         qbn = str2double(char(string(qb)));
                         if ~isnan(qbn) && qbn > maxQubits; maxQubits = qbn; end
                     end
-                    st = lower(char(string(rows{r, 4})));
+                    st = lower(char(string(rows{r, 3})));
                     if contains(st, 'operat') || contains(st, 'online') || ...
                             contains(st, 'active') || contains(st, 'available') || ...
                             contains(st, char(9989)) || strcmp(st, 'ok')
@@ -303,10 +414,7 @@ classdef BackendsViewModel < handle
                     recs = JsonHelper.pick(cache.(names{i}), {'records'}, []);
                     for j = 1:numel(recs)
                         if iscell(recs); r = recs{j}; else; r = recs(j); end
-                        t = datetime( ...
-                            strrep(char(r.sampled_at), 'Z', '+00:00'), ...
-                            'InputFormat', 'yyyy-MM-dd''T''HH:mm:ssXXX', ...
-                            'TimeZone', 'UTC');
+                        t = BackendsViewModel.parseIsoUtc(r.sampled_at);
                         if isnat(latest) || t > latest; latest = t; end
                     end
                 catch
@@ -327,183 +435,20 @@ classdef BackendsViewModel < handle
             end
         end
 
-        function populateTelemetryPanel(obj, app, backendName)
-            safeKey = matlab.lang.makeValidName(char(backendName));
-            if isempty(app.CalibrationHistoryCache); return; end
-            if ~isfield(app.CalibrationHistoryCache, safeKey); return; end
-            data = app.CalibrationHistoryCache.(safeKey);
-            obj.paintTelemetryPerQubitHeatGrid(app, data);
-            obj.paintTelemetryHistoryCharts(app, data);
-        end
-
-        function paintTelemetryPerQubitHeatGrid(~, app, data)
-            if isempty(app.TelemetryPerQubitGrid) || ...
-                    ~isvalid(app.TelemetryPerQubitGrid)
-                return;
-            end
-            parent = app.TelemetryPerQubitGrid;
-            delete(parent.Children);
-
-            % Empty-state: no data yet → centered messaging across the
-            % whole grid instead of a wall of blank cells. Distinguishes
-            % "still loading" from "no row selected" via the message.
-            recs = [];
-            try; recs = data.records; catch; end
-            if isempty(recs)
-                parent.RowHeight   = {'1x'};
-                parent.ColumnWidth = {'1x'};
-                empty = uilabel(parent, ...
-                    'Text', Labels.get('backends_perqubit_empty', ...
-                        'No per-qubit calibration data available for this backend.'), ...
-                    'FontSize', 11, ...
-                    'FontColor', Theme.COLOR_MUTED, ...
-                    'HorizontalAlignment', 'center', ...
-                    'VerticalAlignment', 'center', ...
-                    'WordWrap', 'on');
-                empty.Layout.Row = 1; empty.Layout.Column = 1;
-                return;
-            end
-
-            % Data-layout: 6 rows × 17 cols (col 1 = metric row labels,
-            % cols 2-17 = up to 16 qubits). Wider col 1 so labels like
-            % "Readout err" / "Gate err" fit without truncation.
-            parent.RowHeight   = repmat({22}, 1, 6);
-            parent.ColumnWidth = [{90}, repmat({60}, 1, 16)];
-
-            metrics      = {'qubit', 'T1', 'T2', 'gate_err', 'rd_err', '2Q_err'};
-            rowLabels    = {'',      'T1', 'T2', 'Gate err', 'Readout err', '2Q err'};
-
-            if iscell(recs); n = numel(recs); else; n = numel(recs); end
-            per_qubit = containers.Map('KeyType', 'int32', 'ValueType', 'any');
-            for i = 1:n
-                if iscell(recs); r = recs{i}; else; r = recs(i); end
-                qi = int32(JsonHelper.pickNumeric(r, 'qubit_index', -1));
-                if qi < 0; continue; end
-                if ~isKey(per_qubit, qi)
-                    per_qubit(qi) = r;  % first wins (DESC sorted = newest)
-                end
-            end
-            qubits = sort(cell2mat(keys(per_qubit)));
-
-            % Column 1 — metric row labels. Right-aligned so the value
-            % cells immediately to the right read as the "value of this
-            % metric" without ambiguity.
-            for m = 2:numel(metrics)
-                rl = uilabel(parent, 'Text', rowLabels{m}, ...
-                    'FontSize', 10, 'FontWeight', 'bold', ...
-                    'FontColor', Theme.COLOR_MUTED, ...
-                    'HorizontalAlignment', 'right', ...
-                    'VerticalAlignment', 'center');
-                rl.Layout.Row = m; rl.Layout.Column = 1;
-            end
-
-            % Columns 2-17 — per-qubit data. Row 1 is the qubit header.
-            for c = 1:min(numel(qubits), 16)
-                hdr = uilabel(parent, 'Text', sprintf('q[%d]', qubits(c)), ...
-                              'FontSize', 10, 'FontWeight', 'bold', ...
-                              'FontColor', Theme.COLOR_LABEL, ...
-                              'HorizontalAlignment', 'center');
-                hdr.Layout.Row = 1; hdr.Layout.Column = c + 1;
-                for m = 2:numel(metrics)
-                    r = per_qubit(qubits(c));
-                    switch metrics{m}
-                        case 'T1';        v = JsonHelper.pickNumeric(r, 'T1', NaN);
-                        case 'T2';        v = JsonHelper.pickNumeric(r, 'T2', NaN);
-                        case 'gate_err';  v = JsonHelper.pickNumeric(r, 'gate_error', NaN);
-                        case 'rd_err';    v = JsonHelper.pickNumeric(r, 'readout_error', NaN);
-                        case '2Q_err';    v = JsonHelper.pickNumeric(r, 'two_q_error', NaN);
-                    end
-                    color = BackendsViewModel.healthColor(metrics{m}, v);
-                    lbl = uilabel(parent, ...
-                        'Text', BackendsViewModel.fmtMetric(metrics{m}, v), ...
-                        'FontSize', 10, 'BackgroundColor', color, ...
-                        'HorizontalAlignment', 'center', ...
-                        'VerticalAlignment', 'center');
-                    lbl.Layout.Row = m; lbl.Layout.Column = c + 1;
-                end
-            end
-        end
-
-        function paintTelemetryHistoryCharts(~, app, data)
-            if isempty(app.TelemetryHistoryAxes) || ...
-                    numel(app.TelemetryHistoryAxes) < 3
-                return;
-            end
-            fields   = {'T1', 'T2', 'two_q_error'};
-            titles   = {'T1 coherence (µs)', 'T2 coherence (µs)', '2Q gate error'};
-            % Scale factor per field — T1/T2 are in seconds in the
-            % backend payload but the chart title advertises microseconds,
-            % so multiply for display.
-            scales   = [1e6, 1e6, 1.0];
-
-            recs = [];
-            try; recs = data.records; catch; end
-
-            % Empty-state: paint a centered "no data" annotation in
-            % each of the 3 axes instead of leaving them showing the
-            % pre-styled grid with no curve. Keeps the panel from
-            % looking broken on a backend that has no recorded history.
-            if isempty(recs)
-                for k = 1:3
-                    ax = app.TelemetryHistoryAxes{k};
-                    if isempty(ax) || ~isvalid(ax); continue; end
-                    cla(ax);
-                    ax.Title.String = titles{k};
-                    ax.XLim = [0 1]; ax.YLim = [0 1];
-                    text(ax, 0.5, 0.5, Labels.get('backends_history_empty', ...
-                        'No calibration history available for this backend.'), ...
-                        'HorizontalAlignment', 'center', ...
-                        'VerticalAlignment', 'middle', ...
-                        'FontSize', 10, ...
-                        'Color', Theme.COLOR_MUTED, ...
-                        'HitTest', 'off', 'PickableParts', 'none');
-                end
-                return;
-            end
-
-            if iscell(recs); n = numel(recs); else; n = numel(recs); end
-            for k = 1:3
-                ax = app.TelemetryHistoryAxes{k};
-                if isempty(ax) || ~isvalid(ax); continue; end
-                cla(ax);
-                ax.Title.String = titles{k};
-                ts = NaT(1, n); vals = nan(1, n);
-                for i = 1:n
-                    if iscell(recs); r = recs{i}; else; r = recs(i); end
-                    try
-                        ts(i) = datetime(strrep(char(r.sampled_at), 'Z', '+00:00'), ...
-                                         'InputFormat', 'yyyy-MM-dd''T''HH:mm:ssXXX', ...
-                                         'TimeZone', 'UTC');
-                    catch; continue; end
-                    vals(i) = JsonHelper.pickNumeric(r, fields{k}, NaN) * scales(k);
-                end
-                valid = ~isnat(ts) & ~isnan(vals);
-                if any(valid)
-                    [tsS, idx] = sort(ts(valid));
-                    vS = vals(valid); vS = vS(idx);
-                    plot(ax, tsS, vS, '-o', ...
-                        'Color', Theme.COLOR_PRIMARY, ...
-                        'MarkerFaceColor', Theme.COLOR_PRIMARY, ...
-                        'MarkerEdgeColor', Theme.COLOR_PRIMARY, ...
-                        'MarkerSize', 3.5, ...
-                        'LineWidth', 1.4);
-                    ax.XGrid = 'on'; ax.YGrid = 'on';
-                    try
-                        ax.XAxis.TickLabelFormat = 'MMM d';
-                    catch
-                    end
-                else
-                    % Records exist but none parsed cleanly for this
-                    % field — annotate so the panel doesn't look broken.
-                    ax.XLim = [0 1]; ax.YLim = [0 1];
-                    text(ax, 0.5, 0.5, Labels.get('backends_history_empty', ...
-                        'No calibration history available for this backend.'), ...
-                        'HorizontalAlignment', 'center', ...
-                        'VerticalAlignment', 'middle', ...
-                        'FontSize', 10, 'Color', Theme.COLOR_MUTED, ...
-                        'HitTest', 'off', 'PickableParts', 'none');
-                end
-            end
+        function populateTelemetryPanel(~, ~, backendName)
+            % Stub. The Telemetry tabs (Per-Qubit / History / Topology)
+            % were removed — they reproducibly broke CEF click dispatch
+            % in R2025b uifigure macOS the moment any tab activated, and
+            % every uihtml / uiaxes mitigation we tried still left the
+            % tab-activation path toxic. Overview is the only remaining
+            % content (rendered directly into the panel by BackendsScreen);
+            % the KPI 4 "Selected backend" text is updated in
+            % onTableRowSelected, so this stub intentionally does nothing.
+            try
+                Logger.info('BackendsViewModel', ...
+                    'populateTelemetryPanel(%s) — telemetry tabs removed', ...
+                    char(backendName));
+            catch; end
         end
 
         function onRefreshBackendsError(~, app, ME)
@@ -537,8 +482,22 @@ classdef BackendsViewModel < handle
                     end
                 end
             end
-            filtered = obj.FullTableData(keep, :);
-            app.BackendTable.Data = obj.prependIndex(filtered, 1);
+            filtered    = obj.FullTableData(keep, :);
+            newData     = obj.prependIndex(filtered, 1);
+            newRowCount = size(newData, 1);
+            % Same selective R2025b SortedRowOrder workaround as
+            % applyPage — inlined for the same hot-reload reason.
+            tbl = app.BackendTable;
+            try; sel = tbl.Selection; catch; sel = []; end
+            needsClear = ~isempty(sel) && any(double(sel(:)) > newRowCount);
+            if needsClear
+                try; tbl.Selection = []; catch; end
+                drawnow;
+            end
+            tbl.Data = newData;
+            if needsClear
+                drawnow;
+            end
         end
 
         % ── Pagination ────────────────────────────────────────────────────
@@ -561,44 +520,173 @@ classdef BackendsViewModel < handle
         function onSelectBackend(obj)
             app = obj.App;
             row = obj.getSelectedRow();
+            Logger.info('BackendsViewModel', ...
+                'onSelectBackend fired — row=%d', row);
             if row == 0; return; end
             selName = char(string(app.BackendTable.Data{row, 2}));
             if isempty(selName); return; end
 
-            app.showLoading(Labels.get('loading_saving_selection', 'Saving backend selection...'));
+            % No full-screen overlay here. The local UI (role badge,
+            % KPI cards, Telemetry refresh) updates synchronously
+            % below and IS the visual feedback. The persistSelection
+            % call is a background HTTP PUT to /api/settings — the
+            % user shouldn't wait on a server round-trip to see their
+            % own click take effect. onPersistDone / onPersistError
+            % still log the result via app.logEvent for operator
+            % visibility.
             app.State.selectedBackend = string(selName);
             backupName = obj.findBackup(selName);
             app.State.backupBackend = string(backupName);
 
             obj.updateKpiForSelection(app, row, backupName);
+            obj.updateRolesInTable(selName, backupName);
             obj.updateStatusNotes(app, row, backupName);
+            % Refresh the Telemetry tabs (Overview KPI 4 / Per-Qubit /
+            % History / Topology) for the newly-selected backend.
+            % The Telemetry panel is otherwise wired only to
+            % SelectionChangedFcn — without this explicit refresh, the
+            % tabs stay on whatever backend was last left-clicked even
+            % after the user changes the primary via Select.
+            try
+                if isprop(app, 'OverviewKpiLabels') && ...
+                        ~isempty(app.OverviewKpiLabels) && ...
+                        numel(app.OverviewKpiLabels) >= 4 && ...
+                        ~isempty(app.OverviewKpiLabels{4}) && ...
+                        isvalid(app.OverviewKpiLabels{4})
+                    app.OverviewKpiLabels{4}.Text = selName;
+                    app.OverviewKpiLabels{4}.FontSize = 12;
+                end
+            catch
+            end
+            try
+                obj.populateTelemetryPanel(app, selName);
+                safeKey = matlab.lang.makeValidName(selName);
+                if ~isstruct(app.CalibrationHistoryCache) || ...
+                        ~isfield(app.CalibrationHistoryCache, safeKey)
+                    obj.fetchCalibrationHistory(selName, 7);
+                end
+                % Topology tab removed — no fetch.
+            catch ME
+                Logger.debug('BackendsViewModel', ...
+                    'post-select Telemetry refresh: %s', ME.message);
+            end
             obj.persistSelection(app, selName, backupName);
         end
 
         % ── Context menu actions ──────────────────────────────────────────
 
         function onCtxSetPrimary(obj)
-            obj.App.hideBackendsPopupMenu();
-            drawnow;   % flush the hide before any subsequent work blocks the UI
             app = obj.App;
-            row = obj.getSelectedRow();
+            % Dismiss the custom popup as soon as an option is
+            % chosen (the figure-level WindowButtonDownFcn would
+            % also dismiss it on the next outside-click, but doing
+            % it here keeps the perceived response instant).
+            try; app.hideBackendsPopupMenu(); catch; end
+            % Resolve the right-clicked row via InteractionInformation
+            % (R2025b doesn't auto-write Selection on right-click for
+            % uifigure uitable.ContextMenu — the menu just opens, and
+            % InteractionInformation tracks the actual click target).
+            % Inlined to avoid a static-method dependency that
+            % MATLAB's classdef hot-reload doesn't register without
+            % clear classes.
+            row = 0;
+            try
+                info = app.BackendTable.InteractionInformation;
+                if ~isempty(info)
+                    r = [];
+                    try; r = info.DisplayRow; catch; end
+                    if isempty(r) || ~isnumeric(r) || ~isfinite(r) || r <= 0
+                        try; r = info.Row; catch; end
+                    end
+                    if ~isempty(r) && isnumeric(r) && isfinite(r) && r > 0
+                        row = double(r);
+                    end
+                end
+            catch
+            end
+            if row == 0
+                try
+                    sel = app.BackendTable.Selection;
+                    if ~isempty(sel); row = double(sel(1)); end
+                catch
+                end
+            end
+            Logger.info('BackendsViewModel', ...
+                'onCtxSetPrimary fired — row=%d', row);
             if row == 0; return; end
             selName = char(string(app.BackendTable.Data{row, 2}));
             if isempty(selName); return; end
-            app.showLoading(Labels.get('loading_saving_primary', 'Setting primary backend...'));
+            % No full-screen overlay — same reasoning as
+            % onSelectBackend. Local UI updates synchronously below
+            % (role label moves, KPI/Telemetry refresh); the
+            % /api/settings PUT happens in the background.
             app.State.selectedBackend = string(selName);
             backupName = obj.findBackup(selName);
             app.State.backupBackend = string(backupName);
             obj.updateKpiForSelection(app, row, backupName);
+            obj.updateRolesInTable(selName, backupName);
             obj.updateStatusNotes(app, row, backupName);
+            % Same Telemetry refresh as onSelectBackend — the right-
+            % click "Set as Primary" path otherwise leaves the four
+            % Telemetry tabs stuck on whatever backend was last
+            % left-clicked (or on the row-1 auto-paint from screen
+            % entry), so users like you set ibm_fez as PRIMARY but
+            % keep staring at ibm_pittsburgh's coupling map.
+            try
+                if isprop(app, 'OverviewKpiLabels') && ...
+                        ~isempty(app.OverviewKpiLabels) && ...
+                        numel(app.OverviewKpiLabels) >= 4 && ...
+                        ~isempty(app.OverviewKpiLabels{4}) && ...
+                        isvalid(app.OverviewKpiLabels{4})
+                    app.OverviewKpiLabels{4}.Text = selName;
+                    app.OverviewKpiLabels{4}.FontSize = 12;
+                end
+            catch
+            end
+            try
+                obj.populateTelemetryPanel(app, selName);
+                safeKey = matlab.lang.makeValidName(selName);
+                if ~isstruct(app.CalibrationHistoryCache) || ...
+                        ~isfield(app.CalibrationHistoryCache, safeKey)
+                    obj.fetchCalibrationHistory(selName, 7);
+                end
+                % Topology tab removed — no fetch.
+            catch ME
+                Logger.debug('BackendsViewModel', ...
+                    'post-ctx-primary Telemetry refresh: %s', ME.message);
+            end
             obj.persistSelection(app, selName, backupName);
         end
 
         function onCtxSetBackup(obj)
             app = obj.App;
-            app.hideBackendsPopupMenu();
-            drawnow;
-            row = obj.getSelectedRow();
+            try; app.hideBackendsPopupMenu(); catch; end
+            % Same InteractionInformation lookup as onCtxSetPrimary,
+            % inlined to avoid a static-method dependency.
+            row = 0;
+            try
+                info = app.BackendTable.InteractionInformation;
+                if ~isempty(info)
+                    r = [];
+                    try; r = info.DisplayRow; catch; end
+                    if isempty(r) || ~isnumeric(r) || ~isfinite(r) || r <= 0
+                        try; r = info.Row; catch; end
+                    end
+                    if ~isempty(r) && isnumeric(r) && isfinite(r) && r > 0
+                        row = double(r);
+                    end
+                end
+            catch
+            end
+            if row == 0
+                try
+                    sel = app.BackendTable.Selection;
+                    if ~isempty(sel); row = double(sel(1)); end
+                catch
+                end
+            end
+            Logger.info('BackendsViewModel', ...
+                'onCtxSetBackup fired — row=%d', row);
             if row == 0; return; end
             backupName = char(string(app.BackendTable.Data{row, 2}));
             app.showLoading(Labels.get('loading_saving_backup', 'Setting backup backend...'));
@@ -610,6 +698,7 @@ classdef BackendsViewModel < handle
             notes{end+1} = sprintf('Backup changed to: %s', backupName);
             app.setStatus(app.BackendStatusArea, notes);
             primary = char(app.State.selectedBackend);
+            obj.updateRolesInTable(primary, backupName);
             if isempty(primary)
                 % No primary selected yet — nothing to persist but we still
                 % opened a spinner; close it.
@@ -700,12 +789,48 @@ classdef BackendsViewModel < handle
 
         function onCtxViewDetails(obj)
             app = obj.App;
-            app.hideBackendsPopupMenu();
-            drawnow;
-            row = obj.getSelectedRow();
+            try; app.hideBackendsPopupMenu(); catch; end
+            % Same InteractionInformation lookup, inlined.
+            row = 0;
+            try
+                info = app.BackendTable.InteractionInformation;
+                if ~isempty(info)
+                    r = [];
+                    try; r = info.DisplayRow; catch; end
+                    if isempty(r) || ~isnumeric(r) || ~isfinite(r) || r <= 0
+                        try; r = info.Row; catch; end
+                    end
+                    if ~isempty(r) && isnumeric(r) && isfinite(r) && r > 0
+                        row = double(r);
+                    end
+                end
+            catch
+            end
+            if row == 0
+                try
+                    sel = app.BackendTable.Selection;
+                    if ~isempty(sel); row = double(sel(1)); end
+                catch
+                end
+            end
+            Logger.info('BackendsViewModel', ...
+                'onCtxViewDetails fired — row=%d', row);
             if row == 0; return; end
             bName = char(string(app.BackendTable.Data{row, 2}));
-            app.showLoading(sprintf('Loading details for %s...', bName));
+            % No full-screen overlay here. The previous showLoading()
+            % left the user staring at an opaque modal while the
+            % /api/backends/{name} GET was in flight — if the call
+            % was slow or failed silently, the spinner masked the
+            % whole UI and the user couldn't even leave the screen.
+            % Push "Loading…" into the in-panel status area instead;
+            % onCtxViewDetailsComplete / onCtxViewDetailsError write
+            % the result (or error) over it as soon as they land,
+            % and the sidebar stays clickable the whole time.
+            try
+                app.setStatus(app.BackendStatusArea, ...
+                    {sprintf('Loading details for %s...', bName)});
+            catch
+            end
             backendSvc = app.BackendSvc;
             token      = app.State.authToken;
             AsyncRunner.run( ...
@@ -735,227 +860,6 @@ classdef BackendsViewModel < handle
         end
 
         % ── Topology tab — coupling-map graph ────────────────────────────
-        function onTelemetryTabChanged(obj, evt)
-            % Dispatched by the telemetry uitabgroup's SelectionChangedFcn.
-            % Only the Topology tab needs eager paint — the other three
-            % are populated by populateTelemetryPanel on row select.
-            try
-                titleStr = char(string(evt.NewValue.Title));
-            catch
-                return;
-            end
-            if ~strcmp(titleStr, Labels.get('backends_topology_tab_title'))
-                return;
-            end
-            app = obj.App;
-            row = obj.getSelectedRow();
-            if row == 0
-                obj.paintTopologyPlaceholder(Labels.get('backends_topology_no_selection'));
-                return;
-            end
-            backendName = char(string(app.BackendTable.Data{row, 2}));
-            if isempty(backendName); return; end
-            safeKey = matlab.lang.makeValidName(backendName);
-            if isstruct(app.TopologyCache) && isfield(app.TopologyCache, safeKey)
-                obj.paintTopology(backendName);
-            else
-                obj.fetchTopology(backendName);
-            end
-        end
-
-        function fetchTopology(obj, backendName)
-            % Dispatch GET /api/backends/{name}/topology asynchronously.
-            obj.paintTopologyPlaceholder(Labels.get('backends_topology_loading'));
-            app = obj.App;
-            svc = app.Services.backendService;
-            token = app.State.authToken;
-            AsyncRunner.run( ...
-                @() svc.getTopology(backendName, token), ...
-                @(data) obj.onTopologyLoaded(backendName, data), ...
-                @(ME)   obj.onTopologyError(backendName, ME));
-        end
-
-        function onTopologyLoaded(obj, backendName, data)
-            app = obj.App;
-            if isempty(app.TopologyCache); app.TopologyCache = struct(); end
-            safeKey = matlab.lang.makeValidName(char(backendName));
-            app.TopologyCache.(safeKey) = data;
-            % Repaint only if user is still on the Topology tab AND on
-            % this backend (don't fight a stale fetch).
-            try
-                row = obj.getSelectedRow();
-                if row == 0; return; end
-                selName = char(string(app.BackendTable.Data{row, 2}));
-                if strcmp(selName, char(backendName))
-                    obj.paintTopology(backendName);
-                end
-            catch ME
-                Logger.debug('BackendsViewModel', ...
-                    'topology arrival paint skipped: %s', ME.message);
-            end
-        end
-
-        function onTopologyError(obj, backendName, ME)
-            obj.paintTopologyPlaceholder(sprintf( ...
-                Labels.get('backends_topology_fetch_err'), ME.message));
-            Logger.warn('BackendsViewModel', ...
-                'getTopology failed for %s: %s', char(backendName), ME.message);
-        end
-
-        function ensureTopologyAxes(obj)
-            % Lazy build — BackendsScreen ships a uilabel placeholder
-            % to keep cold-mount fast. Materialise the real uiaxes
-            % inside the saved grid the first time we need to draw a
-            % coupling-map graph; subsequent calls are a no-op.
-            app = obj.App;
-            if ~isempty(app.TopologyAxes) && isvalid(app.TopologyAxes); return; end
-            if isempty(app.TopologyGrid) || ~isvalid(app.TopologyGrid); return; end
-            if ~isempty(app.TopologyPlaceholder) && isvalid(app.TopologyPlaceholder)
-                delete(app.TopologyPlaceholder);
-                app.TopologyPlaceholder = [];
-            end
-            ax = uiaxes(app.TopologyGrid);
-            ax.Layout.Row = 1; ax.Layout.Column = 1;
-            ax.Toolbar.Visible = 'off';
-            ax.Color   = Theme.COLOR_CARD;
-            ax.XColor  = Theme.COLOR_MUTED;
-            ax.YColor  = Theme.COLOR_MUTED;
-            ax.XTick = []; ax.YTick = [];
-            ax.Box     = 'off';
-            try; disableDefaultInteractivity(ax); catch; end
-            app.TopologyAxes = ax;
-        end
-
-        function paintTopology(obj, backendName)
-            obj.ensureTopologyAxes();
-            app = obj.App;
-            if isempty(app.TopologyAxes) || ~isvalid(app.TopologyAxes); return; end
-            ax = app.TopologyAxes;
-            cla(ax);
-            ax.XLim = [-1.1 1.1]; ax.YLim = [-1.1 1.1];
-
-            safeKey = matlab.lang.makeValidName(char(backendName));
-            data = app.TopologyCache.(safeKey);
-            cm = JsonHelper.pick(data, {'coupling_map', 'couplingMap'}, []);
-            n  = JsonHelper.pickNumeric(data, 'num_qubits', NaN);
-            if ~isfinite(n)
-                n = JsonHelper.pickNumeric(data, 'n_qubits', NaN);
-            end
-
-            if isempty(cm)
-                obj.paintTopologyPlaceholder(Labels.get('backends_topology_unavailable'));
-                return;
-            end
-
-            edges = BackendsViewModel.normalizeCouplingMap(cm);
-            if isempty(edges)
-                obj.paintTopologyPlaceholder(Labels.get('backends_topology_unavailable'));
-                return;
-            end
-
-            % Cap node count: include any qubit referenced in coupling_map
-            % even if num_qubits is missing.
-            maxIdx = max(edges(:));
-            if ~isfinite(n); n = maxIdx; end
-            n = max(double(n), maxIdx);
-
-            s = edges(:, 1); t = edges(:, 2);
-            G = graph(s, t, [], double(n));
-
-            try
-                gp = plot(ax, G, 'Layout', 'force', ...
-                    'NodeFontSize', 7, ...
-                    'NodeFontColor', Theme.COLOR_HEADING, ...
-                    'EdgeColor', Theme.COLOR_DIVIDER, ...
-                    'EdgeAlpha', 0.6, ...
-                    'LineWidth', 0.8, ...
-                    'MarkerSize', 6);
-            catch ME
-                obj.paintTopologyPlaceholder(sprintf( ...
-                    'Graph render failed: %s', ME.message));
-                return;
-            end
-
-            healthRgb = obj.computeQubitColors(backendName, double(n));
-            gp.NodeColor = healthRgb;
-
-            if n <= 64
-                gp.NodeLabel = arrayfun(@(q) sprintf('%d', q-1), ...
-                    1:double(n), 'UniformOutput', false);
-            else
-                gp.NodeLabel = repmat({''}, 1, double(n));
-            end
-
-            gp.ButtonDownFcn = @(src,evt) obj.onTopologyNodeClicked(src, evt, backendName);
-
-            metaLbl = app.TopologyInfoLbl.UserData;
-            if ~isempty(metaLbl) && isvalid(metaLbl)
-                metaLbl.Text = sprintf( ...
-                    Labels.get('backends_topology_meta_fmt'), ...
-                    char(backendName), double(n), size(edges, 1));
-            end
-            app.TopologyInfoLbl.Text = Labels.get('backends_topology_no_selection');
-        end
-
-        function onTopologyNodeClicked(obj, gp, evt, backendName)
-            try
-                ip = evt.IntersectionPoint;
-                xs = gp.XData; ys = gp.YData;
-            catch
-                return;
-            end
-            d = (xs - ip(1)).^2 + (ys - ip(2)).^2;
-            [~, idx] = min(d);
-            if isempty(idx); return; end
-            qubit = idx - 1;
-            app = obj.App;
-            safeKey = matlab.lang.makeValidName(char(backendName));
-            calRecord = [];
-            if isstruct(app.CalibrationHistoryCache) && ...
-                    isfield(app.CalibrationHistoryCache, safeKey)
-                calData = app.CalibrationHistoryCache.(safeKey);
-                calRecord = BackendsViewModel.findLatestCalForQubit(calData, qubit);
-            end
-            topoData = app.TopologyCache.(safeKey);
-            cm = JsonHelper.pick(topoData, {'coupling_map', 'couplingMap'}, []);
-            edges = BackendsViewModel.normalizeCouplingMap(cm);
-            if isempty(edges)
-                neighbours = [];
-            else
-                lhs = edges(edges(:,1) == qubit+1, 2) - 1;
-                rhs = edges(edges(:,2) == qubit+1, 1) - 1;
-                neighbours = unique([lhs; rhs]);
-            end
-            basisGates = JsonHelper.pick(topoData, {'basis_gates', 'basisGates'}, {});
-            txt = BackendsViewModel.formatTopologyDetail(qubit, calRecord, neighbours, basisGates);
-            app.TopologyInfoLbl.Text = txt;
-        end
-
-        function paintTopologyPlaceholder(obj, msg)
-            % If the lazy uiaxes hasn't been materialised yet, just
-            % update the placeholder uilabel directly — no need to
-            % spin up a full uiaxes just to host a status message.
-            app = obj.App;
-            if ~isempty(app.TopologyPlaceholder) && isvalid(app.TopologyPlaceholder) ...
-                    && (isempty(app.TopologyAxes) || ~isvalid(app.TopologyAxes))
-                try app.TopologyPlaceholder.Text = char(msg); catch; end
-                return;
-            end
-            app = obj.App;
-            if isempty(app.TopologyAxes) || ~isvalid(app.TopologyAxes); return; end
-            ax = app.TopologyAxes;
-            cla(ax);
-            ax.XLim = [-1 1]; ax.YLim = [-1 1];
-            text(ax, 0, 0, char(msg), ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-                'FontSize', 12, 'Color', Theme.COLOR_MUTED);
-            metaLbl = app.TopologyInfoLbl.UserData;
-            if ~isempty(metaLbl) && isvalid(metaLbl)
-                metaLbl.Text = '';
-            end
-            app.TopologyInfoLbl.Text = '';
-        end
-
         function rgb = computeQubitColors(obj, backendName, n)
             % Returns n×3 RGB matrix. If calibration data is missing, use
             % a neutral grey so the graph still renders.
@@ -1184,6 +1088,45 @@ classdef BackendsViewModel < handle
             app.setStatus(app.BackendStatusArea, notes);
         end
 
+        function updateRolesInTable(obj, primaryName, backupName)
+            Logger.info('BackendsViewModel', ...
+                'updateRolesInTable — primary=%s backup=%s', ...
+                char(string(primaryName)), char(string(backupName)));
+            % Re-stamp the Role column in FullTableData and repaint
+            % the visible table so the user sees PRIMARY / BACKUP /
+            % ALTERNATIVE move to match the new selection. Previously
+            % onSelectBackend / onCtxSetPrimary updated app.State and
+            % the KPI cards but left the table''s Role column frozen
+            % on the server-supplied roles — making the Select button
+            % look like a no-op to the user.
+            %
+            %   FullTableData layout (set by JsonHelper.backendsToRows):
+            %     col 1: name,  col 2: qubits,  col 3: status,
+            %     col 4: pred fidelity,  col 5: queue,  col 6: role.
+            if isempty(obj.FullTableData); return; end
+            primaryName = char(string(primaryName));
+            backupName  = char(string(backupName));
+            for i = 1:size(obj.FullTableData, 1)
+                name = char(string(obj.FullTableData{i, 1}));
+                if ~isempty(primaryName) && strcmp(name, primaryName)
+                    obj.FullTableData{i, 6} = 'PRIMARY';
+                elseif ~isempty(backupName) && strcmp(name, backupName)
+                    obj.FullTableData{i, 6} = 'BACKUP';
+                else
+                    obj.FullTableData{i, 6} = 'ALTERNATIVE';
+                end
+            end
+            % Repaint via applyPage. applyPage clears Selection before
+            % the Data write (R2025b SortedRowOrder workaround), so the
+            % user does lose their visual row highlight on every Select
+            % — that's an acceptable trade for not re-corrupting the
+            % uitable controller. Programmatically restoring Selection
+            % here was the previous behavior; it has been removed
+            % because it triggers the exact "Index must not exceed 1"
+            % path that broke every subsequent user row-click.
+            obj.applyPage();
+        end
+
         function persistSelection(~, app, primaryName, backupName)
             if ~app.State.isAuthenticated() || ~app.State.hasProject() || isempty(primaryName)
                 % No auth / project / primary → nothing to save. The caller
@@ -1211,11 +1154,34 @@ classdef BackendsViewModel < handle
             n = size(obj.FullTableData, 1);
             startIdx = obj.PageSkip + 1;
             endIdx   = min(obj.PageSkip + obj.PageLimit, n);
+            % R2025b SortedRowOrder workaround — selective. Only clear
+            % Selection when the new row count would render the
+            % existing Selection out-of-bounds (the actual condition
+            % that throws "Selection indices are out of data
+            % boundary" inside WebMWTableController). Preserving
+            % Selection across same-size or larger-data writes keeps
+            % the user's row highlight stable through refreshes and
+            % role re-stamps, instead of nuking it every time.
             if startIdx <= n
                 pageRows = obj.FullTableData(startIdx:endIdx, :);
-                app.BackendTable.Data = obj.prependIndex(pageRows, startIdx);
+                newData = obj.prependIndex(pageRows, startIdx);
             else
-                app.BackendTable.Data = {};
+                newData = {};
+            end
+            newRowCount = size(newData, 1);
+            % Selective R2025b SortedRowOrder workaround — inlined to
+            % avoid a static-method dependency that MATLAB's classdef
+            % hot-reload doesn't always register without clear classes.
+            tbl = app.BackendTable;
+            try; sel = tbl.Selection; catch; sel = []; end
+            needsClear = ~isempty(sel) && any(double(sel(:)) > newRowCount);
+            if needsClear
+                try; tbl.Selection = []; catch; end
+                drawnow;
+            end
+            tbl.Data = newData;
+            if needsClear
+                drawnow;
             end
             obj.updatePageLabel();
         end
@@ -1257,6 +1223,7 @@ classdef BackendsViewModel < handle
         % internal to the Backends flow, but widening their
         % visibility avoids a second copy of the fetch fallback
         % logic in each consumer VM.
+
         function applyCalibrationAge(app, kpiIdx, detail)
             if isempty(app.BackendKpiLabels) || numel(app.BackendKpiLabels) < kpiIdx; return; end
             if ~isvalid(app.BackendKpiLabels{kpiIdx}); return; end
@@ -1273,6 +1240,26 @@ classdef BackendsViewModel < handle
             if isempty(app.BackendKpiLabels) || numel(app.BackendKpiLabels) < kpiIdx; return; end
             if ~isvalid(app.BackendKpiLabels{kpiIdx}); return; end
             app.BackendKpiLabels{kpiIdx}.Text = 'N/A';
+        end
+
+        function makeAxesInert(ax)
+            % Strip every pointer-capture surface from a uiaxes so the
+            % R2025b axes manager cannot grab clicks meant for sibling
+            % widgets. plot() / graph plot reinstall defaults, so call
+            % this AFTER each cla/plot/text in the painters.
+            try; ax.Interactions  = []; catch; end
+            try; ax.Toolbar       = []; catch; end
+            try; ax.HitTest       = 'off'; catch; end
+            try; ax.PickableParts = 'none'; catch; end
+            try; disableDefaultInteractivity(ax); catch; end
+        end
+
+        function s = htmlEscape(in)
+            s = char(string(in));
+            s = strrep(s, '&', '&amp;');
+            s = strrep(s, '<', '&lt;');
+            s = strrep(s, '>', '&gt;');
+            s = strrep(s, '"', '&quot;');
         end
 
         function onPersistDone(app, primaryName, backupName)
@@ -1349,6 +1336,22 @@ classdef BackendsViewModel < handle
                     else;              c = [0.99 0.83 0.83];
                     end
             end
+        end
+
+        function dt = parseIsoUtc(raw)
+            % Tolerant ISO-8601 parser for Pydantic-serialized timestamps.
+            % The backend's `sampled_at` is a `datetime` field; Pydantic
+            % serializes with microseconds (e.g. "2026-05-16T07:47:00.123456+00:00"),
+            % which the older fixed-format parser rejected — producing
+            % NaT for every record and a falsely-empty History tab.
+            % We strip the fractional-seconds chunk first, normalize "Z"
+            % to "+00:00", then parse with the seconds-precision format.
+            s = char(raw);
+            s = regexprep(s, '\.\d+', '');        % drop ".123456"
+            s = strrep(s, 'Z', '+00:00');
+            dt = datetime(s, ...
+                'InputFormat', 'yyyy-MM-dd''T''HH:mm:ssXXX', ...
+                'TimeZone', 'UTC');
         end
 
         function out = safeCalibrationFetch(svc, backendName, days, token)

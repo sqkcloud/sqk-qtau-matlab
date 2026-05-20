@@ -121,14 +121,14 @@ classdef ReportsViewModel < handle
             if app.State.hasProject()
                 pid = app.State.currentProjectId;
                 app.logEvent('API', sprintf( ...
-                    'POST /api/projects/%s/reports — title: %s  format: %s', ...
+                    'Generate project report — project %s  title: %s  format: %s', ...
                     pid, reportTitle, fmt));
                 workFcn = @() projectSvc.generateReport( ...
                     pid, reportTitle, fmt, sections, token);
             else
                 jobId = app.State.selectedJobId;
                 app.logEvent('API', sprintf( ...
-                    'POST /api/reports/generate — title: %s  format: %s  job: %s', ...
+                    'Generate report — title: %s  format: %s  job: %s', ...
                     reportTitle, fmt, jobId));
                 workFcn = @() reportSvc.generateReport( ...
                     reportTitle, fmt, sections, jobId, token);
@@ -507,8 +507,13 @@ classdef ReportsViewModel < handle
                     stamp = strrep(created(1:min(16, end)), 'T', ' ');
                 end
                 status = char(JsonHelper.pick(m, {'status'}, '—'));
-                data{i, 1} = sprintf('%s %s', ...
-                    ReportsViewModel.formatGlyph(fmt), upper(fmt));
+                % Format column: plain uppercase tag. The previous
+                % "<emoji> <FMT>" rendering surfaced as tofu boxes
+                % (missing-glyph fallback) because MATLAB's default
+                % uitable font lacks the supplementary-plane emoji
+                % codepoints (📄 / 🌐 / 📋). Dropping the glyph leaves
+                % a clean professional tag like "PDF" / "HTML" / "JSON".
+                data{i, 1} = upper(fmt);
                 data{i, 2} = title;
                 data{i, 3} = stamp;
                 data{i, 4} = status;

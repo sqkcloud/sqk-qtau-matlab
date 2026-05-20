@@ -50,6 +50,13 @@ classdef RunPlannerViewModel < handle
         Frontier      = []
         Optimal       = []
         Phase         = 'idle'
+
+        % Nav-aware cancellation bookkeeping. Every async batch (onEnter
+        % runMany, onPlan runMany) captures the current NavGeneration in
+        % its callback closure; cancelInFlight bumps the counter so any
+        % still-queued callback bails before mutating the panel.
+        NavGeneration   double = 0
+        InFlightFutures cell   = {}
     end
 
     properties (Access = private)
@@ -76,73 +83,114 @@ classdef RunPlannerViewModel < handle
             mitSvc  = obj.App.Services.MitigationSvc;
             ttl     = AppConfig.getDouble('shared_cache_ttl', 120);
 
-            results = struct('circuits', [], 'backends', [], 'levels', [], ...
-                'circDone', false, 'backDone', false, 'levelDone', false);
-            done = @() finalize();
+            % Cache hits land synchronously; misses go into a single
+            % AsyncRunner.runMany batch (one shared 50ms poller instead
+            % of up to three independent timers, as the pre-refactor
+            % nested-counter pattern produced).
+            cached = struct('circuits', [], 'backends', [], 'levels', []);
+            works  = {};
+            keys   = {};
 
-            % Each of the 3 lookups uses the shared session cache when
-            % fresh — saves a cross-continent round-trip per nav across
-            % Mitigation Compare / Run Planner / Resource Estimator.
             if state.isCircuitsListCacheFresh(ttl)
-                results.circuits = state.CircuitListCache;
-                results.circDone = true;
+                cached.circuits = state.CircuitListCache;
             else
-                AsyncRunner.run(@() circSvc.listCircuits(token), ...
-                    @(r) onPart('circ', r), @(ME) onPart('circ', ME));
+                works{end+1} = @() RunPlannerViewModel.safeListFetch( ...
+                    @() circSvc.listCircuits(token));
+                keys{end+1}  = 'circ';
             end
             if state.isBackendsListCacheFresh(ttl)
-                results.backends = state.BackendListCache;
-                results.backDone = true;
+                cached.backends = state.BackendListCache;
             else
-                AsyncRunner.run(@() backSvc.listBackends(token, ''), ...
-                    @(r) onPart('back', r), @(ME) onPart('back', ME));
+                works{end+1} = @() RunPlannerViewModel.safeListFetch( ...
+                    @() backSvc.listBackends(token, ''));
+                keys{end+1}  = 'back';
             end
             if state.isMitigationLevelsCacheFresh(ttl)
-                results.levels = state.MitigationLevelsCache;
-                results.levelDone = true;
+                cached.levels = state.MitigationLevelsCache;
             else
-                AsyncRunner.run(@() mitSvc.listLevels(token), ...
-                    @(r) onPart('lvl', r), @(ME) onPart('lvl', ME));
+                works{end+1} = @() RunPlannerViewModel.safeListFetch( ...
+                    @() mitSvc.listLevels(token));
+                keys{end+1}  = 'lvl';
             end
 
-            % All three hit the cache — finalize synchronously.
-            if results.circDone && results.backDone && results.levelDone
-                done();
+            if isempty(works)
+                obj.finalizeLoading(cached);
                 return;
             end
 
-            function onPart(which, r)
-                if ~isa(r, 'MException')
-                    switch which
-                        case 'circ'
-                            results.circuits = r;
-                            state.setCircuitsListCache(r);
-                        case 'back'
-                            results.backends = r;
-                            state.setBackendsListCache(r);
-                        case 'lvl'
-                            results.levels = r;
-                            state.setMitigationLevelsCache(r);
-                    end
+            gen = AsyncCancellation.bump(obj.NavGeneration);
+            obj.NavGeneration = gen;
+            fut = AsyncRunner.runMany(works, ...
+                @(results) obj.onLoadBatchDone(gen, cached, keys, results), ...
+                @(ME)      obj.onLoadBatchError(gen, ME));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, fut);
+        end
+
+        function onLoadBatchDone(obj, gen, cached, keys, results)
+            if gen ~= obj.NavGeneration; return; end
+            state = obj.App.State;
+            for i = 1:numel(keys)
+                r = results{i};
+                isErr = RunPlannerViewModel.isFetchError(r);
+                if isErr
+                    Logger.debug('RunPlannerViewModel', ...
+                        'partial fetch failed (%s): %s', keys{i}, r.qtauFetchErr);
                 end
-                switch which
-                    case 'circ'; results.circDone  = true;
-                    case 'back'; results.backDone  = true;
-                    case 'lvl';  results.levelDone = true;
-                end
-                if results.circDone && results.backDone && results.levelDone
-                    done();
+                switch keys{i}
+                    case 'circ'
+                        cached.circuits = r;
+                        if ~isErr; state.setCircuitsListCache(r); end
+                    case 'back'
+                        cached.backends = r;
+                        if ~isErr; state.setBackendsListCache(r); end
+                    case 'lvl'
+                        cached.levels = r;
+                        if ~isErr; state.setMitigationLevelsCache(r); end
                 end
             end
+            obj.finalizeLoading(cached);
+        end
 
-            function finalize()
-                obj.Circuits = RunPlannerViewModel.normalizeList(results.circuits);
-                obj.Backends = RunPlannerViewModel.normalizeList(results.backends);
-                obj.Levels   = RunPlannerViewModel.normalizeList(results.levels);
-                obj.populateCircuitDropdown();
+        function onLoadBatchError(obj, gen, ME)
+            if gen ~= obj.NavGeneration; return; end
+            if AsyncCancellation.isCancellation(ME); return; end
+            obj.Phase = 'error';
+            obj.flashStatus(sprintf( ...
+                Labels.get('run_planner_status_err'), ME.message), 'danger');
+        end
+
+        function finalizeLoading(obj, cached)
+            % Tolerate per-fetch errors: if at least one of the three
+            % lists landed, paint what we have so the user can keep
+            % moving (e.g. levels missing but circuits + backends OK →
+            % planner can still surface base-fidelity predictions on a
+            % manual Plan click; the missing levels just means the
+            % chip strip is empty).
+            circuits = cached.circuits;
+            backends = cached.backends;
+            levels   = cached.levels;
+            if RunPlannerViewModel.isFetchError(circuits); circuits = []; end
+            if RunPlannerViewModel.isFetchError(backends); backends = []; end
+            if RunPlannerViewModel.isFetchError(levels);   levels   = []; end
+            obj.Circuits = RunPlannerViewModel.normalizeList(circuits);
+            obj.Backends = RunPlannerViewModel.normalizeList(backends);
+            obj.Levels   = RunPlannerViewModel.normalizeList(levels);
+            obj.populateCircuitDropdown();
+            obj.Phase = 'ready';
+            obj.LastRefresh = tic;
+            obj.refreshStatus();
+        end
+
+        function cancelInFlight(obj)
+            % Called by NavigationManager when the user navs away. Bumps
+            % generation (in-flight callbacks bail silently), cancels
+            % still-running parfeval workers (free worker + timer), and
+            % rolls back any transient Phase.
+            obj.NavGeneration   = AsyncCancellation.bump(obj.NavGeneration);
+            obj.InFlightFutures = AsyncCancellation.cancelAll(obj.InFlightFutures);
+            if strcmp(obj.Phase, 'loading') || strcmp(obj.Phase, 'planning')
                 obj.Phase = 'ready';
-                obj.LastRefresh = tic;
-                obj.refreshStatus();
             end
         end
 
@@ -158,15 +206,70 @@ classdef RunPlannerViewModel < handle
         end
 
         function onPlan(obj)
-            model = obj.resolveSourceModel();
-            if isempty(model) || numel(model.Gates) == 0
-                obj.flashStatus(Labels.get('run_planner_err_empty_circuit'), 'danger');
-                return;
+            % Validate the chosen circuit source. Two branches:
+            %   * Composer mode (dropdown value '__composer__'): require
+            %     the live in-app Composer model to have at least one gate.
+            %   * Project-circuit mode: require a real circuit id from
+            %     the dropdown (rules out the "(loading)" placeholder).
+            %     Gate count is intentionally NOT required here — the
+            %     /api/circuits list response does not ship raw_content,
+            %     so resolveSourceModel falls back to CircuitModel(nq)
+            %     with zero gates for every project circuit. Downstream
+            %     prediction only needs the circuit id, so the old
+            %     "must have gates" check silently bailed every
+            %     project-circuit Plan click.
+            model      = obj.resolveSourceModel();
+            isComposer = ~isempty(obj.CircuitDropdown) ...
+                && isvalid(obj.CircuitDropdown) ...
+                && isequal(obj.CircuitDropdown.Value, '__composer__');
+            if isComposer
+                if isempty(model) || numel(model.Gates) == 0
+                    obj.flashStatus(Labels.get('run_planner_err_empty_circuit'), 'danger');
+                    return;
+                end
+            else
+                cid = RunPlannerViewModel.resolveCircuitId(obj);
+                cidTrim = strtrim(char(cid));
+                if isempty(cidTrim) || startsWith(cidTrim, '(')
+                    obj.flashStatus(Labels.get('run_planner_err_empty_circuit'), 'danger');
+                    return;
+                end
             end
             shots = max(1, round(obj.ShotsField.Value));
-            backendNames = arrayfun(@(b) RunPlannerViewModel.safeField(b, 'name', ''), ...
-                obj.Backends, 'UniformOutput', false);
-            backendNames = backendNames(~cellfun(@isempty, backendNames));
+            circuitId  = RunPlannerViewModel.resolveCircuitId(obj);
+            % Look up the circuit's actual width (from AppState or the
+            % cached circuit list). Filter out backends that physically
+            % cannot run a circuit this wide — the server-side predict
+            % and mitigation estimators return NaN for those, leaving
+            % the Pareto panel showing Cost/Shots/Runtime as NaN with
+            % no actionable signal.
+            cQubits = RunPlannerViewModel.circuitQubitsFor(obj, circuitId);
+            backendPairs = struct('name', {}, 'q', {});
+            for bi = 1:numel(obj.Backends)
+                nm = char(string(RunPlannerViewModel.safeField( ...
+                    obj.Backends(bi), 'name', '')));
+                if isempty(nm); continue; end
+                bq = double(RunPlannerViewModel.safeField( ...
+                    obj.Backends(bi), 'num_qubits', 0));
+                if ~isfinite(bq); bq = 0; end
+                backendPairs(end+1) = struct('name', nm, 'q', bq); %#ok<AGROW>
+            end
+            if cQubits > 0
+                fit = arrayfun(@(p) p.q == 0 || p.q >= cQubits, backendPairs);
+                if ~any(fit)
+                    obj.Phase = 'error';
+                    widestQ = 0;
+                    if ~isempty(backendPairs); widestQ = max([backendPairs.q]); end
+                    obj.flashStatus(sprintf( ...
+                        ['No backend in your project supports this %d-qubit circuit. ' ...
+                         'Widest available is %d qubits — pick a smaller circuit ' ...
+                         'or add a wider backend.'], ...
+                        round(cQubits), round(widestQ)), 'danger');
+                    return;
+                end
+                backendPairs = backendPairs(fit);
+            end
+            backendNames = arrayfun(@(p) {p.name}, backendPairs);
             if isempty(backendNames) || isempty(obj.Levels)
                 obj.flashStatus(sprintf(Labels.get('run_planner_status_err'), ...
                     'no backends or strategies available'), 'danger');
@@ -177,70 +280,108 @@ classdef RunPlannerViewModel < handle
             obj.flashStatus(sprintf(Labels.get('run_planner_status_planning'), ...
                 numel(backendNames) * numel(obj.Levels)), 'info');
 
-            ctx = struct( ...
-                'circuitId',    RunPlannerViewModel.resolveCircuitId(obj), ...
-                'backendNames', {backendNames}, ...
-                'shots',        shots, ...
-                'baseFidByBackend', struct(), ...
-                'costsByStrategy', struct(), ...
-                'pendingPredict',  true, ...
-                'pendingMitig',    numel(obj.Levels), ...
-                'failures',        {{}});
-
             tokenLocal = obj.App.State.authToken;
-            mitSvc = obj.App.Services.MitigationSvc;
-            predSvc = obj.App.Services.PredictionSvc;
+            mitSvc     = obj.App.Services.MitigationSvc;
+            predSvc    = obj.App.Services.PredictionSvc;
+            % Use the actual circuit width when known; otherwise fall
+            % back to the legacy max-backend proxy so estimators still
+            % get a non-zero value.
+            if cQubits > 0
+                qForEstimate = cQubits;
+            else
+                qForEstimate = RunPlannerViewModel.maxBackendQubits(obj.Backends);
+            end
 
-            AsyncRunner.run( ...
-                @() predSvc.predict(ctx.circuitId, backendNames, shots, 1, tokenLocal), ...
-                @(r) onPredictDone(r), @(ME) onPredictErr(ME));
-
-            qProxy = RunPlannerViewModel.maxBackendQubits(obj.Backends);
-            for i = 1:numel(obj.Levels)
+            % One runMany batch covers (1 predict + N mitigation estimate)
+            % fetches. The pre-refactor pattern spawned (N+1) independent
+            % AsyncRunner.run dispatches (one polling timer each) and
+            % tracked completion via pendingPredict/pendingMitig flags
+            % inside nested closures — runMany delivers all results in a
+            % single atomic callback. Position 1 is the predict result;
+            % positions 2..N+1 are the per-strategy estimates, in the
+            % same order as obj.Levels.
+            nLevels  = numel(obj.Levels);
+            works    = cell(1, 1 + nLevels);
+            levelIds = cell(1, nLevels);
+            levelObjs = cell(1, nLevels);
+            works{1} = @() RunPlannerViewModel.safePredict( ...
+                predSvc, circuitId, backendNames, shots, tokenLocal);
+            for i = 1:nLevels
                 lvl = obj.Levels(i);
                 lid = RunPlannerViewModel.safeField(lvl, 'id', '0');
+                levelIds{i}  = lid;
+                levelObjs{i} = lvl;
                 body = struct( ...
-                    'mitigation_level', RunPlannerViewModel.parseLevelId(lid), ...
+                    'mitigation_level',         RunPlannerViewModel.parseLevelId(lid), ...
                     'primitive',                'sampler', ...
                     'backend_name',             char(string(backendNames{1})), ...
                     'base_shots',               int32(shots), ...
-                    'circuit_qubits',           int32(qProxy), ...
+                    'circuit_qubits',           int32(qForEstimate), ...
                     'cutting_overhead_qubits',  int32(0));
-                AsyncRunner.run( ...
-                    @() mitSvc.estimate(body, tokenLocal), ...
-                    @(r) onMitigDone(lid, lvl, r), ...
-                    @(ME) onMitigErr(lid, lvl, ME));
+                works{i+1} = @() RunPlannerViewModel.safeEstimate(mitSvc, body, tokenLocal);
             end
 
-            function onPredictDone(r)
-                ctx.pendingPredict = false;
-                ctx.baseFidByBackend = RunPlannerViewModel.parsePredictResult(r, backendNames);
-                tryFinalize();
+            gen = AsyncCancellation.bump(obj.NavGeneration);
+            obj.NavGeneration = gen;
+            fut = AsyncRunner.runMany(works, ...
+                @(results) obj.onPlanBatchDone(gen, backendNames, levelIds, levelObjs, results), ...
+                @(ME)      obj.onPlanBatchError(gen, ME));
+            obj.InFlightFutures = AsyncCancellation.appendFutures( ...
+                obj.InFlightFutures, fut);
+        end
+
+        function onPlanBatchDone(obj, gen, backendNames, levelIds, levelObjs, results)
+            if gen ~= obj.NavGeneration; return; end
+
+            % Position 1: predict; positions 2..N+1: mitigation estimates
+            % in obj.Levels order.
+            predictResult = results{1};
+            if RunPlannerViewModel.isFetchError(predictResult)
+                Logger.debug('RunPlannerViewModel', ...
+                    'predict failed: %s', predictResult.qtauFetchErr);
+                baseFidByBackend = RunPlannerViewModel.parsePredictResult([], backendNames);
+            else
+                baseFidByBackend = RunPlannerViewModel.parsePredictResult( ...
+                    predictResult, backendNames);
             end
-            function onPredictErr(ME)
-                ctx.pendingPredict = false;
-                ctx.failures{end+1} = sprintf('predict: %s', ME.message);
-                ctx.baseFidByBackend = RunPlannerViewModel.parsePredictResult([], backendNames);
-                tryFinalize();
-            end
-            function onMitigDone(lid, lvl, r)
-                ctx.costsByStrategy.(matlab.lang.makeValidName(['x' lid])) = struct( ...
-                    'lvl', lvl, 'cost', r);
-                ctx.pendingMitig = ctx.pendingMitig - 1;
-                tryFinalize();
-            end
-            function onMitigErr(lid, lvl, ME)
-                ctx.failures{end+1} = sprintf('mitig %s: %s', lid, ME.message);
-                ctx.costsByStrategy.(matlab.lang.makeValidName(['x' lid])) = struct( ...
-                    'lvl', lvl, 'cost', []);
-                ctx.pendingMitig = ctx.pendingMitig - 1;
-                tryFinalize();
-            end
-            function tryFinalize()
-                if ~ctx.pendingPredict && ctx.pendingMitig <= 0
-                    obj.assemblePlan(ctx);
+
+            costsByStrategy = struct();
+            for i = 1:numel(levelIds)
+                lid = levelIds{i};
+                lvl = levelObjs{i};
+                r   = results{i+1};
+                safeKey = matlab.lang.makeValidName(['x' lid]);
+                if RunPlannerViewModel.isFetchError(r)
+                    Logger.debug('RunPlannerViewModel', ...
+                        'estimate failed (%s): %s', lid, r.qtauFetchErr);
+                    costsByStrategy.(safeKey) = struct('lvl', lvl, 'cost', []);
+                else
+                    % Unwrap the outer envelope. /api/mitigation/estimate
+                    % returns {plan, cost, summary}; the actual CostEstimate
+                    % lives inside r.cost. Reading r directly would search
+                    % for cost fields at the top level and miss every one,
+                    % so the planner used to bake NaN into every config.
+                    if isstruct(r) && isfield(r, 'cost') && ~isempty(r.cost)
+                        costEst = r.cost;
+                    else
+                        costEst = r;
+                    end
+                    costsByStrategy.(safeKey) = struct('lvl', lvl, 'cost', costEst);
                 end
             end
+
+            ctx = struct( ...
+                'baseFidByBackend', baseFidByBackend, ...
+                'costsByStrategy',  costsByStrategy);
+            obj.assemblePlan(ctx);
+        end
+
+        function onPlanBatchError(obj, gen, ME)
+            if gen ~= obj.NavGeneration; return; end
+            if AsyncCancellation.isCancellation(ME); return; end
+            obj.Phase = 'ready';
+            obj.flashStatus(sprintf( ...
+                Labels.get('run_planner_status_err'), ME.message), 'danger');
         end
 
         function onSubmit(obj)
@@ -281,7 +422,14 @@ classdef RunPlannerViewModel < handle
                             msg = sprintf(Labels.get('run_planner_status_no_target'), ...
                                 target, obj.Optimal.point.fidelity, obj.Optimal.point.cost);
                         else
-                            msg = sprintf(Labels.get('run_planner_status_no_target'), target, NaN, NaN);
+                            % pickOptimal returned empty point — every
+                            % candidate failed cost estimation. Show an
+                            % actionable message instead of formatting
+                            % NaNs into the no-target template.
+                            msg = Labels.get('run_planner_status_no_viable', ...
+                                ['No viable configuration — every candidate backend ' ...
+                                 'failed cost estimation. The circuit may be too wide ' ...
+                                 'for any backend in your project.']);
                         end
                         col = Theme.COLOR_WARNING;
                     end
@@ -304,7 +452,7 @@ classdef RunPlannerViewModel < handle
                 return;
             end
             for i = 1:numel(obj.Circuits)
-                cid = RunPlannerViewModel.safeField(obj.Circuits(i), 'id', '');
+                cid = RunPlannerViewModel.pickCircuitId(obj.Circuits(i));
                 if strcmp(cid, v)
                     qasm = RunPlannerViewModel.safeField(obj.Circuits(i), 'raw_content', '');
                     if ~isempty(qasm)
@@ -327,9 +475,9 @@ classdef RunPlannerViewModel < handle
                 c = obj.Circuits(i);
                 name = RunPlannerViewModel.safeField(c, 'name', '?');
                 nq   = RunPlannerViewModel.safeField(c, 'num_qubits', 0);
-                cid  = RunPlannerViewModel.safeField(c, 'id', '');
+                cid  = RunPlannerViewModel.pickCircuitId(c);
                 items{end+1} = sprintf('%s (%dq)', char(string(name)), double(nq)); %#ok<AGROW>
-                ids{end+1}   = char(string(cid)); %#ok<AGROW>
+                ids{end+1}   = cid; %#ok<AGROW>
             end
             obj.CircuitDropdown.Items     = items;
             obj.CircuitDropdown.ItemsData = ids;
@@ -357,9 +505,17 @@ classdef RunPlannerViewModel < handle
                     lbl = RunPlannerViewModel.safeField(lvl, 'label', ...
                           RunPlannerViewModel.safeField(lvl, 'name', lid));
                     if isempty(entry.cost); continue; end
-                    cost = RunPlannerViewModel.pickCostField(entry.cost, 'estimated_cost_iqp', NaN);
-                    rt   = RunPlannerViewModel.pickCostField(entry.cost, 'estimated_runtime_seconds', NaN);
-                    tot  = RunPlannerViewModel.pickCostField(entry.cost, 'total_shots', NaN);
+                    % Field names match CostEstimate.to_dict() in
+                    % src/qdash/api/services/mitigation_service.py. The
+                    % older names (estimated_cost_iqp / estimated_runtime_seconds
+                    % / total_shots) never existed on the wire — the same
+                    % bug MitigationCompareViewModel fixed earlier (see
+                    % its line ~583 comment). Without these correct
+                    % names every Plan click silently produced NaN cost
+                    % / runtime / shots regardless of circuit width.
+                    cost = RunPlannerViewModel.pickCostField(entry.cost, 'est_iqp_units', NaN);
+                    rt   = RunPlannerViewModel.pickCostField(entry.cost, 'est_wall_seconds', NaN);
+                    tot  = RunPlannerViewModel.pickCostField(entry.cost, 'effective_shots', NaN);
                     mult = RunPlannerViewModel.pickCostField(entry.cost, 'shot_multiplier', 1.0);
                     fidM = RunPlannerService.applyMitigationFactor(baseFid, lid);
                     points(end+1) = RunPlannerService.makePoint( ...
@@ -417,8 +573,29 @@ classdef RunPlannerViewModel < handle
                     'MarkerSize', 6, 'LineWidth', 1.4);
             end
             target = obj.TargetSlider.Value;
-            xLim = [min(costs)*0.9, max(costs)*1.1];
-            if xLim(1) >= xLim(2); xLim = [0, max(1, max(costs))]; end
+            % Sanitize costs/fidelities before computing axis limits.
+            % Prediction can return NaN/Inf for backends that fail to
+            % transpile a given circuit, and a planner run can produce
+            % all-zero costs for very small / cached configurations.
+            % Without filtering those out min/max propagate NaN into
+            % XLim/YLim and MATLAB throws "Value must be a 1x2 vector
+            % … second element greater than the first or Inf".
+            finCosts = costs(isfinite(costs));
+            finFids  = fids(isfinite(fids));
+            if isempty(finCosts)
+                xLim = [0, 1];
+            else
+                xMin = min(finCosts);
+                xMax = max(finCosts);
+                xLim = [xMin*0.9, xMax*1.1];
+                if ~(xLim(1) < xLim(2))
+                    pad  = max(1e-6, abs(xMax) * 0.1);
+                    xLim = [xMin - pad, xMax + pad];
+                    if ~(xLim(1) < xLim(2))
+                        xLim = [0, max(1, xMax + 1)];
+                    end
+                end
+            end
             line(ax, xLim, [target target], 'Color', Theme.COLOR_WARNING, ...
                 'LineStyle', '--', 'LineWidth', 1.0);
             text(ax, xLim(2), target, sprintf(' target %.2f', target), ...
@@ -434,7 +611,14 @@ classdef RunPlannerViewModel < handle
             ax.XLabel.String = Labels.get('run_planner_chart_xlabel');
             ax.YLabel.String = Labels.get('run_planner_chart_ylabel');
             ax.Title.String  = Labels.get('run_planner_chart_title');
-            ax.XLim = xLim; ax.YLim = [max(0, min(fids)-0.05), 1.0];
+            if isempty(finFids)
+                yLim = [0, 1];
+            else
+                yLow = max(0, min(finFids) - 0.05);
+                yLim = [yLow, 1.0];
+                if ~(yLim(1) < yLim(2)); yLim = [0, 1]; end
+            end
+            ax.XLim = xLim; ax.YLim = yLim;
         end
 
         function repaintCard(obj)
@@ -471,6 +655,45 @@ classdef RunPlannerViewModel < handle
     end
 
     methods (Static)
+        function out = safeListFetch(workFcn)
+            % safeListFetch  Run a list-endpoint fetch in a try/catch so a
+            %   single endpoint failure inside a runMany batch yields a
+            %   sentinel struct (qtauFetchErr) instead of poisoning the
+            %   whole batch via AsyncRunner.pollFutures' first-error-wins
+            %   semantics. Callers test via isFetchError before consuming.
+            try
+                out = workFcn();
+            catch ME
+                out = struct('qtauFetchErr', ME.message);
+            end
+        end
+
+        function out = safePredict(predSvc, circuitId, backendNames, shots, token)
+            % safePredict  /api/predictions/predict wrapper for runMany.
+            try
+                out = predSvc.predict(circuitId, backendNames, shots, 1, token);
+            catch ME
+                out = struct('qtauFetchErr', ME.message);
+            end
+        end
+
+        function out = safeEstimate(mitSvc, body, token)
+            % safeEstimate  Per-strategy /mitigation/estimate wrapper for
+            %   runMany. Same partial-failure semantics as safeListFetch.
+            try
+                out = mitSvc.estimate(body, token);
+            catch ME
+                out = struct('qtauFetchErr', ME.message);
+            end
+        end
+
+        function tf = isFetchError(r)
+            % isFetchError  Sentinel detector for the qtauFetchErr struct
+            %   returned by safeListFetch / safePredict / safeEstimate on
+            %   a failed per-element fetch inside a batch.
+            tf = isstruct(r) && isscalar(r) && isfield(r, 'qtauFetchErr');
+        end
+
         function arr = normalizeList(raw)
             % Accepts three FastAPI response shapes:
             %   1. envelope struct {circuits|backends|levels|items|data: [...]}
@@ -505,9 +728,46 @@ classdef RunPlannerViewModel < handle
             if isempty(v); v = def; end
         end
 
+        function id = pickCircuitId(c)
+            % /api/circuits items expose the identifier under either
+            % `circuit_id` (current FastAPI shape, used by every other
+            % ViewModel) or the legacy `id` field. Without this fallback
+            % chain the planner's dropdown bound every entry's
+            % ItemsData to '' and the project-circuit Plan path bailed
+            % with "Compose at least one gate before planning." even
+            % when the operator picked a real circuit.
+            id = char(string(RunPlannerViewModel.safeField(c, 'circuit_id', '')));
+            if isempty(id)
+                id = char(string(RunPlannerViewModel.safeField(c, 'id', '')));
+            end
+        end
+
+        function q = circuitQubitsFor(obj, cid)
+            % Best-effort circuit width lookup. Tries AppState (set on
+            % Analysis nav) first, then the cached circuit list. Returns
+            % 0 when unknown so the caller can skip the width filter.
+            q = 0;
+            try
+                v = double(obj.App.State.selectedCircuitQubits);
+                if isfinite(v) && v > 0; q = v; return; end
+            catch
+            end
+            for i = 1:numel(obj.Circuits)
+                if strcmp(RunPlannerViewModel.pickCircuitId(obj.Circuits(i)), cid)
+                    v = double(RunPlannerViewModel.safeField( ...
+                        obj.Circuits(i), 'num_qubits', 0));
+                    if ~isfinite(v); v = 0; end
+                    q = v; return;
+                end
+            end
+        end
+
         function n = parseLevelId(idChar)
+            % Always returns int32 so the result is wire-correct when
+            % assigned into the mitigation_level JSON body field (same
+            % rationale as MitigationCompareViewModel.parseLevelId).
             v = str2double(idChar);
-            if isnan(v); n = -1; else; n = int32(v); end
+            if isnan(v); n = int32(-1); else; n = int32(v); end
         end
 
         function q = maxBackendQubits(backends)

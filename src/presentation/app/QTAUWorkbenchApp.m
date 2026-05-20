@@ -49,6 +49,7 @@ classdef QTAUWorkbenchApp < handle
         ContentContainer
         SectionTitleLabel
         SectionSubtitleLabel
+        SectionHelpButton              % "?" help icon next to SectionTitleLabel
 
         EventLog  = {}
         EventLogArea
@@ -57,11 +58,16 @@ classdef QTAUWorkbenchApp < handle
 
         LoadingOverlay
         ActivityOverlay            % Reusable loading overlay for API calls
+        OverlayBgButton            % "Run in background" uibutton overlaid on ActivityOverlay
         NavOverlayTimer            % Safety-timer that auto-dismisses the nav loading overlay
         AuthOverlay                % Login-required overlay covering content area
         HeaderUserLabel            % Logged-in username button in header
         HeaderUserMenuPanel        % The popup panel container
         HeaderLoginButton          % Login button in header (shown when logged out)
+        AppHelpButton              % "?" app-level help icon next to userBadge in the header
+        BackgroundTasks            % BackgroundTaskManager — registry of long-running async tasks
+        Notifications              % NotificationCenter — toast surface for terminal tasks
+        TasksIndicator             % BackgroundTasksIndicator — header badge
     end
 
     % ── Shared services ───────────────────────────────────────────────────────
@@ -315,6 +321,7 @@ classdef QTAUWorkbenchApp < handle
         QmcNotionalField
         QmcLastResult = []   % struct cache of most recent QMC response
         QmcActiveJobId = ''  % job_id of the currently-polling async QMC job ('' when idle)
+        QmcActiveTaskId = '' % BackgroundTaskManager id for the in-flight QMC task ('' when idle)
         QmcPollTimer = []    % MATLAB timer driving QMC job polling (empty when idle)
         QmcBackendMeta = []  % struct array {name, num_qubits} for the loaded QMC backend dropdown — used by the runtime-mode pre-flight width check
         QmcBanner = []       % uigridlayout banner shown above the QMC body when the active circuit cannot run in any mode
@@ -394,13 +401,9 @@ classdef QTAUWorkbenchApp < handle
         CalibrationHistoryCache = []  % struct keyed by makeValidName(backend) → response
         BackendSparklineGrid          % overlay uigridlayout that mirrors the BackendTable rows
         BackendSparklineAxes          % struct keyed by makeValidName(backend) → uiaxes per row
-        TelemetryPerQubitGrid         % uigridlayout for the Per-Qubit heat grid (8x16)
-        TelemetryHistoryAxes          % {1×3} cell of uiaxes for History sparklines (T1/T2/2Q)
-        TopologyAxes                  % uiaxes hosting the coupling-map graph plot
-        TopologyGrid                  % parent grid for the lazy uiaxes
-        TopologyPlaceholder           % uilabel placeholder until the uiaxes materialises
-        TopologyInfoLbl               % side-panel uilabel for clicked-qubit detail
-        TopologyCache         = []    % struct keyed by makeValidName(backend) → topology response
+        % Per-Qubit / History / Topology tabs were removed — they
+        % reproducibly broke R2025b uifigure CEF click dispatch.
+        % Only the Overview content remains in the right-side panel.
     end
 
     % ── Benchmark tab ─────────────────────────────────────────────────────────
@@ -435,6 +438,7 @@ classdef QTAUWorkbenchApp < handle
 
     % ── Jobs tab ──────────────────────────────────────────────────────────────
     properties
+        JobsSearchField              % uieditfield — Job ID / Circuit substring filter
         JobsRefreshButton
         JobsTable
         CancelJobButton
@@ -444,6 +448,16 @@ classdef QTAUWorkbenchApp < handle
         JobsPrevButton          % Pagination: previous page
         JobsNextButton          % Pagination: next page
         JobsPageLabel           % Pagination footer text
+        % Right-click context menu on JobsTable. Built in JobsScreen,
+        % enable/disable driven by JobsViewModel.onContextMenuOpening
+        % from the right-clicked row's Status column.
+        JobsContextMenu
+        JobsCtx_ViewResults
+        JobsCtx_DetailedAnalysis
+        JobsCtx_Cancel
+        JobsCtx_CopyJobId
+        JobsCtx_CopyIbmJobId
+        JobsCtx_OpenIbm
     end
 
     % ── Results tab ───────────────────────────────────────────────────────────
@@ -459,6 +473,15 @@ classdef QTAUWorkbenchApp < handle
         ResultsRawToggleBtn          % right half
         CuttingBatchesTable    % Cutting Batches list on the Results screen
         SelectedBatchId = ""   % Most recently picked cutting batch row
+        % Right-click context menu on CuttingBatchesTable. Built in
+        % ResultsScreen, enable/disable driven by
+        % ResultsViewModel.onBatchContextMenuOpening from the row's
+        % Status column.
+        BatchesContextMenu
+        BatchesCtx_ViewReconstruction
+        BatchesCtx_DetailedAnalysis
+        BatchesCtx_DownloadJson
+        BatchesCtx_GenerateReport
         % Tier B exports — Download JSON dumps /api/jobs/{id}/results
         % via Exporter.toJsonFile; Generate Report bridges to the
         % Reports screen whose loadReportsList → seedReportTitle
@@ -551,6 +574,8 @@ classdef QTAUWorkbenchApp < handle
         VolumetricGrid                 % parent grid for the lazy uiaxes
         VolumetricPlaceholder          % uilabel placeholder until the uiaxes materialises
         ScorecardAxes
+        ScorecardGrid                  % parent grid for the lazy polaraxes
+        ScorecardPlaceholder           % uilabel placeholder until the polaraxes materialises
         CalibrationAxes
         CalibrationGrid                % parent grid for the lazy uiaxes
         CalibrationPlaceholder         % uilabel placeholder until the uiaxes materialises
@@ -808,10 +833,25 @@ classdef QTAUWorkbenchApp < handle
             % of buildUI is left in place as a no-op safety net.
             AsyncRunner.warmUp();
 
+            % BackgroundTaskManager has to exist BEFORE buildUI because
+            % LayoutBuilder.buildHeader mounts the TasksIndicator which
+            % addlisten's to its TasksChanged event.
+            app.BackgroundTasks = BackgroundTaskManager();
+
             Logger.info('QTAUWorkbenchApp', 'Services ready — creating WelcomeVm (lazy init for others)');
             app.WelcomeVm = WelcomeViewModel(app);
 
             app.buildUI();
+
+            % NotificationCenter parents its toast panel to app.UIFigure
+            % so it has to come up after buildUI created the figure.
+            try
+                app.Notifications = NotificationCenter(app);
+            catch ME
+                Logger.warn('QTAUWorkbenchApp', ...
+                    'NotificationCenter init failed: %s', ME.message);
+            end
+
             app.logEvent('UI', 'QTAUWorkbenchApp started');
             NavigationManager.forceInitialLayout(app);
             Logger.info('QTAUWorkbenchApp', '=== QTAUWorkbenchApp ready ===');
@@ -875,14 +915,54 @@ classdef QTAUWorkbenchApp < handle
         end
 
         % -- Overlays / logging (→ OverlayManager) ----------------------------
-        function showLoading(app, msg, showTimer)
+        function showLoading(app, msg, showTimer, bgTaskId)
             if nargin < 2; msg = 'Loading...'; end
             if nargin < 3; showTimer = false; end
-            OverlayManager.showLoading(app, msg, showTimer);
+            if nargin < 4; bgTaskId = ''; end
+            OverlayManager.showLoading(app, msg, showTimer, bgTaskId);
         end
 
         function hideLoading(app)
             OverlayManager.hideLoading(app);
+        end
+
+        % runInBackground  Dismiss the loading overlay while leaving the
+        %   underlying poll alive in app.BackgroundTasks. Wired as the
+        %   ButtonPushedFcn of the "Run in background" button rendered
+        %   over the overlay when a registered task is in flight. taskId
+        %   is informational — the polling timer is owned by
+        %   BackgroundTaskManager, so simply hiding the overlay does not
+        %   stop the underlying server-side job from progressing.
+        function runInBackground(app, taskId)
+            try; app.hideLoading(); catch; end
+            % Release the QMC overlay binding when the backgrounded task
+            % matches the active QMC binding. Without this, the QMC
+            % PollingRunner's onQmcProgress tick (every 3 s) sees
+            % QmcActiveTaskId == taskId, passes its strcmp gate, and
+            % re-calls app.showLoading(...) — which re-pops the modal
+            % overlay seconds after the operator clicked "Run in
+            % background". The poll itself stays alive (managed by
+            % BackgroundTasks); only the overlay binding is dropped,
+            % fulfilling the run-in-background promise.
+            try
+                if ~isempty(taskId) && ~isempty(app.QmcActiveTaskId) ...
+                        && strcmp(char(app.QmcActiveTaskId), char(taskId))
+                    app.QmcActiveJobId  = '';
+                    app.QmcActiveTaskId = '';
+                end
+            catch
+            end
+            try
+                if ~isempty(taskId) && ~isempty(app.BackgroundTasks)
+                    t = app.BackgroundTasks.findById(taskId);
+                    if ~isempty(t)
+                        app.logEvent('TASK', sprintf( ...
+                            'Task %s (%s) moved to background', ...
+                            char(taskId), char(t.displayName)));
+                    end
+                end
+            catch
+            end
         end
 
         % runAsyncWithLoading  Standardized show + AsyncRunner + auto-hide.

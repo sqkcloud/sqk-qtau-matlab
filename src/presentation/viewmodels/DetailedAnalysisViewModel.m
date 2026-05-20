@@ -43,7 +43,7 @@ classdef DetailedAnalysisViewModel < handle
                     'Download JSON', 'Icon', 'info');
                 return;
             end
-            app.logEvent('API', sprintf('GET /api/jobs/%s/results/detailed (export)', jid));
+            app.logEvent('API', sprintf('Loading detailed results — job %s (export)', jid));
             app.showLoading('Fetching detailed results for export...');
             jobSvc = app.JobSvc;
             token  = app.State.authToken;
@@ -93,7 +93,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('Compare'); obj.plotComparisonDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed', jobId));
+            app.logEvent('API', sprintf('Loading distribution comparison — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -107,7 +107,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('Temporal'); obj.plotTemporalDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/error-trends', jobId));
+            app.logEvent('API', sprintf('Loading error trends — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -187,7 +187,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('Qubits'); obj.plotQubitDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (qubit)', jobId));
+            app.logEvent('API', sprintf('Loading per-qubit metrics — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -276,7 +276,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('Heatmap'); obj.plotHeatmapDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/results/detailed (heatmap)', jobId));
+            app.logEvent('API', sprintf('Loading error heatmap — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -349,7 +349,7 @@ classdef DetailedAnalysisViewModel < handle
             app = obj.App;
             if ~obj.requireLiveJob('RB Decay'); obj.plotRBDecayDemo(); return; end
             jobId = app.State.selectedJobId;
-            app.logEvent('API', sprintf('GET /jobs/%s/rb-decay', jobId));
+            app.logEvent('API', sprintf('Loading RB decay — job %s', jobId));
             app.showLoading(Labels.get('loading_analysis', 'Loading analysis...'));
             svc   = app.JobSvc;
             token = app.State.authToken;
@@ -418,7 +418,20 @@ classdef DetailedAnalysisViewModel < handle
             app.hideLoading();
             app.logEvent('ERROR', sprintf('RB decay failed: %s', ME.message));
             obj.reportLiveError('RB Decay', ME);
-            obj.plotRBDecayDemo();
+            % Defensive: if the demo paint throws (e.g. the lazy axes
+            % couldn't be materialized because the panel was torn down,
+            % or the cached class was loaded before the lazy-axes guard
+            % shipped), swallow it here rather than let it cascade back
+            % up through AsyncRunner.pollFuture as the secondary
+            % "First argument must be an axes object." error that the
+            % user saw stacked on top of the original 404.
+            try
+                obj.plotRBDecayDemo();
+            catch demoME
+                Logger.warn('DetailedAnalysisViewModel', ...
+                    'plotRBDecayDemo (error fallback) raised: %s', ...
+                    demoME.message);
+            end
         end
 
     end
@@ -929,6 +942,16 @@ classdef DetailedAnalysisViewModel < handle
 
         function plotRBDecayDemo(obj)
             app = obj.App;
+            % Without this guard, cla(app.RBDecayAxes) on an empty /
+            % invalid handle silently triggered the default-figure
+            % fallback — MATLAB opened a stray "Figure 1" window
+            % instead of rendering inside the embedded Randomized
+            % Benchmarking Decay panel on first visit. ensureLazyAxes
+            % materializes the uiaxes on demand the same way
+            % onPlotRBDecayComplete (line 363) does for the live-data
+            % path; the other four DetailedAnalysis plotters already
+            % had this guard since commit 85197fe.
+            if isempty(app.ensureLazyAxes('RBDecayAxes', 'RBDecayGrid', 'RBDecayPlaceholder')); return; end
             cla(app.RBDecayAxes);
             rs    = RandStream('twister', 'Seed', 1005);
             mPts  = [1 2 4 8 16 32 64 128 256];

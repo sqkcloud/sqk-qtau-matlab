@@ -94,7 +94,7 @@ classdef SettingsViewModel < handle
                 'Text', [char(10003) ' ' Labels.get('settings_btn_verify_ibm')], ...
                 'ButtonPushedFcn', @(~,~)obj.onVerifyIbm(dlg));
             app.VerifyIbmButton.Layout.Column = 2; app.styleBtn(app.VerifyIbmButton, 'secondary');
-            app.VerifyIbmButton.Tooltip = 'POST /api/settings/verify-ibm';
+            app.VerifyIbmButton.Tooltip = 'Verify the configured IBM Runtime token against the server';
 
             closeBtn = uibutton(footer, 'Text', Labels.get('settings_btn_close', 'Close'), ...
                 'ButtonPushedFcn', @(~,~)obj.closeIbmDialog(dlg));
@@ -289,7 +289,7 @@ classdef SettingsViewModel < handle
             end
 
             if app.State.isAuthenticated()
-                app.logEvent('API', sprintf('POST /api/settings — shots: %d  opt: %d  logLevel: %s', ...
+                app.logEvent('API', sprintf('Save settings — shots: %d  opt: %d  logLevel: %s', ...
                     obj.Values.defaultShots, obj.Values.defaultOpt, char(obj.Values.logLevel)));
                 app.showLoading(Labels.get('loading_saving_settings', 'Saving settings...'));
                 % Field names must match the server's SaveSettingsRequest schema.
@@ -330,7 +330,7 @@ classdef SettingsViewModel < handle
             obj.Values.ibmChannel  = string(channel);
             obj.Values.ibmInstance = string(instance);
 
-            app.logEvent('API', sprintf('POST /api/settings/verify-ibm — channel: %s  instance: %s', ...
+            app.logEvent('API', sprintf('Verify IBM Runtime — channel: %s  instance: %s', ...
                 channel, instance));
             app.showLoading(Labels.get('loading_verifying', 'Verifying IBM credentials...'));
             svc   = app.SettingsSvc;
@@ -375,7 +375,7 @@ classdef SettingsViewModel < handle
                     'Clear Cache', 'Icon', 'warning');
                 return;
             end
-            app.logEvent('API', 'DELETE /api/settings/cache');
+            app.logEvent('API', 'Clear cached data');
             app.showLoading(Labels.get('loading_clearing_cache', 'Clearing cache...'));
             svc   = app.SettingsSvc;
             token = app.State.authToken;

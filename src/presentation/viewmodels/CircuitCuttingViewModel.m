@@ -17,6 +17,8 @@ classdef CircuitCuttingViewModel < handle
         CurrentPreset             = "generic"
         LastAnalyze               = []
         ActiveBatchId             = ''
+        ActiveTaskId              = ''  % BackgroundTaskManager id for the in-flight batch
+        ActiveCircuitName         = ''  % display name pinned at submit-time for the task badge
         PollTimer                 = []
         LastRefresh               = []
         LastCuttabilityCircuitId  = ''   % Cache key for the QASM scan
@@ -319,15 +321,160 @@ classdef CircuitCuttingViewModel < handle
             % inside the background-task closure.
             svc   = app.CuttingSvc;
             token = app.State.authToken;
-            app.showLoading();
+
+            % Register a background task BEFORE the submit fires so the
+            % user can dismiss the overlay via "Run in background" and
+            % keep navigating. The task survives across screens and is
+            % surfaced in the header indicator + completion toast.
+            try
+                cName = char(app.State.selectedCircuitName);
+            catch
+                cName = '';
+            end
+            if isempty(cName); cName = char(cid); end
+            displayName = sprintf('Circuit Cutting — %s', cName);
+            vm = obj;
+            % Each onRunCutting call registers an INDEPENDENT task. Any
+            % previously-running cutting tasks survive — they keep
+            % polling on their own PollingRunner ctx, surface in the
+            % header indicator, and announce themselves via toast when
+            % they finish. ActiveTaskId / ActiveBatchId on the VM only
+            % represent the *currently displayed* task (the one whose
+            % batch the Cutting screen widgets are rendering); they do
+            % NOT track every running task — that's the registry's job.
+            taskId = app.BackgroundTasks.register(struct( ...
+                'kind',        'cutting', ...
+                'displayName', displayName, ...
+                'status',      'queued', ...
+                'statusText',  'Submitting batch...', ...
+                'progressPct', 0));
+            % Patch the per-task closures now that taskId is captured.
+            % onCancel during the SUBMIT phase intentionally has no
+            % batchId yet — startPolling repatches it with a batch-
+            % bound closure as soon as the server returns batch_id.
+            app.BackgroundTasks.update(taskId, struct( ...
+                'onCancel', @() vm.cancelDuringSubmit(taskId), ...
+                'userData', struct('onView', ...
+                    @() vm.openCuttingForTask(taskId))));
+            obj.ActiveTaskId      = taskId;
+            obj.ActiveCircuitName = cName;
+            app.showLoading( ...
+                Labels.get('loading_cutting_submit', ...
+                    'Submitting cutting batch — IBM Quantum may take a few minutes...'), ...
+                false, taskId);
+
+            % AsyncRunner default cap (120 s) was killing busy-day
+            % submits with AsyncRunner:Timeout. Allow up to 10 minutes
+            % for the server to enqueue + return a batch_id; the actual
+            % subcircuit execution is tracked via the poll loop, not
+            % this single round-trip.
             AsyncRunner.run( ...
                 @() svc.createBatch(cid, body, token), ...
                 @(r) obj.startPolling(r), ...
-                @(ME) obj.onError(ME));
+                @(ME) obj.onError(ME), ...
+                600);
+        end
+
+        function cancelDuringSubmit(~, taskId)
+            % BackgroundTaskManager.onCancel callback installed in
+            % onRunCutting for the SUBMIT phase (before the server
+            % returns batch_id). No HTTP cancel is possible yet — the
+            % registry transition to 'cancelled' is enough. When the
+            % AsyncRunner future eventually resolves, startPolling
+            % notices the cancelled state on the task and issues the
+            % server-side cancelBatch then.
+            try; Logger.debug('CircuitCuttingViewModel', ...
+                'cancel during submit phase for task %s', char(taskId)); catch; end
+        end
+
+        function cancelBatchByIdSafe(obj, batchId, token)
+            % BackgroundTaskManager.onCancel callback installed in
+            % startPolling once batch_id is known. Per-task cancel —
+            % the batchId is closure-captured so the right batch is
+            % terminated even when the task is BACKGROUNDED and the
+            % VM's ActiveBatchId points at a different (foreground)
+            % task. Quiet on error; the registry transition happens
+            % whether the server accepts the cancel or not.
+            try
+                obj.App.CuttingSvc.cancelBatch(batchId, token);
+            catch ME
+                try; obj.App.logEvent('WARN', sprintf( ...
+                    'cancelBatch %s: %s', batchId, ME.message)); catch; end
+            end
+        end
+
+        function openCuttingForTask(obj, taskId)
+            % Toast / header-indicator "View" callback for a specific
+            % cutting task. Switches the screen's "displayed task"
+            % pointer to the clicked one, navigates to the Cutting
+            % screen, and re-renders the cached result if the task
+            % is terminal. Multi-task safe — when the user has 3
+            % cutting tasks in flight and clicks View on the second,
+            % the screen rebinds to task #2 specifically (the other
+            % two keep polling silently and announce themselves later
+            % via their own toasts).
+            app = obj.App;
+            task = [];
+            try
+                task = app.BackgroundTasks.findById(taskId);
+            catch
+            end
+            try; app.onSelectSection('Circuit Cutting'); catch; end
+            if isempty(task); return; end
+            try
+                bid = '';
+                if isstruct(task.userData) && isfield(task.userData, 'batchId')
+                    bid = char(task.userData.batchId);
+                end
+                obj.ActiveTaskId  = taskId;
+                obj.ActiveBatchId = bid;
+                if ~isempty(task.result)
+                    try; obj.renderResult(task.result); catch; end
+                end
+                try; obj.refreshActionButtons(); catch; end
+            catch ME
+                try; Logger.debug('CircuitCuttingViewModel', ...
+                    'openCuttingForTask(%s): %s', char(taskId), ME.message); catch; end
+            end
+        end
+
+        function cancelActiveBatch(obj)
+            % Legacy alias kept for back-compat — older registrations
+            % wired this as onCancel before the multi-task refactor.
+            % Routes through the registry by way of the currently-
+            % displayed task; will be a no-op when ActiveBatchId is
+            % unset.
+            if isempty(obj.ActiveBatchId); return; end
+            try
+                obj.App.CuttingSvc.cancelBatch( ...
+                    obj.ActiveBatchId, obj.App.State.authToken);
+            catch ME
+                try; obj.App.logEvent('WARN', ...
+                    ['Background cancel failed: ' ME.message]); catch; end
+            end
+            obj.stopPolling();
+            try; obj.refreshStatus(); catch; end
         end
 
         % ── Cancel ───────────────────────────────────────────────────────
         function onCancelBatch(obj)
+            % Route through BackgroundTaskManager when a task is
+            % registered so the header indicator + completion toast
+            % transition properly. The manager invokes cancelActiveBatch
+            % as the onCancel callback — that performs the HTTP cancel
+            % and stops the local timer. Fallback to direct teardown
+            % for the legacy no-task code path.
+            if ~isempty(obj.ActiveTaskId) && ~isempty(obj.App.BackgroundTasks)
+                taskId = obj.ActiveTaskId;
+                obj.ActiveTaskId = '';
+                try
+                    obj.App.BackgroundTasks.cancel(taskId);
+                catch ME
+                    try; obj.App.logEvent('WARN', ['Cancel failed: ' ME.message]); catch; end
+                end
+                try; obj.refreshStatus(); catch; end
+                return;
+            end
             if isempty(obj.ActiveBatchId); return; end
             try
                 obj.App.CuttingSvc.cancelBatch( ...
@@ -393,7 +540,7 @@ classdef CircuitCuttingViewModel < handle
                 return;
             end
             app.logEvent('API', sprintf( ...
-                'GET /api/cutting/batches/%s/result', bid));
+                'Load reconstruction — batch %s', bid));
             % Async — this fetch was a 0.5-2 s freeze when the operator
             % clicked "View Reconstruction" to open the Reconstruction
             % Summary popup. Dialog construction now happens in the
@@ -1249,81 +1396,190 @@ classdef CircuitCuttingViewModel < handle
         % ── Poll lifecycle ───────────────────────────────────────────────
         function startPolling(obj, batchResp)
             obj.App.hideLoading();
-            obj.ActiveBatchId = char(JsonHelper.pick(batchResp, 'batch_id', ''));
-            if isempty(obj.ActiveBatchId); return; end
-            obj.stopPolling();
-            % Reset cached gating state so a re-run resets the Results /
-            % View Reconstruction buttons to disabled until the new
-            % batch advances. ``LastBatchStatus`` is seeded from the
-            % submit response (typically 'queued' / 'partitioning').
+            batchId = char(JsonHelper.pick(batchResp, 'batch_id', ''));
+            if isempty(batchId); return; end
+
+            % The task was registered in onRunCutting; pick it up so
+            % we can attach a PER-TASK PollingRunner ctx. obj.ActiveTaskId
+            % is the SUBMIT-time slot — preserving it here is fine since
+            % onRunCutting wrote it just before AsyncRunner.run fired.
+            taskId = obj.ActiveTaskId;
+
+            % If the user cancelled the task during the submit-wait,
+            % the registry entry is already 'cancelled'. Issue the
+            % server cancel (we now have the batch_id) and bail without
+            % starting any local poll.
+            try
+                if ~isempty(taskId)
+                    t = obj.App.BackgroundTasks.findById(taskId);
+                    if ~isempty(t) && any(strcmp(t.status, ...
+                            {'cancelled','failed','completed'}))
+                        try
+                            obj.App.CuttingSvc.cancelBatch( ...
+                                batchId, obj.App.State.authToken);
+                        catch
+                        end
+                        return;
+                    end
+                end
+            catch
+            end
+
+            % Bind the screen widgets to this freshly-submitted batch.
+            % Earlier backgrounded batches (each in their own task)
+            % keep polling independently — they update the registry but
+            % do NOT mutate the screen because their per-task closures
+            % guard screen writes behind `obj.ActiveTaskId == taskId`.
+            obj.ActiveBatchId = batchId;
             obj.LastBatchStatus = char(JsonHelper.pick(batchResp, 'status', 'queued'));
             obj.LastChildStates = {};
-            obj.PollTimer = timer('Period', 3, ...
-                'ExecutionMode', 'fixedRate', ...
-                'TimerFcn', @(~,~) obj.pollTick());
-            start(obj.PollTimer);
-            obj.App.logEvent('CUT', sprintf('Batch %s dispatched', obj.ActiveBatchId));
-            % Gate buttons now: Jobs becomes available, the rest stay
-            % disabled until a child or the batch reaches terminal.
+
+            vm     = obj;
+            svc    = obj.App.CuttingSvc;
+            token  = obj.App.State.authToken;
+
+            isTerminal = @(s) ismember(char(JsonHelper.pick(s, 'status', '')), ...
+                {'completed','failed','cancelled','partial_failure'});
+
+            ctx = PollingRunner.start(struct( ...
+                'pollFcn',     @() svc.pollBatch(batchId, token), ...
+                'isTerminal',  isTerminal, ...
+                'onProgress',  @(s) vm.onCuttingPollProgress(taskId, batchId, s), ...
+                'onDone',      @(s) vm.onCuttingPollDone(taskId, batchId, s), ...
+                'onError',     @(ME) vm.onCuttingPollError(taskId, ME), ...
+                'intervalSec', 3, ...
+                'timeoutSec',  0, ...
+                'name',        ['CutPoll-' batchId]));
+
+            % Repatch the task with the now-known batchId. Critically:
+            % onCancel becomes BATCH-bound (not VM-state-bound) so a
+            % header-indicator cancel of THIS task cancels the right
+            % batch even if another task is in the foreground.
+            try
+                if ~isempty(taskId)
+                    obj.App.BackgroundTasks.update(taskId, struct( ...
+                        'status',     'running', ...
+                        'statusText', sprintf('Batch %s — %s', ...
+                            batchId, char(obj.LastBatchStatus)), ...
+                        'pollCtx',    ctx, ...
+                        'onCancel',   @() vm.cancelBatchByIdSafe(batchId, token), ...
+                        'userData',   struct( ...
+                            'batchId', batchId, ...
+                            'onView',  @() vm.openCuttingForTask(taskId))));
+                end
+            catch
+            end
+
+            obj.App.logEvent('CUT', sprintf('Batch %s dispatched', batchId));
             obj.refreshActionButtons();
         end
 
-        function pollTick(obj)
-            % Timer callback — runs on the MATLAB main thread, not via
-            % parfeval, so touching obj.App.* here is safe. The "never
-            % reference app.*" rule in onRunCutting/onAnalyzeCuts applies
-            % only to AsyncRunner closures that get serialized to workers.
+        function onCuttingPollProgress(obj, taskId, batchId, state)
+            % PollingRunner onProgress closure for a single cutting
+            % task. EVERY task — foreground or background — drives this.
             %
-            % Skip polls when the user has navigated away from Circuit
-            % Cutting. Otherwise the 3-second timer keeps hitting
-            % /api/cutting/batches/{id} every tick from the Welcome /
-            % Jobs / Results screens — burning bandwidth, racing with
-            % the UI event loop, and giving the operator no visible
-            % benefit (they're not looking at the cutting screen). The
-            % timer is preserved across navigation so re-entering the
-            % screen via onEnter resumes polling without losing
-            % ActiveBatchId.
+            %   1. The BackgroundTaskManager registry update is
+            %      unconditional so the indicator and any subsequent
+            %      View action see the freshest state for every task.
+            %   2. The screen-side widgets (status label, action
+            %      gating, cached child states) are mutated ONLY when
+            %      THIS task is the one currently displayed
+            %      (obj.ActiveTaskId == taskId). That guard is what
+            %      lets the user cut circuit A, background it, then
+            %      cut circuit B on the same screen without A's polls
+            %      corrupting B's display.
+            st  = char(JsonHelper.pick(state, 'status', ''));
+            pct = JsonHelper.pick(state, 'progress_pct', 0);
+            if ~isnumeric(pct); pct = 0; end
+
             try
-                active = false;
+                if ~isempty(taskId)
+                    obj.App.BackgroundTasks.update(taskId, struct( ...
+                        'progressPct', double(pct), ...
+                        'statusText',  sprintf('Batch %s — %s', batchId, st), ...
+                        'status',      'running'));
+                end
+            catch
+            end
+
+            isDisplayed = ~isempty(obj.ActiveTaskId) && strcmp(obj.ActiveTaskId, taskId);
+            if isDisplayed
                 try
-                    active = strcmp(char(obj.App.NavList.Value), 'Circuit Cutting');
-                catch
+                    obj.setStatus(sprintf('Batch %s   status=%s   %d%%', ...
+                        batchId, st, int32(pct)));
+                    obj.LastBatchStatus = st;
+                    children = JsonHelper.pick(state, 'subcircuits', {});
+                    if isempty(children)
+                        children = JsonHelper.pick(state, 'child_job_states', {});
+                    end
+                    obj.LastChildStates = DialogBuilder.cellOrEmpty(children);
+                    obj.refreshActionButtons();
+                catch ME
+                    Logger.debug('CircuitCuttingViewModel', ...
+                        'displayed progress write: %s', ME.message);
                 end
-                if ~active
-                    return;
-                end
+            end
+        end
 
-                r = obj.App.CuttingSvc.pollBatch( ...
-                    obj.ActiveBatchId, obj.App.State.authToken);
-                st  = char(JsonHelper.pick(r, 'status', ''));
-                pct = JsonHelper.pick(r, 'progress_pct', 0);
-                if ~isnumeric(pct); pct = 0; end
-                obj.setStatus(sprintf('Batch %s   status=%s   %d%%', ...
-                    obj.ActiveBatchId, st, int32(pct)));
-
-                % Cache batch + child statuses so refreshActionButtons
-                % can gate the post-run buttons without a second round-
-                % trip. The batch poll already enriches its response
-                % with each child's {job_id, status} when subcircuits
-                % is present; fall back to the legacy child_job_states
-                % field name on older payloads.
-                obj.LastBatchStatus = st;
-                children = JsonHelper.pick(r, 'subcircuits', {});
-                if isempty(children)
-                    children = JsonHelper.pick(r, 'child_job_states', {});
-                end
-                obj.LastChildStates = DialogBuilder.cellOrEmpty(children);
-                obj.refreshActionButtons();
-
-                terminal = ismember(st, ...
-                    {'completed','failed','cancelled','partial_failure'});
-                if terminal
-                    obj.stopPolling();
-                    obj.fetchResult();
+        function onCuttingPollDone(obj, taskId, batchId, state)
+            % PollingRunner terminal-state callback. Transitions the
+            % task in the registry (fires the completion toast) and —
+            % only if this task is currently displayed — renders the
+            % result into the Cutting screen widgets.
+            st = char(JsonHelper.pick(state, 'status', ''));
+            isDisplayed = ~isempty(obj.ActiveTaskId) && strcmp(obj.ActiveTaskId, taskId);
+            try
+                switch st
+                    case {'completed','partial_failure'}
+                        if isDisplayed
+                            try; obj.fetchResult(); catch; end
+                        end
+                        if ~isempty(taskId)
+                            obj.App.BackgroundTasks.complete(taskId, state);
+                        end
+                    case 'failed'
+                        if ~isempty(taskId)
+                            errMsg = char(JsonHelper.pick(state, 'error', ''));
+                            if isempty(errMsg)
+                                errMsg = sprintf('Batch %s failed on the server.', batchId);
+                            end
+                            ME = MException('QTAU:CuttingFailed', '%s', errMsg);
+                            obj.App.BackgroundTasks.fail(taskId, ME);
+                        end
+                        if isDisplayed
+                            try; obj.fetchResult(); catch; end
+                        end
+                    case 'cancelled'
+                        if ~isempty(taskId)
+                            obj.App.BackgroundTasks.cancel(taskId);
+                        end
                 end
             catch ME
                 Logger.warn('CircuitCuttingViewModel', ...
-                    'pollTick: %s', ME.message);
+                    'onCuttingPollDone(%s): %s', st, ME.message);
+            end
+            if isDisplayed
+                obj.ActiveTaskId  = '';
+                obj.ActiveBatchId = '';
+            end
+        end
+
+        function onCuttingPollError(obj, taskId, ME)
+            % Fatal poll-loop error for a single cutting task. Marks
+            % the task failed in the registry; if the task was being
+            % displayed on the Cutting screen, also surface the
+            % standard error popup.
+            try
+                if ~isempty(taskId)
+                    obj.App.BackgroundTasks.fail(taskId, ME);
+                end
+            catch
+            end
+            isDisplayed = ~isempty(obj.ActiveTaskId) && strcmp(obj.ActiveTaskId, taskId);
+            if isDisplayed
+                try; obj.App.showError('Circuit Cutting', ME); catch; end
+                obj.ActiveTaskId  = '';
+                obj.ActiveBatchId = '';
             end
         end
 
@@ -1355,7 +1611,15 @@ classdef CircuitCuttingViewModel < handle
             end
         end
 
-        function stopPolling(obj)
+        function stopPolling(obj, varargin) %#ok<INUSD>
+            % stopPolling  Stop the local poll timer. Deliberately does
+            %   NOT touch BackgroundTaskManager — task transitions are
+            %   handled by handleTerminal / onError / onCancelBatch via
+            %   complete/fail/cancel, which is the canonical channel for
+            %   the registry to invoke onCancel without recursing back
+            %   into stopPolling. The optional vararg is accepted for
+            %   call-site stability (callers may pass a deprecated
+            %   "clearTask" flag) but is ignored.
             if ~isempty(obj.PollTimer)
                 try stop(obj.PollTimer); delete(obj.PollTimer); catch; end
                 obj.PollTimer = [];
@@ -2002,6 +2266,16 @@ classdef CircuitCuttingViewModel < handle
             % otherwise leak HTTP details + the internal server URL
             % into the screen body.
             obj.App.hideLoading();
+            % If a background task was registered for this submit, mark
+            % it failed so the indicator + completion toast surface the
+            % error. The standard error popup still fires.
+            try
+                if ~isempty(obj.ActiveTaskId)
+                    obj.App.BackgroundTasks.fail(obj.ActiveTaskId, ME);
+                    obj.ActiveTaskId = '';
+                end
+            catch
+            end
             obj.App.showError('Circuit Cutting', ME);
             obj.setStatus('');
         end

@@ -52,8 +52,14 @@ classdef test_ReportService < matlab.unittest.TestCase
             p = testCase.Stub.LastPayload;
             testCase.verifyEqual(p.title, 'Title');
             testCase.verifyEqual(p.format, 'html');
-            testCase.verifyEqual(p.sections, 'summary');
-            testCase.verifyEqual(p.job_id, 'j2');
+            % ReportService.generateReport wraps `sections` in a cell so
+            % the JSON payload is an array (the FastAPI side iterates
+            % section names). A flat char assertion would lock the API
+            % shape back to a string.
+            testCase.verifyEqual(p.sections, {'summary'});
+            % Job identifier is sent on the wire as `job_record_id`
+            % (matches the FastAPI ReportRequest model), not `job_id`.
+            testCase.verifyEqual(p.job_record_id, 'j2');
         end
 
         % ── listReports ──────────────────────────────────────────────────

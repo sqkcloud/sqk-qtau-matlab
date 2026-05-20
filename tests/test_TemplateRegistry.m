@@ -17,11 +17,12 @@ function setupOnce(~)
     addpath(fullfile(projectRoot, 'src', 'domain', 'models'));
 end
 
-function test_list_returns_twelve(testCase)
+function test_list_returns_eighteen(testCase)
     items = TemplateRegistry.list();
-    testCase.assertEqual(numel(items), 12);
-    expectedIds = {'bell','ghz','qft','grover','bv','dj', ...
-                   'pe','vqe','qaoa','trotter','teleport','superdense'};
+    testCase.assertEqual(numel(items), 18);
+    expectedIds = {'bell','ghz','wstate','qft','iqft','grover','bv','dj', ...
+                   'pe','vqe','hea','qaoa','trotter','teleport','superdense', ...
+                   'bitflip','phaseflip','chsh'};
     actualIds = {items.id};
     for i = 1:numel(expectedIds)
         testCase.assertTrue(any(strcmp(actualIds, expectedIds{i})), ...

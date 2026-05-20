@@ -245,7 +245,7 @@ classdef DialogBuilder
         function buildNewProjectDialog(app)
             % Create modal New Project dialog — modern card layout
             figPos = app.UIFigure.Position;
-            dlgW = 480; dlgH = 520;
+            dlgW = 480; dlgH = 420;
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
 
@@ -279,8 +279,8 @@ classdef DialogBuilder
                 'BorderColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            cg = uigridlayout(card, [12 1]);
-            cg.RowHeight = {28, 18, 10, 16, 34, 16, 90, 16, 34, 14, 42, 20};
+            cg = uigridlayout(card, [14 1]);
+            cg.RowHeight = {28, 18, 10, 16, 34, 16, 90, 16, 34, 8, 1, 8, 36, 20};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [36 24 36 20];
             cg.RowSpacing  = 2;
@@ -330,26 +330,40 @@ classdef DialogBuilder
                 'FontSize', 13);
             app.NewProjTagsField.Layout.Row = 9; app.NewProjTagsField.Layout.Column = 1;
 
-            btnBar = uigridlayout(cg, [1 2]);
-            btnBar.Layout.Row = 11; btnBar.Layout.Column = 1;
-            btnBar.ColumnWidth = {'1x', '1x'};
-            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
+            % Hairline divider between content and footer — same pattern
+            % every Composer dialog uses (uipanel with Theme.COLOR_DIVIDER
+            % background, no border, parked in a 1-px row).
+            divider = uipanel(cg, 'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_DIVIDER); %#ok<NASGU>
+            divider.Layout.Row = 11; divider.Layout.Column = 1;
+
+            % Footer: invisible left spacer + Cancel (100 px) + Create (150 px).
+            % Matches the canonical right-aligned action-button layout used
+            % across Composer / QMC / EM dialogs instead of the prior
+            % stretch-to-fill 50/50 layout.
+            btnBar = uigridlayout(cg, [1 3]);
+            btnBar.Layout.Row = 13; btnBar.Layout.Column = 1;
+            btnBar.ColumnWidth = {'1x', 100, 150};
+            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 8;
             btnBar.BackgroundColor = cardBg;
+
+            btnSpacer = uilabel(btnBar, 'Text', ''); %#ok<NASGU>
+            btnSpacer.Layout.Row = 1; btnSpacer.Layout.Column = 1;
 
             cancelBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_cancel', 'Cancel'), ...
                 'ButtonPushedFcn', @(~,~)delete(app.NewProjectDialog));
-            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 2;
             app.styleBtn(cancelBtn, 'ghost');
 
             createBtn = uibutton(btnBar, 'Text', Labels.get('new_proj_btn_create', 'Create'), ...
                 'ButtonPushedFcn', @(~,~)app.WelcomeVm.onCreateProject());
-            createBtn.Layout.Row = 1; createBtn.Layout.Column = 2;
+            createBtn.Layout.Row = 1; createBtn.Layout.Column = 3;
             app.styleBtn(createBtn, 'primary');
 
             app.NewProjStatusLabel = uilabel(cg, 'Text', '', ...
                 'FontSize', 11, 'FontColor', errorRed, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.NewProjStatusLabel.Layout.Row = 12; app.NewProjStatusLabel.Layout.Column = 1;
+            app.NewProjStatusLabel.Layout.Row = 14; app.NewProjStatusLabel.Layout.Column = 1;
 
             Logger.info('DialogBuilder', 'New Project dialog shown');
         end
@@ -358,7 +372,7 @@ classdef DialogBuilder
             % Create modal Edit Project dialog pre-filled with existing data
             app.EditProjId = projectId;
             figPos = app.UIFigure.Position;
-            dlgW = 480; dlgH = 520;
+            dlgW = 480; dlgH = 420;
             dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
             dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
 
@@ -392,8 +406,8 @@ classdef DialogBuilder
                 'BorderColor', cardBorder);
             card.Layout.Row = 2; card.Layout.Column = 2;
 
-            cg = uigridlayout(card, [12 1]);
-            cg.RowHeight = {28, 18, 10, 16, 34, 16, 90, 16, 34, 14, 42, 20};
+            cg = uigridlayout(card, [14 1]);
+            cg.RowHeight = {28, 18, 10, 16, 34, 16, 90, 16, 34, 8, 1, 8, 36, 20};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [36 24 36 20];
             cg.RowSpacing  = 2;
@@ -440,26 +454,39 @@ classdef DialogBuilder
                 'FontSize', 13);
             app.EditProjTagsField.Layout.Row = 9; app.EditProjTagsField.Layout.Column = 1;
 
-            btnBar = uigridlayout(cg, [1 2]);
-            btnBar.Layout.Row = 11; btnBar.Layout.Column = 1;
-            btnBar.ColumnWidth = {'1x', '1x'};
-            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 12;
+            % Hairline divider between content and footer — matches the
+            % Composer/QMC/EM dialog pattern: uipanel with Theme.COLOR_DIVIDER
+            % background, no border, parked in a 1-px row.
+            divider = uipanel(cg, 'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_DIVIDER); %#ok<NASGU>
+            divider.Layout.Row = 11; divider.Layout.Column = 1;
+
+            % Footer: invisible left spacer + Cancel (100 px) + Save (150 px).
+            % Same canonical right-aligned action-button layout used
+            % across Composer / QMC / EM dialogs.
+            btnBar = uigridlayout(cg, [1 3]);
+            btnBar.Layout.Row = 13; btnBar.Layout.Column = 1;
+            btnBar.ColumnWidth = {'1x', 100, 150};
+            btnBar.Padding = [0 0 0 0]; btnBar.ColumnSpacing = 8;
             btnBar.BackgroundColor = cardBg;
 
-            cancelBtn = uibutton(btnBar, 'Text', [char(10006) ' ' Labels.get('edit_proj_btn_cancel', 'Cancel')], ...
+            btnSpacer = uilabel(btnBar, 'Text', ''); %#ok<NASGU>
+            btnSpacer.Layout.Row = 1; btnSpacer.Layout.Column = 1;
+
+            cancelBtn = uibutton(btnBar, 'Text', Labels.get('edit_proj_btn_cancel', 'Cancel'), ...
                 'ButtonPushedFcn', @(~,~)delete(app.EditProjectDialog));
-            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 1;
+            cancelBtn.Layout.Row = 1; cancelBtn.Layout.Column = 2;
             app.styleBtn(cancelBtn, 'ghost');
 
-            saveBtn = uibutton(btnBar, 'Text', [char(10004) ' ' Labels.get('edit_proj_btn_save', 'Save')], ...
+            saveBtn = uibutton(btnBar, 'Text', Labels.get('edit_proj_btn_save', 'Save'), ...
                 'ButtonPushedFcn', @(~,~)app.WelcomeVm.onSaveProject());
-            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 2;
+            saveBtn.Layout.Row = 1; saveBtn.Layout.Column = 3;
             app.styleBtn(saveBtn, 'primary');
 
             app.EditProjStatusLabel = uilabel(cg, 'Text', '', ...
                 'FontSize', 11, 'FontColor', errorRed, ...
                 'WordWrap', 'on', 'HorizontalAlignment', 'center');
-            app.EditProjStatusLabel.Layout.Row = 12; app.EditProjStatusLabel.Layout.Column = 1;
+            app.EditProjStatusLabel.Layout.Row = 14; app.EditProjStatusLabel.Layout.Column = 1;
 
             Logger.info('DialogBuilder', 'Edit Project dialog shown for: %s', char(projectId));
         end
@@ -523,9 +550,9 @@ classdef DialogBuilder
             cg.BackgroundColor = cardBg;
 
             % ── Header ─────────────────────────────────────────────────
-            headerRow = uigridlayout(cg, [1 1]);
+            headerRow = uigridlayout(cg, [1 2]);
             headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
-            headerRow.ColumnWidth = {'1x'};
+            headerRow.ColumnWidth = {'1x', 28};
             headerRow.Padding = [0 0 0 0]; headerRow.ColumnSpacing = 8;
             headerRow.BackgroundColor = cardBg;
 
@@ -534,6 +561,17 @@ classdef DialogBuilder
                 'FontSize', 16, 'FontWeight', 'bold', 'FontColor', titleColor, ...
                 'VerticalAlignment', 'center');
             titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
+
+            % "?" help icon — opens the per-dialog help body from
+            % HelpContent.bodyFor('AnalysisQmcDialog'). Same circular
+            % uihtml icon as the screen-title help affordance, palette-
+            % matched to the dialog's card background.
+            qmcHelpIcon = uihtml(headerRow);
+            qmcHelpIcon.Layout.Row = 1; qmcHelpIcon.Layout.Column = 2;
+            qmcHelpIcon.HTMLSource = LayoutBuilder.buildHelpIconHtml( ...
+                cardBg, titleColor);
+            qmcHelpIcon.DataChangedFcn = @(~,~) DialogBuilder.buildScreenHelpDialog( ...
+                app, 'AnalysisQmcDialog', 'Quantum Monte Carlo Simulation');
 
             % ── Viability banner (hidden by default) ───────────────────
             % Shown when the active circuit can't be analysed in any
@@ -785,7 +823,7 @@ classdef DialogBuilder
                 'ButtonPushedFcn', @(~,~)app.AnalysisVm.onRunQmcAnalysis());
             app.QmcRunButton.Layout.Row = 1; app.QmcRunButton.Layout.Column = 2;
             app.styleBtn(app.QmcRunButton, 'primary');
-            app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
+            app.QmcRunButton.Tooltip = 'Run Quantum Monte Carlo analysis on the active circuit';
 
             app.QmcDownloadResultsBtn = uibutton(footer, ...
                 'Text', [char(8681) ' Download Results'], ...
@@ -805,7 +843,7 @@ classdef DialogBuilder
             app.QmcDownloadLogButton.Enable = 'off';
             app.QmcDownloadLogButton.Visible = 'off';
             app.QmcDownloadLogButton.Tooltip = ...
-                'GET /api/circuits/{id}/qae/ibm-log — available after a successful IBM Runtime run';
+                'Download the IBM Runtime execution log — available after a successful run';
 
             app.QmcReportButton = uibutton(footer, ...
                 'Text', [char(9636) ' Generate Report'], ...
@@ -889,9 +927,9 @@ classdef DialogBuilder
             cg.BackgroundColor = cardBg;
 
             % Header
-            headerRow = uigridlayout(cg, [1 1]);
+            headerRow = uigridlayout(cg, [1 2]);
             headerRow.Layout.Row = 1; headerRow.Layout.Column = 1;
-            headerRow.ColumnWidth = {'1x'};
+            headerRow.ColumnWidth = {'1x', 28};
             headerRow.Padding = [0 0 0 0]; headerRow.ColumnSpacing = 8;
             headerRow.BackgroundColor = cardBg;
 
@@ -901,6 +939,18 @@ classdef DialogBuilder
                 'FontSize', 16, 'FontWeight', 'bold', 'FontColor', titleColor, ...
                 'VerticalAlignment', 'center');
             titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
+
+            % "?" help icon — opens the per-dialog help body from
+            % HelpContent.bodyFor('AnalysisEmDialog'). Same circular
+            % uihtml icon as the QMC dialog and the screen-title help
+            % affordance, palette-matched to the dialog's card bg.
+            emHelpIcon = uihtml(headerRow);
+            emHelpIcon.Layout.Row = 1; emHelpIcon.Layout.Column = 2;
+            emHelpIcon.HTMLSource = LayoutBuilder.buildHelpIconHtml( ...
+                cardBg, titleColor);
+            emHelpIcon.DataChangedFcn = @(~,~) DialogBuilder.buildScreenHelpDialog( ...
+                app, 'AnalysisEmDialog', ...
+                Labels.get('analysis_em_dialog_title', 'Quantum Error Mitigation Analysis'));
 
             % Body: form (left) | charts (right)
             body = uigridlayout(cg, [1 2]);
@@ -1183,7 +1233,7 @@ classdef DialogBuilder
             app.EmRunButton.Layout.Row = 1; app.EmRunButton.Layout.Column = 2;
             app.styleBtn(app.EmRunButton, 'primary');
             app.EmRunButton.Tooltip = ...
-                'Re-run /api/mitigation/estimate over every technique and refresh the panels';
+                'Re-run the mitigation cost estimate over every technique and refresh the panels';
 
             app.EmApplyButton = uibutton(footer, ...
                 'Text', [char(9004) ' ' Labels.get('em_btn_apply', 'Apply to Benchmark')], ...
@@ -1321,11 +1371,18 @@ classdef DialogBuilder
                 topoRowHeight = 0;
             end
             cg = uigridlayout(card, [6 1]);
-            cg.RowHeight   = {62, 84, topoRowHeight, '1x', 1, 52};
+            % Body row switched from '1x' to 'fit' + Scrollable='on' so
+            % the dialog grows a vertical scrollbar when the summary
+            % content (long subcircuit lists, partition maps, etc.)
+            % exceeds the card's visible height — previously the '1x'
+            % body absorbed all remaining space and the bottom of the
+            % content was simply clipped on smaller windows.
+            cg.RowHeight   = {62, 84, topoRowHeight, 'fit', 1, 52};
             cg.ColumnWidth = {'1x'};
             cg.Padding     = [20 14 20 14];
             cg.RowSpacing  = 12;
             cg.BackgroundColor = cardBg;
+            cg.Scrollable  = 'on';
 
             % ── Header
             header = uigridlayout(cg, [2 1]);
@@ -1406,10 +1463,16 @@ classdef DialogBuilder
             % ── Body: table + (optional) diagnostic
             body = uigridlayout(cg, [2 1]);
             body.Layout.Row = 4; body.Layout.Column = 1;
+            % Row 1 (Expectation values panel) was previously '1x' inside
+            % an outer 'fit' parent row, which collapsed the table to its
+            % minimal intrinsic height (header + 1 blank row). Fixed at
+            % 100 px so the operator sees several rows of expectation
+            % data without resizing the dialog (+~50 px over the prior
+            % visible height).
             if nNaN > 0
-                body.RowHeight = {'1x', 96};
+                body.RowHeight = {100, 96};
             else
-                body.RowHeight = {'1x', 0};
+                body.RowHeight = {100, 0};
             end
             body.RowSpacing = 10; body.Padding = [0 0 0 0];
             body.BackgroundColor = cardBg;
@@ -1424,7 +1487,11 @@ classdef DialogBuilder
 
             tbl = uitable(tg);
             tbl.ColumnName  = {'#', 'Observable', 'Value', 'Std err', 'Status'};
-            tbl.ColumnWidth = {40, 460, 120, 110, 90};
+            % Observable column flexes ('1x') so the table fills the
+            % full panel width out to the outline border instead of
+            % stopping short with a black void on the right. Other
+            % columns keep fixed pixel widths for predictable layout.
+            tbl.ColumnWidth = {40, '1x', 120, 110, 90};
             tbl.RowName     = {};
             tbl.Data        = DialogBuilder.expectationsToRows(items);
             try; StyleHelper.styleTable(tbl); catch; end
@@ -1457,7 +1524,7 @@ classdef DialogBuilder
                     bodyTxt = ['The batch was created without an ' ...
                          'explicit observables list, so the server has ' ...
                          'nothing to reconstruct against. Re-create the ' ...
-                         'batch via POST /api/cutting/batches and pass ' ...
+                         'batch via the cutting service and pass ' ...
                          'observables=["Z","X","ZZ",...] - one Pauli ' ...
                          'string per observable of interest, each ' ...
                          'aligned with the original circuit width. ' ...
@@ -2160,6 +2227,156 @@ classdef DialogBuilder
 
             Logger.info('DialogBuilder', ...
                 'Compatible Circuit Picker shown (ceiling = %dq)', round(qubitCeiling));
+        end
+
+        % ----------------------------------------------------------------
+        % Per-screen help dialog
+        % ----------------------------------------------------------------
+        function buildScreenHelpDialog(app, key, displayName)
+            % buildScreenHelpDialog  Open a non-modal help dialog for the
+            %   currently-visible screen or for an in-app modal dialog.
+            %   Content (purpose / what it does / measurements /
+            %   formulas / notes) comes from HelpContent.bodyFor(key);
+            %   rendering uses uihtml so bullet lists, formula blocks,
+            %   and headings show with proper formatting.
+            %
+            %   Optional displayName overrides the dialog's title bar
+            %   for keys that don't map to a NavigationManager routing
+            %   entry (e.g. the QMC and EM modal dialogs which live
+            %   outside the sidebar — pass 'Quantum Monte Carlo
+            %   Simulation' / 'Quantum Error Mitigation Analysis').
+            try
+                if nargin < 2 || isempty(key)
+                    try; key = char(app.LastSectionKey); catch; key = ''; end
+                end
+                key = char(key);
+                if nargin < 3 || isempty(displayName)
+                    try
+                        displayName = NavigationManager.displayLabelFor(key);
+                    catch
+                        displayName = key;
+                    end
+                end
+                if isempty(displayName); displayName = key; end
+
+                body = HelpContent.bodyFor(key);
+
+                figW = 720; figH = 620;
+                try
+                    mainPos = app.UIFigure.Position;
+                    x = max(0, mainPos(1) + (mainPos(3) - figW) / 2);
+                    y = max(0, mainPos(2) + (mainPos(4) - figH) / 2);
+                catch
+                    x = 200; y = 200;
+                end
+
+                dlg = uifigure( ...
+                    'Name', sprintf('Help — %s', char(displayName)), ...
+                    'Position', [x y figW figH], ...
+                    'Resize', 'on');
+                try; dlg.Color = Theme.COLOR_CARD; catch; end
+
+                g = uigridlayout(dlg, [3 1]);
+                g.RowHeight   = {'1x', 1, 56};
+                g.Padding     = [0 0 0 0];
+                g.RowSpacing  = 0;
+                try; g.BackgroundColor = Theme.COLOR_CARD; catch; end
+
+                html = uihtml(g);
+                html.Layout.Row = 1; html.Layout.Column = 1;
+                html.HTMLSource = HelpContent.renderHtml(displayName, body);
+
+                % Hairline divider above the footer so the Close button
+                % feels like a proper footer instead of floating below
+                % the body.
+                divider = uipanel(g, 'BorderType', 'none');
+                divider.Layout.Row = 2; divider.Layout.Column = 1;
+                try; divider.BackgroundColor = Theme.COLOR_DIVIDER; catch; end
+
+                btnRow = uigridlayout(g, [1 2]);
+                btnRow.Layout.Row = 3; btnRow.Layout.Column = 1;
+                btnRow.ColumnWidth = {'1x', 120};
+                btnRow.RowHeight   = {'1x'};
+                btnRow.Padding     = [20 10 20 12];
+                try; btnRow.BackgroundColor = Theme.COLOR_CARD; catch; end
+
+                closeBtn = uibutton(btnRow, ...
+                    'Text', 'Close', ...
+                    'FontSize', 13, 'FontWeight', 'bold', ...
+                    'ButtonPushedFcn', @(~,~) delete(dlg));
+                closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 2;
+                try; StyleHelper.styleBtn(closeBtn, 'primary'); catch; end
+
+                try; figure(dlg); catch; end
+            catch ME
+                try; Logger.warn('DialogBuilder', ...
+                    'buildScreenHelpDialog(%s): %s', char(key), ME.message); catch; end
+            end
+        end
+
+        % ----------------------------------------------------------------
+        % App-level help dialog ("About this workspace")
+        % ----------------------------------------------------------------
+        function buildAppHelpDialog(app)
+            % buildAppHelpDialog  Open the application-wide help dialog.
+            %   Content comes from HelpContent.appBody() + appLabels()
+            %   and is rendered with the same uihtml stylesheet as the
+            %   per-screen dialog so both surfaces feel like one
+            %   coherent documentation system. End-user-oriented — no
+            %   code, no project structure, no internal endpoint names.
+            try
+                body   = HelpContent.appBody();
+                labels = HelpContent.appLabels();
+                displayName = 'QTAU Connector Workspace';
+
+                figW = 760; figH = 660;
+                try
+                    mainPos = app.UIFigure.Position;
+                    x = max(0, mainPos(1) + (mainPos(3) - figW) / 2);
+                    y = max(0, mainPos(2) + (mainPos(4) - figH) / 2);
+                catch
+                    x = 200; y = 200;
+                end
+
+                dlg = uifigure( ...
+                    'Name', sprintf('About — %s', displayName), ...
+                    'Position', [x y figW figH], ...
+                    'Resize', 'on');
+                try; dlg.Color = Theme.COLOR_CARD; catch; end
+
+                g = uigridlayout(dlg, [3 1]);
+                g.RowHeight  = {'1x', 1, 56};
+                g.Padding    = [0 0 0 0];
+                g.RowSpacing = 0;
+                try; g.BackgroundColor = Theme.COLOR_CARD; catch; end
+
+                html = uihtml(g);
+                html.Layout.Row = 1; html.Layout.Column = 1;
+                html.HTMLSource = HelpContent.renderHtml(displayName, body, labels);
+
+                divider = uipanel(g, 'BorderType', 'none');
+                divider.Layout.Row = 2; divider.Layout.Column = 1;
+                try; divider.BackgroundColor = Theme.COLOR_DIVIDER; catch; end
+
+                btnRow = uigridlayout(g, [1 2]);
+                btnRow.Layout.Row = 3; btnRow.Layout.Column = 1;
+                btnRow.ColumnWidth = {'1x', 120};
+                btnRow.RowHeight   = {'1x'};
+                btnRow.Padding     = [20 10 20 12];
+                try; btnRow.BackgroundColor = Theme.COLOR_CARD; catch; end
+
+                closeBtn = uibutton(btnRow, ...
+                    'Text', 'Close', ...
+                    'FontSize', 13, 'FontWeight', 'bold', ...
+                    'ButtonPushedFcn', @(~,~) delete(dlg));
+                closeBtn.Layout.Row = 1; closeBtn.Layout.Column = 2;
+                try; StyleHelper.styleBtn(closeBtn, 'primary'); catch; end
+
+                try; figure(dlg); catch; end
+            catch ME
+                try; Logger.warn('DialogBuilder', ...
+                    'buildAppHelpDialog: %s', ME.message); catch; end
+            end
         end
     end
 end

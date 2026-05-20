@@ -79,7 +79,7 @@ function UploadScreen(app)
     app.UploadButton.Layout.Row = 2; app.UploadButton.Layout.Column = 4;
     app.styleBtn(app.UploadButton, 'primary');
     app.UploadButton.FontSize = 14;
-    app.UploadButton.Tooltip = 'POST /api/circuits/upload';
+    app.UploadButton.Tooltip = 'Upload the selected QASM file';
 
     app.CircuitPreviewArea = uitextarea(dg, 'Editable', 'on');
     app.CircuitPreviewArea.Layout.Row = 4; app.CircuitPreviewArea.Layout.Column = [1 4];

@@ -88,7 +88,7 @@ classdef UploadViewModel < handle
             category = char(app.CircuitCategoryDropdown.Value);
             nQubits  = obj.ParsedQubits;
             depth    = obj.ParsedDepth;
-            app.logEvent('API', sprintf('POST /api/circuits/upload — file: %s  name: %s  format: %s  category: %s  qubits: %d  depth: %d  project: %s', ...
+            app.logEvent('API', sprintf('Upload circuit — file: %s  name: %s  format: %s  category: %s  qubits: %d  depth: %d  project: %s', ...
                 filePath, name, format, category, nQubits, depth, char(app.State.currentProjectId)));
             % Show file size in loading overlay; enable elapsed timer for large files
             fInfo = dir(filePath);
@@ -208,7 +208,7 @@ classdef UploadViewModel < handle
                 try; app.hideLoading(); catch; end
                 return;
             end
-            app.logEvent('API', sprintf('GET /api/circuits — project: %s', char(app.State.currentProjectId)));
+            app.logEvent('API', sprintf('Loading circuits — project: %s', char(app.State.currentProjectId)));
             % Async — populating the Circuits table is a tab-enter
             % path (and the post-delete refresh target). Sync was
             % freezing the Upload tab on each refresh.
@@ -285,7 +285,7 @@ classdef UploadViewModel < handle
             if ~strcmp(answer, 'Delete')
                 return;
             end
-            app.logEvent('API', sprintf('DELETE /api/circuits/%s', circuitId));
+            app.logEvent('API', sprintf('Delete circuit — id %s', circuitId));
             % Async — delete on backgroundPool, refresh the table from
             % the success callback so the user sees an instant UI
             % response instead of a frozen window.

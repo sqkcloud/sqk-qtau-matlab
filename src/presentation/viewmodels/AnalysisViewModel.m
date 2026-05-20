@@ -15,7 +15,7 @@ classdef AnalysisViewModel < handle
             % Called when navigating to the Analysis screen — load circuits
             app = obj.App;
             if ~app.State.isAuthenticated(); return; end
-            app.logEvent('API', 'GET /api/circuits — loading circuit list for Analysis');
+            app.logEvent('API', 'Loading circuit list for Analysis');
             app.showLoading(Labels.get('loading_circuits', 'Loading circuits...'));
             circSvc = app.CircuitSvc;
             token   = app.State.authToken;
@@ -110,7 +110,7 @@ classdef AnalysisViewModel < handle
                 return;
             end
             cid = char(app.State.selectedCircuitId);
-            app.logEvent('API', sprintf('GET /api/circuits/%s/analysis (export)', cid));
+            app.logEvent('API', sprintf('Loading circuit analysis — circuit %s (export)', cid));
             app.showLoading('Fetching analysis for export...');
             circSvc = app.CircuitSvc;
             token   = app.State.authToken;
@@ -166,7 +166,7 @@ classdef AnalysisViewModel < handle
                 uialert(app.UIFigure, Labels.get('error_no_circuit'), 'Analyze', 'Icon', 'warning'); return;
             end
             cid = app.State.selectedCircuitId;
-            app.logEvent('API', sprintf('POST /api/circuits/%s/analyze — circuit: %s  name: %s', ...
+            app.logEvent('API', sprintf('Analyze circuit — id: %s  circuit: %s  name: %s', ...
                 cid, cid, app.State.selectedCircuitName));
             app.showLoading(Labels.get('loading_analyzing', 'Analyzing circuit...'));
             circSvc = app.CircuitSvc;
@@ -470,7 +470,7 @@ classdef AnalysisViewModel < handle
             opts.compute_greeks = true;
 
             if isfield(opts,'mitigation'); mitLog = opts.mitigation; else; mitLog = 'none'; end
-            app.logEvent('API', sprintf('POST /api/circuits/%s/qae/analyze — mode=%s shots=%d mitig=%s', ...
+            app.logEvent('API', sprintf('Submit QMC analysis — circuit: %s  mode=%s shots=%d mitig=%s', ...
                 cid, mode, shots, mitLog));
             % Wipe every KPI / Greek / chart on the popup so the user sees
             % empty controls while the server is running rather than stale
@@ -503,14 +503,14 @@ classdef AnalysisViewModel < handle
         end
 
         function onCloseQmcDialog(obj)
-            % Teardown: stop polling timer, hide overlay, destroy dialog.
-            % The async QMC job (if any) is left running on the server;
-            % the user can reopen the popup and getLast will show the
-            % result when it completes.
+            % Teardown: hide overlay, destroy the dialog frame. The async
+            % QMC job stays running on the server AND in the client-side
+            % BackgroundTaskManager — the user can reopen the popup (or
+            % click "View" on the completion toast / header indicator)
+            % and the cached QmcLastResult will surface as soon as it
+            % lands. Only the dialog widgets are torn down here.
             app = obj.App;
-            try; obj.stopQmcPoll(app); catch; end
             try; app.hideLoading(); catch; end
-            app.QmcActiveJobId = '';
             try
                 if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
                     delete(app.QmcDialog);
@@ -635,7 +635,7 @@ classdef AnalysisViewModel < handle
             % subcircuit_id/backend/shots/status/job_id/counts/error.
             fmt      = 'jsonl';
             tmpPath  = fullfile(tempdir, sprintf('quantum_exec_log_%s.%s', runtimeJobId, fmt));
-            app.logEvent('API', sprintf('GET /api/circuits/%s/qae/ibm-log (job=%s)', cid, runtimeJobId));
+            app.logEvent('API', sprintf('Loading IBM execution log — circuit %s (job=%s)', cid, runtimeJobId));
             app.showLoading(Labels.get('loading_qmc_ibm_log', 'Fetching IBM Runtime log...'));
             AsyncRunner.run( ...
                 @() qaeSvc.downloadIbmLog(cid, token, fmt, tmpPath), ...
@@ -808,7 +808,7 @@ classdef AnalysisViewModel < handle
                 dlgW = 1100; dlgH = 650;
                 dlgX = figPos(1) + (figPos(3) - dlgW) / 2;
                 dlgY = figPos(2) + (figPos(4) - dlgH) / 2;
-                dlg = uifigure('Name', 'QTAUBench Similarity Visualization', ...
+                dlg = uifigure('Name', 'Circuit Visualization', ...
                     'Position', [dlgX dlgY dlgW dlgH], ...
                     'Resize', 'on', 'Color', Theme.COLOR_BG);
                 Theme.applyFigureMode(dlg, Theme.activeName());
@@ -823,14 +823,43 @@ classdef AnalysisViewModel < handle
                 tg.Layout.Row = 1; tg.Layout.Column = 1;
 
                 % ══════════════════════════════════════════════════════════════
-                % Tab 1: QTAUBench Similarity Visualization
+                % Tab 1: Circuit Diagram (default-active — created first so
+                %   MATLAB selects it on initial paint).
+                % ══════════════════════════════════════════════════════════════
+                tabDiagram = uitab(tg, 'Title', 'Circuit Diagram');
+                tabDiagram.BackgroundColor = Theme.COLOR_CARD;
+
+                tabDiagramGrid = uigridlayout(tabDiagram, [1 1]);
+                tabDiagramGrid.Padding = [16 14 16 10];
+                tabDiagramGrid.BackgroundColor = Theme.COLOR_CARD;
+                diagramHtml = uihtml(tabDiagramGrid);
+                diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
+
+                % Async circuit-diagram fetch — walks a server-SVG →
+                % getCircuit fallback chain on the background pool;
+                % final HTMLSource lands from one of four main-thread
+                % callbacks (server-success, fallback-success, empty,
+                % failed).
+                svgContent = '<p style="color:#888;font-family:sans-serif">Loading circuit diagram...</p>';
+                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
+                if app.State.hasCircuit() && app.State.isAuthenticated()
+                    AnalysisViewModel.dispatchSimilarityDiagram( ...
+                        diagramHtml, app.CircuitSvc, ...
+                        char(app.State.selectedCircuitId), app.State.authToken);
+                else
+                    diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
+                        '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>');
+                end
+
+                % ══════════════════════════════════════════════════════════════
+                % Tab 2: Circuit Similarity
                 %   Single focused ranked-bar chart with auto-scaled X axis
                 %   (tight similarity bands of 97–98% become visually
                 %   differentiated) + a Match Profile side panel that
                 %   surfaces the current circuit, category breakdown, and
                 %   a calibrated interpretation of the top match.
                 % ══════════════════════════════════════════════════════════════
-                tab1 = uitab(tg, 'Title', 'QTAUBench Similarity Visualization');
+                tab1 = uitab(tg, 'Title', 'Circuit Similarity');
                 tab1.BackgroundColor = Theme.COLOR_CARD;
 
                 dg = uigridlayout(tab1, [2 2]);
@@ -933,48 +962,20 @@ classdef AnalysisViewModel < handle
 
                 % ── Right: Match Profile side panel ────────────────────────
                 profilePanel = uipanel(dg, 'Title', 'Match Profile', ...
-                    'FontWeight', 'bold', 'BackgroundColor', Theme.COLOR_ACCENT_BG, ...
-                    'ForegroundColor', [0.20 0.28 0.45]);
+                    'FontWeight', 'bold', 'BackgroundColor', Theme.COLOR_CARD, ...
+                    'ForegroundColor', Theme.COLOR_HEADING);
                 profilePanel.Layout.Row = 2; profilePanel.Layout.Column = 2;
 
                 ppg = uigridlayout(profilePanel, [1 1]);
                 ppg.Padding = [12 10 12 10];
-                ppg.BackgroundColor = Theme.COLOR_ACCENT_BG;
+                ppg.BackgroundColor = Theme.COLOR_CARD;
 
                 profileArea = uitextarea(ppg, 'Editable', 'off');
                 profileArea.FontSize = 12;
                 profileArea.FontColor = Theme.COLOR_HEADING;
+                profileArea.BackgroundColor = Theme.COLOR_CARD;
                 profileArea.Value = AnalysisViewModel.buildMatchProfileText( ...
                     curCircName, dispNames, sims, cats, notes, uniqueCats, topIdx);
-
-                % ══════════════════════════════════════════════════════════════
-                % Tab 2: Circuit Diagram
-                % ══════════════════════════════════════════════════════════════
-                tab2 = uitab(tg, 'Title', 'Circuit Diagram');
-                tab2.BackgroundColor = Theme.COLOR_CARD;
-
-                tab2Grid = uigridlayout(tab2, [1 1]);
-                tab2Grid.Padding = [16 14 16 10]; tab2Grid.BackgroundColor = Theme.COLOR_CARD;
-                diagramHtml = uihtml(tab2Grid);
-                diagramHtml.Layout.Row = 1; diagramHtml.Layout.Column = 1;
-
-                % Async circuit-diagram fetch — was a chained sync
-                % round-trip (server SVG → fallback getCircuit) that
-                % froze the dialog while the placeholder text was up.
-                % The dispatcher walks the same fallback chain on the
-                % background pool; final HTMLSource lands from one of
-                % four main-thread callbacks (server-success, fallback-
-                % success, fallback-empty, fallback-failed).
-                svgContent = '<p style="color:#888;font-family:sans-serif">Loading circuit diagram...</p>';
-                diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, svgContent);
-                if app.State.hasCircuit() && app.State.isAuthenticated()
-                    AnalysisViewModel.dispatchSimilarityDiagram( ...
-                        diagramHtml, app.CircuitSvc, ...
-                        char(app.State.selectedCircuitId), app.State.authToken);
-                else
-                    diagramHtml.HTMLSource = CircuitDiagram.buildStatsHtml({}, ...
-                        '<p style="color:#888;font-family:sans-serif">No circuit selected.</p>');
-                end
 
                 % ── Separator line ─────────────────────────────────────────
                 sep = uipanel(rootGrid, 'Title', '', 'BorderType', 'none');
@@ -1868,10 +1869,46 @@ classdef AnalysisViewModel < handle
                     else
                         app.QmcRunButton.Text   = [char(9883) ' Run QMC'];
                         app.QmcRunButton.Enable = 'on';
-                        app.QmcRunButton.Tooltip = 'POST /api/circuits/{id}/qae/analyze';
+                        app.QmcRunButton.Tooltip = 'Run Quantum Monte Carlo analysis on the active circuit';
                         app.QmcRunButton.ButtonPushedFcn = ...
                             @(~,~) app.AnalysisVm.onRunQmcAnalysis();
                     end
+                end
+            catch
+            end
+        end
+
+        function cancelQmcJob(qmcSvc, jobId, app, taskId)
+            % Best-effort server-side cancel for a QMC job. Wired as the
+            % onCancel callback of the BackgroundTaskManager task so the
+            % header indicator's Cancel button stops the IBM execution
+            % instead of just dropping the local poll. Quiet on error —
+            % the registry teardown happens whether or not the server
+            % accepts the cancel.
+            %
+            % When taskId is the foreground binding (i.e. the modal
+            % overlay was tracking THIS task), also drop the overlay
+            % and clear the binding so the user sees the cancel
+            % reflected immediately. Other backgrounded tasks remain
+            % running.
+            if nargin < 4; taskId = ''; end
+            try
+                token = '';
+                if ~isempty(app) && ~isempty(app.State)
+                    token = app.State.authToken;
+                end
+                qmcSvc.cancelAnalyzeJob(jobId, token);
+            catch ME
+                Logger.debug('AnalysisViewModel', ...
+                    'cancelQmcJob(%s) failed: %s', char(jobId), ME.message);
+            end
+            try
+                if ~isempty(taskId) && ~isempty(app) ...
+                        && ~isempty(app.QmcActiveTaskId) ...
+                        && strcmp(app.QmcActiveTaskId, taskId)
+                    try; app.hideLoading(); catch; end
+                    app.QmcActiveJobId  = '';
+                    app.QmcActiveTaskId = '';
                 end
             catch
             end
@@ -2235,40 +2272,154 @@ classdef AnalysisViewModel < handle
     end
 
     methods (Access = private)
-        function onQmcComplete(obj, app, data)
-            app.hideLoading();
-            app.QmcLastResult = data;
-            obj.renderQmcResult(app, data);
-            AnalysisViewModel.toggleIbmLogButton(app, data);
-            app.logEvent('API', sprintf('QMC complete — amp=%.4f speedup=%.1fx', ...
-                JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
-                JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
-            app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
-            % M9 — reveal the export trio now that a fresh result
-            % exists. resetQmcUi has already hidden them at the start
-            % of this run, so this is the symmetric re-reveal.
-            AnalysisViewModel.revealQmcResultButtons(app);
+        function onQmcComplete(obj, app, data, taskId)
+            % Fired when a registered QMC BackgroundTask transitions to
+            % completed. `taskId` lets the callback distinguish this run
+            % from any other QMC tasks that may also be in flight (the
+            % user can have N concurrent QMC analyses backgrounded).
+            %
+            %   - The shared cache app.QmcLastResult and the dialog
+            %     widgets are mutated ONLY when this task is currently
+            %     bound to the overlay (== the foreground task). For
+            %     backgrounded tasks the result still lives on the task
+            %     struct (BackgroundTaskManager.findById(taskId).result)
+            %     and `openQmcForTask` restores it on demand from the
+            %     toast / indicator "View" link.
+            if nargin < 4; taskId = ''; end
+            try; app.hideLoading(); catch; end
+
+            isBoundToOverlay = ~isempty(taskId) && ...
+                ~isempty(app.QmcActiveTaskId) && ...
+                strcmp(app.QmcActiveTaskId, taskId);
+
+            if isBoundToOverlay || isempty(taskId)
+                app.QmcLastResult = data;
+            end
+
+            dialogUp = false;
+            try
+                dialogUp = ~isempty(app.QmcDialog) && isvalid(app.QmcDialog) ...
+                    && strcmp(app.QmcDialog.Visible, 'on');
+            catch
+            end
+            if dialogUp && (isBoundToOverlay || isempty(taskId))
+                try; obj.renderQmcResult(app, data); catch; end
+                try; AnalysisViewModel.toggleIbmLogButton(app, data); catch; end
+                try; AnalysisViewModel.revealQmcResultButtons(app); catch; end
+            end
+            try
+                app.logEvent('API', sprintf('QMC complete — amp=%.4f speedup=%.1fx', ...
+                    JsonHelper.pickNumeric(data, 'amplitude_estimate', 0.0), ...
+                    JsonHelper.pickNumeric(data, 'quadratic_speedup', 1.0)));
+                app.State.logActivity('Quantum Monte Carlo simulation', 'Success');
+            catch
+            end
+        end
+
+        function openQmcForTask(obj, taskId)
+            % Toast / header-indicator "View" callback. Restores the
+            % specified task's payload into app.QmcLastResult and opens
+            % the QMC dialog (which calls renderQmcResult from cache).
+            % Multi-task safe: if two QMC tasks finish, clicking View on
+            % the second one's toast surfaces the second one's result
+            % without disturbing the first.
+            app = obj.App;
+            try
+                task = app.BackgroundTasks.findById(taskId);
+                if ~isempty(task) && ~isempty(task.result)
+                    app.QmcLastResult = task.result;
+                end
+            catch
+            end
+            try; obj.onOpenQmcDialog(); catch; end
         end
 
         function startQmcPoll(obj, app, jobId)
-            % Kick off a 3s MATLAB timer that polls GET /api/qae/jobs/{id}
-            % until the job reaches a terminal state. UI work happens on
-            % the main thread so we don't need AsyncRunner here — each
-            % tick does one fast HTTP GET.
-            obj.stopQmcPoll(app);
-            app.showLoading(Labels.get('loading_qmc_queued', 'Queued — waiting for backend...'));
-            t = timer( ...
-                'ExecutionMode', 'fixedSpacing', ...
-                'Period',        3.0, ...
-                'StartDelay',    0.0, ...
-                'BusyMode',      'drop', ...
-                'Name',          ['QmcPoll-' char(jobId)], ...
-                'TimerFcn',      @(src,~) obj.onQmcPollTick(app, jobId, src));
-            app.QmcPollTimer = t;
-            start(t);
+            % Register THIS submission as a NEW BackgroundTask, decoupled
+            % from any other QMC tasks that may also be in flight. The
+            % user can launch multiple QMC analyses against different
+            % circuits and each runs independently via its own
+            % PollingRunner ctx. The "overlay binding" pointers
+            % (QmcActiveJobId / QmcActiveTaskId) only mark which task
+            % the modal overlay is currently rendering for — they do
+            % NOT track every running task (that's the registry's job).
+
+            % Release the overlay binding from any previously-bound
+            % task. Crucially do NOT cancel the task itself — that
+            % would defeat the whole "Run in background" promise.
+            app.QmcActiveJobId  = '';
+            app.QmcActiveTaskId = '';
+            try
+                if ~isempty(app.QmcPollTimer) && isvalid(app.QmcPollTimer)
+                    stop(app.QmcPollTimer); delete(app.QmcPollTimer);
+                end
+            catch
+            end
+            app.QmcPollTimer = [];
+
+            try
+                cName = char(app.State.selectedCircuitName);
+            catch
+                cName = '';
+            end
+            if isempty(cName); cName = 'circuit'; end
+            displayName = sprintf('Run QMC — %s', cName);
+
+            vm = obj;
+            qmcSvc = app.QmcSvc;
+
+            % Register first with no taskId-bound closures so the
+            % registry hands us back an id we can capture.
+            taskId = app.BackgroundTasks.register(struct( ...
+                'kind',        'qmc', ...
+                'displayName', displayName, ...
+                'status',      'queued', ...
+                'statusText',  'Queued — waiting for backend', ...
+                'progressPct', 0, ...
+                'userData',    struct('jobId', char(jobId))));
+
+            % Patch closures now that taskId is known.
+            app.BackgroundTasks.update(taskId, struct( ...
+                'onComplete', @(result) vm.onQmcComplete(app, result, taskId), ...
+                'onCancel',   @() AnalysisViewModel.cancelQmcJob(qmcSvc, jobId, app, taskId), ...
+                'userData',   struct( ...
+                    'jobId',  char(jobId), ...
+                    'onView', @() vm.openQmcForTask(taskId))));
+
+            app.QmcActiveJobId  = jobId;
+            app.QmcActiveTaskId = taskId;
+            app.showLoading( ...
+                Labels.get('loading_qmc_queued', 'Queued — waiting for backend...'), ...
+                false, taskId);
+
+            isTerminal = @(s) any(strcmp(lower(char(JsonHelper.pick(s, {'status'}, ''))), ...
+                {'completed','failed','cancelled'}));
+
+            ctx = PollingRunner.start(struct( ...
+                'pollFcn',     @() qmcSvc.getAnalyzeJob(jobId, app.State.authToken), ...
+                'isTerminal',  isTerminal, ...
+                'onProgress',  @(s) vm.onQmcProgress(app, taskId, s), ...
+                'onDone',      @(s) vm.onQmcTerminal(app, taskId, s), ...
+                'onError',     @(ME) vm.onQmcPollError(app, taskId, ME), ...
+                'intervalSec', 3, ...
+                'timeoutSec',  3600, ...
+                'name',        ['QmcPoll-' char(jobId)]));
+
+            app.BackgroundTasks.update(taskId, ...
+                struct('pollCtx', ctx, 'status', 'running'));
         end
 
         function stopQmcPoll(~, app)
+            % Cancel the active QMC task (poll + server-side cancel).
+            try
+                if ~isempty(app.QmcActiveTaskId)
+                    app.BackgroundTasks.cancel(app.QmcActiveTaskId);
+                end
+            catch
+            end
+            app.QmcActiveTaskId = '';
+            % Legacy timer cleanup — kept for back-compat in case anything
+            % outside this class ever wrote to QmcPollTimer.
             try
                 if ~isempty(app.QmcPollTimer) && isvalid(app.QmcPollTimer)
                     stop(app.QmcPollTimer);
@@ -2279,54 +2430,80 @@ classdef AnalysisViewModel < handle
             app.QmcPollTimer = [];
         end
 
-        function onQmcPollTick(obj, app, jobId, timerObj)
-            % One poll iteration. Swallows transient HTTP errors and
-            % lets the timer try again on the next tick.
-            if isempty(app.QmcActiveJobId) || ~strcmp(app.QmcActiveJobId, jobId)
-                % Job was superseded or cancelled; stop this timer.
-                try; stop(timerObj); delete(timerObj); catch; end
-                return;
-            end
+        function onQmcProgress(~, app, taskId, state)
+            % Update the BackgroundTask progress AND refresh the overlay
+            % message ONLY if it's still showing for this task.
             try
-                state = app.QmcSvc.getAnalyzeJob(jobId, app.State.authToken);
+                status   = lower(char(JsonHelper.pick(state, {'status'}, 'running')));
+                progress = JsonHelper.pickNumeric(state, 'progress_pct', 0);
+                msg      = char(JsonHelper.pick(state, {'message'}, ''));
+                pretty   = AnalysisViewModel.prettyJobStatus(status, msg);
+                displayMsg = sprintf('%s (%d%%)', pretty, round(progress));
+                if ~isempty(app.QmcActiveTaskId) && strcmp(app.QmcActiveTaskId, taskId)
+                    try; app.showLoading(displayMsg, false, taskId); catch; end
+                end
+                app.BackgroundTasks.update(taskId, struct( ...
+                    'progressPct', progress, ...
+                    'statusText',  pretty, ...
+                    'status',      'running'));
             catch ME
-                Logger.debug('AnalysisViewModel', 'QMC poll transient: %s', ME.message);
-                return;
+                Logger.debug('AnalysisViewModel', ...
+                    'onQmcProgress transient: %s', ME.message);
             end
-            status = lower(char(JsonHelper.pick(state, {'status'}, 'queued')));
-            progress = JsonHelper.pickNumeric(state, 'progress_pct', 0);
-            msg = char(JsonHelper.pick(state, {'message'}, ''));
-            % Refresh the loading overlay with the latest step.
-            displayMsg = sprintf('%s (%d%%)', AnalysisViewModel.prettyJobStatus(status, msg), round(progress));
-            try; app.showLoading(displayMsg); catch; end
+        end
 
-            switch status
-                case {'completed'}
-                    obj.stopQmcPoll(app);
-                    app.QmcActiveJobId = '';
+        function onQmcTerminal(obj, app, taskId, state)
+            % Terminal poll state — dispatch to complete / fail / cancel.
+            statusStr = lower(char(JsonHelper.pick(state, {'status'}, '')));
+            switch statusStr
+                case 'completed'
                     result = JsonHelper.pick(state, {'result'}, []);
                     if isempty(result)
-                        obj.onQmcError(app, MException('QTAU:QmcEmpty', ...
-                            'Job completed but server returned no result payload.'));
-                        return;
+                        ME = MException('QTAU:QmcEmpty', ...
+                            'Job completed but server returned no result payload.');
+                        app.BackgroundTasks.fail(taskId, ME);
+                        obj.onQmcError(app, ME);
+                    else
+                        app.BackgroundTasks.complete(taskId, result);
                     end
-                    obj.onQmcComplete(app, result);
-                case {'failed'}
-                    obj.stopQmcPoll(app);
-                    app.QmcActiveJobId = '';
+                case 'failed'
                     errMsg = char(JsonHelper.pick(state, {'error'}, ''));
-                    if isempty(errMsg); errMsg = msg; end
-                    if isempty(errMsg); errMsg = 'QMC job failed on the server.'; end
-                    obj.onQmcError(app, MException('QTAU:QmcFailed', '%s', errMsg));
-                case {'cancelled'}
-                    obj.stopQmcPoll(app);
-                    app.QmcActiveJobId = '';
-                    app.hideLoading();
-                    uialert(AnalysisViewModel.qmcAlertParent(app), ...
-                        'Quantum Monte Carlo job was cancelled.', ...
-                        'Quantum Monte Carlo', 'Icon', 'info');
-                otherwise
-                    % queued / running — keep polling.
+                    if isempty(errMsg)
+                        errMsg = char(JsonHelper.pick(state, {'message'}, ''));
+                    end
+                    if isempty(errMsg)
+                        errMsg = 'QMC job failed on the server.';
+                    end
+                    ME = MException('QTAU:QmcFailed', '%s', errMsg);
+                    app.BackgroundTasks.fail(taskId, ME);
+                    obj.onQmcError(app, ME);
+                case 'cancelled'
+                    app.BackgroundTasks.cancel(taskId);
+                    try; app.hideLoading(); catch; end
+                    try
+                        if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog) ...
+                                && strcmp(app.QmcDialog.Visible, 'on')
+                            uialert(AnalysisViewModel.qmcAlertParent(app), ...
+                                'Quantum Monte Carlo job was cancelled.', ...
+                                'Quantum Monte Carlo', 'Icon', 'info');
+                        end
+                    catch
+                    end
+            end
+            if ~isempty(app.QmcActiveTaskId) && strcmp(app.QmcActiveTaskId, taskId)
+                app.QmcActiveJobId  = '';
+                app.QmcActiveTaskId = '';
+            end
+        end
+
+        function onQmcPollError(obj, app, taskId, ME)
+            % Fatal poll-loop error (PollingRunner:Timeout, etc.). Treat
+            % as a task failure and surface via the standard error popup.
+            app.BackgroundTasks.fail(taskId, ME);
+            try; obj.onQmcError(app, ME); catch; end
+            if ~isempty(app.QmcActiveTaskId) && strcmp(app.QmcActiveTaskId, taskId)
+                app.QmcActiveJobId  = '';
+                app.QmcActiveTaskId = '';
             end
         end
 
@@ -2907,7 +3084,7 @@ classdef AnalysisViewModel < handle
             % state is educational rather than mysterious.
             app = obj.App;
             if enable
-                onTip = 'Save /api/circuits/{id}/analysis to a .json file.';
+                onTip = 'Save the circuit analysis payload to a .json file.';
                 offTip = 'Run Analyze first; this saves the response as a .json file.';
                 pdfOn = 'Open Reports with the title pre-filled for the active circuit.';
                 pdfOff = 'Run Analyze first; this opens Reports with the title pre-filled.';

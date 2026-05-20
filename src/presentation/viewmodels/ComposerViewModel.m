@@ -502,8 +502,9 @@ classdef ComposerViewModel < handle
                     obj.drawCtrl(ax, x, g.qubits(2));
                     obj.drawTargetCircle(ax, x, g.qubits(3));
                     qs = sort(g.qubits);
+                    s = ComposerViewModel.gateStyle();
                     line(ax, [x x], [qs(1) qs(end)], ...
-                        'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.2, ...
+                        'Color', s.Border, 'LineWidth', 1.2, ...
                         'HitTest', 'off', 'PickableParts', 'none');
                 case 'measure'
                     obj.drawBox(ax, x, g.qubits(1), 'M');
@@ -516,86 +517,137 @@ classdef ComposerViewModel < handle
         end
 
         function drawBox(~, ax, x, q, label)
+            % Blue gate palette matches the SVG circuit renderer
+            % (CircuitDiagram.drawSvgDiagram) used by Circuit Preview
+            % and the QTAUBench Similarity Circuit Diagram tab, so the
+            % Composer canvas reads as the same visual language as the
+            % other circuit-render surfaces instead of the previous
+            % theme-driven purple variant.
+            s = ComposerViewModel.gateStyle();
             w = 0.7; h = 0.55;
             rectangle(ax, 'Position', [x - w/2, q - h/2, w, h], ...
-                'FaceColor', Theme.COLOR_ACCENT_BG, ...
-                'EdgeColor', Theme.COLOR_PRIMARY, 'LineWidth', 1.2, ...
-                'Curvature', 0.15);
+                'FaceColor', s.Fill, ...
+                'EdgeColor', s.Border, 'LineWidth', 1.2, ...
+                'Curvature', 0.3);
             text(ax, x, q, char(label), ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
                 'FontWeight', 'bold', 'FontSize', 11, ...
-                'Color', Theme.COLOR_HEADING, ...
+                'Color', s.Text, ...
                 'HitTest', 'off', 'PickableParts', 'none');
         end
 
         function drawCtrl(~, ax, x, q)
+            s = ComposerViewModel.gateStyle();
             r = 0.13;
             rectangle(ax, 'Position', [x-r, q-r, 2*r, 2*r], ...
-                'FaceColor', Theme.COLOR_PRIMARY, ...
-                'EdgeColor', Theme.COLOR_PRIMARY, 'Curvature', 1.0);
+                'FaceColor', s.Border, ...
+                'EdgeColor', s.Border, 'Curvature', 1.0);
         end
 
         function drawTargetCircle(~, ax, x, q)
+            s = ComposerViewModel.gateStyle();
             r = 0.22;
             rectangle(ax, 'Position', [x-r, q-r, 2*r, 2*r], ...
-                'FaceColor', 'none', 'EdgeColor', Theme.COLOR_PRIMARY, ...
+                'FaceColor', s.TargetFill, 'EdgeColor', s.Border, ...
                 'LineWidth', 1.4, 'Curvature', 1.0);
-            line(ax, [x-r, x+r], [q q], 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.4, ...
+            line(ax, [x-r, x+r], [q q], 'Color', s.Text, 'LineWidth', 1.4, ...
                 'HitTest', 'off', 'PickableParts', 'none');
-            line(ax, [x x], [q-r, q+r], 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.4, ...
+            line(ax, [x x], [q-r, q+r], 'Color', s.Text, 'LineWidth', 1.4, ...
                 'HitTest', 'off', 'PickableParts', 'none');
         end
 
         function drawSwapMark(~, ax, x, q)
+            s = ComposerViewModel.gateStyle();
             r = 0.16;
-            line(ax, [x-r, x+r], [q-r, q+r], 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.6);
-            line(ax, [x-r, x+r], [q+r, q-r], 'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.6);
+            line(ax, [x-r, x+r], [q-r, q+r], 'Color', s.Border, 'LineWidth', 1.6);
+            line(ax, [x-r, x+r], [q+r, q-r], 'Color', s.Border, 'LineWidth', 1.6);
         end
 
         function drawConnector(~, ax, x, q1, q2)
+            s = ComposerViewModel.gateStyle();
             line(ax, [x x], [min(q1,q2), max(q1,q2)], ...
-                'Color', Theme.COLOR_PRIMARY, 'LineWidth', 1.2, ...
+                'Color', s.Border, 'LineWidth', 1.2, ...
                 'HitTest', 'off', 'PickableParts', 'none');
         end
 
         % ── Templates dialog ─────────────────────────────────────────────
         function openTemplatesDialog(obj)
             items = TemplateRegistry.list();
+            nTotal = numel(items);
+
             fig = uifigure('Name', Labels.get('composer_btn_templates'), ...
-                'Position', [200 150 920 540], 'WindowStyle', 'modal', ...
+                'Position', [200 100 960 720], 'WindowStyle', 'modal', ...
                 'Color', Theme.COLOR_BG);
             try; Theme.applyFigureMode(fig, Theme.activeName()); catch; end
 
-            outer = uigridlayout(fig, [3 1]);
-            outer.RowHeight = {'1x', 1, 'fit'};
+            outer = uigridlayout(fig, [4 1]);
+            outer.RowHeight = {40, '1x', 1, 'fit'};
             outer.Padding = [16 16 16 16];
             outer.RowSpacing = 10;
             outer.BackgroundColor = Theme.COLOR_BG;
 
-            grid = uigridlayout(outer, [3 4]);
-            grid.Layout.Row = 1; grid.Layout.Column = 1;
+            % ── Row 1: Search bar (field + button + match-count label) ───
+            top = uigridlayout(outer, [1 3]);
+            top.Layout.Row = 1; top.Layout.Column = 1;
+            top.ColumnWidth = {'1x', 110, 200};
+            top.Padding = [0 0 0 0]; top.ColumnSpacing = 8;
+            top.BackgroundColor = Theme.COLOR_BG;
+
+            searchField = uieditfield(top, 'text', ...
+                'Placeholder', Labels.get('composer_template_search_placeholder', ...
+                    'Search templates by name or description…'));
+            searchField.Layout.Row = 1; searchField.Layout.Column = 1;
+            searchField.FontSize = 12;
+            searchField.ValueChangedFcn = @(src,~) rebuildCards(src.Value);
+
+            searchBtn = uibutton(top, 'Text', [char(8981) ' Search'], ...
+                'ButtonPushedFcn', @(~,~) rebuildCards(searchField.Value));
+            searchBtn.Layout.Row = 1; searchBtn.Layout.Column = 2;
+            StyleHelper.styleBtn(searchBtn, 'ghost');
+            searchBtn.FontSize = 12;
+
+            countLbl = uilabel(top, 'Text', ...
+                sprintf(Labels.get('composer_template_count_fmt', '%d of %d templates'), ...
+                    nTotal, nTotal));
+            countLbl.Layout.Row = 1; countLbl.Layout.Column = 3;
+            countLbl.HorizontalAlignment = 'right';
+            countLbl.FontSize = 11;
+            countLbl.FontColor = Theme.COLOR_MUTED;
+
+            % ── Row 2: Card grid hosted in a scrollable panel so we can
+            % grow past the visible viewport once filters narrow / widen
+            % the set.
+            gridHost = uipanel(outer, 'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_BG, 'Scrollable', 'on');
+            gridHost.Layout.Row = 2; gridHost.Layout.Column = 1;
+
+            grid = uigridlayout(gridHost, [1 4]);
             grid.RowSpacing    = 12;
             grid.ColumnSpacing = 12;
-            grid.RowHeight     = {'1x','1x','1x'};
             grid.ColumnWidth   = {'1x','1x','1x','1x'};
+            grid.Padding       = [4 4 4 4];
             grid.BackgroundColor = Theme.COLOR_BG;
+            % uipanel.Scrollable on its own does not engage when the
+            % child is a uigridlayout — the grid auto-fills the panel
+            % instead of producing the fixed-pixel overflow uipanel
+            % needs to grow a scrollbar, so all 18 templates packed
+            % into 5 rows (180 px each) silently clipped the bottom
+            % two rows below the dialog footer. Setting Scrollable='on'
+            % on the grid itself activates vertical scrolling because
+            % rebuildCards writes fixed-pixel RowHeight per card row.
+            grid.Scrollable = 'on';
 
-            for i = 1:numel(items)
-                meta = items(i);
-                row = floor((i-1)/4) + 1;
-                col = mod(i-1, 4) + 1;
-                obj.buildTemplateCard(grid, meta, fig, row, col);
-            end
+            % Seed with all templates.
+            rebuildCards('');
 
-            % Divider line between the template grid and the footer —
-            % matches the hairline pattern used by the JobPicker and
-            % NewProject dialogs (DialogBuilder.m).
+            % ── Row 3: hairline divider ──────────────────────────────────
             divider = uipanel(outer, 'BorderType', 'none', ...
                 'BackgroundColor', Theme.COLOR_DIVIDER);
-            divider.Layout.Row = 2; divider.Layout.Column = 1;
+            divider.Layout.Row = 3; divider.Layout.Column = 1;
 
+            % ── Row 4: footer (Cancel) ───────────────────────────────────
             barRow = uigridlayout(outer, [1 2]);
-            barRow.Layout.Row = 3; barRow.Layout.Column = 1;
+            barRow.Layout.Row = 4; barRow.Layout.Column = 1;
             barRow.ColumnWidth = {'1x', 100};
             barRow.RowHeight = {36};
             barRow.Padding = [0 0 0 0];
@@ -605,6 +657,60 @@ classdef ComposerViewModel < handle
                 'ButtonPushedFcn', @(~,~) close(fig));
             cancelBtn.Layout.Column = 2;
             StyleHelper.styleBtn(cancelBtn, 'ghost');
+
+            % ── Closures ─────────────────────────────────────────────────
+            function rebuildCards(query)
+                if ~isvalid(grid); return; end
+                delete(grid.Children);
+                filtered = filterItems(items, query);
+                nMatch = numel(filtered);
+                countLbl.Text = sprintf( ...
+                    Labels.get('composer_template_count_fmt', '%d of %d templates'), ...
+                    nMatch, nTotal);
+                nCols = 4;
+
+                if nMatch == 0
+                    grid.RowHeight   = {'fit'};
+                    grid.ColumnWidth = {'1x'};
+                    qstr = strtrim(char(query));
+                    emptyMsg = uilabel(grid, ...
+                        'Text', sprintf( ...
+                            Labels.get('composer_template_no_match_fmt', ...
+                                'No templates match "%s".'), qstr), ...
+                        'HorizontalAlignment', 'center', ...
+                        'FontSize', 13, 'FontColor', Theme.COLOR_MUTED);
+                    emptyMsg.Layout.Row = 1; emptyMsg.Layout.Column = 1;
+                    return;
+                end
+
+                nRows = ceil(nMatch / nCols);
+                grid.RowHeight   = repmat({180}, 1, nRows);
+                grid.ColumnWidth = repmat({'1x'}, 1, nCols);
+                for k = 1:nMatch
+                    m = filtered(k);
+                    r = floor((k-1)/nCols) + 1;
+                    c = mod(k-1, nCols) + 1;
+                    obj.buildTemplateCard(grid, m, fig, r, c);
+                end
+            end
+
+            function out = filterItems(allItems, q)
+                qs = lower(strtrim(char(q)));
+                if isempty(qs)
+                    out = allItems;
+                    return;
+                end
+                keep = false(1, numel(allItems));
+                for i = 1:numel(allItems)
+                    hay = lower([char(allItems(i).name)        ' ' ...
+                                 char(allItems(i).description) ' ' ...
+                                 char(allItems(i).id)]);
+                    if contains(hay, qs)
+                        keep(i) = true;
+                    end
+                end
+                out = allItems(keep);
+            end
         end
 
         function buildTemplateCard(obj, parent, meta, parentFig, row, col)
@@ -651,25 +757,89 @@ classdef ComposerViewModel < handle
 
         function params = openParamDialog(~, meta, defaults)
             ret = struct('done', false, 'params', defaults);
+
+            % Pre-compute the number of input fields so the dialog can be
+            % sized tightly (avoids the empty-whitespace look the original
+            % had — fixed 10 rows × 30 px regardless of template).
+            switch meta.id
+                case {'ghz','qft','iqft','wstate','vqe','superdense'}; nFields = 1;
+                case {'grover','bv','dj','qaoa','trotter','hea'};      nFields = 2;
+                otherwise; nFields = 2;
+            end
+
+            % Geometry — keep tight so the dialog hugs its content.
+            headerH = 56;   rowH = 34;   rowGap = 8;
+            panelPadV = 14;
+            panelH = panelPadV*2 + nFields*rowH + (nFields-1)*rowGap;
+            footerH = 36;
+            outerPadV = 18;  outerGap = 14;
+            dialogW = 520;
+            dialogH = outerPadV*2 + headerH + outerGap + panelH + ...
+                      outerGap + 1 + outerGap + footerH;
+            % Centre on the primary screen.
+            try
+                screen = get(0, 'ScreenSize');
+                xPos = max(80, round((screen(3) - dialogW) / 2));
+                yPos = max(80, round((screen(4) - dialogH) / 2));
+            catch
+                xPos = 320; yPos = 240;
+            end
+
             fig = uifigure('Name', Labels.get('composer_param_title'), ...
-                'Position', [300 250 420 360], 'WindowStyle', 'modal', ...
-                'Color', Theme.COLOR_BG);
+                'Position', [xPos yPos dialogW dialogH], ...
+                'WindowStyle', 'modal', 'Color', Theme.COLOR_BG, ...
+                'Resize', 'off');
             try; Theme.applyFigureMode(fig, Theme.activeName()); catch; end
 
-            g = uigridlayout(fig, [10 2]);
-            g.RowHeight = repmat({30}, 1, 10);
-            g.ColumnWidth = {160, '1x'};
-            g.Padding = [16 16 16 16];
-            g.RowSpacing = 8;
-            g.BackgroundColor = Theme.COLOR_BG;
+            outer = uigridlayout(fig, [4 1]);
+            outer.RowHeight = {headerH, panelH, 1, footerH};
+            outer.Padding = [20 outerPadV 20 outerPadV];
+            outer.RowSpacing = outerGap;
+            outer.BackgroundColor = Theme.COLOR_BG;
+
+            % ── Header: template name + subtitle ─────────────────────────
+            header = uigridlayout(outer, [2 1]);
+            header.Layout.Row = 1; header.Layout.Column = 1;
+            header.RowHeight = {24, 28};
+            header.RowSpacing = 2; header.Padding = [0 0 0 0];
+            header.BackgroundColor = Theme.COLOR_BG;
+            titleLbl = uilabel(header, 'Text', char(meta.name), ...
+                'FontSize', 15, 'FontWeight', 'bold', ...
+                'FontColor', Theme.COLOR_HEADING);
+            titleLbl.Layout.Row = 1; titleLbl.Layout.Column = 1;
+            subLbl = uilabel(header, 'Text', Labels.get('composer_param_subtitle', ...
+                'Configure values before inserting this template into the circuit.'), ...
+                'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+            subLbl.Layout.Row = 2; subLbl.Layout.Column = 1;
+
+            % ── Field panel (card) ───────────────────────────────────────
+            fieldPanel = uipanel(outer, 'BorderType', 'line', ...
+                'BorderColor', Theme.COLOR_DIVIDER, ...
+                'BackgroundColor', Theme.COLOR_CARD);
+            fieldPanel.Layout.Row = 2; fieldPanel.Layout.Column = 1;
+
+            g = uigridlayout(fieldPanel, [nFields 2]);
+            g.RowHeight = repmat({rowH}, 1, nFields);
+            g.ColumnWidth = {220, '1x'};
+            g.Padding = [18 panelPadV 18 panelPadV];
+            g.RowSpacing = rowGap;
+            g.ColumnSpacing = 12;
+            g.BackgroundColor = Theme.COLOR_CARD;
 
             row = 0;
             handles = struct();
             switch meta.id
                 case 'ghz'
                     [row, handles.n] = numField(g, row, Labels.get('composer_param_n_qubits'), defaults.n);
+                case 'wstate'
+                    [row, handles.n] = numField(g, row, Labels.get('composer_param_n_qubits'), defaults.n);
                 case 'qft'
                     [row, handles.n] = numField(g, row, Labels.get('composer_param_n_qubits'), defaults.n);
+                case 'iqft'
+                    [row, handles.n] = numField(g, row, Labels.get('composer_param_n_qubits'), defaults.n);
+                case 'hea'
+                    [row, handles.n]      = numField(g, row, Labels.get('composer_param_n_qubits'), defaults.n);
+                    [row, handles.layers] = numField(g, row, Labels.get('composer_param_layers'), defaults.layers);
                 case 'grover'
                     [row, handles.k]      = numField(g, row, Labels.get('composer_param_k'), defaults.k);
                     [row, handles.marked] = strField(g, row, Labels.get('composer_param_marked'), defaults.marked);
@@ -691,16 +861,30 @@ classdef ComposerViewModel < handle
                     [row, handles.message] = strField(g, row, Labels.get('composer_param_message'), defaults.message);
             end
 
-            row = row + 1;
-            barCol = uigridlayout(g, [1 2]);
-            barCol.Layout.Row = row+1; barCol.Layout.Column = [1 2];
-            barCol.ColumnWidth = {'1x', 120};
-            barCol.Padding = [0 6 0 0];
-            barCol.BackgroundColor = Theme.COLOR_BG;
-            spacer = uilabel(barCol, 'Text', ''); %#ok<NASGU>
-            applyBtn = uibutton(barCol, 'Text', Labels.get('composer_param_apply'), ...
+            % ── Hairline divider above the footer ────────────────────────
+            divider = uipanel(outer, 'BorderType', 'none', ...
+                'BackgroundColor', Theme.COLOR_DIVIDER);
+            divider.Layout.Row = 3; divider.Layout.Column = 1;
+
+            % ── Footer: spacer · Cancel · Apply Template ─────────────────
+            footer = uigridlayout(outer, [1 3]);
+            footer.Layout.Row = 4; footer.Layout.Column = 1;
+            footer.ColumnWidth = {'1x', 100, 150};
+            footer.RowHeight = {footerH};
+            footer.Padding = [0 0 0 0]; footer.ColumnSpacing = 8;
+            footer.BackgroundColor = Theme.COLOR_BG;
+            spacer = uilabel(footer, 'Text', ''); spacer.Layout.Column = 1; %#ok<NASGU>
+            cancelBtn = uibutton(footer, 'Text', Labels.get('composer_param_cancel'), ...
+                'ButtonPushedFcn', @(~,~) cancelAndClose());
+            cancelBtn.Layout.Column = 2;
+            StyleHelper.styleBtn(cancelBtn, 'ghost');
+            applyBtn = uibutton(footer, 'Text', Labels.get('composer_param_apply'), ...
                 'ButtonPushedFcn', @(~,~) accept());
+            applyBtn.Layout.Column = 3;
             StyleHelper.styleBtn(applyBtn, 'primary');
+
+            % Treat window-close as Cancel so callers still get [] back.
+            fig.CloseRequestFcn = @(~,~) cancel();
 
             uiwait(fig);
             if ret.done
@@ -722,7 +906,12 @@ classdef ComposerViewModel < handle
                 end
                 ret.params = mergeStructs(defaults, p);
                 ret.done = true;
-                if isvalid(fig); close(fig); end
+                if isvalid(fig); delete(fig); end
+            end
+
+            function cancel()
+                ret.done = false;
+                if isvalid(fig); delete(fig); end
             end
         end
 
@@ -1324,6 +1513,30 @@ classdef ComposerViewModel < handle
             obj.InspectStepIdx = obj.InspectStepIdx + 1;
             obj.InspectSlider.Value = obj.InspectStepIdx - 1;
             obj.paintInspectStep();
+        end
+    end
+
+    methods (Static, Access = private)
+        function s = gateStyle()
+            % gateStyle  Single source of truth for the Composer's gate
+            %   colour palette. Matches the SVG circuit renderer
+            %   (CircuitDiagram.drawSvgDiagram + Circuit Preview) so
+            %   the Composer canvas, the QTAUBench Similarity Circuit
+            %   Diagram, and the Circuit Preview all read as the same
+            %   visual language — a unified blue treatment rather than
+            %   the previous theme-driven purple on the Composer side.
+            %
+            %   Hex values mirror the Tailwind blue ramp used by the
+            %   SVG renderer:
+            %     Fill        = #1D4ED8  (blue-700, single-qubit + measure box)
+            %     TargetFill  = #2563EB  (blue-600, CNOT / CCX target circle)
+            %     Border      = #3B82F6  (blue-500, gate border + connector + control dot)
+            %     Text        = #FFFFFF  (white, gate label + target cross)
+            s = struct( ...
+                'Fill',       [29/255 78/255 216/255],   ... % #1D4ED8
+                'TargetFill', [37/255 99/255 235/255],   ... % #2563EB
+                'Border',     [59/255 130/255 246/255],  ... % #3B82F6
+                'Text',       [1 1 1]);                       % #FFFFFF
         end
     end
 end

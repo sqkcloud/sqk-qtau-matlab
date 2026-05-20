@@ -108,7 +108,11 @@ classdef test_ProjectService < matlab.unittest.TestCase
         % ── saveBenchmarkConfig / getBenchmarkConfig ─────────────────────
 
         function testSaveBenchmarkConfigPosts(testCase)
-            testCase.Service.saveBenchmarkConfig('p7', 4096, 3, 'Measurement', 'Fidelity', 'tok');
+            % New signature: (projectId, circuitId, backendName, shots,
+            % optLevel, mitigation, strategy, token).
+            testCase.Service.saveBenchmarkConfig( ...
+                'p7', 'c123', 'ibm_boston', 4096, 3, ...
+                'Measurement', 'Fidelity', 'tok');
             testCase.verifyEqual(char(testCase.Stub.LastMethod), 'postAuthJson');
             testCase.verifyTrue(contains(char(testCase.Stub.LastEndpoint), 'p7/benchmark-config'));
         end

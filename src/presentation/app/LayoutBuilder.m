@@ -57,18 +57,46 @@ classdef LayoutBuilder
              % same grid cell (column 2) so that hiding one never leaves a
              % ghost "fit" column behind. Their visibility is toggled by
              % updateHeaderAuthButtons based on authentication state.
-            headerRight = uigridlayout(app.HeaderGrid, [1 2]);
+            headerRight = uigridlayout(app.HeaderGrid, [1 4]);
             headerRight.Layout.Row = 1; headerRight.Layout.Column = 3;
-            headerRight.ColumnWidth = {'fit', 'fit'};
+            % Column 1: Background Tasks indicator (uihtml badge, needs
+            %   a fixed pixel width — 'fit' is unreliable for uihtml
+            %   which has no intrinsic size). 48 px accommodates the
+            %   pill-state count up to ~99 active tasks while leaving
+            %   the empty-state circle visually centered.
+            % Column 3: AppHelpButton (28 px circular uihtml).
+            headerRight.ColumnWidth = {48, 'fit', 28, 'fit'};
             headerRight.Padding = [0 0 4 0]; headerRight.ColumnSpacing = 10;
             headerRight.BackgroundColor = Theme.NAV_BG;
+
+            % Background-tasks badge — hidden while idle, shows a count
+            % + popover while long-running tasks (Run QMC, Circuit
+            % Cutting submit + poll, IBM job submit) are in flight.
+            try
+                app.TasksIndicator = BackgroundTasksIndicator(app, headerRight);
+            catch ME
+                try; Logger.warn('LayoutBuilder', ...
+                    'TasksIndicator init failed: %s', ME.message); catch; end
+            end
 
             userBadge = uilabel(headerRight, 'Text', 'SQK Admin Workspace');
             userBadge.FontSize = 13; userBadge.FontWeight = 'bold';
             userBadge.HorizontalAlignment = 'right';
             userBadge.FontColor = Theme.NAV_FG;
-            userBadge.Layout.Row = 1; userBadge.Layout.Column = 1;
+            userBadge.Layout.Row = 1; userBadge.Layout.Column = 2;
             userBadge.Tooltip = 'QTAU Connector v2026';
+
+            % App-level help icon — opens the application "About" dialog
+            % with end-user-oriented content (purpose, features,
+            % workflow, algorithms, tips). Themed for the dark navy
+            % header bar via the NAV_BG / NAV_FG palette so the icon
+            % stays legible against the header background.
+            app.AppHelpButton = uihtml(headerRight);
+            app.AppHelpButton.Layout.Row = 1; app.AppHelpButton.Layout.Column = 3;
+            app.AppHelpButton.HTMLSource = LayoutBuilder.buildHelpIconHtml( ...
+                Theme.NAV_BG, Theme.NAV_FG);
+            app.AppHelpButton.DataChangedFcn = @(~,~) ...
+                DialogBuilder.buildAppHelpDialog(app);
 
             app.HeaderLoginButton = uihyperlink(headerRight, ...
                 'Text', Labels.get('header_btn_login', 'Login'), ...
@@ -76,7 +104,7 @@ classdef LayoutBuilder
                 'HyperlinkClickedFcn', @(~,~)app.showLoginDialog(), ...
                 'FontSize', 14, 'FontWeight', 'bold', 'FontColor', Theme.NAV_FG, ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-            app.HeaderLoginButton.Layout.Row = 1; app.HeaderLoginButton.Layout.Column = 2;
+            app.HeaderLoginButton.Layout.Row = 1; app.HeaderLoginButton.Layout.Column = 4;
             app.HeaderLoginButton.VisitedColor = Theme.NAV_FG;
 
             app.HeaderUserLabel = uihyperlink(headerRight, ...
@@ -85,7 +113,7 @@ classdef LayoutBuilder
                 'HyperlinkClickedFcn', @(~,~)app.toggleHeaderUserMenu(), ...
                 'FontSize', 14, 'FontWeight', 'bold', 'FontColor', Theme.NAV_FG, ...
                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'center');
-            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 2;
+            app.HeaderUserLabel.Layout.Row = 1; app.HeaderUserLabel.Layout.Column = 4;
             app.HeaderUserLabel.Visible = 'off';
             app.HeaderUserLabel.VisitedColor = Theme.NAV_FG;
 
@@ -182,18 +210,31 @@ classdef LayoutBuilder
             headerPanel.Layout.Row = 1; headerPanel.Layout.Column = 1;
             headerPanel.BackgroundColor = Theme.COLOR_CARD;
             app.HeaderSectionPanel = headerPanel;
-            hg = uigridlayout(headerPanel, [2 1]);
-            hg.RowHeight = {28, 20}; hg.Padding = [16 10 16 10];
+            hg = uigridlayout(headerPanel, [2 2]);
+            hg.RowHeight = {28, 20}; hg.ColumnWidth = {'1x', 32};
+            hg.Padding = [16 10 16 10]; hg.ColumnSpacing = 10;
             hg.BackgroundColor = Theme.COLOR_CARD;
             app.HeaderSectionGrid = hg;
             app.SectionTitleLabel = uilabel(hg, 'Text', 'Welcome');
             app.SectionTitleLabel.FontSize = 18; app.SectionTitleLabel.FontWeight = 'bold';
             app.SectionTitleLabel.FontColor = Theme.COLOR_HEADING;
             app.SectionTitleLabel.Layout.Row = 1; app.SectionTitleLabel.Layout.Column = 1;
+
+            % Circular "?" help icon next to the title — uihtml so we can
+            % render a proper round shape (uibutton would be a rectangle).
+            % Click is wired by setting htmlComponent.Data from JS, which
+            % fires DataChangedFcn on the MATLAB side; the callback opens
+            % DialogBuilder.buildScreenHelpDialog for the active screen.
+            app.SectionHelpButton = uihtml(hg);
+            app.SectionHelpButton.Layout.Row = 1; app.SectionHelpButton.Layout.Column = 2;
+            app.SectionHelpButton.HTMLSource = LayoutBuilder.buildHelpIconHtml();
+            app.SectionHelpButton.DataChangedFcn = @(~,~) ...
+                DialogBuilder.buildScreenHelpDialog(app, char(app.LastSectionKey));
+
             app.SectionSubtitleLabel = uilabel(hg, 'Text', 'Server authentication and project access');
             app.SectionSubtitleLabel.FontSize = 12;
             app.SectionSubtitleLabel.FontColor = Theme.COLOR_MUTED;
-            app.SectionSubtitleLabel.Layout.Row = 2; app.SectionSubtitleLabel.Layout.Column = 1;
+            app.SectionSubtitleLabel.Layout.Row = 2; app.SectionSubtitleLabel.Layout.Column = [1 2];
 
             sep = uipanel(shellGrid, 'Title', '');
             sep.Layout.Row = 2; sep.Layout.Column = 1;
@@ -400,6 +441,56 @@ classdef LayoutBuilder
             btn.Layout.Row = 4; btn.Layout.Column = 1;
             app.styleBtn(btn, 'primary');
             btn.ButtonPushedFcn = @(~,~)app.showLoginDialog();
+        end
+
+        function html = buildHelpIconHtml(bgColor, fgColor)
+            % buildHelpIconHtml  Themed circular "?" icon for the help
+            %   buttons. Uses uihtml so the shape is genuinely round
+            %   (uibutton would be a rectangle). The icon is a 22 px
+            %   circle with a 1.5 px stroke at 60 % fg opacity, a
+            %   transparent fill that lets the host's background show
+            %   through, a subtle bg + full-opacity border on hover, and
+            %   a JS click handler that sets htmlComponent.Data to fire
+            %   DataChangedFcn on the MATLAB side.
+            %
+            %   Optional bgColor / fgColor let callers swap the palette
+            %   so the same renderer can drive both the screen-title
+            %   icon (Theme.COLOR_CARD / Theme.COLOR_HEADING) and the
+            %   header-bar app icon (Theme.NAV_BG / Theme.NAV_FG).
+            try
+                if nargin < 1 || isempty(bgColor); bgColor = Theme.COLOR_CARD; end
+                if nargin < 2 || isempty(fgColor); fgColor = Theme.COLOR_HEADING; end
+                bg = Theme.toHex(bgColor);
+                fg = Theme.toHex(fgColor);
+            catch
+                bg = '#262B33'; fg = '#F2F4F7';
+            end
+            html = [ ...
+                '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' ...
+                'html,body{margin:0;padding:0;width:100%;height:100%;' ...
+                'background:' bg ';display:flex;align-items:center;' ...
+                'justify-content:center;font-family:-apple-system,' ...
+                '"Segoe UI",Helvetica,Arial,sans-serif;}' ...
+                '.help{width:22px;height:22px;border-radius:50%;' ...
+                'border:1.5px solid ' fg '99;color:' fg ';' ...
+                'display:flex;align-items:center;justify-content:center;' ...
+                'font-size:13px;font-weight:700;line-height:1;cursor:pointer;' ...
+                'background:transparent;user-select:none;' ...
+                'transition:background 120ms ease, border-color 120ms ease;}' ...
+                '.help:hover{background:' fg '22;border-color:' fg ';}' ...
+                '.help:active{background:' fg '33;}' ...
+                '</style></head><body>' ...
+                '<div class="help" id="b" title="Show help for this screen">?</div>' ...
+                '<script>' ...
+                'function setup(htmlComponent){' ...
+                ' var b=document.getElementById("b");' ...
+                ' if(!b)return;' ...
+                ' b.addEventListener("click",function(){' ...
+                '  htmlComponent.Data=Date.now();' ...
+                ' });' ...
+                '}' ...
+                '</script>' ...
+                '</body></html>'];
         end
 
     end

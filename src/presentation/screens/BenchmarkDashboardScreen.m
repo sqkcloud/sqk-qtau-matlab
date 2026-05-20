@@ -152,11 +152,21 @@ function BenchmarkDashboardScreen(app)
     radarPanel.BackgroundColor = Theme.COLOR_CARD;
     rpg = uigridlayout(radarPanel, [1 1]);
     rpg.Padding = [10 10 10 10]; rpg.BackgroundColor = Theme.COLOR_CARD;
-    app.ScorecardAxes = polaraxes(rpg);
-    app.ScorecardAxes.ThetaTick = [0 90 180 270];
-    app.ScorecardAxes.ThetaTickLabel = {'Capacity','Scalability','Accuracy','Runtime'};
-    app.ScorecardAxes.RLim = [0 10];
-    title(app.ScorecardAxes, 'Backend Scorecard', 'Interpreter', 'none');
+    % Lazy polaraxes — eagerly calling polaraxes(rpg) at screen-build
+    % time on R2025b uifigure occasionally fails to parent the
+    % polaraxes to the uigridlayout and spawns a top-level Figure
+    % window instead (visible to the operator as a blank "Figures"
+    % window when they navigate to Benchmark Dashboard). Match the
+    % Volumetric / Calibration pattern: ship a placeholder uilabel,
+    % build the real polaraxes inside applyScorecard via the explicit
+    % 'Parent' property syntax once data is available.
+    scoPlaceholder = uilabel(rpg, ...
+        'Text', 'Backend scorecard appears here after a benchmark run.', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
+    app.ScorecardGrid        = rpg;
+    app.ScorecardPlaceholder = scoPlaceholder;
+    app.ScorecardAxes        = [];
 
     % ── Row 5 Left: Prediction Calibration scatter ───────────────────────
     calPanel = uipanel(g, 'Title', 'Prediction Calibration', ...

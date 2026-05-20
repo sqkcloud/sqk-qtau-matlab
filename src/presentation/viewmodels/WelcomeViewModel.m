@@ -186,7 +186,7 @@ classdef WelcomeViewModel < handle
                 return;
             end
 
-            app.logEvent('API', sprintf('DELETE /api/projects/%s', projectId));
+            app.logEvent('API', sprintf('Delete project — id %s', projectId));
             app.showLoading(Labels.get('loading_projects_delete', 'Deleting project...'));
             svc = app.ProjectSvc;
             token = app.State.authToken;
@@ -406,7 +406,7 @@ classdef WelcomeViewModel < handle
             if ~app.State.isAuthenticated()
                 return;
             end
-            app.logEvent('API', 'GET /api/projects');
+            app.logEvent('API', 'Loading projects');
             app.showLoading(Labels.get('loading_projects', 'Loading projects...'));
             svc = app.AuthSvc;
             token = app.State.authToken;
@@ -545,7 +545,7 @@ classdef WelcomeViewModel < handle
             obj.FilteredIds     = ids;
             obj.TotalItems = size(rows, 1);
             nRows = size(rows, 1);
-            app.logEvent('API', sprintf('GET /api/projects → %d row(s) returned (total: %d)', nRows, obj.TotalItems));
+            app.logEvent('API', sprintf('Projects loaded — %d row(s) returned (total: %d)', nRows, obj.TotalItems));
             if app.State.hasProject() && nRows > 0
                 for r = 1:nRows
                     if strcmp(ids{r}, char(app.State.currentProjectId))

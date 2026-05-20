@@ -115,7 +115,7 @@ function ReportsScreen(app)
     app.styleBtn(app.GenerateReportButton, 'primary');
     app.GenerateReportButton.FontSize = 14;
     app.GenerateReportButton.Tooltip = ...
-        'POST /api/reports/generate — polls until ready, downloads, opens.';
+        'Generate a fresh report, poll until ready, then download and open.';
 
     statusHeader = uilabel(gg, ...
         'Text', Labels.get('reports_status_header', 'Last action'), ...
@@ -184,7 +184,7 @@ function ReportsScreen(app)
         'ButtonPushedFcn', @(~,~) app.ReportsVm.onRefreshList());
     app.ReportsRefreshBtn.Layout.Row = 1; app.ReportsRefreshBtn.Layout.Column = 3;
     app.styleBtn(app.ReportsRefreshBtn, 'ghost');
-    app.ReportsRefreshBtn.Tooltip = 'Refresh from GET /api/reports';
+    app.ReportsRefreshBtn.Tooltip = 'Refresh the reports list';
 
     % Table
     %  Explicit pixel widths (was {70, '1x', 160, 90}) so the table

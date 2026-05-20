@@ -90,6 +90,38 @@ function test_optimal_falls_back_when_no_target_hit(testCase)
     testCase.assertEqual(r.point.backend, 'C');  % highest-fidelity overall
 end
 
+function test_optimal_returns_empty_when_all_costs_nan(testCase)
+    % Regression: when every candidate point has NaN cost (e.g. the
+    % chosen circuit is wider than every available backend so the
+    % server-side estimator returns NaN for cost/runtime/shots while
+    % parsePredictResult falls back to the default 0.80 fidelity),
+    % pickOptimal previously returned points(max(fidelity)) which had
+    % NaN cost — leaking NaN into the Recommended card. Now the
+    % fallback filters to finite-cost candidates first; if none exist,
+    % point stays empty so the UI can show a clear "no viable
+    % configuration" status instead of NaN values.
+    pts = [makePoint('A', NaN, 0.80), makePoint('B', NaN, 0.80), ...
+           makePoint('C', NaN, 0.80)];
+    f = RunPlannerService.computeParetoFrontier(pts);
+    r = RunPlannerService.pickOptimal(pts, f, 0.90);
+    testCase.assertFalse(r.metTarget);
+    testCase.assertTrue(isempty(r.point), ...
+        'pickOptimal must NOT recommend a point with NaN cost');
+end
+
+function test_optimal_skips_nan_cost_when_others_are_finite(testCase)
+    % Mixed case: a NaN-cost candidate sits next to finite-cost
+    % candidates. The finite candidates must win even when a NaN
+    % candidate's nominal fidelity is higher.
+    pts = [makePoint('A', 0.05, 0.80), makePoint('B', NaN, 0.99), ...
+           makePoint('C', 0.10, 0.85)];
+    f = RunPlannerService.computeParetoFrontier(pts);
+    r = RunPlannerService.pickOptimal(pts, f, 0.95);
+    testCase.assertFalse(r.metTarget);
+    testCase.assertEqual(r.point.backend, 'C', ...
+        'NaN-cost candidate must be skipped even when its fidelity is higher');
+end
+
 % ── makePoint sanity ────────────────────────────────────────────────────────
 function test_makePoint_round_trip(testCase)
     p = RunPlannerService.makePoint('be', '2', 'Standard', 0.85, 0.92, 0.04, 3.2, 4710, 1.15);

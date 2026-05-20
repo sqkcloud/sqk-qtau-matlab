@@ -39,6 +39,13 @@ classdef NavigationManager
                         prevPanel.Visible = 'off';
                     end
                 end
+                % B7 — cancel any in-flight AsyncRunner futures owned by
+                % the outgoing VM so a 30-second fetch the user left
+                % behind doesn't keep burning the worker + 50ms polling
+                % timer. cancelInFlightFor maps the routing key to the
+                % VM and is a no-op for screens that haven't implemented
+                % cancelInFlight yet.
+                NavigationManager.cancelInFlightFor(app, prevKey);
             end
 
             safeKey = matlab.lang.makeValidName(char(key));
@@ -214,7 +221,13 @@ classdef NavigationManager
 
         function autoLoadScreen(app, key)
             NavigationManager.ensureVm(app, key);
-            ttl = AppConfig.getDouble('screen_cache_ttl', 30);
+            % B10 — per-screen TTL with fallback to the global default
+            % (30 s). The config-style screens (Backends / Mitigation
+            % Compare / Resource Estimator / Run Planner) override to
+            % 300 s in app.properties so a quick nav-away-and-back
+            % doesn't re-fire ~750 ms worth of round-trips for data
+            % that hasn't changed in a session.
+            ttl = NavigationManager.ttlForScreen(key);
 
             % Centralised "Loading {screen}..." overlay. We flip it on
             % right before firing any VM auto-loader that is actually
@@ -290,11 +303,16 @@ classdef NavigationManager
                         asyncStarted = true;
                     end
                 case 'Backends'
+                    % B2 skin-first: VM.onRefreshBackends drops a
+                    % "Loading backends..." line into the in-panel
+                    % BackendStatusArea while the async fetch runs.
+                    % The full-screen nav overlay is gone — the user
+                    % sees the toolbar, the empty backends table, and
+                    % the status line immediately, and the table
+                    % populates inline as soon as /api/backends lands.
                     if ~isempty(app.BackendsVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.BackendsVm, ttl)
-                        NavigationManager.showNavLoading(app, 'Backends');
                         app.BackendsVm.onRefreshBackends();
-                        asyncStarted = true;
                     end
                 case 'Prediction'
                     if ~isempty(app.PredictionVm) && app.State.isAuthenticated() ...
@@ -304,25 +322,37 @@ classdef NavigationManager
                         asyncStarted = true;
                     end
                 case 'Mitigation Compare'
+                    % B2 skin-first: VM.onEnter signals progress via its
+                    % inline StatusLbl ("Loading circuits / backends /
+                    % strategies…"), the dropdowns already show
+                    % " (loading)" placeholders, and the card grid
+                    % shows its empty-state prompt. The full-screen
+                    % overlay is dropped — the tail-end of
+                    % autoLoadScreen lets the build-time overlay (if
+                    % any) hide via `~asyncStarted` so the panel
+                    % becomes interactive immediately.
                     if ~isempty(app.MitigationCompareVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.MitigationCompareVm, ttl)
-                        NavigationManager.showNavLoading(app, 'Mitigation Compare');
                         app.MitigationCompareVm.onEnter();
-                        asyncStarted = true;
                     end
                 case 'Resource Estimator'
+                    % B2 skin-first: VM.onEnter writes 'Loading
+                    % circuits…' to its StatusLbl and the result cards
+                    % display em-dash placeholders until Estimate is
+                    % clicked. No full-screen overlay needed on auto-
+                    % load.
                     if ~isempty(app.ResourceEstimatorVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.ResourceEstimatorVm, ttl)
-                        NavigationManager.showNavLoading(app, 'Resource Estimator');
                         app.ResourceEstimatorVm.onEnter();
-                        asyncStarted = true;
                     end
                 case 'Run Planner'
+                    % B2 skin-first: VM.onEnter sets Phase='loading'
+                    % which refreshStatus writes to StatusLbl. The
+                    % scatter axes ship a uilabel placeholder and the
+                    % recommendation card shows em-dash defaults.
                     if ~isempty(app.RunPlannerVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.RunPlannerVm, ttl)
-                        NavigationManager.showNavLoading(app, 'Run Planner');
                         app.RunPlannerVm.onEnter();
-                        asyncStarted = true;
                     end
                 case 'Jobs'
                     if ~isempty(app.JobsVm) && app.State.hasProject() ...
@@ -384,11 +414,18 @@ classdef NavigationManager
                         asyncStarted = true;
                     end
                 case 'Circuit Cutting'
+                    % B2 skin-first: VM.onEnter fires loadCircuits /
+                    % loadPresets / loadBackendPool as parallel async
+                    % parfeval futures and writes operational hints
+                    % to the inline CuttingStatusLabel via
+                    % refreshStatus. The full-screen nav overlay is
+                    % gone — the user sees the mode tabs, the toolbar,
+                    % and the empty Cut Plan / Backend Assignments
+                    % cards immediately, and each card populates as
+                    % its respective fetch lands.
                     if ~isempty(app.CircuitCuttingVm) && app.State.isAuthenticated() ...
                             && ~NavigationManager.isScreenFresh(app.CircuitCuttingVm, ttl)
-                        NavigationManager.showNavLoading(app, 'Circuit Cutting');
                         app.CircuitCuttingVm.onEnter();
-                        asyncStarted = true;
                     end
                 case 'Settings'
                     if ~isempty(app.SettingsVm) && app.State.isAuthenticated() ...
@@ -565,6 +602,65 @@ classdef NavigationManager
                 end
             catch ME
                 Logger.debug('NavigationManager', 'freshness check: %s', ME.message);
+            end
+        end
+
+        function ttl = ttlForScreen(key)
+            % ttlForScreen  Per-screen cache TTL override with fallback
+            %   to the global screen_cache_ttl. Lets config-style screens
+            %   (Backends, Mitigation Compare, Resource Estimator, Run
+            %   Planner — data that changes rarely inside a session) be
+            %   marked long-cache while keeping the Dashboard's
+            %   auto-refresh-friendly default of 30 seconds.
+            %
+            %   Property key shape: screen_cache_ttl_<lowercased_key>
+            %   with spaces → underscores. Example: 'Mitigation Compare'
+            %   → screen_cache_ttl_mitigation_compare. Missing entry
+            %   falls through to the global default.
+            defaultTtl = AppConfig.getDouble('screen_cache_ttl', 30);
+            safeKey    = lower(strrep(char(key), ' ', '_'));
+            perKey     = ['screen_cache_ttl_' safeKey];
+            ttl        = AppConfig.getDouble(perKey, defaultTtl);
+        end
+
+        function cancelInFlightFor(app, key)
+            % cancelInFlightFor  Map a routing key to the corresponding
+            %   VM and ask it to cancel any in-flight AsyncRunner
+            %   future. Called from onSelectSection right after the
+            %   outgoing panel is hidden so a mid-fetch nav-away frees
+            %   the worker + polling timer instead of letting the ghost
+            %   fetch run to completion (and possibly land on a stale
+            %   generation that a defensive isvalid() check has to
+            %   discard).
+            %
+            %   Only the four lookup-driven screens that have
+            %   implemented cancelInFlight (Backends, Mitigation
+            %   Compare, Resource Estimator, Run Planner) are covered.
+            %   Other screens' AsyncRunner calls stay un-cancellable
+            %   for now — Phase A targeted scope.
+            if isempty(key); return; end
+            try
+                switch char(key)
+                    case 'Backends'
+                        if ~isempty(app.BackendsVm)
+                            app.BackendsVm.cancelInFlight();
+                        end
+                    case 'Mitigation Compare'
+                        if ~isempty(app.MitigationCompareVm)
+                            app.MitigationCompareVm.cancelInFlight();
+                        end
+                    case 'Resource Estimator'
+                        if ~isempty(app.ResourceEstimatorVm)
+                            app.ResourceEstimatorVm.cancelInFlight();
+                        end
+                    case 'Run Planner'
+                        if ~isempty(app.RunPlannerVm)
+                            app.RunPlannerVm.cancelInFlight();
+                        end
+                end
+            catch ME
+                Logger.debug('NavigationManager', ...
+                    'cancelInFlightFor(%s): %s', char(key), ME.message);
             end
         end
 

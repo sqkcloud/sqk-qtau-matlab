@@ -24,7 +24,7 @@ classdef test_AsyncRunner < matlab.unittest.TestCase
         function testRunReturnsScalarResult(testCase)
             captured = [];
             AsyncRunner.run(@() 42, @(r) captureResult(r), @(ME) []);
-            test_AsyncRunner.waitForAsync(captured);
+            test_AsyncRunner.waitForAsync();
             testCase.verifyEqual(captured, 42);
 
             function captureResult(r)

@@ -12,7 +12,7 @@ classdef AppState < handle
     properties
         % ── Network ──────────────────────────────────────────────────────────
         % Loaded from resources/app.properties key "base_url".
-        % Fallback: http://34.42.87.190:5715
+        % Fallback: http://localhost:5715
         baseUrl string = ""
 
         % ── Authentication ───────────────────────────────────────────────────
@@ -49,6 +49,14 @@ classdef AppState < handle
 
         % ── Job context ───────────────────────────────────────────────────────
         selectedJobId string = ""
+        % Pinned job id set by an explicit operator gesture on the Jobs
+        % screen (right-click → View Results, or double-click a
+        % terminal row). ResultsViewModel.onRefreshResults consumes
+        % and clears this on render, bypassing its default
+        % "first-completed in /api/jobs" autodiscovery so the operator
+        % sees the exact job they picked even when the queue has
+        % several completed siblings.
+        pinnedJobId   string = ""
 
         % ── Prediction context ────────────────────────────────────────────────
         predictionId string = ""
@@ -117,9 +125,23 @@ classdef AppState < handle
 
     methods
         function obj = AppState()
-            % Load base URL from app.properties; fall back to the shared
-            % QTAU API server at 34.42.87.190:5715.
-            obj.baseUrl = string(AppConfig.get('base_url', 'http://34.42.87.190:5715'));
+            % Load base URL from app.properties; fall back to a
+            % localhost default so a shipped toolbox with an empty
+            % base_url= line doesn't hard-code any specific server.
+            % End-users override via Settings → Connection or via
+            % the URL field on the Login dialog.
+            %
+            % AppConfig.get's 2-arg default only fires when the key is
+            % MISSING from the file. When the key exists with an empty
+            % value (e.g. shipped toolbox with `base_url=`), it returns
+            % '' and FastAPIClient.assertSafeBaseUrl would reject the
+            % empty URL before the Login dialog can appear. The empty-
+            % string guard below catches that case too.
+            configured = strtrim(char(AppConfig.get('base_url', '')));
+            if isempty(configured)
+                configured = 'http://localhost:5715';
+            end
+            obj.baseUrl = string(configured);
             fprintf('[AppState] Base URL loaded from config: %s\n', char(obj.baseUrl));
         end
 
@@ -215,6 +237,7 @@ classdef AppState < handle
             obj.selectedBackend       = "";
             obj.backupBackend       = "";
             obj.selectedJobId       = "";
+            obj.pinnedJobId         = "";
             obj.predictionId        = "";
             obj.reportId            = "";
         end
