@@ -28,18 +28,13 @@ classdef test_QecEngineService < matlab.unittest.TestCase
         end
 
         function testDepolarizingNoNoisePerfectFidelity(testCase)
-            % Use |0⟩ (the codespace logical-zero, a product state) as
-            % the input. The bit-flip code's |+⟩_L is the GHZ-3 entangled
-            % state; QecEngineService.traceOutBitFlip3 currently uses a
-            % literal partial trace rather than the inverse-encoding
-            % circuit, so GHZ-3 → I/2 and the fidelity with the
-            % unencoded |+⟩ drops to 0.5 even when the channel is
-            % identity (p=0). What the test cares about is the
-            % depolarizing-channel branch behaving as identity at p=0;
-            % using |0⟩ exercises that branch without tripping the
-            % decoder-shortcut limitation. The decoder upgrade is
-            % tracked for 1.1.0.
-            r = testCase.Engine.simulate('bitflip3', 'depolarizing', 0, '0', 1);
+            % Uses |+⟩ — the encoded state is GHZ-3, the worst-case
+            % input for any naive partial-trace decoder. 1.1.0 ships
+            % QecEngineService.decodeBitFlip3 which applies the inverse
+            % encoding circuit (CNOT_1->3 · CNOT_1->2) before tracing,
+            % so the recovered fidelity is 1.0 even under the
+            % depolarizing channel at p=0. 1.0.0 capped at 0.5 here.
+            r = testCase.Engine.simulate('bitflip3', 'depolarizing', 0, '+', 1);
             testCase.verifyGreaterThanOrEqual(r.fidelity, 0.99, ...
                 'Depolarizing noise with p=0 should give perfect fidelity');
         end
