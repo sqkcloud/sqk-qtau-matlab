@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    demos.xml - Registers QTAU Connector Workbench example scripts with
+    the MATLAB Help browser's Examples tab and the `demo` command.
+
+    Discovered via info.xml's <help_location>doc/help</help_location>.
+    Targets are .m scripts under doc/examples/. If you convert each .m
+    to a Live Script (.mlx) - recommended for the embedded plots - the
+    file attribute below picks up the .mlx form automatically because
+    MATLAB resolves the file extension at runtime.
+-->
+<demos>
+    <name>QTAU Connector Workbench</name>
+    <type>toolbox</type>
+    <icon>../resources/toolbox-icon-64.png</icon>
+    <description>
+        Runnable examples for QTAU Connector Workbench. The first two
+        examples run entirely offline (no QTAU FastAPI server needed);
+        the third demonstrates the programmatic-API flow against a
+        running backend.
+    </description>
+
+    <demosection>
+        <label>Offline (no backend)</label>
+        <demoitem>
+            <label>Local QEC simulation</label>
+            <type>M-file</type>
+            <source>example_01_qec_simulation</source>
+            <file>../examples/example_01_qec_simulation.m</file>
+            <description>
+                Sweep fidelity vs. depolarizing-noise probability for the
+                3-qubit bit-flip code. Compare bitflip3 / phaseflip3 /
+                shor9 side-by-side. Inspect the Bloch vector of the
+                recovered logical state.
+            </description>
+        </demoitem>
+        <demoitem>
+            <label>Visualize a quantum circuit</label>
+            <type>M-file</type>
+            <source>example_02_visualize_circuit</source>
+            <file>../examples/example_02_visualize_circuit.m</file>
+            <description>
+                Render an OpenQASM circuit as ASCII, HTML, and SVG using
+                the bundled CircuitDiagram helper. Cycle through the
+                bundled QTAUBench small-circuit subset.
+            </description>
+        </demoitem>
+    </demosection>
+
+    <demosection>
+        <label>With backend</label>
+        <demoitem>
+            <label>Programmatic connection and browsing</label>
+            <type>M-file</type>
+            <source>example_03_connect_and_browse</source>
+            <file>../examples/example_03_connect_and_browse.m</file>
+            <description>
+                Drive the QTAU FastAPI backend from MATLAB without
+                launching the workbench UI. List projects, browse
+                circuits, prepare for scripted bulk operations.
+            </description>
+        </demoitem>
+    </demosection>
+</demos>

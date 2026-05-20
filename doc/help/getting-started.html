@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Getting Started - QTAU Connector Workbench</title>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; max-width: 760px; margin: 1em 2em; line-height: 1.5; color: #222; }
+        h1 { color: #07669e; border-bottom: 2px solid #07669e; padding-bottom: 0.3em; }
+        h2 { color: #07669e; margin-top: 1.6em; }
+        code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
+        pre { background: #f4f4f4; padding: 0.8em; border-radius: 4px; overflow-x: auto; }
+        .note { background: #fffbea; border-left: 3px solid #f5b900; padding: 0.6em 1em; margin: 1em 0; }
+        ol { padding-left: 1.6em; }
+        ol li { margin-bottom: 0.4em; }
+    </style>
+</head>
+<body>
+
+<h1>Getting Started</h1>
+
+<p>
+    This page is a short reference. For the full walkthrough with embedded
+    screenshots, open the bundled Live Script:
+</p>
+
+<pre>&gt;&gt; open(fullfile(matlabroot,'toolbox','QTAU Connector Workbench','doc','GettingStarted.mlx'))</pre>
+
+<p>
+    Or from <em>Add-Ons &raquo; Manage Add-Ons &raquo; QTAU Connector Workbench &raquo; Options &raquo; Getting Started</em>.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+    <li>MATLAB R2025b or later.</li>
+    <li>A reachable QTAU FastAPI server. The toolbox is the client only.</li>
+    <li>Login credentials for that server.</li>
+</ul>
+
+<h2>Step 1 - Launch</h2>
+<pre>&gt;&gt; QTAUWorkbenchLauncher</pre>
+<p>The main window appears. The Login dialog opens on top.</p>
+
+<h2>Step 2 - Set the server URL</h2>
+<p>
+    The Base URL field is <strong>blank by default</strong> in the shipped
+    toolbox. Type your server URL (e.g.
+    <code>https://qtau.example.com:5715</code>). If you leave it blank, the
+    app falls back to <code>http://localhost:5715</code>.
+</p>
+
+<div class="note">
+    The Base URL is saved in your local <code>resources/app.properties</code>
+    after a successful login. To change it later, open the Settings screen
+    or edit that file directly.
+</div>
+
+<h2>Step 3 - Sign in and tour</h2>
+<ol>
+    <li>Enter username + password, click <strong>Sign In</strong>.</li>
+    <li>You land on the <strong>Dashboard</strong>.</li>
+    <li>Open a project from the <strong>Projects</strong> sidebar entry.</li>
+    <li>Try the <strong>Composer</strong> &raquo; pick a template (Bell state, GHZ, QFT).</li>
+    <li>Click <strong>Save</strong> to upload the circuit, then <strong>Analysis</strong> to inspect features.</li>
+    <li>Open the <strong>QMC</strong> popup from Analysis &raquo; Run QMC for a Monte Carlo sweep.</li>
+</ol>
+
+<h2>Next</h2>
+<ul>
+    <li><a href="screens.html">Screen Catalog</a> &mdash; what each screen is for.</li>
+    <li><a href="troubleshooting.html">Troubleshooting</a> &mdash; common first-launch issues.</li>
+</ul>
+
+</body>
+</html>

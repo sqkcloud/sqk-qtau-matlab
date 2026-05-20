@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>QTAU Connector Workbench</title>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; max-width: 760px; margin: 1em 2em; line-height: 1.5; color: #222; }
+        h1 { color: #07669e; border-bottom: 2px solid #07669e; padding-bottom: 0.3em; }
+        h2 { color: #07669e; margin-top: 1.6em; }
+        code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
+        pre { background: #f4f4f4; padding: 0.8em; border-radius: 4px; overflow-x: auto; }
+        .lede { font-size: 1.1em; color: #444; }
+        ul { padding-left: 1.4em; }
+        .badge { display: inline-block; padding: 2px 8px; font-size: 0.85em; background: #e3f0f7; color: #07669e; border-radius: 3px; margin-right: 0.4em; }
+    </style>
+</head>
+<body>
+
+<h1>QTAU Connector Workbench</h1>
+
+<p class="lede">
+    A professional MATLAB R2025b+ desktop client for managing quantum-circuit
+    experiments through the QTAU FastAPI backend.
+</p>
+
+<p>
+    <span class="badge">v1.1.0</span>
+    <span class="badge">Apache 2.0</span>
+    <span class="badge">Windows / macOS / Linux</span>
+</p>
+
+<h2>What it does</h2>
+<ul>
+    <li>20+ workflow screens for circuit upload, in-app composition, analysis, backend exploration, benchmark planning, fidelity prediction, error mitigation, cost-aware run planning, job monitoring, results review, reports, QEC simulation, and 3D visualization.</li>
+    <li>A built-in Quantum Monte Carlo simulator popup with asynchronous IBM Runtime job execution, zero-noise extrapolation, vector-chart PDF reports, and IBM execution-log download.</li>
+    <li>A reproducibility-bundle exporter that packages a circuit as QASM plus Qiskit/Cirq/Braket Python equivalents with a SHA-256-stamped manifest.</li>
+    <li>A pure-MATLAB QEC simulation engine (no backend needed) for the bit-flip, phase-flip, Shor-9, Steane-7, perfect-5, and surface codes.</li>
+</ul>
+
+<h2>What it is not</h2>
+<p>
+    The workbench is a <strong>client only</strong> &mdash; your data lives on
+    whichever QTAU FastAPI server you connect to. The server is a separate
+    open-source project; see the <a href="https://github.com/sqkcloud/sqk-qtau-matlab">GitHub repository</a>
+    for backend setup notes.
+</p>
+
+<h2>Quick start</h2>
+<pre>&gt;&gt; QTAUWorkbenchLauncher</pre>
+<p>
+    Sets the path, opens the main window, and pops the Login dialog. Fill in
+    your QTAU server base URL (the field starts blank), username, and
+    password. See <a href="getting-started.html">Getting Started</a> for a
+    detailed walkthrough.
+</p>
+
+<h2>Where to go next</h2>
+<ul>
+    <li><a href="getting-started.html">Getting Started</a> &mdash; first launch, connection setup, 5-minute tour.</li>
+    <li><a href="screens.html">Screen Catalog</a> &mdash; what each of the 20+ screens does and when to use it.</li>
+    <li><a href="troubleshooting.html">Troubleshooting</a> &mdash; common issues and fixes.</li>
+    <li><strong>Examples</strong> &mdash; runnable Live Scripts in the toolbox &raquo; Examples tab.</li>
+</ul>
+
+</body>
+</html>

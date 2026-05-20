@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding="utf-8"?>
+<!--
+    helptoc.xml - Table of contents for the QTAU Connector Workbench
+    Help browser entry. Referenced from info.xml's <help_location>.
+
+    Each <tocitem target="..."> is a clickable node in the Help tree.
+    HTML targets are resolved relative to doc/help/. MATLAB-script
+    targets (.m, .mlx) are resolved against the MATLAB path.
+-->
+<toc version="2.0">
+    <tocitem target="overview.html">QTAU Connector Workbench
+        <tocitem target="getting-started.html">Getting Started</tocitem>
+        <tocitem target="screens.html">Screen Catalog</tocitem>
+        <tocitem target="troubleshooting.html">Troubleshooting</tocitem>
+        <tocitem target="examples/example_01_qec_simulation.m"
+                 image="$toolbox/matlab/icons/help_demo.gif">
+            Example: Local QEC simulation
+        </tocitem>
+        <tocitem target="examples/example_02_visualize_circuit.m"
+                 image="$toolbox/matlab/icons/help_demo.gif">
+            Example: Visualize a quantum circuit
+        </tocitem>
+        <tocitem target="examples/example_03_connect_and_browse.m"
+                 image="$toolbox/matlab/icons/help_demo.gif">
+            Example: Programmatic connection
+        </tocitem>
+    </tocitem>
+</toc>

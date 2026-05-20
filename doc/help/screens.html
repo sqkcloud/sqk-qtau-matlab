@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Screen Catalog - QTAU Connector Workbench</title>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; max-width: 880px; margin: 1em 2em; line-height: 1.5; color: #222; }
+        h1 { color: #07669e; border-bottom: 2px solid #07669e; padding-bottom: 0.3em; }
+        h2 { color: #07669e; margin-top: 1.6em; }
+        table { border-collapse: collapse; width: 100%; margin: 0.6em 0; }
+        th, td { border: 1px solid #ddd; padding: 0.5em 0.7em; text-align: left; vertical-align: top; }
+        th { background: #f0f7fb; color: #07669e; }
+        tr:nth-child(even) { background: #fafafa; }
+        code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<h1>Screen Catalog</h1>
+
+<p>
+    The workbench has 21 screens (20 visible in the sidebar plus
+    <em>Upload</em>, which is reachable from the Composer toolbar and
+    Circuits toolbar but hidden from the sidebar).
+</p>
+
+<h2>Core workflow screens</h2>
+<table>
+<tr><th>Screen</th><th>Purpose</th></tr>
+<tr><td>Dashboard</td><td>Default landing post-login. KPI strip, workflow stepper, Run Readiness, Backend Health, Job Submissions trend, merged activity feed, 30s silent auto-refresh.</td></tr>
+<tr><td>Projects</td><td>Login, project picker, recent projects. (Routing key is still <code>'Welcome'</code> for back-compat.)</td></tr>
+<tr><td>Circuits</td><td>Browse, search, manage project circuits. Toolbar exposes Composer and Upload entry-points.</td></tr>
+<tr><td>Composer</td><td>In-app circuit authoring with template gallery, gate palette, OpenQASM bidirectional mirror, Inspect footer, multi-target code export, reproducibility bundle.</td></tr>
+<tr><td>Notes</td><td>Working notes and operator memos. Per-project markdown notes with checklists.</td></tr>
+<tr><td>Analysis</td><td>Circuit feature extraction, QTAUBench similarity, Quantum Monte Carlo popup.</td></tr>
+<tr><td>Detailed Analysis</td><td>Heatmaps, drift, qubit metrics, cross-run comparisons.</td></tr>
+</table>
+
+<h2>Execution-planning screens</h2>
+<table>
+<tr><th>Screen</th><th>Purpose</th></tr>
+<tr><td>Backends</td><td>Backend explorer with primary/backup selection and telemetry tabs (Overview / Per-Qubit / History / Topology).</td></tr>
+<tr><td>Benchmark</td><td>Execution parameters, mitigation strategy, cost.</td></tr>
+<tr><td>Benchmark Dashboard</td><td>Benchmark configuration summary and recommendations.</td></tr>
+<tr><td>Circuit Cutting</td><td>Circuit cutting + distributed reconstruction.</td></tr>
+<tr><td>Prediction</td><td>Predicted fidelity, distribution, error budget.</td></tr>
+<tr><td>Mitigation Compare</td><td>Side-by-side cost / shot-multiplier / runtime / IQP-cost cards for None / Minimal / Standard / Aggressive mitigation strategies.</td></tr>
+<tr><td>Resource Estimator</td><td>Fault-tolerant overhead planner. Surface-code distance, T-state budget, T-factory count, total runtime.</td></tr>
+<tr><td>Run Planner</td><td>Cost-aware run optimisation. Picks the cheapest (backend x mitigation x shots) configuration that meets a target fidelity, via a Pareto frontier.</td></tr>
+</table>
+
+<h2>Execution and review screens</h2>
+<table>
+<tr><th>Screen</th><th>Purpose</th></tr>
+<tr><td>Jobs</td><td>Job Monitoring Dashboard with 6-column table. Auto-refreshes every 5s while visible.</td></tr>
+<tr><td>Results</td><td>Measured vs predicted vs ideal result analysis.</td></tr>
+<tr><td>Reports</td><td>Report generation and viewing (PDF, HTML).</td></tr>
+<tr><td>Settings</td><td>Account settings, defaults, storage, notifications.</td></tr>
+</table>
+
+<h2>QEC screens</h2>
+<table>
+<tr><th>Screen</th><th>Purpose</th></tr>
+<tr><td>QEC Simulation</td><td>QEC simulation under configurable noise models. bit-flip, phase-flip, Shor-9, Steane-7, perfect-5, surface codes.</td></tr>
+<tr><td>QEC Visualization</td><td>3D Bloch sphere, surface code lattice, error propagation animation.</td></tr>
+</table>
+
+</body>
+</html>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    info.xml - registers QTAU Connector Workbench with the MATLAB Help
+    browser and Add-On Explorer.
+
+    Discovered automatically when this file is on the MATLAB path (the
+    toolbox install action adds the toolbox root to the path, so this
+    file is reachable). MATLAB indexes the helptoc.xml referenced via
+    <help_location> and surfaces the entries in F1 search.
+-->
+<productinfo>
+    <matlabrelease>R2025b</matlabrelease>
+    <name>QTAU Connector Workbench</name>
+    <type>toolbox</type>
+    <icon>resources/toolbox-icon-64.png</icon>
+    <help_location>doc/help</help_location>
+    <help_contents_icon_location>resources/toolbox-icon-64.png</help_contents_icon_location>
+    <list>
+        <listitem>
+            <label>Launch QTAU Connector Workbench</label>
+            <callback>QTAUWorkbenchLauncher</callback>
+            <icon>HelpIcon.START</icon>
+        </listitem>
+        <listitem>
+            <label>Documentation</label>
+            <callback>doc QTAU Connector Workbench</callback>
+            <icon>HelpIcon.DOC_CENTER</icon>
+        </listitem>
+        <listitem>
+            <label>Examples</label>
+            <callback>demo toolbox 'QTAU Connector Workbench'</callback>
+            <icon>HelpIcon.EXAMPLES</icon>
+        </listitem>
+    </list>
+</productinfo>
