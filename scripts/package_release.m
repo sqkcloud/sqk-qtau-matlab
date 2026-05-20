@@ -88,7 +88,7 @@ function outFile = package_release()
 
     % Toolbox Information
     opts.ToolboxName      = 'QTAU Connector Workbench';
-    opts.ToolboxVersion   = '1.0.0';
+    opts.ToolboxVersion   = '1.1.0';
     opts.AuthorName       = 'Mason';
     opts.AuthorEmail      = 'contact@sqkcloud.com';
     opts.AuthorCompany    = 'SQK Cloud Inc';
@@ -255,13 +255,22 @@ function tf = iShouldExclude(absPath, projectRoot)
         if endsWith(rel, suffixExcludes{i}); tf = true; return; end
     end
 
-    % doc/ — ship ONLY the Getting Started guide (.mlx preferred, .m
-    % fallback); everything else under doc/ is internal dev material
-    % (architecture notes, OpenAPI dump, dev guide, notebooks,
-    % superpowers/, features/, etc.).
+    % doc/ — ship the user-facing material only:
+    %   - GettingStarted.{m,mlx}   bundled Live Editor walkthrough
+    %   - help/                    MATLAB Help browser content
+    %                              (info.xml is at the repo root and is
+    %                               auto-included; this dir holds
+    %                               helptoc.xml, demos.xml, and HTML)
+    %   - examples/                runnable .m/.mlx scripts surfaced via
+    %                              the Help browser's Examples tab
+    % Everything else under doc/ (architecture notes, OpenAPI dump,
+    % dev guide, notebooks, superpowers/, features/, screenshots/) is
+    % internal dev material.
     if startsWith(rel, 'doc/') ...
             && ~strcmp(rel, 'doc/GettingStarted.m') ...
-            && ~strcmp(rel, 'doc/GettingStarted.mlx')
+            && ~strcmp(rel, 'doc/GettingStarted.mlx') ...
+            && ~startsWith(rel, 'doc/help/') ...
+            && ~startsWith(rel, 'doc/examples/')
         tf = true; return;
     end
 
