@@ -207,11 +207,15 @@ function tf = iShouldExclude(absPath, projectRoot)
     % auto-scan on macOS-built packages.
     if endsWith(rel, '.DS_Store'); tf = true; return; end
 
-    % Whole-directory excludes (anywhere)
+    % Whole-directory excludes (anywhere). 'screenshots/' is a safety
+    % net for the FEX-listing PNG masters — the canonical home is
+    % doc/screenshots/ (caught by the doc/ filter below) but an earlier
+    % run landed them at the repo root, where they would have leaked
+    % 26 MB into the .mltbx without this rule.
     dirPrefixes = { ...
         '.git/', '.github/', '.claude/', '.serena/', ...
         'tests/', 'scripts/', 'output/', 'release/', ...
-        'samples/aqs-qmc/'};
+        'samples/aqs-qmc/', 'screenshots/'};
     for i = 1:numel(dirPrefixes)
         if startsWith(rel, dirPrefixes{i}); tf = true; return; end
     end
