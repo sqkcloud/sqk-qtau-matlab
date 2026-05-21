@@ -1,0 +1,63 @@
+name: Tests
+
+# Runs the full MATLAB unit-test suite on every push to develop / main
+# and on every pull request targeting those branches. Catches regressions
+# in the inter-release window so 1.x.y -> 1.x.(y+1) is never "we hope it
+# still works."
+#
+# Uses MathWorks' MATLAB GitHub Action with the hosted license (free for
+# public repositories), pinning to R2025b - the toolbox's declared
+# minimum-supported release. If you need to verify against R2026a or
+# later, expand the matrix in the `strategy.matrix.release` list.
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+# Only run the latest workflow per branch - cancel in-progress runs when
+# a newer commit lands. Saves CI minutes and gets the latest signal faster.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: runtests on ${{ matrix.os }} / ${{ matrix.release }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        release: [R2025b]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up MATLAB ${{ matrix.release }}
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: ${{ matrix.release }}
+
+      - name: Run unit tests
+        uses: matlab-actions/run-tests@v2
+        with:
+          # Tests live under tests/. Each test file's TestClassSetup
+          # block adds the required src/ subfolders to the MATLAB path,
+          # so a top-level source-folder isn't strictly needed; declared
+          # here as belt-and-suspenders.
+          source-folder: src
+          select-by-folder: tests
+          # Persist a JUnit XML report so the GitHub UI surfaces
+          # per-test pass/fail rather than a single binary status.
+          test-results-junit: test-results/results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-results-${{ matrix.release }}
+          path: test-results/
+          if-no-files-found: ignore
