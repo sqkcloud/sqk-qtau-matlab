@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+title: QTAU Connector Workbench
+message: >-
+  If you use this software in academic work, please cite it using the
+  metadata below.
+type: software
+authors:
+  - name: SQK Cloud Inc
+    website: "https://sqkcloud.com/"
+abstract: >-
+  A professional MATLAB R2025b+ desktop client for designing, running,
+  mitigating, and analysing quantum-circuit experiments against IBM Quantum
+  hardware through the QTAU FastAPI backend. Includes a Composer with a
+  12-template gallery, cost-aware Run Planner, Quantum Monte Carlo
+  simulation popup, error mitigation cost comparator, fault-tolerant
+  Resource Estimator, and a local-MATLAB QEC simulation engine for the
+  bit-flip, phase-flip, Shor-9, Steane-7, perfect-5, and surface codes.
+version: 1.2.0
+date-released: "2026-05-21"
+url: "https://github.com/sqkcloud/sqk-qtau-matlab"
+repository-code: "https://github.com/sqkcloud/sqk-qtau-matlab"
+license: Apache-2.0
+identifiers:
+  - type: url
+    value: "https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench"
+    description: "MATLAB Central File Exchange listing"
+keywords:
+  - quantum computing
+  - IBM Quantum
+  - Qiskit
+  - quantum circuits
+  - error mitigation
+  - quantum Monte Carlo
+  - quantum error correction
+  - MATLAB toolbox
+  - FastAPI
