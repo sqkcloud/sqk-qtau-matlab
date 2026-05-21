@@ -87,7 +87,7 @@ function outFile = package_release()
     opts = matlab.addons.toolbox.ToolboxOptions(projectRoot, TOOLBOX_IDENTIFIER);
 
     % Toolbox Information
-    opts.ToolboxName      = 'QTAU: Hardware-Agnostic Execution';
+    opts.ToolboxName      = 'QTAU - Hardware-Agnostic Execution';
     opts.ToolboxVersion   = '1.2.0';
     opts.AuthorName       = 'Mason';
     opts.AuthorEmail      = 'contact@sqkcloud.com';
