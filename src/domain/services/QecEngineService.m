@@ -710,15 +710,28 @@ classdef QecEngineService < handle
 
         % ── Decoding ──────────────────────────────────────────────────────────
         function rhoLogical = decodeLogical(obj, rho, codeType)
-            % Trace out ancilla qubits to get 2×2 logical density matrix
+            % Decode the encoded density matrix back to a 2×2 logical
+            % density matrix. For repetition-family codes the proper
+            % decoder applies the inverse encoding circuit so the
+            % ancilla qubits factor out before the partial trace —
+            % otherwise superposition logical inputs (|+⟩, |-⟩, …)
+            % whose encoded form is the GHZ-3 entangled state partial-
+            % trace to I/2 and the recovered fidelity caps at 0.5 even
+            % under a perfect identity channel. Product-state inputs
+            % (|0⟩, |1⟩) are unaffected: CNOT with control bit zero is
+            % the identity, so the new pipeline produces bit-identical
+            % numerical results to the old `traceOutBitFlip3`-only path.
             nQubits = obj.qubitCount(codeType);
             switch codeType
                 case {'bitflip3', 'repetition'}
-                    rhoLogical = obj.traceOutBitFlip3(rho);
+                    rhoLogical = obj.decodeBitFlip3(rho);
                 case 'phaseflip3'
+                    % Map back from {|+++⟩,|−−−⟩} to {|000⟩,|111⟩}
+                    % (the bit-flip basis), then apply the bit-flip
+                    % inverse encoder.
                     H3 = kron(kron(obj.H, obj.H), obj.H);
                     rho = H3 * rho * H3';
-                    rhoLogical = obj.traceOutBitFlip3(rho);
+                    rhoLogical = obj.decodeBitFlip3(rho);
                 case 'shor9'
                     rhoLogical = obj.projectLogical(rho, codeType);
                 case 'steane7'
@@ -730,8 +743,28 @@ classdef QecEngineService < handle
             end
         end
 
+        function rhoLogical = decodeBitFlip3(obj, rho)
+            % decodeBitFlip3  Inverse-encoding decoder for the 3-qubit
+            %   bit-flip code. Encoding is CNOT_1->2 · CNOT_1->3 (qubit 1
+            %   control). The inverse circuit applies CNOT_1->3 then
+            %   CNOT_1->2 (CNOT is self-inverse, so the inverse is the
+            %   same gates in reverse order). After conjugation the
+            %   ancilla qubits are uncorrelated with qubit 1 and the
+            %   partial trace recovers the original logical state.
+            inv12 = obj.cnotMatrix(1, 2, 3);
+            inv13 = obj.cnotMatrix(1, 3, 3);
+            U_inv = inv12 * inv13;
+            rho = U_inv * rho * U_inv';
+            rhoLogical = obj.traceOutBitFlip3(rho);
+        end
+
         function rhoL = traceOutBitFlip3(~, rho)
-            % For bit-flip code: trace out qubits 2,3 to get qubit 1
+            % For bit-flip code: trace out qubits 2,3 to get qubit 1.
+            % Kept for: (a) decodeBitFlip3's final step, (b) the
+            % `otherwise` fallback in decodeLogical (codes we don't
+            % know about default to a literal partial trace), and (c)
+            % any debugging caller that wants the un-decoded reduced
+            % density matrix.
             dim = 8;
             rhoL = zeros(2);
             for i = 0:1
@@ -742,6 +775,33 @@ classdef QecEngineService < handle
                         col = j*4 + b2*2 + b3 + 1;
                         rhoL(i+1, j+1) = rhoL(i+1, j+1) + rho(row, col);
                     end
+                end
+            end
+        end
+
+        function U = cnotMatrix(~, controlQubit, targetQubit, nQubits)
+            % cnotMatrix  Build the unitary for a CNOT gate on an
+            %   n-qubit system. controlQubit / targetQubit are 1-indexed
+            %   with qubit 1 = leftmost (MSB) in the basis-state
+            %   labelling |q1 q2 … qn⟩ — the same convention
+            %   encodeBitFlip3 uses (kron(kron(q1, q2), q3)).
+            %
+            %   Returns a 2^n × 2^n permutation matrix. For nQubits=3,
+            %   control=1, target=3 it swaps rows 5↔6 and 7↔8 (basis
+            %   states |100⟩↔|101⟩ and |110⟩↔|111⟩).
+            dim = 2^nQubits;
+            U = eye(dim);
+            % bitand/bitxor work on 0-indexed integers; map qubit
+            % position 1..n to bit position (n-1)..0 (MSB convention).
+            cBit  = nQubits - controlQubit;
+            tBit  = nQubits - targetQubit;
+            cMask = bitshift(1, cBit);
+            tMask = bitshift(1, tBit);
+            for i = 0:dim-1
+                if bitand(i, cMask) ~= 0
+                    j = bitxor(i, tMask);
+                    U(:, i+1) = 0;
+                    U(j+1, i+1) = 1;
                 end
             end
         end

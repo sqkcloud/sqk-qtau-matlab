@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Troubleshooting - QTAU Connector Workbench</title>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; max-width: 760px; margin: 1em 2em; line-height: 1.5; color: #222; }
+        h1 { color: #07669e; border-bottom: 2px solid #07669e; padding-bottom: 0.3em; }
+        h2 { color: #07669e; margin-top: 1.6em; }
+        h3 { color: #333; margin-top: 1.2em; }
+        code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
+        pre { background: #f4f4f4; padding: 0.8em; border-radius: 4px; overflow-x: auto; }
+        .symptom { font-weight: 600; color: #c34a00; }
+    </style>
+</head>
+<body>
+
+<h1>Troubleshooting</h1>
+
+<h2>First-launch issues</h2>
+
+<h3 class="symptom">"Unable to connect to server" right after Sign In</h3>
+<p>
+    The most common cause: the Base URL field on the Login dialog points at
+    a server that isn't running, isn't reachable from your network, or
+    requires VPN. Verify:
+</p>
+<pre>&gt;&gt; webread('http://YOUR-QTAU-HOST:5715/health')</pre>
+<p>
+    If that errors, the workbench cannot reach the server either. Check
+    DNS, firewall, VPN, and that the FastAPI server is actually running.
+</p>
+
+<h3 class="symptom">Login succeeds but Dashboard shows "No data"</h3>
+<p>
+    Your account may not have any projects yet. Open <em>Projects</em>,
+    click <strong>New Project</strong>, then return to the Dashboard.
+</p>
+
+<h3 class="symptom">QTAUWorkbenchLauncher: "Undefined function or variable"</h3>
+<p>
+    The install action did not add the toolbox directory to your MATLAB
+    path. Reinstall the .mltbx, or add the directories manually:
+</p>
+<pre>&gt;&gt; addpath(genpath(fullfile(matlabroot,'toolbox','QTAU Connector Workbench','src')))</pre>
+
+<h2>Runtime issues</h2>
+
+<h3 class="symptom">Jobs screen never refreshes</h3>
+<p>
+    The Jobs screen auto-refreshes every 5 seconds via a MATLAB timer.
+    If your session has many stale timers, MATLAB may throttle them. Run:
+</p>
+<pre>&gt;&gt; delete(timerfindall)</pre>
+<p>Then re-navigate to the Jobs screen.</p>
+
+<h3 class="symptom">QMC popup hangs at "Queued (0%)"</h3>
+<p>
+    The QMC job was accepted by the backend but the IBM Runtime queue is
+    long. The 3-second poll loop will eventually update. To verify a job
+    is alive, in another MATLAB session:
+</p>
+<pre>&gt;&gt; webread('http://YOUR-QTAU-HOST:5715/api/qae/jobs/JOB_ID')</pre>
+
+<h3 class="symptom">Circuit upload returns 404</h3>
+<p>
+    Your Base URL likely has a trailing slash (e.g.
+    <code>http://qtau.example.com:5715/</code>). The HTTP client trims
+    trailing slashes in newer versions; if you see this on an older
+    install, edit <code>resources/app.properties</code> and remove the
+    trailing slash.
+</p>
+
+<h2>Diagnostics</h2>
+
+<h3>Inspect the structured log</h3>
+<p>
+    All HTTP requests, service-layer errors, and screen lifecycle events
+    are logged via the <code>Logger</code> class to the MATLAB Command
+    Window. Set verbose logging:
+</p>
+<pre>&gt;&gt; Logger.setLevel('DEBUG');</pre>
+
+<h3>Reload config without restarting</h3>
+<p>
+    After editing <code>resources/app.properties</code> or
+    <code>resources/labels.properties</code>:
+</p>
+<pre>&gt;&gt; AppConfig.reload(); Labels.reload();</pre>
+
+<h2>Reporting bugs</h2>
+<p>
+    File issues at
+    <a href="https://github.com/sqkcloud/sqk-qtau-matlab/issues">
+        github.com/sqkcloud/sqk-qtau-matlab/issues
+    </a>
+    with a minimal reproducer plus the Command Window output captured
+    after setting <code>Logger.setLevel('DEBUG')</code>.
+</p>
+
+</body>
+</html>

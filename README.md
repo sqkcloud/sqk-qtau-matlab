@@ -1,15 +1,39 @@
 # QTAU Connector Workbench
 
-A professional **MATLAB R2025b+** desktop client for managing quantum-circuit experiments through the QTAU FastAPI backend. The toolbox is the client only — your data lives on whichever QTAU server you connect to. Built with clean three-layer architecture (presentation / domain / infrastructure), externalised configuration, and structured logging. Includes a Quantum Monte Carlo simulation popup with async IBM Runtime job execution, zero-noise extrapolation, vector-chart PDF reports, and IBM execution-log download.
+[![Tests](https://github.com/sqkcloud/sqk-qtau-matlab/actions/workflows/test.yml/badge.svg?branch=develop)](https://github.com/sqkcloud/sqk-qtau-matlab/actions/workflows/test.yml)
+[![MATLAB File Exchange](https://img.shields.io/badge/File_Exchange-183914-0076A8?logo=mathworks)](https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench)
+[![MATLAB R2025b+](https://img.shields.io/badge/MATLAB-R2025b%2B-orange?logo=mathworks)](https://www.mathworks.com/products/matlab.html)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](CHANGELOG.md)
+[![GitHub stars](https://img.shields.io/github/stars/sqkcloud/sqk-qtau-matlab?style=social)](https://github.com/sqkcloud/sqk-qtau-matlab)
 
-Copyright © 2026 SQK Cloud Inc. Licensed under the Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+![QTAU Connector Workbench — Dashboard](doc/screenshots/dashboard.png)
+
+> A professional **MATLAB R2025b+** desktop client for designing, running, mitigating, and analysing quantum-circuit experiments against IBM Quantum hardware through the QTAU FastAPI backend.
+
+**MATLAB Central File Exchange:** [183914 — QTAU Connector Workbench](https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench)
+**Source code:** <https://github.com/sqkcloud/sqk-qtau-matlab>
+**License:** Apache 2.0 (Copyright © 2026 SQK Cloud Inc) — see [LICENSE](LICENSE) and [NOTICE](NOTICE)
+
+The toolbox is the *client only* — your data lives on whichever QTAU server you connect to. It is built on a clean three-layer architecture (presentation / domain / infrastructure), externalised configuration (`resources/*.properties`, runtime-reloadable), structured `Logger` output, and unit-tested service classes that you can drive both interactively from the workbench UI and programmatically from your own MATLAB scripts.
 
 ---
 
-## For end users — install from a `.mltbx`
+## What's new in **1.1.0** (2026-05-20)
+
+- **MATLAB Help browser integration.** `info.xml` + `doc/help/helptoc.xml` + 4 HTML pages + `demos.xml`. The toolbox now appears as a first-class entry in F1 search; the *Examples* tab in the Add-On Explorer hosts three runnable scripts.
+- **Three pre-rendered example scripts** under `doc/examples/` — local QEC simulation, circuit visualisation, and programmatic FastAPI browsing. Two run offline with no backend.
+- **Notes screen** restored to the sidebar between Circuits and Analysis.
+- **QEC 3-qubit bit-flip decoder fix** — inverse-encoding circuit now applied before the partial trace, so the `bitflip3` / `repetition` / `phaseflip3` codes correctly handle superposition logical inputs (`|+⟩`, `|-⟩`, …). Previously fidelity capped at 0.5 even under a noiseless channel.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full 1.0.0 → 1.1.0 diff.
+
+---
+
+## Install from a `.mltbx`
 
 1. **Install MATLAB R2025b or later.**
-2. Download `QTAUConnectorWorkbench.mltbx` (from your QTAU admin or MATLAB Central File Exchange) and **double-click it inside MATLAB**. MATLAB registers the toolbox and adds it to the path.
+2. Download `QTAUConnectorWorkbench.mltbx` from the [File Exchange listing](https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench) and **double-click it inside MATLAB**. MATLAB registers the toolbox and adds it to the path.
 3. From the MATLAB prompt, type:
    ```matlab
    QTAUWorkbenchLauncher
@@ -17,9 +41,113 @@ Copyright © 2026 SQK Cloud Inc. Licensed under the Apache License 2.0 — see [
 4. The Login dialog appears. **On first launch the Base URL is blank — set it to your QTAU server URL** (e.g. `https://qtau.example.com:5715` or `http://localhost:5715` if you self-host).
 5. Enter your username + password and sign in.
 
-The **Getting Started** guide is registered with the toolbox install and accessible via *Add-Ons → Manage Add-Ons → QTAU Connector Workbench → Options → Getting Started*. It walks you through a 5-minute tour of the main screens.
+The **Getting Started** guide is registered with the install and accessible via *Add-Ons → Manage Add-Ons → QTAU Connector Workbench → Options → Getting Started*. The same content is also reachable inside the workbench via *Help → Documentation* once 1.1.0 is installed.
 
-> The toolbox does **not** ship the FastAPI backend. You need either access to a hosted QTAU server (ask your admin) or a self-hosted instance. See the upstream QTAU FastAPI repository for backend setup.
+> The toolbox does **not** ship the FastAPI backend. You need either access to a hosted QTAU server (ask your admin) or a self-hosted instance. The backend is a separate open-source project — see the [GitHub repository](https://github.com/sqkcloud/sqk-qtau-matlab) for setup notes.
+
+---
+
+## A guided tour
+
+### 1. Pick a project after login
+
+![Project landing screen](doc/screenshots/project.png)
+
+The workbench launches into the **Dashboard** by default; from there the **Projects** entry on the sidebar (formerly "Welcome" — routing key preserved for back-compat) lets you switch between organisational projects, see recent activity, and create new workspaces. Each project keeps its own circuits, jobs, benchmarks, predictions, mitigation runs, reports, and operator notes — fully isolated.
+
+### 2. Compose circuits visually (or by code)
+
+![Composer with template gallery and gate palette](doc/screenshots/circuit_composer.png)
+
+The **Composer** screen ships a 12-template gallery (Bell, GHZ_n, QFT_n, Grover_k, Bernstein-Vazirani_n, Deutsch-Jozsa_n, Phase Estimation, VQE H₂, QAOA, Trotter, Teleport, Superdense), a full single- and multi-qubit gate palette (`H/X/Y/Z/S/T/S†/T†/Rx/Ry/Rz/reset/CX/CZ/SWAP/CCX/M/barrier`), and a bidirectional **OpenQASM 2.0 mirror** — type code, see the canvas; drag on the canvas, see the code. A collapsible **Inspect** footer runs a local statevector simulator (≤ 14 qubits) with per-qubit Bloch sphere tiles and top-K amplitude bars.
+
+**Multi-target code export** writes the same circuit out as OpenQASM 2/3, Qiskit Python, Cirq Python, or AWS Braket Python with one click. The **Reproducibility Bundle** packages QASM + all three Python equivalents + circuit metadata + an optional backend calibration snapshot + optional mitigation estimates + an FT resource estimate + an auto-generated README + a `manifest.json` with SHA-256 checksums of every artefact, zipped for sharing — a Tier-3 differentiator no other quantum vendor ships today.
+
+### 3. Predict fidelity before you spend any quantum credits
+
+![Fidelity prediction screen](doc/screenshots/prediction.png)
+
+Pick a circuit + backend and the **Prediction** screen returns predicted fidelity, success-probability distribution, expected queue time, runtime, and an error budget broken down by physical source. The same numbers feed the Run Planner's Pareto frontier so you can see the cost-vs-fidelity trade-off across every available chip + mitigation level.
+
+### 4. Compare error-mitigation strategies side-by-side
+
+![Mitigation Compare screen](doc/screenshots/quantum_error_mitigation.png)
+
+The **Mitigation Compare** screen is a pre-submit strategy planner that runs `POST /api/mitigation/estimate` in parallel across every chip in your selection. Cost, shot-multiplier, runtime, and IQP-cost cards line up so you can pick *None / Minimal / Standard / Aggressive / Custom* deliberately. A colour-graded shot-multiplier ranking bar chart and a recommendation strip (cheapest / best balance / most aggressive) make the decision concrete. No competitor (IBM / AWS Braket / Azure Quantum / Google / Quantinuum / IonQ / Rigetti) ships an analogous side-by-side mitigation cost comparator.
+
+### 5. Run quantum Monte Carlo analytics from inside MATLAB
+
+![Quantum Monte Carlo popup](doc/screenshots/quantum_monte_carlo_simulation.png)
+
+A modal Quantum Monte Carlo dialog launched from the Analysis toolbar runs QAE-based Monte Carlo risk analytics against either a local statevector backend or IBM Runtime. Async job dispatch (`POST /api/circuits/{id}/qae/analyze` → `202 {job_id}`) is polled by a 3-second MATLAB `timer` until completion; the loading overlay walks the user through `Queued (0 %) → Running (50 %) → Completed (100 %)` without blocking the UI. **Zero-noise extrapolation** is on by default. The **Generate Report** button produces a vector-chart PDF (loss distribution with VaR, CDF, QAE-vs-classical-MC convergence curve, amplitude bar, ZNE curve, Greeks table, market scenario, benchmark matches). The **Download IBM Log** button streams `GET /api/circuits/{id}/qae/ibm-log?fmt=jsonl` — one record per IBM submission matching the canonical schema in `samples/aqs-qmc/`.
+
+### 6. Visualise quantum error correction in 3D
+
+![QEC Visualization](doc/screenshots/qec_visualization.png)
+
+The **QEC Visualization** screen renders a 3D Bloch sphere, the surface-code lattice, and an error-propagation animation. The companion **QEC Simulation** screen sweeps fidelity vs. noise probability for six codes (`bitflip3 / phaseflip3 / shor9 / steane7 / perfect5 / surface`) against four noise models (`bitflip / phaseflip / depolarizing / amplitude_damping`) — all running locally in pure MATLAB, no backend required. The 1.1.0 release also fixes a fidelity-ceiling bug in the bit-flip code's decoder; superposition logical inputs (`|+⟩`, `|-⟩`, etc.) now decode to fidelity 1.0 under a noiseless channel as they should.
+
+### 7. Find the cheapest configuration that meets your fidelity target
+
+The **Run Planner** screen dispatches one `PredictionService.predict` call (per-backend base fidelity) plus *N* parallel `MitigationService.estimate` calls (per-strategy cost), cross-multiplies them into M·N candidate configurations, applies a heuristic mitigation-fidelity factor (None ×1.0 → Aggressive ×1.30, capped 0.99), computes the Pareto frontier via `RunPlannerService.computeParetoFrontier`, and recommends the cheapest configuration that hits your target via `RunPlannerService.pickOptimal`. Falls back to highest-fidelity-overall when no config meets the target. Renders a Pareto scatter (all points + frontier overlay + target line + optimal-star) and a recommendation card with **Submit-this-run** + **Bundle-this-config** hand-off buttons. The cost-aware "give me fidelity F at minimum spend" question is the question every quantum operations team is asking today — and no other platform in the 7-vendor audit answers it in one click.
+
+---
+
+## Feature catalog
+
+### Authoring & design
+- **In-app Composer** with click-to-place gate palette, uiaxes canvas, bidirectional OpenQASM mirror, and a 12-template gallery (Bell, GHZ_n, QFT_n, Grover_k, Bernstein-Vazirani_n, Deutsch-Jozsa_n, Phase Estimation, VQE H₂, QAOA, Trotter, Teleport, Superdense).
+- **Local statevector simulator** (≤ 14 qubits) in the collapsible *Inspect* footer — per-qubit Bloch ⟨X⟩/⟨Y⟩/⟨Z⟩ tiles, top-K amplitude bars, ▶ Auto-step.
+- **Multi-target export**: OpenQASM 2/3, Qiskit Python, Cirq Python, AWS Braket Python — copy-to-clipboard + save-to-file.
+- **Reproducibility Bundle** (📦 Bundle): one-click ZIP packaging circuit + 3 Python ecosystems + circuit metadata + optional calibration snapshot + optional mitigation estimates + optional FT resource estimate + README + `manifest.json` with SHA-256 checksums.
+
+### Execution planning
+- **Backends** explorer with per-qubit calibration heat-grid, 7-day sparkline history (T1, T2, 2Q error), and force-directed coupling-map topology view.
+- **Prediction** screen — predicted fidelity, success-probability distribution, error budget per physical-error source, expected queue time, runtime.
+- **Mitigation Compare** — cost/shot-multiplier/runtime/IQP-cost cards for None / Minimal / Standard / Aggressive / Custom strategies, side-by-side across chips. Tier-3 differentiator.
+- **Resource Estimator** — fault-tolerant overhead planner. Computes surface-code distance (Fowler et al.), physical-per-logical qubit count, T-state budget, T-factory footprint, and total runtime.
+- **Run Planner** — cost-aware Pareto optimiser: cheapest backend × mitigation × shots configuration that meets a target fidelity. Tier-3 differentiator.
+
+### Execution & monitoring
+- **Jobs Dashboard** with 6-column live table (Job ID / Circuit / Backend / Status / Progress / Created), 5-second auto-refresh while visible, right-click context menus, detailed job logs.
+- **Results** screen comparing measured vs. predicted vs. ideal outcome distributions for any completed job.
+- **Reports** — vector-chart PDF generation, HTML export, sharing.
+- **Background Tasks** tray — drop-down list of in-flight async operations with cancel / view-progress actions.
+
+### Quantum error correction
+- **QEC Simulation** — density-matrix simulator for 6 codes (`bitflip3 / phaseflip3 / shor9 / steane7 / perfect5 / surface`) under 4 noise models; per-qubit error rate sourced from backend calibration when available.
+- **QEC Visualization** — 3D Bloch sphere, surface-code lattice rendering, error-propagation animation.
+
+### Quantum Monte Carlo (financial / actuarial workloads)
+- **QMC popup** launched from the Analysis screen — async IBM Runtime job execution with 3-second poll loop, zero-noise extrapolation, vector-chart PDF report builder, IBM execution-log JSONL download matching the upstream `JSONLLogger` schema.
+
+### Integration & extensibility
+- **`scripts/seed_*.m`** — 14 idempotent seed scripts populating demo projects, circuits, benchmarks, jobs, reports.
+- **`doc/examples/`** — three runnable Live Scripts (QEC sim, circuit visualisation, programmatic API browse).
+- **MATLAB Help integration** — F1 search returns workbench pages; *Examples* tab lists the runnable scripts.
+- **OpenAPI contract** — `doc/openapi.json` (the full FastAPI backend spec) ships with the repo so you can validate against the deployed server.
+
+---
+
+## Architecture in 30 seconds
+
+```
+src/
+├── presentation/     UI chrome, navigation, screens, viewmodels
+│   ├── app/          QTAUWorkbenchApp + NavigationManager + LayoutBuilder
+│   ├── screens/      21 screen-builder functions (pure UI)
+│   └── viewmodels/   21 ViewModel classes (callbacks, state)
+├── domain/           Pure business logic, no UI dependencies
+│   ├── models/       AppState (session-scoped mutable state)
+│   └── services/     11 service classes (Auth / Backend / Circuit / Job / …)
+└── infrastructure/   HTTP, config, logging
+    ├── http/         FastAPIClient (matlab.net.http multipart upload)
+    └── config/       AppConfig, Labels, Logger, JsonHelper, CircuitDiagram, Theme
+```
+
+**Data flow:** Screen → ViewModel → Service → FastAPIClient → HTTP. Services receive `FastAPIClient` via constructor injection (`ServiceContainer`); `AppState` is instantiated once and shared across ViewModels for the session.
+
+The same Service classes power the workbench UI and the [`doc/examples/example_03_connect_and_browse.m`](doc/examples/example_03_connect_and_browse.m) standalone script — anything you can do interactively, you can do from a `.m` file.
 
 ---
 
