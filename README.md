@@ -1,5 +1,12 @@
 # QTAU Connector Workbench
 
+[![Tests](https://github.com/sqkcloud/sqk-qtau-matlab/actions/workflows/test.yml/badge.svg?branch=develop)](https://github.com/sqkcloud/sqk-qtau-matlab/actions/workflows/test.yml)
+[![MATLAB File Exchange](https://img.shields.io/badge/File_Exchange-183914-0076A8?logo=mathworks)](https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench)
+[![MATLAB R2025b+](https://img.shields.io/badge/MATLAB-R2025b%2B-orange?logo=mathworks)](https://www.mathworks.com/products/matlab.html)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](CHANGELOG.md)
+[![GitHub stars](https://img.shields.io/github/stars/sqkcloud/sqk-qtau-matlab?style=social)](https://github.com/sqkcloud/sqk-qtau-matlab)
+
 ![QTAU Connector Workbench — Dashboard](doc/screenshots/dashboard.png)
 
 > A professional **MATLAB R2025b+** desktop client for designing, running, mitigating, and analysing quantum-circuit experiments against IBM Quantum hardware through the QTAU FastAPI backend.
