@@ -11,29 +11,43 @@
         strong { color: #07669e; }
         a { color: #0076a8; }
         code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.95em; }
-        .instructions { background: #fffbea; border-left: 3px solid #f5b900; padding: 0.7em 1em 0.7em 1em; margin: 1em 0 1.5em 0; font-size: 0.92em; }
+        .instructions { background: #fffbea; border-left: 3px solid #f5b900; padding: 0.9em 1em; margin: 1em 0 1em 0; font-size: 0.95em; }
         .instructions strong { color: #8a6d00; }
         .screenshot-marker { color: #888; font-style: italic; font-size: 0.9em; padding: 0.4em 0.8em; background: #f8f8f8; border-left: 3px solid #aaa; margin: 0.6em 0; }
         hr.start { border: 0; border-top: 2px dashed #07669e; margin: 1.5em 0; }
+        .copybar { position: sticky; top: 0; background: linear-gradient(180deg, #fff 70%, rgba(255,255,255,0.95)); padding: 1em 0 0.6em 0; z-index: 10; }
+        button.copy { background: #1e7a3e; color: white; border: 0; padding: 0.7em 1.4em; font-size: 1em; font-weight: 600; border-radius: 6px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+        button.copy:hover { background: #156330; }
+        button.copy:active { transform: translateY(1px); }
+        button.copy.success { background: #07669e; }
+        .status { display: inline-block; margin-left: 1em; color: #555; font-size: 0.92em; }
+        .status.ok { color: #1e7a3e; font-weight: 600; }
+        .status.err { color: #c34a00; font-weight: 600; }
+        #payload { display: none; }
     </style>
 </head>
 <body>
 
 <h1>FEX Overview - source for copy/paste</h1>
 
+<div class="copybar">
+    <button class="copy" id="copyBtn" onclick="copyOverview()">📋 Copy formatted content to clipboard</button>
+    <span class="status" id="status">Click the button, then paste into the FEX Description field.</span>
+</div>
+
 <div class="instructions">
-    <strong>How to use this file:</strong><br>
-    1. This file lives at <code>doc/fex-listing/overview.html</code>. Open it in any browser (double-click in Finder, or <code>open doc/fex-listing/overview.html</code> from a terminal).<br>
-    2. Click anywhere in the content area below the dashed line, then <strong>Cmd+A</strong> (macOS) or <strong>Ctrl+A</strong> (Win/Linux) to select all, then <strong>Cmd+C</strong> / <strong>Ctrl+C</strong> to copy.<br>
-    3. Open the FEX listing at <a href="https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench">https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench</a>, click <strong>Edit Submission</strong>, click into the Description field, select all existing content, delete, then paste.<br>
-    4. The browser's clipboard exports the formatting (headings, bold, hyperlinks) so it lands in the FEX editor with structure intact.<br>
-    5. At each <em>SCREENSHOT</em> marker (the light grey boxes inline below), use the FEX editor's <strong>Insert &rarr; Image</strong> button to upload the matching PNG from <code>doc/screenshots/</code>.<br>
-    6. Click <strong>Update Submission</strong> at the bottom of the FEX form.
+    <strong>How to use:</strong><br>
+    1. <strong>You must open this file in a web browser</strong> (Safari, Chrome, Firefox), not in TextEdit or a code editor. If you double-click and it opens in something else, right-click the file in Finder &rarr; <em>Open With</em> &rarr; pick your browser.<br>
+    2. Click the green <strong>Copy formatted content to clipboard</strong> button above. The button writes the content to your OS clipboard in BOTH rich-text (HTML) and plain-text formats simultaneously, so the FEX editor will pick whichever it accepts.<br>
+    3. Open the FEX listing at <a href="https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench" target="_blank">https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench</a>, click <strong>Edit Submission</strong>, click into the Description field, select all existing content (Cmd+A), delete, then paste (Cmd+V).<br>
+    4. At each <em>SCREENSHOT</em> marker (the light grey boxes inline below), use the FEX editor's <strong>Insert &rarr; Image</strong> button to upload the matching PNG from <code>doc/screenshots/</code>.<br>
+    5. Click <strong>Update Submission</strong> at the bottom of the FEX form.
 </div>
 
 <hr class="start">
 
-<!-- ========== START OF FEX OVERVIEW CONTENT - select everything from here ========== -->
+<!-- ========== START OF FEX OVERVIEW CONTENT (this is what the button copies) ========== -->
+<div id="payload">
 
 <p><strong>QTAU Connector Workbench</strong> is the MATLAB R2025b+ desktop client for the QTAU FastAPI quantum execution platform. It lets you design, run, mitigate, and analyse quantum-circuit experiments against quantum hardware backends through a single unified workbench &mdash; with no Qiskit knowledge required and no leaving MATLAB.</p>
 
@@ -87,7 +101,76 @@
 
 <p>For academic citation, see <code>CITATION.cff</code> at the repository root. GitHub renders a "Cite this repository" button with BibTeX, APA, and EndNote exports.</p>
 
-<!-- ========== END OF FEX OVERVIEW CONTENT ========== -->
+</div>
+
+<!-- ========== Preview of the same content (this is what the FEX listing will look like) ========== -->
+
+<h1 style="margin-top: 3em;">Preview (what the FEX page will look like)</h1>
+<p style="color: #888; font-size: 0.9em;">The block above (inside the dashed border) is what the Copy button puts on your clipboard. The Preview below is identical content rendered for your visual confirmation.</p>
+
+<div style="border: 1px dashed #ccc; padding: 1em 1.5em; background: #fafafa; margin-top: 1em;" id="preview">
+    <p><strong>QTAU Connector Workbench</strong> is the MATLAB R2025b+ desktop client for the QTAU FastAPI quantum execution platform. It lets you design, run, mitigate, and analyse quantum-circuit experiments against quantum hardware backends through a single unified workbench &mdash; with no Qiskit knowledge required and no leaving MATLAB.</p>
+    <p style="color: #888;"><em>(... full content same as above ...)</em></p>
+</div>
+
+<script>
+    function copyOverview() {
+        const payload = document.getElementById('payload');
+        const status  = document.getElementById('status');
+        const btn     = document.getElementById('copyBtn');
+
+        if (!payload) {
+            status.className = 'status err';
+            status.textContent = 'Internal error: payload element missing.';
+            return;
+        }
+
+        // Strip the "[ SCREENSHOT: ... ]" markers' styling so they paste as plain
+        // muted text and don't carry the inline background/border into the
+        // FEX editor (which might preserve them).
+        const html = payload.innerHTML
+            .replace(/<div class="screenshot-marker">([^<]+)<\/div>/g,
+                     '<p style="color:#888;font-style:italic;">$1</p>');
+
+        // Plain-text fallback: walk the DOM, extract text.
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        const plain = tmp.innerText;
+
+        // Use the Clipboard API to write BOTH formats. The FEX rich-text editor
+        // will pick text/html if it accepts it, fall back to text/plain otherwise.
+        if (navigator.clipboard && window.ClipboardItem) {
+            const blobHtml  = new Blob([html],  { type: 'text/html'  });
+            const blobPlain = new Blob([plain], { type: 'text/plain' });
+            navigator.clipboard.write([
+                new ClipboardItem({ 'text/html': blobHtml, 'text/plain': blobPlain })
+            ]).then(() => {
+                status.className = 'status ok';
+                status.textContent = '✓ Copied! Paste into the FEX Description field with Cmd+V.';
+                btn.classList.add('success');
+                btn.textContent = '✓ Copied — click again to re-copy';
+            }).catch(err => {
+                status.className = 'status err';
+                status.textContent = 'Clipboard API blocked: ' + err.message + '. Try Safari or Chrome.';
+            });
+        } else {
+            // Old-browser fallback: use document.execCommand('copy') on a hidden textarea
+            const ta = document.createElement('textarea');
+            ta.value = html;
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            ta.remove();
+            if (ok) {
+                status.className = 'status ok';
+                status.textContent = '✓ Copied (HTML source only — browser too old for rich clipboard).';
+            } else {
+                status.className = 'status err';
+                status.textContent = 'Copy failed. Browser too old. Use Safari or Chrome.';
+            }
+        }
+    }
+</script>
 
 </body>
 </html>
