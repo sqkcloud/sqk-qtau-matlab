@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>QTAU - Hardware-Agnostic Execution - FEX Overview source</title>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; max-width: 760px; margin: 1.5em 2em; line-height: 1.5; color: #222; }
+        h1 { color: #07669e; border-bottom: 2px solid #07669e; padding-bottom: 0.3em; font-size: 1.4em; }
+        h2 { color: #07669e; margin-top: 1.6em; font-size: 1.15em; }
+        p { margin: 0.7em 0; }
+        strong { color: #07669e; }
+        a { color: #0076a8; }
+        code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.95em; }
+        .instructions { background: #fffbea; border-left: 3px solid #f5b900; padding: 0.7em 1em 0.7em 1em; margin: 1em 0 1.5em 0; font-size: 0.92em; }
+        .instructions strong { color: #8a6d00; }
+        .screenshot-marker { color: #888; font-style: italic; font-size: 0.9em; padding: 0.4em 0.8em; background: #f8f8f8; border-left: 3px solid #aaa; margin: 0.6em 0; }
+        hr.start { border: 0; border-top: 2px dashed #07669e; margin: 1.5em 0; }
+    </style>
+</head>
+<body>
+
+<h1>FEX Overview - source for copy/paste</h1>
+
+<div class="instructions">
+    <strong>How to use this file:</strong><br>
+    1. This file lives at <code>doc/fex-listing/overview.html</code>. Open it in any browser (double-click in Finder, or <code>open doc/fex-listing/overview.html</code> from a terminal).<br>
+    2. Click anywhere in the content area below the dashed line, then <strong>Cmd+A</strong> (macOS) or <strong>Ctrl+A</strong> (Win/Linux) to select all, then <strong>Cmd+C</strong> / <strong>Ctrl+C</strong> to copy.<br>
+    3. Open the FEX listing at <a href="https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench">https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench</a>, click <strong>Edit Submission</strong>, click into the Description field, select all existing content, delete, then paste.<br>
+    4. The browser's clipboard exports the formatting (headings, bold, hyperlinks) so it lands in the FEX editor with structure intact.<br>
+    5. At each <em>SCREENSHOT</em> marker (the light grey boxes inline below), use the FEX editor's <strong>Insert &rarr; Image</strong> button to upload the matching PNG from <code>doc/screenshots/</code>.<br>
+    6. Click <strong>Update Submission</strong> at the bottom of the FEX form.
+</div>
+
+<hr class="start">
+
+<!-- ========== START OF FEX OVERVIEW CONTENT - select everything from here ========== -->
+
+<p><strong>QTAU Connector Workbench</strong> is the MATLAB R2025b+ desktop client for the QTAU FastAPI quantum execution platform. It lets you design, run, mitigate, and analyse quantum-circuit experiments against quantum hardware backends through a single unified workbench &mdash; with no Qiskit knowledge required and no leaving MATLAB.</p>
+
+<p>Built on a clean three-layer architecture (presentation, domain, infrastructure), externalised configuration (<code>resources/*.properties</code>, runtime-reloadable), and unit-tested service classes that work both interactively from the workbench UI and programmatically from your own MATLAB scripts.</p>
+
+<div class="screenshot-marker">[ SCREENSHOT: dashboard.png &mdash; insert via Insert &rarr; Image in the FEX editor ]</div>
+
+<h2>What you get</h2>
+
+<p><strong>20+ workflow screens</strong> covering circuit upload, in-app composer, analysis, backend exploration, benchmark planning, fidelity prediction, error-mitigation cost comparison, fault-tolerant resource estimation, cost-aware run planning, job monitoring, results review, reports, QEC simulation, and 3D QEC visualization.</p>
+
+<p><strong>In-app Composer</strong> with a click-to-place gate palette, a bidirectional OpenQASM 2.0 mirror, and a 12-template gallery (Bell, GHZ, QFT, Grover, Bernstein-Vazirani, Deutsch-Jozsa, Phase Estimation, VQE H2, QAOA, Trotter, Teleport, Superdense). A collapsible Inspect footer runs a local statevector simulator up to 14 qubits with per-qubit Bloch sphere tiles. One-click code export writes the same circuit out as OpenQASM 2/3, Qiskit Python, Cirq Python, and AWS Braket Python.</p>
+
+<div class="screenshot-marker">[ SCREENSHOT: circuit_composer.png ]</div>
+
+<p><strong>Reproducibility Bundle</strong> &mdash; a one-click ZIP that packages your circuit as QASM plus equivalents in three Python ecosystems, plus optional backend calibration snapshot, plus optional mitigation estimates, plus a fault-tolerant resource estimate, plus an auto-generated README, plus a manifest with SHA-256 checksums of every artefact. Share or archive your experiment with cryptographic provenance.</p>
+
+<p><strong>Cost-aware Run Planner</strong> &mdash; pick a target fidelity, and the planner cross-multiplies prediction scores with mitigation-strategy costs across every available backend, computes the Pareto frontier, and recommends the cheapest configuration that hits your target.</p>
+
+<div class="screenshot-marker">[ SCREENSHOT: prediction.png ]</div>
+
+<p><strong>Mitigation Compare</strong> &mdash; side-by-side cards for None / Minimal / Standard / Aggressive / Custom mitigation strategies, showing cost, shot multiplier, runtime, and IQP-cost across every chip in your selection. Pick deliberately rather than guess.</p>
+
+<div class="screenshot-marker">[ SCREENSHOT: quantum_error_mitigation.png ]</div>
+
+<p><strong>Quantum Monte Carlo simulation</strong> &mdash; a modal QMC popup launched from the Analysis screen runs QAE-based Monte Carlo risk analytics against either a local statevector backend or IBM Runtime. Asynchronous job execution with polling progress overlay, zero-noise extrapolation on by default, vector-chart PDF report builder, and IBM execution-log JSONL download.</p>
+
+<div class="screenshot-marker">[ SCREENSHOT: quantum_monte_carlo_simulation.png ]</div>
+
+<p><strong>Quantum error correction</strong> &mdash; a pure-MATLAB density-matrix simulator for the bit-flip, phase-flip, Shor-9, Steane-7, perfect-5, and surface codes under four noise models. No backend required. A companion 3D QEC visualization screen renders the Bloch sphere, surface-code lattice, and error-propagation animation.</p>
+
+<div class="screenshot-marker">[ SCREENSHOT: qec_visualization.png ]</div>
+
+<h2>Prerequisites</h2>
+
+<p>MATLAB R2025b or later.</p>
+
+<p>A reachable QTAU FastAPI server. The toolbox is the client only and does not include the backend. On first launch the Base URL field is blank &mdash; set it via the Login dialog or Settings &rarr; Connection.</p>
+
+<h2>Getting started</h2>
+
+<p>After install, type <code>QTAUWorkbenchLauncher</code> at the MATLAB prompt. The bundled Getting Started guide is accessible via Add-Ons &rarr; Manage Add-Ons &rarr; QTAU - Hardware-Agnostic Execution &rarr; Options &rarr; Getting Started.</p>
+
+<p>Three runnable Live Scripts ship under <code>doc/examples/</code> &mdash; local QEC simulation, circuit visualisation, and programmatic FastAPI browsing. Two run offline with no backend.</p>
+
+<h2>Links and citation</h2>
+
+<p>Source code, issue tracker, and backend setup notes: <a href="https://github.com/sqkcloud/sqk-qtau-matlab">https://github.com/sqkcloud/sqk-qtau-matlab</a></p>
+
+<p>License: Apache 2.0. See LICENSE and NOTICE inside the toolbox.</p>
+
+<p>For academic citation, see <code>CITATION.cff</code> at the repository root. GitHub renders a "Cite this repository" button with BibTeX, APA, and EndNote exports.</p>
+
+<!-- ========== END OF FEX OVERVIEW CONTENT ========== -->
+
+</body>
+</html>
