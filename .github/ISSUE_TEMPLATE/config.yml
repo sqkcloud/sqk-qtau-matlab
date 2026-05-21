@@ -1,0 +1,17 @@
+# GitHub issue-template chooser configuration.
+# Disables the "open a blank issue" option so every report goes through
+# one of the three structured templates above, and surfaces the FEX
+# listing + Discussions tab as alternative routes.
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: MATLAB Central File Exchange
+    url: https://www.mathworks.com/matlabcentral/fileexchange/183914-qtau-connector-workbench
+    about: Download the toolbox, read the listing description, leave a review.
+  - name: GitHub Discussions
+    url: https://github.com/sqkcloud/sqk-qtau-matlab/discussions
+    about: Open-ended questions, show-and-tell, RFCs. Use for things that aren't a concrete bug or feature request.
+  - name: Security disclosure
+    url: https://github.com/sqkcloud/sqk-qtau-matlab/security/advisories/new
+    about: Private vulnerability report. Do NOT file security issues publicly.
