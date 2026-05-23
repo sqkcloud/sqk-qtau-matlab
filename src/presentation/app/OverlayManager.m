@@ -237,6 +237,24 @@ classdef OverlayManager
             % Dismiss the safety timer so a late fire can't pop an
             % unrelated overlay on a subsequent nav.
             try; NavigationManager.disarmNavOverlayTimer(app); catch; end
+            % Fast-path: if both overlay handles are already empty /
+            % invalid (e.g. runInBackground tore them down a moment
+            % earlier, and onCloseQmcDialog is now cleaning up) there
+            % is no UI to hide. Skip the body — and crucially skip the
+            % trailing drawnow(). On R2025b / R2026a macOS uifigure, a
+            % drawnow against a QmcDialog whose uihtml children have
+            % been deleted can stall the MATLAB main thread waiting on
+            % the CEF event bridge.
+            haveOverlay = false;
+            try
+                haveOverlay = ...
+                    (~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)) ...
+                    || (~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton));
+            catch
+            end
+            if ~haveOverlay
+                return;
+            end
             try
                 if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
                     % Hide instead of delete — keeps the uihtml component

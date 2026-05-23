@@ -934,16 +934,27 @@ classdef QTAUWorkbenchApp < handle
         %   BackgroundTaskManager, so simply hiding the overlay does not
         %   stop the underlying server-side job from progressing.
         function runInBackground(app, taskId)
-            try; app.hideLoading(); catch; end
-            % Release the QMC overlay binding when the backgrounded task
-            % matches the active QMC binding. Without this, the QMC
-            % PollingRunner's onQmcProgress tick (every 3 s) sees
-            % QmcActiveTaskId == taskId, passes its strcmp gate, and
-            % re-calls app.showLoading(...) — which re-pops the modal
-            % overlay seconds after the operator clicked "Run in
-            % background". The poll itself stays alive (managed by
-            % BackgroundTasks); only the overlay binding is dropped,
-            % fulfilling the run-in-background promise.
+            % Diagnostic — confirms the "Run in background" button click
+            % actually reached the handler. Fires unconditionally before
+            % any try/catch so a downstream error can't hide entry.
+            try; app.logEvent('TASK', sprintf( ...
+                'runInBackground invoked (taskId=%s)', char(taskId))); catch; end
+            % Release the QMC overlay binding BEFORE hiding the overlay.
+            % Order matters: hideLoading ends with drawnow(), which pumps
+            % the MATLAB timer queue. If QmcActiveTaskId is still set when
+            % that drawnow runs, a pending PollingRunner tick fires
+            % onQmcProgress, its strcmp gate against QmcActiveTaskId
+            % passes, and app.showLoading(...) re-pops the modal overlay
+            % on top of the QmcDialog before runInBackground finishes
+            % clearing the binding. The reborn overlay sits over the
+            % dialog's Close button so the operator can no longer dismiss
+            % the popup.
+            %
+            % Clearing first makes the gate fail on any tick that flushes
+            % during hideLoading's drawnow, so the overlay stays down.
+            % The poll itself stays alive (managed by BackgroundTasks);
+            % only the overlay binding is dropped, fulfilling the
+            % run-in-background promise.
             try
                 if ~isempty(taskId) && ~isempty(app.QmcActiveTaskId) ...
                         && strcmp(char(app.QmcActiveTaskId), char(taskId))
@@ -952,6 +963,32 @@ classdef QTAUWorkbenchApp < handle
                 end
             catch
             end
+            try; app.hideLoading(); catch; end
+            % Defensively DESTROY the overlay handles, not just hide them.
+            % Visible='off' + offscreen Position is normally enough, but on
+            % R2025b uifigure (macOS) a uihtml's CEF hit-test rectangle can
+            % survive a Visible flip, silently swallowing clicks on
+            % whatever sits underneath — including the QmcDialog's Close
+            % button. Destroying the handles eliminates the hit-test rect
+            % entirely; the next showLoading lazy-recreates them.
+            try
+                if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
+                    delete(app.OverlayBgButton);
+                end
+            catch
+            end
+            app.OverlayBgButton = [];
+            try
+                if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
+                    try; app.ActivityOverlay.Visible = 'off'; catch; end
+                    drawnow;
+                    pause(0.1);
+                    drawnow;
+                    delete(app.ActivityOverlay);
+                end
+            catch
+            end
+            app.ActivityOverlay = [];
             try
                 if ~isempty(taskId) && ~isempty(app.BackgroundTasks)
                     t = app.BackgroundTasks.findById(taskId);

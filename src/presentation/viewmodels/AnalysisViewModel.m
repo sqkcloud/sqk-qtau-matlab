@@ -182,11 +182,22 @@ classdef AnalysisViewModel < handle
         % selected circuit so the dialog opens with data already shown.
         function onOpenQmcDialog(obj)
             app = obj.App;
-            if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
-                figure(app.QmcDialog);  % bring existing dialog to front
-                return;
+            % Reuse-not-rebuild: if the hidden QmcDialog handle still
+            % lives (close path is now Visible='off', not delete — see
+            % onCloseQmcDialog rationale), un-hide and re-raise rather
+            % than constructing a second uifigure. State refresh below
+            % (backends / circuit meta / last result / viability) runs
+            % unconditionally so the reused popup re-presents with
+            % current data on every open.
+            isReuse = ~isempty(app.QmcDialog) && isvalid(app.QmcDialog);
+            if isReuse
+                try; app.QmcDialog.Visible = 'on'; catch; end
+                try; figure(app.QmcDialog); catch; end
+                Logger.info('DialogBuilder', ...
+                    'Quantum Monte Carlo / QMC dialog shown (reuse)');
+            else
+                DialogBuilder.buildQmcDialog(app);
             end
-            DialogBuilder.buildQmcDialog(app);
             % Populate the backend dropdown from BackendService so the
             % popup mirrors the Backends screen's list.
             obj.loadQmcBackends();
@@ -503,20 +514,111 @@ classdef AnalysisViewModel < handle
         end
 
         function onCloseQmcDialog(obj)
-            % Teardown: hide overlay, destroy the dialog frame. The async
-            % QMC job stays running on the server AND in the client-side
-            % BackgroundTaskManager — the user can reopen the popup (or
-            % click "View" on the completion toast / header indicator)
-            % and the cached QmcLastResult will surface as soon as it
-            % lands. Only the dialog widgets are torn down here.
+            % Teardown: destroy the QmcDialog frame, then clean up overlay
+            % handles. The async QMC job stays running on the server AND
+            % in the client-side BackgroundTaskManager — the user can
+            % reopen the popup (or click "View" on the completion toast /
+            % header indicator) and the cached QmcLastResult will surface
+            % as soon as it lands.
+            %
+            % v6 ordering — figure kill FIRST, then overlay cleanup.
+            %
+            % Reproduction on R2025b / R2026a (macOS): after the operator
+            % clicks "Run in background", runInBackground synchronously
+            % delete()s the uihtml ActivityOverlay (a child of
+            % QmcDialog). Subsequent Close-button clicks reach this
+            % handler — log line "onCloseQmcDialog invoked" appears —
+            % but every prior revision then immediately called
+            % app.hideLoading(), whose unconditional drawnow() at the
+            % end stalls waiting for the QmcDialog's CEF event bridge,
+            % which the earlier uihtml deletion has left in a degraded
+            % state. The stall blocks all subsequent teardown code from
+            % ever running, so none of the v5 attempts at delete() /
+            % close('force') / sweep ever fired and the operator's
+            % repeated clicks just queued more stalled invocations.
+            %
+            % By killing the figure synchronously WITHOUT any
+            % intervening drawnow, the MATLAB-side handle is invalidated
+            % regardless of CEF state and the click succeeds even if
+            % the subsequent overlay cleanup stalls.
             app = obj.App;
-            try; app.hideLoading(); catch; end
+            try; app.logEvent('UI', 'onCloseQmcDialog invoked'); catch; end
+
+            % Step 1: collect every uifigure the user may be looking at
+            % right now. Stored handle plus a root sweep matching the
+            % dialog Name — handles the rare handle-drift case where
+            % app.QmcDialog points at a stale object while the visible
+            % window on screen is a different uifigure.
+            targets = {};
             try
                 if ~isempty(app.QmcDialog) && isvalid(app.QmcDialog)
-                    delete(app.QmcDialog);
+                    targets{end+1} = app.QmcDialog;
                 end
             catch
             end
+            try
+                stragglers = findall(groot, 'Type', 'figure', ...
+                    'Name', 'Quantum Monte Carlo Simulation');
+                for k = 1:numel(stragglers)
+                    sf = stragglers(k);
+                    if isvalid(sf) && ~any(cellfun(@(t) isequal(t, sf), targets))
+                        targets{end+1} = sf; %#ok<AGROW>
+                    end
+                end
+            catch
+            end
+
+            % Step 2: neutralize + kill each target. No drawnow in this
+            % loop — that is the point of v6. Each per-figure operation
+            % is wrapped in try so a swallowed CEF error on one property
+            % assignment cannot starve the next attempt.
+            for k = 1:numel(targets)
+                f = targets{k};
+                % Make any reentrant Close click inert immediately so
+                % subsequent presses cannot pile up while teardown
+                % completes.
+                try; f.CloseRequestFcn = @(~,~) []; catch; end
+                % Pop the modal lock so close() / delete() are not gated
+                % by the modal event loop.
+                try; f.WindowStyle    = 'normal';   catch; end
+                try; f.Visible        = 'off';      catch; end
+                try; close(f, 'force');             catch; end
+                try; if isvalid(f); delete(f); end; catch; end
+                try
+                    if isvalid(f)
+                        app.logEvent('UI', ...
+                            '[onCloseQmcDialog v6] target still valid after delete');
+                    else
+                        app.logEvent('UI', ...
+                            '[onCloseQmcDialog v6] target killed');
+                    end
+                catch
+                end
+            end
+            app.QmcDialog = [];
+
+            % Step 3: overlay handle cleanup. The figure is already gone
+            % so even if hideLoading's drawnow stalls, the user's Close
+            % click already succeeded. The OverlayBgButton and
+            % ActivityOverlay assignments may already be [] (cleared by
+            % runInBackground); reassigning is safe.
+            try; app.hideLoading(); catch; end
+            try
+                if ~isempty(app.OverlayBgButton) && isvalid(app.OverlayBgButton)
+                    delete(app.OverlayBgButton);
+                end
+            catch
+            end
+            app.OverlayBgButton = [];
+            try
+                if ~isempty(app.ActivityOverlay) && isvalid(app.ActivityOverlay)
+                    try; app.ActivityOverlay.Visible = 'off'; catch; end
+                    delete(app.ActivityOverlay);
+                end
+            catch
+            end
+            app.ActivityOverlay = [];
+            try; app.logEvent('UI', '[onCloseQmcDialog v6] teardown done'); catch; end
         end
 
         function onChooseCompatibleCircuit(obj)
