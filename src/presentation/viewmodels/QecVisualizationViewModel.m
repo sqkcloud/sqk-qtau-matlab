@@ -14,6 +14,12 @@ classdef QecVisualizationViewModel < handle
         % or with app.State.selectedCircuitId).
         SelectedCircuit = struct('id', '', 'name', '', 'num_qubits', 0);
         SelectedBackend = struct('name', '', 'num_qubits', 0);
+        % Bloch decay animation runs via a fixedSpacing timer instead of
+        % a blocking for/pause loop so the UI stays responsive between
+        % ticks (nav clicks, slider drags, window close all fire while
+        % the animation runs).
+        AnimationTimer = []
+        AnimationState = struct()
     end
 
     methods
@@ -264,41 +270,83 @@ classdef QecVisualizationViewModel < handle
             app = obj.App;
             app.logEvent('QEC', 'Animating Bloch vector decay');
             try
+                obj.stopAnimationTimer();
+
                 params = obj.readSimParams();
                 nSteps = AppConfig.getDouble('qec_viz_decay_steps', 30);
                 pRange = linspace(0, AppConfig.getDouble('qec_viz_decay_max_prob', 0.5), nSteps);
-                blochTrail = zeros(nSteps, 3);
 
-                % Get ideal vector
                 idealResult = app.QecEngine.simulate( ...
                     params.codeType, params.noiseModel, 0, params.initialState, 1);
-                idealVec = idealResult.blochVector;
 
-                % Also compute and plot fidelity decay over rounds
                 maxRounds = AppConfig.getDouble('qec_viz_max_rounds', 10);
                 decay = app.QecEngine.simulateDecay( ...
                     params.codeType, params.noiseModel, params.errorProb, ...
                     params.initialState, maxRounds);
                 obj.plotDecay(decay);
 
-                % Animate Bloch sphere
-                for step = 1:nSteps
-                    p = pRange(step);
-                    result = app.QecEngine.simulate( ...
-                        params.codeType, params.noiseModel, p, params.initialState, 1);
-                    blochTrail(step, :) = result.blochVector;
+                obj.AnimationState = struct( ...
+                    'step',       0, ...
+                    'nSteps',     nSteps, ...
+                    'pRange',     pRange, ...
+                    'blochTrail', zeros(nSteps, 3), ...
+                    'idealVec',   idealResult.blochVector, ...
+                    'params',     params);
 
-                    obj.drawBlochSphereWithTrail(result.blochVector, idealVec, blochTrail(1:step, :));
-                    drawnow();
-                    pause(0.06);
-                end
-
-                app.logEvent('QEC', 'Animation complete');
-                app.State.logActivity('QEC visualize — Bloch decay animation', 'Success');
+                obj.AnimationTimer = timer( ...
+                    'ExecutionMode',   'fixedSpacing', ...
+                    'Period',          0.06, ...
+                    'TasksToExecute',  nSteps, ...
+                    'TimerFcn',        @(src,~) obj.onAnimationTick(src), ...
+                    'StopFcn',         @(src,~) obj.onAnimationStop(src), ...
+                    'ErrorFcn',        @(src,~) obj.onAnimationStop(src));
+                start(obj.AnimationTimer);
             catch ME
                 app.logEvent('ERROR', sprintf('Animation failed: %s', ME.message));
                 app.showError('Bloch Animation', ME);
             end
+        end
+
+        function onAnimationTick(obj, src)
+            app = obj.App;
+            if isempty(app) || ~isvalid(app) || ~isvalid(app.UIFigure)
+                stop(src); return;
+            end
+            try
+                st = obj.AnimationState;
+                st.step = st.step + 1;
+                p = st.pRange(st.step);
+                result = app.QecEngine.simulate( ...
+                    st.params.codeType, st.params.noiseModel, p, ...
+                    st.params.initialState, 1);
+                st.blochTrail(st.step, :) = result.blochVector;
+                obj.drawBlochSphereWithTrail(result.blochVector, st.idealVec, ...
+                    st.blochTrail(1:st.step, :));
+                obj.AnimationState = st;
+            catch ME
+                Logger.warn('QecVisualizationViewModel', 'tick failed: %s', ME.message);
+                stop(src);
+            end
+        end
+
+        function onAnimationStop(obj, src)
+            try; if isvalid(src); delete(src); end; catch; end
+            obj.AnimationTimer = [];
+            app = obj.App;
+            if isempty(app) || ~isvalid(app); return; end
+            st = obj.AnimationState;
+            if isfield(st, 'step') && isfield(st, 'nSteps') && st.step >= st.nSteps
+                app.logEvent('QEC', 'Animation complete');
+                try app.State.logActivity('QEC visualize — Bloch decay animation', 'Success'); catch; end
+            end
+        end
+
+        function stopAnimationTimer(obj)
+            if ~isempty(obj.AnimationTimer) && isvalid(obj.AnimationTimer)
+                try; stop(obj.AnimationTimer); catch; end
+                try; delete(obj.AnimationTimer); catch; end
+            end
+            obj.AnimationTimer = [];
         end
     end
 

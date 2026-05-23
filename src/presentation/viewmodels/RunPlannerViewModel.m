@@ -487,17 +487,28 @@ classdef RunPlannerViewModel < handle
         end
 
         function assemblePlan(obj, ctx)
-            points = struct( ...
-                'backend', {}, 'level', {}, 'levelLabel', {}, ...
-                'baseFidelity', {}, 'fidelity', {}, ...
-                'cost', {}, 'runtime', {}, 'totalShots', {}, 'shotMult', {});
-            stratFns = fieldnames(ctx.costsByStrategy);
+            stratFns    = fieldnames(ctx.costsByStrategy);
             backendKeys = fieldnames(ctx.baseFidByBackend);
-            for bi = 1:numel(backendKeys)
+            M = numel(backendKeys);
+            N = numel(stratFns);
+            % Preallocate to worst-case M*N. Empty-cost entries are
+            % skipped via `continue`, then truncate to actual count.
+            % Replaces the prior points(end+1) = ... AGROW which
+            % reallocated the struct array on every iteration
+            % (~80-250 ms on 10x10 grids).
+            if M == 0 || N == 0
+                points = RunPlannerService.makePoint('', '', '', 0, 0, 0, 0, 0, 0);
+                points = points([]);
+            else
+                emptyPoint = RunPlannerService.makePoint('', '', '', 0, 0, 0, 0, 0, 0);
+                points = repmat(emptyPoint, 1, M * N);
+            end
+            idx = 0;
+            for bi = 1:M
                 bk = backendKeys{bi};
                 bname = ctx.baseFidByBackend.(bk).name;
                 baseFid = ctx.baseFidByBackend.(bk).fidelity;
-                for si = 1:numel(stratFns)
+                for si = 1:N
                     sk = stratFns{si};
                     entry = ctx.costsByStrategy.(sk);
                     lvl = entry.lvl;
@@ -518,10 +529,12 @@ classdef RunPlannerViewModel < handle
                     tot  = RunPlannerViewModel.pickCostField(entry.cost, 'effective_shots', NaN);
                     mult = RunPlannerViewModel.pickCostField(entry.cost, 'shot_multiplier', 1.0);
                     fidM = RunPlannerService.applyMitigationFactor(baseFid, lid);
-                    points(end+1) = RunPlannerService.makePoint( ...
-                        bname, lid, lbl, baseFid, fidM, cost, rt, tot, mult); %#ok<AGROW>
+                    idx = idx + 1;
+                    points(idx) = RunPlannerService.makePoint( ...
+                        bname, lid, lbl, baseFid, fidM, cost, rt, tot, mult);
                 end
             end
+            points = points(1:idx);
             obj.Points = points;
             obj.Frontier = RunPlannerService.computeParetoFrontier(points);
             target = obj.TargetSlider.Value;

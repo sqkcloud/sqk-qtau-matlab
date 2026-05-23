@@ -71,11 +71,45 @@ classdef BenchmarkDashboardViewModel < handle
             token = app.State.authToken;
             svc   = app.BenchmarkSvc;
 
-            % Run all 5 API fetches off the UI thread in one async task
-            AsyncRunner.run( ...
-                @() BenchmarkDashboardViewModel.fetchAllData(svc, backendName, pid, token), ...
-                @(results) obj.applyAllData(app, backendName, results), ...
-                @(ME)      obj.onRefreshError(app, ME));
+            % Phase-perf: dispatch the 5 fetches as parallel parfeval
+            % futures (AsyncRunner.runMany) instead of running them
+            % serially inside a single worker. Previously the worker
+            % thread issued the 5 HTTP GETs back-to-back — if each
+            % took 400 ms, the dashboard waited ~2 s. With runMany the
+            % batch completes when the slowest call finishes (max,
+            % not sum).
+            %
+            % Per-task errors are swallowed by safeFetch into [] so a
+            % single 404/500 doesn't abort the batch — applyAllData
+            % already renders an empty panel for nil sections.
+            empty   = @() [];
+            metricsFn = empty; volFn = empty; scoreFn = empty;
+            calibFn   = empty; regFn = empty;
+            if ~isempty(backendName)
+                metricsFn = @() BenchmarkDashboardViewModel.safeFetch( ...
+                    'metrics', backendName, @() svc.getSystemMetrics(backendName, token));
+            end
+            if ~isempty(pid)
+                volFn = @() BenchmarkDashboardViewModel.safeFetch( ...
+                    'volumetric', '', @() svc.getVolumetricData(pid, token));
+                calibFn = @() BenchmarkDashboardViewModel.safeFetch( ...
+                    'calibration', '', @() svc.getPredictionCalibration(pid, token));
+            end
+            if ~isempty(backendName) && ~isempty(pid)
+                scoreFn = @() BenchmarkDashboardViewModel.safeFetch( ...
+                    'scorecard', backendName, @() svc.getBackendScorecard(pid, backendName, token));
+                regFn = @() BenchmarkDashboardViewModel.safeFetch( ...
+                    'regression', backendName, @() svc.getBenchmarkRegression(pid, backendName, token));
+            end
+            AsyncRunner.runMany( ...
+                {metricsFn, volFn, scoreFn, calibFn, regFn}, ...
+                @(r) obj.applyAllData(app, backendName, struct( ...
+                    'metrics',     r{1}, ...
+                    'volumetric',  r{2}, ...
+                    'scorecard',   r{3}, ...
+                    'calibration', r{4}, ...
+                    'regression',  r{5})), ...
+                @(ME) obj.onRefreshError(app, ME));
         end
 
         % ── Backend dropdown population ──────────────────────────────────
@@ -781,33 +815,22 @@ classdef BenchmarkDashboardViewModel < handle
 
         % ── Data fetching (runs off UI thread) ───────────────────────────
 
-        function results = fetchAllData(svc, backendName, pid, token)
-            % fetchAllData  Run all 5 API calls and return a struct of
-            %   results.  Each call is wrapped in try-catch so a single
-            %   failure doesn't abort the others. The failures are logged
-            %   at WARN level so the user can see why panels are empty.
-            results = struct('metrics', [], 'volumetric', [], ...
-                'scorecard', [], 'calibration', [], 'regression', []);
-
-            if ~isempty(backendName)
-                try results.metrics = svc.getSystemMetrics(backendName, token);
-                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchMetrics (%s): %s', backendName, ME.message); end
-            end
-            if ~isempty(pid)
-                try results.volumetric = svc.getVolumetricData(pid, token);
-                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchVolumetric: %s', ME.message); end
-            end
-            if ~isempty(backendName) && ~isempty(pid)
-                try results.scorecard = svc.getBackendScorecard(pid, backendName, token);
-                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchScorecard (%s): %s', backendName, ME.message); end
-            end
-            if ~isempty(pid)
-                try results.calibration = svc.getPredictionCalibration(pid, token);
-                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchCalibration: %s', ME.message); end
-            end
-            if ~isempty(backendName) && ~isempty(pid)
-                try results.regression = svc.getBenchmarkRegression(pid, backendName, token);
-                catch ME; Logger.warn('BenchmarkDashboardViewModel', 'fetchRegression (%s): %s', backendName, ME.message); end
+        function v = safeFetch(label, ctx, fn)
+            % safeFetch  Run a single HTTP fetch on a parfeval worker;
+            %   any failure logs WARN and returns []. Used by
+            %   AsyncRunner.runMany so per-task failures don't abort the
+            %   batch (applyAllData renders an empty panel for [] sections).
+            try
+                v = fn();
+            catch ME
+                if isempty(ctx)
+                    Logger.warn('BenchmarkDashboardViewModel', ...
+                        '%s: %s', label, ME.message);
+                else
+                    Logger.warn('BenchmarkDashboardViewModel', ...
+                        '%s (%s): %s', label, ctx, ME.message);
+                end
+                v = [];
             end
         end
     end
