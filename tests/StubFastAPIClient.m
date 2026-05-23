@@ -61,9 +61,19 @@ classdef StubFastAPIClient < handle
             data = obj.Response;
         end
 
-        function data = postAuthJson(obj, endpoint, payload, token)
+        function data = postAuthJson(obj, endpoint, payload, token, varargin)
+            % varargin absorbs optional timeoutSec (QmcService passes it).
             obj.record('postAuthJson', endpoint, payload, token);
             data = obj.Response;
+        end
+
+        function localPath = downloadFileAuth(obj, endpoint, token, localPath)
+            obj.record('downloadFileAuth', endpoint, struct('localPath', char(localPath)), token);
+            fid = fopen(localPath, 'w');
+            if fid >= 0
+                fwrite(fid, uint8('{}'));
+                fclose(fid);
+            end
         end
 
         function data = putAuthJson(obj, endpoint, payload, token)

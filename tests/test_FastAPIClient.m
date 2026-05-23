@@ -88,9 +88,21 @@ classdef test_FastAPIClient < matlab.unittest.TestCase
         end
 
         function testHttpRemoteRejected(testCase)
-            testCase.verifyError( ...
-                @() FastAPIClient.assertSafeBaseUrl('http://api.example.com'), ...
-                'FastAPIClient:insecureBaseUrl');
+            % Policy is configurable via resources/app.properties:
+            %   allow_insecure_base_url=true   → remote plain-HTTP allowed
+            %                                    (credentials sent unencrypted)
+            %   allow_insecure_base_url=false  → remote plain-HTTP rejected
+            % Verify the live policy reflects the flag, whichever way it
+            % is set in this checkout.
+            allowInsecure = strcmpi(strtrim(AppConfig.get('allow_insecure_base_url', 'false')), 'true');
+            if allowInsecure
+                testCase.verifyWarningFree( ...
+                    @() FastAPIClient.assertSafeBaseUrl('http://api.example.com'));
+            else
+                testCase.verifyError( ...
+                    @() FastAPIClient.assertSafeBaseUrl('http://api.example.com'), ...
+                    'FastAPIClient:insecureBaseUrl');
+            end
         end
 
         function testEmptyBaseUrlRejected(testCase)
@@ -100,9 +112,18 @@ classdef test_FastAPIClient < matlab.unittest.TestCase
         end
 
         function testSetBaseUrlRejectsInsecureRemote(testCase)
-            testCase.verifyError( ...
-                @() testCase.Client.setBaseUrl('http://attacker.example.com'), ...
-                'FastAPIClient:insecureBaseUrl');
+            % Same policy as testHttpRemoteRejected — branch on the
+            % allow_insecure_base_url flag so the test reflects whichever
+            % policy the operator has configured.
+            allowInsecure = strcmpi(strtrim(AppConfig.get('allow_insecure_base_url', 'false')), 'true');
+            if allowInsecure
+                testCase.verifyWarningFree( ...
+                    @() testCase.Client.setBaseUrl('http://attacker.example.com'));
+            else
+                testCase.verifyError( ...
+                    @() testCase.Client.setBaseUrl('http://attacker.example.com'), ...
+                    'FastAPIClient:insecureBaseUrl');
+            end
         end
 
         % ── ProjectId assignment ─────────────────────────────────────────
