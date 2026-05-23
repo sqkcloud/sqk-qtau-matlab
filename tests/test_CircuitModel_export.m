@@ -117,7 +117,7 @@ function test_all_emitters_carry_header_comment(testCase)
     m.addGate('h', 0);
     targets = {m.toQiskitPython(), m.toCirqPython(), m.toBraketPython()};
     for i = 1:numel(targets)
-        testCase.assertSubstring(targets{i}, 'QTAU Connector Workspace');
+        testCase.assertSubstring(targets{i}, 'QTAU');
     end
 end
 

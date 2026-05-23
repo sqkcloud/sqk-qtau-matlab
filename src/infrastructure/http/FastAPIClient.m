@@ -365,9 +365,16 @@ classdef FastAPIClient < handle
                     'Plain HTTP allowed for loopback only: %s', s);
                 return;
             end
+            allowInsecure = strcmpi(strtrim(AppConfig.get('allow_insecure_base_url', 'false')), 'true');
+            if allowInsecure && startsWith(s, 'http://', 'IgnoreCase', true)
+                Logger.warn('FastAPIClient', ...
+                    'Plain HTTP base URL allowed via allow_insecure_base_url=true: %s (credentials sent unencrypted)', s);
+                return;
+            end
             error('FastAPIClient:insecureBaseUrl', ...
                 ['Refusing non-HTTPS base URL: %s. ' ...
-                 'Use https:// (or http://localhost for local development).'], s);
+                 'Use https:// (or http://localhost for local development). ' ...
+                 'To permit plain HTTP to a remote host, set allow_insecure_base_url=true in resources/app.properties.'], s);
         end
 
         function s = encodePathSegment(seg)

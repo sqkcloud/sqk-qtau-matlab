@@ -1,4 +1,4 @@
-% QTAUWorkbenchApp   Main application class for the QTAU Connector Workspace.
+% QTAUWorkbenchApp   Main application class for QTAU: Hardware-Agnostic Execution.
 %
 %   Architecture (Clean Architecture for MATLAB):
 %
@@ -1408,7 +1408,7 @@ classdef QTAUWorkbenchApp < handle
     methods (Access = private)
 
         function buildUI(app)
-            app.UIFigure = uifigure('Name', 'QTAU Connector Workspace', ...
+            app.UIFigure = uifigure('Name', AppConfig.get('app_name', 'QTAU: Hardware-Agnostic Execution'), ...
                 'Position', [80 40 1600 940], ...
                 'Color', Theme.COLOR_BG, 'Visible', 'off');
             % R2025a+ built-in theme cascade — handles uitable/uidropdown/

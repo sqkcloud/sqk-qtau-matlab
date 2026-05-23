@@ -1,4 +1,4 @@
-% QTAUWorkbenchLauncher  Single-command launcher for QTAU Connector Workbench.
+% QTAUWorkbenchLauncher  Single-command launcher for QTAU: Hardware-Agnostic Execution.
 %
 %   Adds every src/ folder to the MATLAB search path and starts the
 %   QTAUWorkbenchApp main window.
@@ -88,9 +88,17 @@ if isDevLaunch
 end
 
 fprintf('\n');clear
-fprintf('  ╔══════════════════════════════════════════════════╗\n');
-fprintf('  ║   QDash Workbench — QTAU Connector Workspace     ║\n');
-fprintf('  ╚══════════════════════════════════════════════════╝\n');
+appName    = AppConfig.get('app_name', 'QTAU: Hardware-Agnostic Execution');
+bannerText = sprintf('QDash Workbench — %s', appName);
+innerWidth = max(50, strlength(bannerText) + 6);
+bar        = repmat('═', 1, innerWidth);
+padded     = sprintf(' %s ', bannerText);
+pad        = innerWidth - strlength(padded);
+leftPad    = floor(pad / 2);
+rightPad   = pad - leftPad;
+fprintf('  ╔%s╗\n', bar);
+fprintf('  ║%s%s%s║\n', repmat(' ', 1, leftPad), padded, repmat(' ', 1, rightPad));
+fprintf('  ╚%s╝\n', bar);
 fprintf('  Starting application...\n\n');
 
 QTAUWorkbenchApp;

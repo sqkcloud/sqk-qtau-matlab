@@ -227,12 +227,31 @@ runtests('tests')                    % Run all
 runtests('tests/test_CircuitService') % Run one
 ```
 
-## Required MCP Tool Workflow
+## Required MCP Tool & Skill Workflow
 
-Every request that involves analyzing, debugging, or modifying code **must** use these MCP tools:
+Every request that involves analyzing, debugging, or modifying code **must** use the following tools and skill suites. This is not optional — apply them even for seemingly simple tasks.
 
 1. **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) — Start here. Break down the problem, plan analysis steps, and reason through the solution before writing code.
-2. **Context7** (`mcp__context7__resolve-library-id` → `mcp__context7__query-docs`) — Look up current documentation for any library, framework, or API involved in the task. Always resolve the library ID first, then query docs.
-3. **Serena** — Use via SuperClaude skills (`/sc:analyze`, `/sc:reflect`, `/sc:load`) for project-aware deep code analysis, validation, and reflection.
+2. **Context7** (`mcp__context7__resolve-library-id` → `mcp__context7__query-docs`) — Always use for any library, framework, or API involved in the task (MATLAB toolboxes, FastAPI, Qiskit, Cirq, Braket, ReportLab, etc.). Resolve the library ID first, then query docs. Prefer this over web search for library documentation.
+3. **Serena** — Always use for project-aware, symbol-level code analysis. Call `mcp__serena__initial_instructions` once per session, then use `find_symbol`, `find_referencing_symbols`, `get_symbols_overview`, `replace_symbol_body`, etc. for surgical edits instead of broad text searches.
+4. **Superpowers** — Always use the `superpowers:*` skill suite for process discipline. Mandatory entry points:
+   - `superpowers:using-superpowers` — at the start of every conversation.
+   - `superpowers:brainstorming` — before any creative / new-feature work (aligns with the "deep brainstorm before touching code" rule).
+   - `superpowers:systematic-debugging` — before proposing any bug fix.
+   - `superpowers:test-driven-development` — when touching anything covered by `tests/`.
+   - `superpowers:verification-before-completion` — before claiming work is done, fixed, or passing.
+   - `superpowers:writing-plans` / `superpowers:executing-plans` — for multi-step tasks.
+5. **SuperClaude** — Always use the `/sc:*` skills for structured workflow on top of Serena:
+   - `/sc:load` at session start, `/sc:save` at session end.
+   - `/sc:analyze`, `/sc:reflect`, `/sc:troubleshoot` for investigation.
+   - `/sc:implement`, `/sc:improve`, `/sc:test`, `/sc:document` for execution.
+   - `/sc:brainstorm`, `/sc:design`, `/sc:workflow`, `/sc:estimate` for planning.
+6. **Caveman** — Always use for token-efficient communication and review:
+   - `caveman` / `/caveman` for ultra-compressed responses when brevity is requested.
+   - `caveman-review` / `/caveman-review` for PR / diff review comments.
+   - `caveman-commit` / `/caveman-commit` for commit-message generation.
+   - `cavecrew` (investigator / builder / reviewer subagents) to keep main-thread context lean on long sessions.
 
-This is not optional. Use all three even for seemingly simple tasks.
+**Order of operations for a typical task:** Sequential Thinking → Superpowers (`brainstorming` or `systematic-debugging`) → Context7 (docs lookup) → Serena (symbol-level code reading) → SuperClaude (`/sc:implement` / `/sc:test`) → Superpowers (`verification-before-completion`) → Caveman (compressed commit / review output).
+
+**Codex will review your output once you are done.**

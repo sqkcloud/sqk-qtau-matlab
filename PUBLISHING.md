@@ -423,11 +423,13 @@ QTAUWorkbenchLauncher
 Watch for the boot banner:
 
 ```
-  ╔══════════════════════════════════════════════════╗
-  ║   QDash Workbench — QTAU Connector Workspace     ║
-  ╚══════════════════════════════════════════════════╝
+  ╔══════════════════════════════════════════════════════════╗
+  ║   QDash Workbench — QTAU: Hardware-Agnostic Execution    ║
+  ╚══════════════════════════════════════════════════════════╝
   Starting application...
 ```
+
+(Banner width auto-fits the `app_name` from `resources/app.properties`.)
 
 The Login dialog should appear.
 

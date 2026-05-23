@@ -191,7 +191,9 @@ classdef DialogBuilder
             app.LoginDlgStatusLabel.Layout.Column = 1;
 
             verLbl = uilabel(outerGrid, ...
-                'Text', Labels.get('login_dlg_version', 'QTAU Connector Workspace v2026'), ...
+                'Text', sprintf('%s v%s', ...
+                    AppConfig.get('app_name',    'QTAU: Hardware-Agnostic Execution'), ...
+                    AppConfig.get('app_version', '2026')), ...
                 'FontSize', 9, 'FontColor', footerColor, ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'center');
             verLbl.Layout.Row = 3; verLbl.Layout.Column = 2;
@@ -2327,7 +2329,7 @@ classdef DialogBuilder
             try
                 body   = HelpContent.appBody();
                 labels = HelpContent.appLabels();
-                displayName = 'QTAU Connector Workspace';
+                displayName = AppConfig.get('app_name', 'QTAU: Hardware-Agnostic Execution');
 
                 figW = 760; figH = 660;
                 try

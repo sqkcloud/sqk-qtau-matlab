@@ -70,7 +70,7 @@ function test_assemble_contents_include_manifest_and_readme(testCase)
     raw = fileread(fullfile(extractDir, 'manifest.json'));
     m = jsondecode(raw);
     testCase.assertEqual(char(string(m.bundle_version)), '1.0');
-    testCase.assertSubstring(char(string(m.generator)), 'QTAU Connector Workspace');
+    testCase.assertSubstring(char(string(m.generator)), 'QTAU');
     testCase.assertGreaterThan(numel(m.files), 0);
     delete(cleanup); delete(cleanup2);
 end
