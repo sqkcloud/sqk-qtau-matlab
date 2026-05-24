@@ -27,14 +27,76 @@ end
 % `persistent cachedProps` in Labels.m / AppConfig.m — forcing a full
 % 600-line labels.properties re-parse on every launch and dropping all
 % in-memory class metadata. On a 200+ .m file project that costs 1-3 s
-% on every cold start. The default (production) path skips it. Devs
-% iterating on classdef changes (added/removed properties) set
-% QTAU_DEV=1 in their env to force the clear.
-isDevLaunch = strcmp(getenv('QTAU_DEV'), '1');
+% on every cold start. Production / deployed builds skip it for the
+% faster warm-cache path. Dev launches (any tree with a `.git` folder
+% next to this launcher, OR explicit QTAU_DEV=1) always clear so .m
+% edits the operator just made on disk take effect on next launch
+% without them having to remember the env var. Without this auto-clear,
+% MATLAB's cached classdef vtable executes whatever method bodies were
+% loaded on FIRST launch and ignores every subsequent .m edit until
+% `clear classes` is run — causing confusing "my fix did not apply"
+% loops where the source has the change but the running session does
+% not.
+launcherDir = fileparts(mfilename('fullpath'));
+isDevLaunch = strcmp(getenv('QTAU_DEV'), '1') ...
+    || isfolder(fullfile(launcherDir, '.git'));
 if isDevLaunch
-    warning('off', 'all');
+    % Drain everything that can hold a strong reference to a classdef
+    % instance before `clear classes`. MATLAB silently REFUSES to clear
+    % a class definition if any live instance, timer with that class
+    % in its UserData, or figure still references it. The old launcher
+    % suppressed warnings so the refusal was invisible — operator
+    % thought clear succeeded, MATLAB executed cached bytecode forever,
+    % .m edits never took effect. New launcher: kill timers + figures
+    % first, keep warnings audible so a failed clear is loud.
+    try; delete(timerfindall); catch; end
+    try; close all force; catch; end
+    drawnow;
+    % Reset lastwarn so a stale prior warning can't impersonate a
+    % blocked-clear failure below.
+    lastwarn('');
     clear classes %#ok<CLSCR>
-    warning('on', 'all');
+    % Detect a blocked `clear classes` and SURGICALLY reload the
+    % user-defined classes that the close-button + dialog teardown
+    % path actually depends on. The MATLAB-wide warning fires for
+    % onCleanup whenever any cleanup obj is alive (very common from
+    % MATLAB / Project startup itself), so a hard-fail on the
+    % warning produces false-positives that block every launch. The
+    % real concern is only the handful of user classes whose .m
+    % edits the operator is iterating on — clear those by NAME.
+    % `clear ClassName` is more granular than `clear classes` and
+    % usually succeeds when the broad clear is blocked.
+    [warnMsg, ~] = lastwarn();
+    if ~isempty(warnMsg) && (contains(warnMsg, 'Cannot clear') || ...
+            contains(warnMsg, 'cannot be cleared'))
+        fprintf(2, ...
+            '\n  ⚠  clear classes warned; force-reloading hot-path user classes:\n');
+        hotClasses = { ...
+            'AnalysisViewModel', ...
+            'DialogBuilder', ...
+            'QTAUWorkbenchApp', ...
+            'OverlayManager', ...
+            'NavigationManager'};
+        for k = 1:numel(hotClasses)
+            try
+                evalin('base', sprintf('clear %s', hotClasses{k}));
+                fprintf(2, '       cleared %s\n', hotClasses{k});
+            catch ME
+                fprintf(2, '       FAILED %s — %s\n', hotClasses{k}, ME.message);
+            end
+        end
+        fprintf(2, ...
+            '     If your .m edits still do not take effect, fully quit\n');
+        fprintf(2, ...
+            '     MATLAB (Cmd-Q on macOS, exit otherwise) and relaunch.\n\n');
+    end
+    % `clear classes` wipes ALL workspace variables in addition to class
+    % definitions, so isDevLaunch + launcherDir are gone here. Restore
+    % them so the rest of the script (path setup, the later
+    % `if isDevLaunch` for rehash) still sees the intended values.
+    launcherDir = fileparts(mfilename('fullpath'));
+    isDevLaunch = strcmp(getenv('QTAU_DEV'), '1') ...
+        || isfolder(fullfile(launcherDir, '.git'));
 end
 
 projectRoot = fileparts(mfilename('fullpath'));
