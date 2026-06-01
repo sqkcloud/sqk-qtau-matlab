@@ -1,5 +1,11 @@
 # Feature Documentation — QTAU Connector Workbench
 
+> **Looking for everything in one place?** See
+> [`../MASTER_REFERENCE.md`](../MASTER_REFERENCE.md) — the consolidated
+> compendium of all features, every client-side formula/algorithm (with
+> `file:line` citations), and the purpose of each. The per-feature pages
+> below go deeper on individual screens.
+
 This directory holds per-feature reference documents. Each one follows the
 same seven-section template:
 
