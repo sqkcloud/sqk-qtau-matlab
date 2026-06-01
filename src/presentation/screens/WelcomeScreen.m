@@ -118,7 +118,8 @@ function WelcomeScreen(app)
     % and detect right-clicks (alt) on the projects table.
     app.buildProjectPopupMenu();
     prevFcn = app.UIFigure.WindowButtonDownFcn;
-    app.UIFigure.WindowButtonDownFcn = @(src, evt) handleWelcomeMouseDown(app, prevFcn, src, evt);
+    LayoutBuilder.setWindowButtonDownFcnSafe(app.UIFigure, ...
+        @(src, evt) handleWelcomeMouseDown(app, prevFcn, src, evt));
 
     % Pagination bar: Prev | Page X of Y | Next
     pageBar = uigridlayout(pg, [1 3]);

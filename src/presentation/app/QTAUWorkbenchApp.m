@@ -488,6 +488,7 @@ classdef QTAUWorkbenchApp < handle
         % pre-fills the title for the active job.
         ResultsDownloadJsonBtn
         ResultsGeneratePdfBtn
+        ResultsViewReconstructionBtn  % toolbar button; disabled until ≥1 cutting batch lands
         % ── Tier B/C visual redesign widgets (M2) ───────────────────
         % Identity strip across the top of the Results screen.
         ResultsHeroTitle              % "Quantum Run Report"
@@ -1211,6 +1212,7 @@ classdef QTAUWorkbenchApp < handle
                 app.(placeholderField) = [];
             end
             ax = uiaxes(g);
+            StyleHelper.hideAxesToolbar(ax);
             app.(axesField) = ax;
         end
 
@@ -1454,6 +1456,14 @@ classdef QTAUWorkbenchApp < handle
             Theme.applyFigureMode(app.UIFigure, Theme.activeName());
             app.UIFigure.AutoResizeChildren    = 'off';
             app.UIFigure.SizeChangedFcn        = @(~,~)app.onResizeUI();
+            % Closing the window must also delete the app handle —
+            % otherwise the QTAUWorkbenchApp instance survives in base
+            % workspace `ans`, keeps every VM / service / timer alive,
+            % and the next launcher invocation hits a wall of
+            % "Cannot clear class … instance still exists" warnings.
+            % delete(app) cascades to logout + UIFigure delete + the
+            % services tear down on their own.
+            app.UIFigure.CloseRequestFcn       = @(~,~) delete(app);
 
             app.RootGrid = uigridlayout(app.UIFigure, [2 1]);
             app.RootGrid.RowHeight   = {52, '1x'};

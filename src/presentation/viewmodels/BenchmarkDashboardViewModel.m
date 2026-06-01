@@ -448,6 +448,7 @@ classdef BenchmarkDashboardViewModel < handle
                     app.ScorecardPlaceholder = [];
                 end
                 ax = polaraxes('Parent', app.ScorecardGrid);
+                StyleHelper.hideAxesToolbar(ax);
                 app.ScorecardAxes = ax;
             end
             cla(ax);

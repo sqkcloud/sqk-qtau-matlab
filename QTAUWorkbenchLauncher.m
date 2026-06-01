@@ -51,6 +51,33 @@ if isDevLaunch
     % first, keep warnings audible so a failed clear is loud.
     try; delete(timerfindall); catch; end
     try; close all force; catch; end
+    % Cancel any in-flight parfeval futures on the background pool —
+    % their captured closures hold strong refs to VM / app handles, so
+    % a live future will pin every classdef in the dispatch chain and
+    % make `clear classes` warn for each one. Cancel is best-effort:
+    % some MATLAB releases reject cancel on already-finished futures.
+    try
+        pool = backgroundPool();
+        if ~isempty(pool)
+            futs = pool.FevalQueue.QueuedFutures;
+            for kk = 1:numel(futs); try; cancel(futs(kk)); catch; end; end
+            futs = pool.FevalQueue.RunningFutures;
+            for kk = 1:numel(futs); try; cancel(futs(kk)); catch; end; end
+        end
+    catch
+    end
+    % Drop the prior app instance still pinned by base-workspace `ans`
+    % (assignment-less invocation of `QTAUWorkbenchApp;` leaves the
+    % returned handle in ans, which alone is enough to block class
+    % clearing). Delete it explicitly so its delete() chain releases
+    % every VM / service / timer reference before `clear classes`.
+    try
+        evalin('base', ...
+            ['try; if exist(''ans'',''var'') && isa(ans, ''handle'')' ...
+             ' && isvalid(ans); delete(ans); end; catch; end; ' ...
+             'clear ans;']);
+    catch
+    end
     drawnow;
     % Reset lastwarn so a stale prior warning can't impersonate a
     % blocked-clear failure below.

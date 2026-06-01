@@ -36,7 +36,6 @@ classdef LayoutBuilder
                 brand = uiimage(brandWrap);
                 brand.ImageSource = logoPath;
                 brand.ScaleMethod = 'fit';
-                brand.Tooltip = 'SQK';
                 brand.Layout.Row = 1; brand.Layout.Column = 1;
             catch
                 brand = uilabel(brandWrap, 'Text', 'SQK');
@@ -358,6 +357,28 @@ classdef LayoutBuilder
             catch
                 % property missing on this widget class; ignore.
             end
+        end
+
+        function setWindowButtonDownFcnSafe(fig, fcn)
+            % Set figure.WindowButtonDownFcn after disabling any active
+            % graphics-interaction mode (zoom/pan/rotate3d/datacursormode/
+            % brush). MATLAB blocks the property write while one of those
+            % modes owns the figure's button-down callback, emitting the
+            % "Setting the WindowButtonDownFcn property is not permitted
+            % while this mode is active" warning and silently leaving the
+            % callback unchanged. This happens when a lazy-built screen
+            % (e.g. Reports) is opened directly after the user rotated a
+            % 3D uiaxes via the AxesToolbar (e.g. QEC Visualization's
+            % Bloch sphere), since the mode persists on the figure across
+            % nav. Each mode-off is guarded so an unsupported mode on a
+            % given figure flavour just no-ops.
+            if isempty(fig) || ~isvalid(fig); return; end
+            try; zoom(fig, 'off');            catch; end
+            try; pan(fig, 'off');             catch; end
+            try; rotate3d(fig, 'off');        catch; end
+            try; datacursormode(fig, 'off');  catch; end
+            try; brush(fig, 'off');           catch; end
+            fig.WindowButtonDownFcn = fcn;
         end
 
         function buildLoadingOverlay(app)

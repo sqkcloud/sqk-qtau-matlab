@@ -182,8 +182,8 @@ function BackendsScreen(app)
     %     can't sit over the figure swallowing right-clicks.
     app.buildBackendsPopupMenu();
     prevFcn = app.UIFigure.WindowButtonDownFcn;
-    app.UIFigure.WindowButtonDownFcn = ...
-        @(src, evt) handleBackendsMouseDown(app, prevFcn, src, evt);
+    LayoutBuilder.setWindowButtonDownFcnSafe(app.UIFigure, ...
+        @(src, evt) handleBackendsMouseDown(app, prevFcn, src, evt));
 
     % ── Calibration notes (right) ─────────────────────────────────────────────
     detailPanel = uipanel(g, 'Title', Labels.get('backends_panel_notes'), ...

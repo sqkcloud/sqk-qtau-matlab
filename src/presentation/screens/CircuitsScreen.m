@@ -81,7 +81,8 @@ function CircuitsScreen(app)
     % Custom right-click popup (same pattern as Welcome/Projects)
     app.buildCircuitsPopupMenu();
     prevFcn = app.UIFigure.WindowButtonDownFcn;
-    app.UIFigure.WindowButtonDownFcn = @(src, evt) handleCircuitsMouseDown(app, prevFcn, src, evt);
+    LayoutBuilder.setWindowButtonDownFcnSafe(app.UIFigure, ...
+        @(src, evt) handleCircuitsMouseDown(app, prevFcn, src, evt));
 
     % ── Pagination + Upload bar ───────────────────────────────────────────
     barPanel = uipanel(g, 'Title', '', 'BorderType', 'line', ...

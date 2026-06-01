@@ -40,7 +40,17 @@ classdef StyleHelper
             ax.Color      = Theme.CHART_BG;
             ax.XColor     = Theme.CHART_AXIS;
             ax.YColor     = Theme.CHART_AXIS;
-            try; axtoolbar(ax, {'zoom','pan','datacursor','restoreview'}); catch; end
+            StyleHelper.hideAxesToolbar(ax);
+        end
+
+        function hideAxesToolbar(ax)
+            % Hide the floating axes hover-toolbar (datatip / pan / zoom /
+            % home / restore) and disable default interactivity. Charts in
+            % this app are static read-only views — the toolbar adds visual
+            % noise without affording anything users need.
+            try; ax.Toolbar.Visible = 'off'; catch; end
+            try; ax.Interactions = []; catch; end
+            try; disableDefaultInteractivity(ax); catch; end
         end
 
         function styleTable(tbl)

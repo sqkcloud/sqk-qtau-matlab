@@ -303,8 +303,8 @@ function ReportsScreen(app)
     %   'alt') over a selected table row, then calls
     %   app.showReportsPopupMenu(x, y).
     prevFcn = app.UIFigure.WindowButtonDownFcn;
-    app.UIFigure.WindowButtonDownFcn = ...
-        @(src, evt) handleReportsMouseDown(app, prevFcn, src, evt);
+    LayoutBuilder.setWindowButtonDownFcnSafe(app.UIFigure, ...
+        @(src, evt) handleReportsMouseDown(app, prevFcn, src, evt));
 
     Logger.info('ReportsScreen', 'Reports tab UI built successfully');
 end

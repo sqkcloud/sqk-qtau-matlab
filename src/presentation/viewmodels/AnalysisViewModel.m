@@ -987,6 +987,7 @@ classdef AnalysisViewModel < handle
                 % ── Left: Ranked similarity bars (auto-scaled X) ────────────
                 ax1 = uiaxes(dg);
                 ax1.Layout.Row = 2; ax1.Layout.Column = 1;
+                StyleHelper.hideAxesToolbar(ax1);
 
                 % Sort worst→best so highest bar sits at the TOP in barh
                 [sortedSims, si] = sort(sims, 'ascend');

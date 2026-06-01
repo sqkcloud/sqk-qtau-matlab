@@ -52,9 +52,9 @@ classdef ResultsViewModel < handle
                 jobSvc = app.JobSvc;
                 token  = app.State.authToken;
                 AsyncRunner.run( ...
-                    @() jobSvc.getResults(pinned, token), ...
-                    @(data) obj.onRefreshResultsComplete(app, pinned, data), ...
-                    @(ME)   obj.onRefreshResultsError(app, pinned, ME));
+                    @() ResultsViewModel.fetchResultsAndJob(jobSvc, pinned, token), ...
+                    @(bundle) obj.onRefreshResultsComplete(app, pinned, bundle), ...
+                    @(ME)     obj.onRefreshResultsError(app, pinned, ME));
                 obj.loadCuttingBatches();
                 return;
             end
@@ -372,12 +372,31 @@ classdef ResultsViewModel < handle
             svc   = app.JobSvc;
             token = app.State.authToken;
             AsyncRunner.run( ...
-                @() svc.getResults(completedId, token), ...
-                @(data) obj.onRefreshResultsComplete(app, completedId, data), ...
-                @(ME)   obj.onRefreshResultsError(app, completedId, ME));
+                @() ResultsViewModel.fetchResultsAndJob(svc, completedId, token), ...
+                @(bundle) obj.onRefreshResultsComplete(app, completedId, bundle), ...
+                @(ME)     obj.onRefreshResultsError(app, completedId, ME));
         end
 
-        function onRefreshResultsComplete(obj, app, jobId, data)
+        function onRefreshResultsComplete(obj, app, jobId, bundle)
+            % `bundle` is the struct produced by fetchResultsAndJob:
+            %   bundle.results — /api/jobs/{id}/results (ResultSummary)
+            %   bundle.job     — /api/jobs/{id}        (JobDetail) or []
+            % Merge the JobDetail fields the ResultSummary doesn't carry
+            % (submitted_at, completed_at, mitigation_plan, …) into a
+            % single `data` struct so applyHeroAndKpis can populate the
+            % Mitigation / Timing / Execution context tiles which used
+            % to render permanently blank because those fields are only
+            % on the Job record, not on the ResultSummary payload.
+            if isstruct(bundle) && isfield(bundle, 'results')
+                data = bundle.results;
+                jobMeta = struct();
+                if isfield(bundle, 'job'); jobMeta = bundle.job; end
+            else
+                data = bundle;
+                jobMeta = struct();
+            end
+            data = ResultsViewModel.mergeJobMeta(data, jobMeta);
+
             % Measured vs Predicted Summary table — `measured_vs_predicted`
             % array on the ResultSummary response.
             rows = JsonHelper.resultsToRows(data);
@@ -468,6 +487,9 @@ classdef ResultsViewModel < handle
             catch
                 return;
             end
+            % Reset to disabled state before the refresh — prevents a
+            % stale-enabled button while the new batch list is in flight.
+            ResultsViewModel.setViewReconstructionEnable(app, false);
             % Capture LOCAL variables for the parfeval closure. Capturing
             % `app` would drag the entire QTAUWorkbenchApp class graph
             % (including uihtml properties) into the worker process,
@@ -538,6 +560,7 @@ classdef ResultsViewModel < handle
                 items = items(keep);
             end
             obj.CuttingBatches = items;
+            ResultsViewModel.setViewReconstructionEnable(app, ~isempty(items));
 
             tbl = app.CuttingBatchesTable;
             if isempty(tbl) || ~isvalid(tbl); return; end
@@ -580,6 +603,27 @@ classdef ResultsViewModel < handle
                 if ~isempty(tbl) && isvalid(tbl)
                     tbl.Data = {{'(load failed — see event log)', ...
                         '', '', '', '', '', '', ''}};
+                end
+            catch
+            end
+            ResultsViewModel.setViewReconstructionEnable(app, false);
+        end
+
+        function setViewReconstructionEnable(app, on)
+            % Toggle the bottom-bar View Reconstruction button. Disabled
+            % when the Circuit Cutting Batches table is empty (or failed
+            % to load) because there is nothing to reconstruct from.
+            try
+                btn = app.ResultsViewReconstructionBtn;
+                if isempty(btn) || ~isvalid(btn); return; end
+                if on
+                    btn.Enable = 'on';
+                    btn.Tooltip = ...
+                        'Open the reconstructed expectation values for the selected batch.';
+                else
+                    btn.Enable = 'off';
+                    btn.Tooltip = ...
+                        'Disabled until a cutting batch is available for the selected job.';
                 end
             catch
             end
@@ -1246,9 +1290,15 @@ classdef ResultsViewModel < handle
             end
             cla(ax);
             states = {}; measured = []; ideals = [];
-            % Prefer histogram_data (richer, already sorted).
+            % Prefer histogram_data (richer, already sorted). MATLAB's
+            % jsondecode returns a struct array (not a cell array) for a
+            % JSON array of homogeneous objects, so normalize both shapes
+            % before iterating — the previous iscell-only guard caused
+            % the chart to silently render blank whenever the backend
+            % response was homogeneous.
             hd = JsonHelper.pick(data, {'histogram_data'}, []);
-            if iscell(hd) && ~isempty(hd)
+            hd = ResultsViewModel.toCellList(hd);
+            if ~isempty(hd)
                 topN = min(5, numel(hd));
                 for i = 1:topN
                     e = hd{i};
@@ -1276,16 +1326,15 @@ classdef ResultsViewModel < handle
             % Fall back to distribution_review (carries ideal column).
             if isempty(states)
                 dr = JsonHelper.pick(data, {'distribution_review'}, []);
-                if iscell(dr) && ~isempty(dr)
-                    for i = 1:min(6, numel(dr))
-                        e = dr{i};
-                        states{end+1} = char(string(JsonHelper.pick(e, ...
-                            {'state'}, ''))); %#ok<AGROW>
-                        measured(end+1) = JsonHelper.pickNumeric(e, ...
-                            'measured', NaN); %#ok<AGROW>
-                        ideals(end+1) = JsonHelper.pickNumeric(e, ...
-                            'ideal', NaN); %#ok<AGROW>
-                    end
+                dr = ResultsViewModel.toCellList(dr);
+                for i = 1:min(6, numel(dr))
+                    e = dr{i};
+                    states{end+1} = char(string(JsonHelper.pick(e, ...
+                        {'state'}, ''))); %#ok<AGROW>
+                    measured(end+1) = JsonHelper.pickNumeric(e, ...
+                        'measured', NaN); %#ok<AGROW>
+                    ideals(end+1) = JsonHelper.pickNumeric(e, ...
+                        'ideal', NaN); %#ok<AGROW>
                 end
             end
             if isempty(states); return; end
@@ -1312,6 +1361,82 @@ classdef ResultsViewModel < handle
             ax.XTickLabel = shortStates;
             ax.YLim = [0 1];
             ax.XGrid = 'off'; ax.YGrid = 'on';
+        end
+
+        function items = toCellList(raw)
+            % Normalize a JSON-decoded array field into a cell array of
+            % entries. Handles the three shapes the Results endpoint
+            % produces: cell (heterogeneous), struct array (homogeneous,
+            % jsondecode's default), or empty. Without this normalization
+            % paintResultsHistogram silently skipped struct-array payloads
+            % and rendered a blank chart.
+            items = {};
+            if isempty(raw); return; end
+            if iscell(raw)
+                items = raw;
+            elseif isstruct(raw)
+                items = num2cell(raw(:).');
+            end
+        end
+
+        function bundle = fetchResultsAndJob(jobSvc, jobId, token)
+            % Worker-side fan-out: pull /api/jobs/{id}/results AND
+            % /api/jobs/{id} in the same parfeval so applyHeroAndKpis
+            % can render the Mitigation / Timing / Execution-context
+            % tiles, which read fields (submitted_at, completed_at,
+            % mitigation_plan, …) that live on the Job record and are
+            % absent from the ResultSummary payload.
+            %
+            % The job-detail fetch is best-effort — a network blip on
+            % that leg must not blank the histogram or measured table,
+            % so we swallow its errors and fall back to an empty meta
+            % struct. The results-fetch leg propagates normally.
+            bundle = struct('results', struct(), 'job', struct());
+            bundle.results = jobSvc.getResults(jobId, token);
+            try
+                bundle.job = jobSvc.getJob(jobId, token);
+            catch ME
+                Logger.warn('ResultsViewModel', ...
+                    'getJob meta fetch failed (job %s): %s', ...
+                    char(jobId), ME.message);
+            end
+        end
+
+        function out = mergeJobMeta(results, jobMeta)
+            % Copy fields from the JobDetail response onto the
+            % ResultSummary struct so downstream paint code has one
+            % canonical struct to read from. ResultSummary fields win
+            % when both are present (the Results endpoint is the
+            % authoritative source for measurement-derived numbers).
+            out = results;
+            if ~isstruct(jobMeta); return; end
+            if ~isstruct(out); out = struct(); end
+            % Fields the Mitigation / Timing / Execution-context tiles
+            % read but ResultSummary doesn't carry.
+            keys = {'submitted_at', 'started_at', 'running_at', ...
+                    'completed_at', 'finished_at', ...
+                    'mitigation_plan', 'mitigation', ...
+                    'result_metadata', 'queue_position'};
+            for i = 1:numel(keys)
+                k = keys{i};
+                if isfield(jobMeta, k) && (~isfield(out, k) || ...
+                        ResultsViewModel.isBlank(out.(k)))
+                    out.(k) = jobMeta.(k);
+                end
+            end
+        end
+
+        function tf = isBlank(v)
+            % Treat empty / "" / NaN as blank so a placeholder field on
+            % ResultSummary doesn't shadow a real value on the Job
+            % record (e.g. some backends return submitted_at='' on the
+            % ResultSummary stub while the Job has the real timestamp).
+            tf = false;
+            if isempty(v); tf = true; return; end
+            if (ischar(v) || isstring(v)) && strlength(strtrim(string(v))) == 0
+                tf = true; return;
+            end
+            if isnumeric(v) && all(isnan(v(:))); tf = true; return; end
         end
     end
 end

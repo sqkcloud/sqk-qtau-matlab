@@ -633,7 +633,14 @@ classdef DashboardViewModel < handle
             % runs in parallel with the dashboard payload load; failure
             % falls back to an all-zero chart with a debug log.
             app = obj.App;
-            if isempty(app.DashActivityAxes) || ~isvalid(app.DashActivityAxes)
+            % Accept either the eager uiaxes OR the lazy-axes grid that
+            % DashboardScreen ships as a uilabel placeholder. onJobsForTrend
+            % promotes the placeholder to a real uiaxes on first paint;
+            % gating only on DashActivityAxes here strands the placeholder
+            % forever because the cold-mount value is intentionally [].
+            hasAxes = ~isempty(app.DashActivityAxes) && isvalid(app.DashActivityAxes);
+            hasGrid = ~isempty(app.DashActivityGrid) && isvalid(app.DashActivityGrid);
+            if ~hasAxes && ~hasGrid
                 return;
             end
             if ~app.State.isAuthenticated() || ~app.State.hasProject()
