@@ -13,6 +13,43 @@ classdef MatlabQuantumBridge
             tf = exist('quantumCircuit', 'class') == 8;
         end
 
+        function names = listWorkspaceCircuits()
+            names = string.empty(1, 0);
+            try
+                vars = evalin('base', 'whos');
+            catch
+                return;
+            end
+            if isempty(vars); return; end
+            isQc = strcmp({vars.class}, 'quantumCircuit');
+            if any(isQc)
+                names = string({vars(isQc).name});
+            end
+        end
+
+        function model = importByName(name)
+            name = char(name);
+            if ~isvarname(name)
+                error('MatlabQuantumBridge:BadName', ...
+                    'Not a valid variable name: %s', name);
+            end
+            if ~evalin('base', sprintf('exist(''%s'', ''var'')', name))
+                error('MatlabQuantumBridge:NotFound', ...
+                    'No workspace variable named %s', name);
+            end
+            qc = evalin('base', name);
+            model = MatlabQuantumBridge.fromQuantumCircuit(qc);
+        end
+
+        function pushToWorkspace(name, value)
+            name = char(name);
+            if ~isvarname(name)
+                error('MatlabQuantumBridge:BadName', ...
+                    'Not a valid variable name: %s', name);
+            end
+            assignin('base', name, value);
+        end
+
         function model = fromQuantumCircuit(qc)
             if ~(isscalar(qc) && isa(qc, 'quantumCircuit'))
                 error('MatlabQuantumBridge:NotAQuantumCircuit', ...

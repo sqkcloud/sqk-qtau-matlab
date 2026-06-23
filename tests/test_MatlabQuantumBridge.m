@@ -112,3 +112,40 @@ function test_simulateNative_rejects_reset(testCase)
     testCase.verifyError(@() MatlabQuantumBridge.simulateNative(m), ...
         'MatlabQuantumBridge:UnsupportedNativeOp');
 end
+
+function test_pushToWorkspace_roundtrip(testCase)
+    MatlabQuantumBridge.pushToWorkspace('qtau_test_push', 42);
+    got = evalin('base', 'qtau_test_push');
+    testCase.assertEqual(got, 42);
+    evalin('base', 'clear qtau_test_push');
+end
+
+function test_pushToWorkspace_rejects_bad_name(testCase)
+    testCase.verifyError(@() MatlabQuantumBridge.pushToWorkspace('2bad name', 1), ...
+        'MatlabQuantumBridge:BadName');
+end
+
+function test_listWorkspaceCircuits_filters_by_class(testCase)
+    testCase.assumeTrue(MatlabQuantumBridge.isAvailable());
+    assignin('base', 'qtau_qc_a',  quantumCircuit(2));
+    assignin('base', 'qtau_not_qc', 7);
+    names = MatlabQuantumBridge.listWorkspaceCircuits();
+    testCase.assertTrue(any(names == "qtau_qc_a"));
+    testCase.assertFalse(any(names == "qtau_not_qc"));
+    evalin('base', 'clear qtau_qc_a qtau_not_qc');
+end
+
+function test_importByName_roundtrips_through_model(testCase)
+    testCase.assumeTrue(MatlabQuantumBridge.isAvailable());
+    assignin('base', 'qtau_imp_qc', quantumCircuit([hGate(1); cxGate(1, 2)], 2));
+    model = MatlabQuantumBridge.importByName('qtau_imp_qc');
+    testCase.assertEqual(model.NumQubits, 2);
+    testCase.assertEqual(model.Gates(1).kind, 'h');
+    testCase.assertEqual(model.Gates(2).kind, 'cx');
+    evalin('base', 'clear qtau_imp_qc');
+end
+
+function test_importByName_missing_var_errors(testCase)
+    testCase.verifyError(@() MatlabQuantumBridge.importByName('qtau_nope_xyz'), ...
+        'MatlabQuantumBridge:NotFound');
+end
