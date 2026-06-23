@@ -73,6 +73,7 @@ function test_roundtrip_identity_all_mapped_gates(testCase)
     testCase.assertEqual(m2.Gates(4).params(1), pi/3, 'AbsTol', 1e-12);
 end
 
+% isa() returns false for unknown classes, so this passes with or without the add-on - no assumeTrue needed.
 function test_fromQuantumCircuit_rejects_non_circuit(testCase)
     testCase.verifyError(@() MatlabQuantumBridge.fromQuantumCircuit(42), ...
         'MatlabQuantumBridge:NotAQuantumCircuit');

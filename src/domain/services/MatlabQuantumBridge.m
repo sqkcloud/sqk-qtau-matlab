@@ -93,7 +93,7 @@ classdef MatlabQuantumBridge
                 error('MatlabQuantumBridge:NotAvailable', ...
                     'MATLAB Support Package for Quantum Computing is not installed.');
             end
-            gates = [];
+            gateList = {};
             for i = 1:numel(model.Gates)
                 g = model.Gates(i);
                 switch g.kind
@@ -104,12 +104,12 @@ classdef MatlabQuantumBridge
                             ['Circuits with reset cannot be converted to a ' ...
                              'quantumCircuit; use the local simulator.']);
                 end
-                gates = [gates; MatlabQuantumBridge.kindToGate(g)]; %#ok<AGROW>
+                gateList{end+1} = MatlabQuantumBridge.kindToGate(g); %#ok<AGROW>
             end
-            if isempty(gates)
+            if isempty(gateList)
                 qc = quantumCircuit(model.NumQubits);
             else
-                qc = quantumCircuit(gates, model.NumQubits);
+                qc = quantumCircuit(vertcat(gateList{:}), model.NumQubits);
             end
         end
     end
@@ -122,6 +122,7 @@ classdef MatlabQuantumBridge
                 's','s'; 'si','sdg'; 't','t'; 'ti','tdg'; ...
                 'rx','rx'; 'ry','ry'; 'rz','rz'; ...
                 'cx','cx'; 'cz','cz'; 'swap','swap'; 'ccx','ccx'};
+            % .Type matched case-insensitively; output is always the lowercase internal kind.
             idx = find(strcmpi(map(:, 1), t), 1);
             if isempty(idx)
                 error('MatlabQuantumBridge:UnsupportedGate', ...
