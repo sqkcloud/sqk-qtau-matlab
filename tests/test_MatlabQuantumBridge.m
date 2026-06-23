@@ -51,3 +51,36 @@ function test_toQuantumCircuit_rejects_reset(testCase)
     testCase.verifyError(@() MatlabQuantumBridge.toQuantumCircuit(m), ...
         'MatlabQuantumBridge:UnsupportedNativeOp');
 end
+
+function test_roundtrip_identity_all_mapped_gates(testCase)
+    testCase.assumeTrue(MatlabQuantumBridge.isAvailable());
+    m = CircuitModel(3);
+    m.addGate('h', 0);
+    m.addGate('cx', [0 1]);
+    m.addGate('ccx', [0 1 2]);
+    m.addGate('rx', 2, pi/3);
+    m.addGate('sdg', 1);
+    m.addGate('swap', [0 2]);
+    qc = MatlabQuantumBridge.toQuantumCircuit(m);
+    m2 = MatlabQuantumBridge.fromQuantumCircuit(qc);
+    testCase.assertEqual(m2.NumQubits, m.NumQubits);
+    testCase.assertEqual(numel(m2.Gates), numel(m.Gates));
+    for i = 1:numel(m.Gates)
+        testCase.assertEqual(m2.Gates(i).kind,   m.Gates(i).kind);
+        testCase.assertEqual(m2.Gates(i).qubits, m.Gates(i).qubits);
+    end
+    % rotation param preserved within tolerance
+    testCase.assertEqual(m2.Gates(4).params(1), pi/3, 'AbsTol', 1e-12);
+end
+
+function test_fromQuantumCircuit_rejects_non_circuit(testCase)
+    testCase.verifyError(@() MatlabQuantumBridge.fromQuantumCircuit(42), ...
+        'MatlabQuantumBridge:NotAQuantumCircuit');
+end
+
+function test_fromQuantumCircuit_errors_on_unsupported_gate(testCase)
+    testCase.assumeTrue(MatlabQuantumBridge.isAvailable());
+    qc = quantumCircuit(cyGate(1, 2));   % cy is outside the Composer palette
+    testCase.verifyError(@() MatlabQuantumBridge.fromQuantumCircuit(qc), ...
+        'MatlabQuantumBridge:UnsupportedGate');
+end
