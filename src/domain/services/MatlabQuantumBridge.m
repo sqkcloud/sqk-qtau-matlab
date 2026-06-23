@@ -34,6 +34,23 @@ classdef MatlabQuantumBridge
             end
         end
 
+        function out = simulateNative(model)
+            % Runs MATLAB's native simulate() on the circuit. Returns the
+            % final-state amplitudes plus per-qubit P(|0>) marginals
+            % (endianness- and global-phase-independent — used for the
+            % parity check against the local hand-rolled simulator).
+            qc = MatlabQuantumBridge.toQuantumCircuit(model);  % errors on reset / no add-on
+            s = simulate(qc);
+            n = model.NumQubits;
+            zeroProbs = zeros(1, n);
+            for q = 1:n
+                zeroProbs(q) = probability(s, q, "0");
+            end
+            out = struct('amplitudes', s.Amplitudes, ...
+                         'zeroProbs',  zeroProbs, ...
+                         'numQubits',  n);
+        end
+
         function qc = toQuantumCircuit(model)
             if ~MatlabQuantumBridge.isAvailable()
                 error('MatlabQuantumBridge:NotAvailable', ...

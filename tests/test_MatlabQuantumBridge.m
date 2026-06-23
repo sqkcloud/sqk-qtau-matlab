@@ -84,3 +84,31 @@ function test_fromQuantumCircuit_errors_on_unsupported_gate(testCase)
     testCase.verifyError(@() MatlabQuantumBridge.fromQuantumCircuit(qc), ...
         'MatlabQuantumBridge:UnsupportedGate');
 end
+
+function test_simulateNative_matches_handrolled_per_qubit(testCase)
+    testCase.assumeTrue(MatlabQuantumBridge.isAvailable());
+    m = CircuitModel(2);
+    m.addGate('x', 0);   % q0 -> |1>  => P(0)=0
+    m.addGate('h', 1);   % q1 -> |+>  => P(0)=0.5
+    out = MatlabQuantumBridge.simulateNative(m);
+    steps = StatevectorSimulator.simulate(m);
+    bloch = steps(end).blochPerQubit;          % n x 3, column 3 is <Z>
+    expectedP0 = (1 + bloch(:, 3)') / 2;       % row vector, endianness/phase-safe
+    testCase.assertEqual(out.zeroProbs, expectedP0, 'AbsTol', 1e-9);
+end
+
+function test_simulateNative_bell_marginals(testCase)
+    testCase.assumeTrue(MatlabQuantumBridge.isAvailable());
+    m = CircuitModel(2);
+    m.addGate('h', 0); m.addGate('cx', [0 1]);
+    out = MatlabQuantumBridge.simulateNative(m);
+    testCase.assertEqual(out.zeroProbs, [0.5 0.5], 'AbsTol', 1e-9);
+end
+
+function test_simulateNative_rejects_reset(testCase)
+    testCase.assumeTrue(MatlabQuantumBridge.isAvailable());
+    m = CircuitModel(1);
+    m.addGate('h', 0); m.addGate('reset', 0);
+    testCase.verifyError(@() MatlabQuantumBridge.simulateNative(m), ...
+        'MatlabQuantumBridge:UnsupportedNativeOp');
+end
