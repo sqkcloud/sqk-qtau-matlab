@@ -168,54 +168,6 @@ classdef ComposerViewModel < handle
             obj.openImportDialog(names);
         end
 
-        function openImportDialog(obj, names)
-            fig = uifigure('Name', Labels.get('composer_import_title'), ...
-                'Position', [320 280 440 180], 'WindowStyle', 'modal', ...
-                'Color', Theme.COLOR_BG);
-            try; Theme.applyFigureMode(fig, Theme.activeName()); catch; end
-
-            g = uigridlayout(fig, [3 2]);
-            g.RowHeight = {30, 30, 50}; g.ColumnWidth = {140, '1x'};
-            g.Padding = [16 16 16 16]; g.RowSpacing = 10;
-
-            uilabel(g, 'Text', Labels.get('composer_import_var_lbl'), ...
-                'FontColor', Theme.COLOR_LABEL);
-            dd = uidropdown(g, 'Items', cellstr(names), 'Value', char(names(1)));
-
-            blank1 = uilabel(g, 'Text', ''); %#ok<NASGU>
-            blank2 = uilabel(g, 'Text', ''); %#ok<NASGU>
-
-            bar = uigridlayout(g, [1 3]);
-            bar.Layout.Row = 3; bar.Layout.Column = [1 2];
-            bar.ColumnWidth = {'1x', 120, 120}; bar.Padding = [0 6 0 0];
-            bar.BackgroundColor = Theme.COLOR_BG;
-            sp = uilabel(bar, 'Text', ''); sp.Layout.Column = 1; %#ok<NASGU>
-
-            cancelBtn = uibutton(bar, 'Text', Labels.get('composer_param_cancel'), ...
-                'ButtonPushedFcn', @(~,~) close(fig));
-            cancelBtn.Layout.Column = 2;
-            StyleHelper.styleBtn(cancelBtn, 'ghost');
-
-            importBtn = uibutton(bar, 'Text', Labels.get('composer_import_btn'), ...
-                'ButtonPushedFcn', @(~,~) doImport());
-            importBtn.Layout.Column = 3;
-            StyleHelper.styleBtn(importBtn, 'primary');
-
-            function doImport()
-                name = dd.Value;
-                close(fig);
-                try
-                    obj.Model = MatlabQuantumBridge.importByName(name);
-                    obj.afterModelEdit(sprintf( ...
-                        Labels.get('composer_toast_matlab_imported'), name));
-                    obj.App.logEvent('COMPOSE', ...
-                        sprintf('Import quantumCircuit: %s', name));
-                catch ME
-                    obj.flashStatus(ME.message, 'danger');
-                end
-            end
-        end
-
         function onToggleMirror(obj)
             obj.MirrorCollapsed = ~obj.MirrorCollapsed;
             obj.applyMirrorCollapse();
@@ -1304,6 +1256,55 @@ classdef ComposerViewModel < handle
                 case 'braket'; txt = obj.Model.toBraketPython();
                 case 'matlab'; txt = obj.Model.toMatlabScript();
                 otherwise;     txt = obj.Model.toQasm();
+            end
+        end
+
+        % ── Import from MATLAB Workspace dialog ──────────────────────────
+        function openImportDialog(obj, names)
+            fig = uifigure('Name', Labels.get('composer_import_title'), ...
+                'Position', [320 280 440 180], 'WindowStyle', 'modal', ...
+                'Color', Theme.COLOR_BG);
+            try; Theme.applyFigureMode(fig, Theme.activeName()); catch; end
+
+            g = uigridlayout(fig, [3 2]);
+            g.RowHeight = {30, 30, 50}; g.ColumnWidth = {140, '1x'};
+            g.Padding = [16 16 16 16]; g.RowSpacing = 10;
+
+            uilabel(g, 'Text', Labels.get('composer_import_var_lbl'), ...
+                'FontColor', Theme.COLOR_LABEL);
+            dd = uidropdown(g, 'Items', cellstr(names), 'Value', char(names(1)));
+
+            blank1 = uilabel(g, 'Text', ''); %#ok<NASGU>
+            blank2 = uilabel(g, 'Text', ''); %#ok<NASGU>
+
+            importBar = uigridlayout(g, [1 3]);
+            importBar.Layout.Row = 3; importBar.Layout.Column = [1 2];
+            importBar.ColumnWidth = {'1x', 120, 120}; importBar.Padding = [0 6 0 0];
+            importBar.BackgroundColor = Theme.COLOR_BG;
+            sp = uilabel(importBar, 'Text', ''); sp.Layout.Column = 1; %#ok<NASGU>
+
+            cancelBtn = uibutton(importBar, 'Text', Labels.get('composer_param_cancel'), ...
+                'ButtonPushedFcn', @(~,~) close(fig));
+            cancelBtn.Layout.Column = 2;
+            StyleHelper.styleBtn(cancelBtn, 'ghost');
+
+            importBtn = uibutton(importBar, 'Text', Labels.get('composer_import_btn'), ...
+                'ButtonPushedFcn', @(~,~) doImport());
+            importBtn.Layout.Column = 3;
+            StyleHelper.styleBtn(importBtn, 'primary');
+
+            function doImport()
+                name = dd.Value;
+                close(fig);
+                try
+                    obj.Model = MatlabQuantumBridge.importByName(name);
+                    obj.afterModelEdit(sprintf( ...
+                        Labels.get('composer_toast_matlab_imported'), name));
+                    obj.App.logEvent('COMPOSE', ...
+                        sprintf('Import quantumCircuit: %s', name));
+                catch ME
+                    obj.flashStatus(ME.message, 'danger');
+                end
             end
         end
 
