@@ -56,10 +56,10 @@ function buildToolbar(parent, vm)
         'BorderColor', Theme.COLOR_DIVIDER, 'BackgroundColor', Theme.COLOR_CARD);
     bar.Layout.Row = 1; bar.Layout.Column = 1;
 
-    grid = uigridlayout(bar, [1 11]);
+    grid = uigridlayout(bar, [1 12]);
     grid.Padding = [10 6 10 6];
     grid.ColumnSpacing = 8;
-    grid.ColumnWidth = {120, 90, 100, 100, 100, 90, 90, 90, 100, '1x', 160};
+    grid.ColumnWidth = {120, 90, 100, 100, 100, 110, 90, 90, 90, 100, '1x', 160};
     grid.BackgroundColor = Theme.COLOR_CARD;
 
     btnTemplates = uibutton(grid, 'Text', Labels.get('composer_btn_templates'), ...
@@ -83,6 +83,10 @@ function buildToolbar(parent, vm)
         'ButtonPushedFcn', @(~,~) vm.onOpenBundle());
     StyleHelper.styleBtn(btnBundle, 'ghost');
     vm.BtnBundle = btnBundle;
+
+    btnImport = uibutton(grid, 'Text', Labels.get('composer_btn_import_matlab'), ...
+        'ButtonPushedFcn', @(~,~) vm.onImportFromMatlab());
+    StyleHelper.styleBtn(btnImport, 'ghost');
 
     btnAddQ = uibutton(grid, 'Text', Labels.get('composer_btn_add_qubit'), ...
         'ButtonPushedFcn', @(~,~) vm.onAddQubit());
