@@ -468,6 +468,29 @@ classdef ComposerViewModel < handle
             if isempty(obj.HeroPanel) || ~isvalid(obj.HeroPanel); return; end
             obj.HeroPanel.Visible = matlab.lang.OnOffSwitchState(true);
         end
+
+        function flashNativeParity(obj)
+            % After a local-simulator refresh, cross-check the final state
+            % against MATLAB's native simulate() per-qubit marginals and
+            % flash the result. No-op without the add-on, on empty
+            % circuits, or on circuits containing reset (no native path).
+            if ~MatlabQuantumBridge.isAvailable(); return; end
+            if isempty(obj.InspectSteps); return; end
+            if any(strcmp({obj.Model.Gates.kind}, 'reset')); return; end
+            try
+                out = MatlabQuantumBridge.simulateNative(obj.Model);
+                bloch = obj.InspectSteps(end).blochPerQubit;
+                expectedP0 = (1 + bloch(:, 3)') / 2;
+                if max(abs(out.zeroProbs - expectedP0)) < 1e-6
+                    obj.flashStatus(Labels.get('composer_inspect_parity_ok'), 'success');
+                else
+                    obj.flashStatus(Labels.get('composer_inspect_parity_warn'), 'danger');
+                end
+            catch
+                % Native simulation unavailable for this circuit — leave the
+                % existing Inspect status untouched.
+            end
+        end
     end
 
     methods (Access = private)
@@ -1466,6 +1489,7 @@ classdef ComposerViewModel < handle
             obj.InspectSlider.Value = stepCount - 1;
             obj.InspectSlider.Enable = matlab.lang.OnOffSwitchState(stepCount > 1);
             obj.paintInspectStep();
+            obj.flashNativeParity();
         end
 
         function showInspectMessage(obj, msg)
