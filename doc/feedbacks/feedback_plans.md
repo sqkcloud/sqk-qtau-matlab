@@ -188,53 +188,61 @@ Resolves **O2 (docs extension), O3b (sandbox), S1 (Live Scripts).**
 
 ---
 
-## 5. Schedule
+## 5. Schedule — 2-week target
 
-### 5.1 Effort roll-up
+The full phased plan above totals **~39 dev-days (~9 weeks, 1 engineer)**. To meet a **1-engineer / 2-week** target, the work is split into a **2-week sprint** (the cheap, high-signal items in *minimal* form) and a **deferred backlog** (the two large pieces + soft UX/polish). The compression is **scope reduction, not faster estimates** — see the trade-offs in §5.3.
 
-| Phase | Scope | Effort (dev-days) | +20% buffer | Calendar weeks (1 eng) |
-|-------|-------|:-----------------:|:-----------:|:----------------------:|
-| 1 | MATLAB Quantum Bridge | (~6, **done**) | — | shipped |
-| 2 | Data interop + flagship | 16 | 19 | ~3.8 |
-| 3 | UX simplification | 13 | 16 | ~3.1 |
-| 4 | Polish / docs / access | 10 | 12 | ~2.4 |
-| | **Remaining total** | **39** | **47** | **~9.3 weeks** |
+### 5.1 Two-week sprint (1 engineer, start Mon 2026-06-30)
 
-### 5.2 Calendar (1 engineer, start Mon 2026-06-30)
+| # | Sprint item | Feedback | Minimal scope | Days |
+|---|-------------|:--------:|---------------|:----:|
+| 1 | Results push UI | O4 (AC gap) | wire the existing `pushToWorkspace` helper to a Results/Inspect button | 1 |
+| 2 | Export demotion | S4 | regroup the export `formats` list (MATLAB+QASM primary, rest "Advanced") + 1 doc paragraph | 1 |
+| 3 | Templates on empty-state | S1 | surface the existing 12-template gallery on the Composer empty-state; no new authoring | 1.5 |
+| 4 | Prediction → Run Planner (minimal) | S3 | retire the Prediction tab (keep routing key); reuse the existing predict call as Run Planner step 1 | 2 |
+| 5 | generateQASM import (MATLAB subset) | O5d-iii | accept *only* the OpenQASM-3 header/measure subset MATLAB emits → existing gate-map; not a general QASM-3 parser | 2 |
+| | **Build subtotal** | | | **7.5** |
+| | + test / review / integration buffer | | | ~2.5 |
+| | **Sprint total** | | | **~10 (≈ 2 weeks)** |
+
+### 5.2 Day-by-day calendar
 
 ```
-Wk  Dates              Phase / task
-─── ────────────────── ──────────────────────────────────────────────
- 1  Jun 30 – Jul 03    P2.1 generateQASM + QASM-3 parser
- 2  Jul 06 – Jul 10    P2.3 .mat/table data import  + P2.2 results push
- 3  Jul 13 – Jul 17    P2.4 QMC flagship vertical (build)
- 4  Jul 20 – Jul 24    P2.4 QMC flagship vertical (finish) + Phase-2 buffer
-    -- Phase 2 complete ~ Fri Jul 24 --
- 5  Jul 27 – Jul 31    P3.1 templates discoverability + P3.4 export rationalization
- 6  Aug 03 – Aug 07    P3.3 Prediction<->Run Planner consolidation
- 7  Aug 10 – Aug 14    P3.2 progressive disclosure + Phase-3 buffer
-    -- Phase 3 complete ~ Fri Aug 14 --
- 8  Aug 17 – Aug 21    P4.2 sandbox/demo mode
- 9  Aug 24 – Aug 28    P4.1 Live Scripts + P4.3 docs + Phase-4 buffer
-    -- Phase 4 complete ~ Fri Aug 28 --
+Day  Date          Task
+───  ────────────  ──────────────────────────────────────────────
+ 1   Mon Jun 30    #1 results push UI  +  #2 export demotion (start)
+ 2   Tue Jul 01    #2 export demotion (finish)  +  #3 templates (start)
+ 3   Wed Jul 02    #3 templates empty-state (finish)
+ 4   Thu Jul 03    #4 Prediction -> Run Planner (start)
+ 5   Fri Jul 04    #4 Prediction -> Run Planner (finish + test)
+ 6   Mon Jul 07    #5 generateQASM import (build)
+ 7   Tue Jul 08    #5 generateQASM import (finish + test)
+ 8   Wed Jul 09    integration + full test pass
+ 9   Thu Jul 10    review fixes + inline doc notes
+10   Fri Jul 11    buffer / demo prep
 ```
 
-**1-engineer finish: ~Fri 2026-08-28** (≈ 9 weeks after restart).
+**1-engineer sprint finish: ~Fri 2026-07-11.**
 
-### 5.3 Two-engineer compression (optional)
+### 5.3 What the sprint defers (trade-offs)
 
-Phases 2 and 3 contain independent tracks that parallelize cleanly:
-- **Eng A:** P2.1 → P2.3 → P2.4 (the data/compute spine).
-- **Eng B:** P2.2 + P3.1 + P3.4 (UI affordances) → P3.3 → P3.2.
+| Deferred item | Feedback | Days | Why it's safe to defer |
+|---------------|:--------:|:----:|------------------------|
+| QMC flagship vertical | O4d | 7 | O4d still answered by the shipped round-trip + generateQASM interop. **Swap-in:** a *thin* QMC demo (workspace vector → existing QMC popup → push results) ≈ 2–3d can replace one sprint item if the finance showcase is a priority. |
+| `.mat` / table data import | O4b | 4 | O4b's circuit-import half is already shipped; numeric data-binding is additive |
+| Progressive disclosure | S2 | 4 | S2 direction is set by the positioning memo; the UI toggle is polish |
+| Sandbox / demo mode | O3b | 5 | Independent, no dependents; offline Composer already unblocks exploration |
+| Example Live Scripts | S1 | 3 | Gallery surfacing (sprint #3) covers the core S1 ask |
+| Built-in docs extension | O2 | 2 | These feedback docs + inline notes cover it interim |
+| Full general QASM-3 parser | O5d-iii | ~2 | Sprint #5 handles MATLAB's emitted subset; arbitrary QASM-3 is rarely needed |
 
-This overlaps ~10 dev-days, pulling the finish to **~early-to-mid August 2026** (~6 weeks). P4.2 sandbox mode stays near the end (lower priority, no dependents).
+**Deferred backlog total ≈ 25–27 dev-days.**
 
-### 5.4 Critical path & sequencing notes
+### 5.4 Sequencing notes
 
-- **Critical path:** P2.1 → P2.4 (the flagship vertical depends on robust QASM/data interop) — the longest single chain; start it first.
-- **P2.2 (results push)** clears the one open Phase-1 acceptance-criterion gap and is cheap — do it early for a quick win.
-- **P3.3 (Prediction↔Run Planner)** touches shared lookup/prediction code; schedule it when no other UI track is editing those view-models to avoid merge churn.
-- **P4.2 (sandbox mode)** is independent and low-risk; it can slip without blocking anything.
+- **Front-load #1 + #2** (1-day wins) for immediate momentum and a quick demoable diff.
+- **#4 (Prediction↔Run Planner)** edits shared view-model/lookup code — keep it isolated from #3 to avoid merge churn.
+- **#5 (generateQASM)** reuses the existing direct gate-map; only QASM-3 header/measure recognition is new, which bounds the risk.
 
 ---
 
@@ -252,7 +260,7 @@ This overlaps ~10 dev-days, pulling the finish to **~early-to-mid August 2026** 
 
 ## 7. Summary
 
-- **Backbone shipped (Phase 1):** the highest-leverage feedback — no Support-Package linkage, no MATLAB data path, external-only export, auth wall — is **resolved**.
-- **Remaining ≈ 39 dev-days (~47 with buffer):** Phase 2 completes the data story + flagship demo; Phase 3 simplifies the UX and consolidates tabs; Phase 4 adds polish/docs/sandbox.
-- **1-engineer finish ≈ 2026-08-28; 2-engineer ≈ mid-August 2026.**
-- Every feedback bullet is tracked in §3 with an owner-phase; nothing is dropped.
+- **Backbone shipped (Phase 1, ~6 dev-days):** the highest-leverage feedback — no Support-Package linkage, no MATLAB data path, external-only export, auth wall — is **resolved**.
+- **2-week sprint (~10 dev-days, 1 engineer, finish ≈ 2026-07-11):** ships the cheap high-signal items in *minimal* form — results push (O4), export demotion (S4), templates surfacing (S1), Prediction↔Run Planner merge (S3), generateQASM import (O5d-iii). See §5.1.
+- **Deferred backlog (~25 dev-days):** QMC flagship (O4d), `.mat`/table import (O4b), progressive disclosure (S2), sandbox (O3b), Live Scripts (S1), docs (O2). The QMC flagship is the main trade-off — a thin 2–3d demo can swap into the sprint if the finance showcase is a priority.
+- Every feedback bullet is still tracked in §3; nothing is dropped — the large items are **parked, not abandoned**.
