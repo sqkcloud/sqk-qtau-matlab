@@ -128,3 +128,43 @@ function test_empty_circuit_still_emits_scaffold(testCase)
     testCase.assertSubstring(m.toCirqPython(),   'cirq.LineQubit.range(2)');
     testCase.assertSubstring(m.toBraketPython(), 'circuit = Circuit()');
 end
+
+% -- MATLAB (quantumCircuit) --------------------------------------------------
+function test_matlab_emits_gate_array_and_constructor(testCase)
+    m = CircuitModel(2);
+    m.addGate('h', 0); m.addGate('cx', [0 1]);
+    txt = m.toMatlabScript();
+    testCase.assertSubstring(txt, 'hGate(1)');
+    testCase.assertSubstring(txt, 'cxGate(1, 2)');
+    testCase.assertSubstring(txt, 'quantumCircuit(gates, 2)');
+end
+
+function test_matlab_rotation_uses_bare_pi(testCase)
+    m = CircuitModel(1);
+    m.addGate('rx', 0, pi/2);
+    txt = m.toMatlabScript();
+    testCase.assertSubstring(txt, 'rxGate(1, pi/2)');
+end
+
+function test_matlab_renames_sdg_tdg_and_shifts_ccx(testCase)
+    m = CircuitModel(3);
+    m.addGate('sdg', 0); m.addGate('tdg', 1); m.addGate('ccx', [0 1 2]);
+    txt = m.toMatlabScript();
+    testCase.assertSubstring(txt, 'siGate(1)');
+    testCase.assertSubstring(txt, 'tiGate(2)');
+    testCase.assertSubstring(txt, 'ccxGate(1, 2, 3)');
+end
+
+function test_matlab_drops_measure_to_comment_and_uses_n_only_ctor(testCase)
+    m = CircuitModel(1);
+    m.addGate('measure', 0);
+    txt = m.toMatlabScript();
+    testCase.assertSubstring(txt, '% measure');
+    testCase.assertSubstring(txt, 'quantumCircuit(1);');  % empty-gates branch
+end
+
+function test_matlab_carries_header_comment(testCase)
+    m = CircuitModel(1);
+    m.addGate('h', 0);
+    testCase.assertSubstring(m.toMatlabScript(), 'QTAU');
+end
