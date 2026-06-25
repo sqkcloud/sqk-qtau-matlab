@@ -1,10 +1,8 @@
-We’ve reviewed the QTau MATLAB Toolbox and I want to share our feedback ahead of our meeting next week.
+Thank you very much for taking the time to review the QTau MATLAB Toolbox and for such clear, detailed feedback — we really appreciate it, and it aligns closely with the direction we want to take within the MATLAB ecosystem.
 
-In summary, you’ve done a lot of good work and it looks very good, but we think there could be some improvements to strengthen its utility within the MATLAB ecosystem.
+Below is our response to each point: the solution we plan to implement and an effort estimate. We have kept your original comments inline for easy reference, and we look forward to walking through the plan with you at the meeting.
 
-See the feedback below. I’m looking forward to our conversation next week.
-
-> Each item is answered with the solution we will implement and an effort estimate in **man-days**.
+> Original feedback is shown as the bullet points; each `>>> Answer:` gives our proposed solution and an effort estimate in **man-days**.
 
 # Overall Feedback and Direction
 
