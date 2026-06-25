@@ -88,7 +88,7 @@ classdef NavigationManager
             % onResizeUI() call also looped every panel via
             % fitAllSections — we've already resized the active panel
             % above, so call only the auth-overlay helper directly.
-            OverlayManager.fitAuthOverlay(app);
+            NavigationManager.refreshAuthOverlay(app, key);
             NavigationManager.autoLoadScreen(app, key);
         end
 
@@ -999,6 +999,26 @@ classdef NavigationManager
                 NavigationManager.onResizeUI(app);
                 drawnow();
             catch ME; Logger.debug('NavigationManager', 'forceInitialLayout: %s', ME.message); end
+        end
+
+        % ── Offline-capability classification ───────────────────────────
+
+        function tf = isOfflineCapable(key)
+            % Screens whose core surface is fully local (no FastAPIClient)
+            % and therefore usable without a backend login.
+            tf = any(strcmp(char(key), {'Composer'}));
+        end
+
+        function refreshAuthOverlay(app, key)
+            % Show the auth overlay only when logged out AND the active
+            % screen needs the backend. Offline-capable screens render
+            % with no overlay.
+            if app.State.isAuthenticated() || NavigationManager.isOfflineCapable(key)
+                OverlayManager.hideAuthOverlay(app);
+            else
+                OverlayManager.showAuthOverlay(app);
+            end
+            OverlayManager.fitAuthOverlay(app);
         end
 
     end
