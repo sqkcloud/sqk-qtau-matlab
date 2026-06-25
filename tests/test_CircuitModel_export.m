@@ -1,6 +1,6 @@
 % test_CircuitModel_export.m ─────────────────────────────────────────────────
 % Tests for the multi-target export emitters on CircuitModel:
-%   toQasm3 · toQiskitPython · toCirqPython · toBraketPython
+%   toQasm3 · toQiskitPython · toCirqPython · toBraketPython · toMatlabScript
 %
 % Run from the project root:
 %   >> runtests('tests/test_CircuitModel_export')

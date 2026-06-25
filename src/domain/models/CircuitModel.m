@@ -415,10 +415,10 @@ classdef CircuitModel < handle
                 case 'swap'; line = sprintf('swapGate(%d, %d)', q(1), q(2));
                 case 'ccx';  line = sprintf('ccxGate(%d, %d, %d)', q(1), q(2), q(3));
                 case 'reset'
-                    line = sprintf('%% reset q[%d] - no quantumCircuit equivalent', g.qubits(1));
+                    line = sprintf('%% reset q[%d] - no quantumCircuit equivalent', q(1));
                     isDrop = true;
                 case 'measure'
-                    line = sprintf('%% measure q[%d] - implicit in simulate()', g.qubits(1));
+                    line = sprintf('%% measure q[%d] - implicit in simulate()', q(1));
                     isDrop = true;
                 case 'barrier'
                     line = '% barrier - no quantumCircuit equivalent';
