@@ -1070,6 +1070,7 @@ classdef ComposerViewModel < handle
                 'qiskit', Labels.get('composer_export_fmt_qiskit'), 'py';
                 'cirq',   Labels.get('composer_export_fmt_cirq'),   'py';
                 'braket', Labels.get('composer_export_fmt_braket'), 'py';
+                'matlab', Labels.get('composer_export_fmt_matlab'), 'm';
             };
             % WindowStyle='normal' so uiputfile inside Save doesn't deadlock.
             fig = uifigure('Name', Labels.get('composer_export_title'), ...
@@ -1192,6 +1193,7 @@ classdef ComposerViewModel < handle
                 case 'qiskit'; txt = obj.Model.toQiskitPython();
                 case 'cirq';   txt = obj.Model.toCirqPython();
                 case 'braket'; txt = obj.Model.toBraketPython();
+                case 'matlab'; txt = obj.Model.toMatlabScript();
                 otherwise;     txt = obj.Model.toQasm();
             end
         end
