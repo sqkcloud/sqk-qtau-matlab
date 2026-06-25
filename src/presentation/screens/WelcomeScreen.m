@@ -24,9 +24,9 @@ function WelcomeScreen(app)
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     hero.Layout.Row = 1; hero.Layout.Column = 1;
     hero.BackgroundColor = Theme.COLOR_CARD;
-    hg = uigridlayout(hero, [1 5]);
+    hg = uigridlayout(hero, [1 6]);
     hg.RowHeight   = {34};
-    hg.ColumnWidth = {'1x', 110, 110, 110, 110};
+    hg.ColumnWidth = {'1x', 110, 110, 110, 110, 140};
     hg.Padding     = [18 10 18 10]; hg.ColumnSpacing = 8; hg.BackgroundColor = Theme.COLOR_CARD;
 
     titleLabel = uilabel(hg, 'Text', Labels.get('welcome_hero_title'));
@@ -53,6 +53,11 @@ function WelcomeScreen(app)
     btn4.Layout.Row = 1; btn4.Layout.Column = 5; app.styleBtn(btn4, 'secondary');
     btn4.FontSize = 14;
     btn4.ButtonPushedFcn = @(~,~)app.onSelectSection('Settings');
+
+    btn5 = uibutton(hg, 'Text', [char(9658) ' ' Labels.get('welcome_btn_explore_offline')]);
+    btn5.Layout.Row = 1; btn5.Layout.Column = 6; app.styleBtn(btn5, 'secondary');
+    btn5.FontSize = 14;
+    btn5.ButtonPushedFcn = @(~,~)app.onSelectSection('Composer');
 
     % ── Recent Projects (full width) ─────────────────────────────────────────
     projPanel = uipanel(g, 'Title', Labels.get('welcome_panel_recent_projects'), ...
