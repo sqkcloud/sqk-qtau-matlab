@@ -1170,9 +1170,9 @@ classdef ComposerViewModel < handle
                 'BackgroundColor', Theme.COLOR_DIVIDER);
             divider.Layout.Row = 3; divider.Layout.Column = 1;
 
-            footer = uigridlayout(outer, [1 4]);
+            footer = uigridlayout(outer, [1 5]);
             footer.Layout.Row = 4; footer.Layout.Column = 1;
-            footer.ColumnWidth = {120, 120, '1x', 100};
+            footer.ColumnWidth = {120, 120, 150, '1x', 100};
             footer.RowHeight = {36};
             footer.Padding = [0 0 0 0]; footer.ColumnSpacing = 8;
             footer.BackgroundColor = Theme.COLOR_BG;
@@ -1185,11 +1185,15 @@ classdef ComposerViewModel < handle
                 'ButtonPushedFcn', @(~,~) doSave());
             StyleHelper.styleBtn(btnSave, 'secondary');
 
-            spacer = uilabel(footer, 'Text', ''); spacer.Layout.Column = 3; %#ok<NASGU>
+            btnPush = uibutton(footer, 'Text', Labels.get('composer_export_btn_push'), ...
+                'ButtonPushedFcn', @(~,~) doPushWorkspace());
+            StyleHelper.styleBtn(btnPush, 'secondary');
+
+            spacer = uilabel(footer, 'Text', ''); spacer.Layout.Column = 4; %#ok<NASGU>
 
             btnClose = uibutton(footer, 'Text', Labels.get('composer_export_btn_close'), ...
                 'ButtonPushedFcn', @(~,~) close(fig));
-            btnClose.Layout.Column = 4;
+            btnClose.Layout.Column = 5;
             StyleHelper.styleBtn(btnClose, 'ghost');
 
             % Initial render + format-change wiring.
@@ -1242,6 +1246,27 @@ classdef ComposerViewModel < handle
                 catch ME
                     statusLbl.Text = sprintf( ...
                         Labels.get('composer_export_status_save_err'), ME.message);
+                    statusLbl.FontColor = Theme.COLOR_DANGER;
+                end
+            end
+
+            function doPushWorkspace()
+                if ~MatlabQuantumBridge.isAvailable()
+                    statusLbl.Text = Labels.get('composer_matlab_unavailable');
+                    statusLbl.FontColor = Theme.COLOR_DANGER;
+                    return;
+                end
+                varName = Labels.get('composer_push_default_name');
+                try
+                    qc = MatlabQuantumBridge.toQuantumCircuit(obj.Model);
+                    MatlabQuantumBridge.pushToWorkspace(varName, qc);
+                    statusLbl.Text = sprintf( ...
+                        Labels.get('composer_push_done_fmt'), varName);
+                    statusLbl.FontColor = Theme.COLOR_SUCCESS;
+                    obj.App.logEvent('COMPOSE', ...
+                        sprintf('Push quantumCircuit -> base.%s', varName));
+                catch ME
+                    statusLbl.Text = ME.message;
                     statusLbl.FontColor = Theme.COLOR_DANGER;
                 end
             end
