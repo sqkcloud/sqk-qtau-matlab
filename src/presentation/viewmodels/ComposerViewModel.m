@@ -1100,14 +1100,27 @@ classdef ComposerViewModel < handle
 
         % ── Export dialog (multi-target code emission) ───────────────────
         function openExportDialog(obj)
+            % Primary targets (MATLAB + OpenQASM) keep work inside the MATLAB
+            % workflow; the Python ecosystems are grouped as Advanced export
+            % for collaboration / downstream platform execution. Column 4
+            % flags the advanced (Python) targets.
             formats = {
-                'qasm2',  Labels.get('composer_export_fmt_qasm2'),  'qasm';
-                'qasm3',  Labels.get('composer_export_fmt_qasm3'),  'qasm';
-                'qiskit', Labels.get('composer_export_fmt_qiskit'), 'py';
-                'cirq',   Labels.get('composer_export_fmt_cirq'),   'py';
-                'braket', Labels.get('composer_export_fmt_braket'), 'py';
-                'matlab', Labels.get('composer_export_fmt_matlab'), 'm';
+                'matlab', Labels.get('composer_export_fmt_matlab'), 'm',    false;
+                'qasm2',  Labels.get('composer_export_fmt_qasm2'),  'qasm', false;
+                'qasm3',  Labels.get('composer_export_fmt_qasm3'),  'qasm', false;
+                'qiskit', Labels.get('composer_export_fmt_qiskit'), 'py',   true;
+                'cirq',   Labels.get('composer_export_fmt_cirq'),   'py',   true;
+                'braket', Labels.get('composer_export_fmt_braket'), 'py',   true;
             };
+            % Display labels — prefix the advanced targets so the grouping
+            % reads clearly in the flat dropdown.
+            displayItems = formats(:, 2)';
+            for fi = 1:size(formats, 1)
+                if formats{fi, 4}
+                    displayItems{fi} = [Labels.get('composer_export_advanced_prefix') ...
+                        ' ' formats{fi, 2}];
+                end
+            end
             % WindowStyle='normal' so uiputfile inside Save doesn't deadlock.
             fig = uifigure('Name', Labels.get('composer_export_title'), ...
                 'Position', [240 200 760 540], 'Color', Theme.COLOR_BG);
@@ -1127,9 +1140,10 @@ classdef ComposerViewModel < handle
             uilabel(top, 'Text', Labels.get('composer_export_format_lbl'), ...
                 'FontSize', 12, 'FontColor', Theme.COLOR_LABEL);
             fmtDD = uidropdown(top, ...
-                'Items', formats(:, 2)', 'ItemsData', formats(:, 1)', ...
-                'Value', 'qiskit');
-            uilabel(top, 'Text', '');  % spacer
+                'Items', displayItems, 'ItemsData', formats(:, 1)', ...
+                'Value', 'matlab');
+            uilabel(top, 'Text', Labels.get('composer_export_advanced_note'), ...
+                'FontSize', 10, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
             statusLbl = uilabel(top, 'Text', Labels.get('composer_export_status_idle'), ...
                 'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, ...
                 'HorizontalAlignment', 'right', 'WordWrap', 'on');
