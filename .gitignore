@@ -29,6 +29,11 @@ Reconstruction_*.json
 # Claude Code transient lock files
 .claude/scheduled_tasks.lock
 
+# Claude Code transient session/harness state (per-machine, not project config)
+.claude/memory/
+.claude/sessions/
+.claude/state/
+
 # Toolbox packaging output — generated .mltbx files
 release/
 *.mltbx
