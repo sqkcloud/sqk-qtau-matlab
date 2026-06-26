@@ -94,7 +94,13 @@ classdef MatlabQuantumBridge
             end
             val = evalin('base', name);
             if istable(val)
-                val = table2array(val);
+                try
+                    val = table2array(val);
+                catch
+                    error('MatlabQuantumBridge:NotNumeric', ...
+                        ['Table "%s" has mixed or non-numeric columns; only ' ...
+                         'all-numeric tables are supported'], name);
+                end
             end
             if ~isnumeric(val) || isempty(val)
                 error('MatlabQuantumBridge:NotNumeric', ...

@@ -192,6 +192,13 @@ function test_importAnglesByName_missing_var_errors(testCase)
         'MatlabQuantumBridge:NotFound');
 end
 
+function test_importAnglesByName_rejects_mixed_type_table(testCase)
+    assignin('base', 'qtau_mixtbl', table([1; 2], ["a"; "b"]));
+    testCase.verifyError(@() MatlabQuantumBridge.importAnglesByName('qtau_mixtbl'), ...
+        'MatlabQuantumBridge:NotNumeric');
+    evalin('base', 'clear qtau_mixtbl');
+end
+
 function test_circuitFromAngles_builds_ry_and_cx_chain(testCase)
     m = MatlabQuantumBridge.circuitFromAngles([0.3 0.6 0.9]);
     testCase.assertEqual(m.NumQubits, 3);
