@@ -150,3 +150,64 @@ function test_importByName_missing_var_errors(testCase)
     testCase.verifyError(@() MatlabQuantumBridge.importByName('qtau_nope_xyz'), ...
         'MatlabQuantumBridge:NotFound');
 end
+
+% ── MATLAB data import (numeric / table → parametric circuit) ─────────────────
+% These need no Support Package — pure base-workspace I/O + CircuitModel.
+function test_listWorkspaceData_filters_numeric_and_table(testCase)
+    assignin('base', 'qtau_d_vec', [0.1 0.2 0.3]);
+    assignin('base', 'qtau_d_tbl', table([1; 2; 3]));
+    assignin('base', 'qtau_d_txt', 'not data');
+    names = MatlabQuantumBridge.listWorkspaceData();
+    testCase.assertTrue(any(names == "qtau_d_vec"));
+    testCase.assertTrue(any(names == "qtau_d_tbl"));
+    testCase.assertFalse(any(names == "qtau_d_txt"));
+    evalin('base', 'clear qtau_d_vec qtau_d_tbl qtau_d_txt');
+end
+
+function test_importAnglesByName_flattens_vector(testCase)
+    assignin('base', 'qtau_ang', [0.5 1.0 1.5]);
+    a = MatlabQuantumBridge.importAnglesByName('qtau_ang');
+    testCase.assertEqual(a, [0.5 1.0 1.5], 'AbsTol', 1e-12);
+    testCase.assertEqual(size(a, 1), 1);   % row vector
+    evalin('base', 'clear qtau_ang');
+end
+
+function test_importAnglesByName_reads_table_numeric(testCase)
+    assignin('base', 'qtau_angt', table([0.2; 0.4]));
+    a = MatlabQuantumBridge.importAnglesByName('qtau_angt');
+    testCase.assertEqual(numel(a), 2);
+    testCase.assertEqual(a(1), 0.2, 'AbsTol', 1e-12);
+    evalin('base', 'clear qtau_angt');
+end
+
+function test_importAnglesByName_rejects_non_numeric(testCase)
+    assignin('base', 'qtau_bad', 'hello');
+    testCase.verifyError(@() MatlabQuantumBridge.importAnglesByName('qtau_bad'), ...
+        'MatlabQuantumBridge:NotNumeric');
+    evalin('base', 'clear qtau_bad');
+end
+
+function test_importAnglesByName_missing_var_errors(testCase)
+    testCase.verifyError(@() MatlabQuantumBridge.importAnglesByName('qtau_absent_xyz'), ...
+        'MatlabQuantumBridge:NotFound');
+end
+
+function test_circuitFromAngles_builds_ry_and_cx_chain(testCase)
+    m = MatlabQuantumBridge.circuitFromAngles([0.3 0.6 0.9]);
+    testCase.assertEqual(m.NumQubits, 3);
+    testCase.assertEqual(numel(m.Gates), 5);    % 3 Ry + 2 CX
+    testCase.assertEqual(m.Gates(1).kind, 'ry');
+    testCase.assertEqual(m.Gates(1).params, 0.3, 'AbsTol', 1e-12);
+    testCase.assertEqual(m.Gates(4).kind, 'cx');
+    testCase.assertEqual(m.Gates(4).qubits, [0 1]);
+end
+
+function test_circuitFromAngles_caps_at_max_qubits(testCase)
+    m = MatlabQuantumBridge.circuitFromAngles(0.1 * ones(1, 40));
+    testCase.assertEqual(m.NumQubits, CircuitModel.MAX_QUBITS);
+end
+
+function test_circuitFromAngles_rejects_empty(testCase)
+    testCase.verifyError(@() MatlabQuantumBridge.circuitFromAngles([]), ...
+        'MatlabQuantumBridge:NotFiniteReal');
+end

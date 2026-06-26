@@ -168,6 +168,18 @@ classdef ComposerViewModel < handle
             obj.openImportDialog(names);
         end
 
+        function onImportDataFromMatlab(obj)
+            % Import a MATLAB numeric vector / table from the base
+            % workspace and build a parametric (Ry + CX) circuit from it.
+            % No Support Package needed — pure workspace I/O.
+            names = MatlabQuantumBridge.listWorkspaceData();
+            if isempty(names)
+                obj.flashStatus(Labels.get('composer_data_no_vars'), 'info');
+                return;
+            end
+            obj.openDataImportDialog(names);
+        end
+
         function onToggleMirror(obj)
             obj.MirrorCollapsed = ~obj.MirrorCollapsed;
             obj.applyMirrorCollapse();
@@ -1316,6 +1328,61 @@ classdef ComposerViewModel < handle
                         Labels.get('composer_toast_matlab_imported'), name));
                     obj.App.logEvent('COMPOSE', ...
                         sprintf('Import quantumCircuit: %s', name));
+                catch ME
+                    obj.flashStatus(ME.message, 'danger');
+                end
+            end
+        end
+
+        % ── Import MATLAB data (numeric vector / table → parametric) ──────
+        function openDataImportDialog(obj, names)
+            fig = uifigure('Name', Labels.get('composer_import_data_title'), ...
+                'Position', [320 280 470 180], 'WindowStyle', 'modal', ...
+                'Color', Theme.COLOR_BG);
+            try; Theme.applyFigureMode(fig, Theme.activeName()); catch; end
+
+            g = uigridlayout(fig, [3 2]);
+            g.RowHeight = {30, 30, 50}; g.ColumnWidth = {150, '1x'};
+            g.Padding = [16 16 16 16]; g.RowSpacing = 10;
+
+            uilabel(g, 'Text', Labels.get('composer_import_data_var_lbl'), ...
+                'FontColor', Theme.COLOR_LABEL);
+            dd = uidropdown(g, 'Items', cellstr(names), 'Value', char(names(1)));
+
+            blank1 = uilabel(g, 'Text', ''); %#ok<NASGU>
+            blank2 = uilabel(g, 'Text', ''); %#ok<NASGU>
+
+            importBar = uigridlayout(g, [1 3]);
+            importBar.Layout.Row = 3; importBar.Layout.Column = [1 2];
+            importBar.ColumnWidth = {'1x', 120, 120}; importBar.Padding = [0 6 0 0];
+            importBar.BackgroundColor = Theme.COLOR_BG;
+            sp = uilabel(importBar, 'Text', ''); sp.Layout.Column = 1; %#ok<NASGU>
+
+            cancelBtn = uibutton(importBar, 'Text', Labels.get('composer_param_cancel'), ...
+                'ButtonPushedFcn', @(~,~) close(fig));
+            cancelBtn.Layout.Column = 2;
+            StyleHelper.styleBtn(cancelBtn, 'ghost');
+
+            importBtn = uibutton(importBar, 'Text', Labels.get('composer_import_btn'), ...
+                'ButtonPushedFcn', @(~,~) doImportData());
+            importBtn.Layout.Column = 3;
+            StyleHelper.styleBtn(importBtn, 'primary');
+
+            function doImportData()
+                name = dd.Value;
+                close(fig);
+                try
+                    angles = MatlabQuantumBridge.importAnglesByName(name);
+                    obj.Model = MatlabQuantumBridge.circuitFromAngles(angles);
+                    obj.afterModelEdit(sprintf( ...
+                        Labels.get('composer_toast_data_imported'), name, obj.Model.NumQubits));
+                    if numel(angles) > CircuitModel.MAX_QUBITS
+                        obj.flashStatus(sprintf( ...
+                            Labels.get('composer_data_truncated_fmt'), ...
+                            numel(angles), CircuitModel.MAX_QUBITS), 'info');
+                    end
+                    obj.App.logEvent('COMPOSE', ...
+                        sprintf('Import data: %s (%d values)', name, numel(angles)));
                 catch ME
                     obj.flashStatus(ME.message, 'danger');
                 end

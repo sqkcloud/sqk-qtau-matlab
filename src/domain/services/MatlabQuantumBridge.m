@@ -50,6 +50,83 @@ classdef MatlabQuantumBridge
             assignin('base', name, value);
         end
 
+        % ── MATLAB data import (numeric / table → parametric circuit) ─────
+        %   The pathway for bringing MATLAB *data* into the app: a numeric
+        %   vector (or a table's numeric columns) becomes the rotation
+        %   angles of a parametric circuit. Pure workspace I/O + CircuitModel
+        %   construction — no Support Package required.
+
+        function names = listWorkspaceData()
+            % Base-workspace numeric arrays and tables — candidate
+            % parametric inputs (e.g. a rotation-angle set or a returns
+            % series).
+            names = string.empty(1, 0);
+            try
+                vars = evalin('base', 'whos');
+            catch
+                return;
+            end
+            if isempty(vars); return; end
+            keep = false(1, numel(vars));
+            for i = 1:numel(vars)
+                cls = vars(i).class;
+                isNum = any(strcmp(cls, {'double', 'single'})) && prod(vars(i).size) >= 1;
+                keep(i) = isNum || strcmp(cls, 'table');
+            end
+            if any(keep)
+                names = string({vars(keep).name});
+            end
+        end
+
+        function angles = importAnglesByName(name)
+            % Reads a numeric workspace variable (vector/matrix) or the
+            % numeric content of a table and returns a finite, real double
+            % ROW vector to use as circuit rotation angles. Validates
+            % aggressively so the Composer can surface a clear error.
+            name = char(name);
+            if ~isvarname(name)
+                error('MatlabQuantumBridge:BadName', ...
+                    'Not a valid variable name: %s', name);
+            end
+            if ~evalin('base', sprintf('exist(''%s'', ''var'')', name))
+                error('MatlabQuantumBridge:NotFound', ...
+                    'No workspace variable named %s', name);
+            end
+            val = evalin('base', name);
+            if istable(val)
+                val = table2array(val);
+            end
+            if ~isnumeric(val) || isempty(val)
+                error('MatlabQuantumBridge:NotNumeric', ...
+                    'Variable "%s" is not a non-empty numeric array', name);
+            end
+            angles = double(val(:)');   % column-major flatten to a row
+            if ~isreal(angles) || ~all(isfinite(angles))
+                error('MatlabQuantumBridge:NotFiniteReal', ...
+                    'Variable "%s" must contain only finite real values', name);
+            end
+        end
+
+        function model = circuitFromAngles(angles)
+            % Builds a hardware-efficient parametric circuit from imported
+            % MATLAB data: one qubit per angle (capped at
+            % CircuitModel.MAX_QUBITS), an Ry(angle) on each, then a linear
+            % CX entangling chain. Pure CircuitModel construction.
+            angles = double(angles(:)');
+            if isempty(angles) || ~isreal(angles) || ~all(isfinite(angles))
+                error('MatlabQuantumBridge:NotFiniteReal', ...
+                    'angles must be a non-empty finite real vector');
+            end
+            nq = min(numel(angles), CircuitModel.MAX_QUBITS);
+            model = CircuitModel(nq);
+            for q = 0:nq-1
+                model.addGate('ry', q, angles(q+1));
+            end
+            for q = 0:nq-2
+                model.addGate('cx', [q q+1]);
+            end
+        end
+
         function model = fromQuantumCircuit(qc)
             if ~(isscalar(qc) && isa(qc, 'quantumCircuit'))
                 error('MatlabQuantumBridge:NotAQuantumCircuit', ...
