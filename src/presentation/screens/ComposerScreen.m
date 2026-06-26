@@ -124,8 +124,8 @@ function buildHero(parent, vm)
         'BorderColor', Theme.COLOR_DIVIDER, 'BackgroundColor', Theme.COLOR_CARD);
     panel.Layout.Row = 2; panel.Layout.Column = 1;
 
-    g = uigridlayout(panel, [3 1]);
-    g.RowHeight   = {28, 22, 'fit'};
+    g = uigridlayout(panel, [4 1]);
+    g.RowHeight   = {28, 22, 34, 'fit'};
     g.Padding     = [18 12 18 12];
     g.RowSpacing  = 6;
     g.BackgroundColor = Theme.COLOR_CARD;
@@ -138,9 +138,45 @@ function buildHero(parent, vm)
         'FontSize', 12, 'FontColor', Theme.COLOR_LABEL, 'WordWrap', 'on');
     sublineLbl.Layout.Row = 2;
 
+    % ── One-click quick-start template chips ─────────────────────────────
+    % Curated shortcuts onto the most common templates so a pre-built
+    % circuit is the obvious starting point from the empty canvas; the
+    % full 18-template gallery is one click away via "Browse all".
+    chips = uigridlayout(g, [1 8]);
+    chips.Layout.Row = 3;
+    chips.RowHeight = {28};
+    chips.ColumnWidth = {130, 95, 60, 60, 85, 115, 115, '1x'};
+    chips.ColumnSpacing = 6;
+    chips.Padding = [0 0 0 0];
+    chips.BackgroundColor = Theme.COLOR_CARD;
+
+    promptLbl = uilabel(chips, 'Text', Labels.get('composer_hero_templates_lbl'), ...
+        'FontSize', 11, 'FontWeight', 'bold', 'FontColor', Theme.COLOR_LABEL);
+    promptLbl.Layout.Column = 1;
+
+    quick = { ...
+        'bell',     'composer_template_bell'; ...
+        'ghz',      'composer_template_ghz'; ...
+        'qft',      'composer_template_qft'; ...
+        'grover',   'composer_template_grover'; ...
+        'teleport', 'composer_template_teleport'};
+    for i = 1:size(quick, 1)
+        chipBtn = uibutton(chips, 'Text', Labels.get(quick{i, 2}), ...
+            'ButtonPushedFcn', @(~,~) vm.onTemplateClicked(quick{i, 1}));
+        chipBtn.Layout.Column = i + 1;
+        StyleHelper.styleBtn(chipBtn, 'secondary');
+        chipBtn.FontSize = 11;
+    end
+
+    browseBtn = uibutton(chips, 'Text', Labels.get('composer_hero_browse_all'), ...
+        'ButtonPushedFcn', @(~,~) vm.onOpenTemplatesDialog());
+    browseBtn.Layout.Column = 7;
+    StyleHelper.styleBtn(browseBtn, 'ghost');
+    browseBtn.FontSize = 11;
+
     statusLbl = uilabel(g, 'Text', Labels.get('composer_hero_status'), ...
         'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
-    statusLbl.Layout.Row = 3;
+    statusLbl.Layout.Row = 4;
 
     vm.HeroPanel = panel;
 end

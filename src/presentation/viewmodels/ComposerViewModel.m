@@ -253,9 +253,9 @@ classdef ComposerViewModel < handle
             end
         end
 
-        % Legacy v0.1 entry-point kept for any out-of-tree callers; the
-        % live UI no longer wires it (Templates dialog dispatches
-        % directly to onTemplatePicked).
+        % One-click template entry by id. Wired from the hero strip's
+        % quick-start chips; the Templates gallery dispatches to
+        % onTemplatePicked directly.
         function onTemplateClicked(obj, templateId)
             try
                 meta = TemplateRegistry.find(templateId);
