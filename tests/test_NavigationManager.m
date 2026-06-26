@@ -48,3 +48,27 @@ function test_prediction_routing_key_still_resolves(testCase)
     % it is hidden from the sidebar (falls back to the key as its label).
     testCase.assertEqual(NavigationManager.displayLabelFor('Prediction'), 'Prediction');
 end
+
+% ── Progressive disclosure (core vs advanced screens) ─────────────────────────
+function test_advanced_screens_classified(testCase)
+    adv = {'Circuit Cutting', 'Mitigation Compare', 'Resource Estimator', ...
+           'QEC Simulation', 'QEC Visualization'};
+    for i = 1:numel(adv)
+        testCase.assertTrue(NavigationManager.isAdvancedScreen(adv{i}), adv{i});
+    end
+end
+
+function test_core_screens_not_advanced(testCase)
+    core = {'Dashboard', 'Welcome', 'Circuits', 'Analysis', 'Backends', ...
+            'Benchmark', 'Run Planner', 'Jobs', 'Results', 'Reports', 'Settings'};
+    for i = 1:numel(core)
+        testCase.assertFalse(NavigationManager.isAdvancedScreen(core{i}), core{i});
+    end
+end
+
+function test_every_advanced_screen_is_a_real_nav_entry(testCase)
+    % Guard against typos: every advanced key must exist in navNames.
+    n = NavigationManager.navNames();
+    adv = n(arrayfun(@(i) NavigationManager.isAdvancedScreen(n{i}), 1:numel(n)));
+    testCase.assertEqual(numel(adv), 5);
+end

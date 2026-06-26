@@ -35,6 +35,8 @@ classdef QTAUWorkbenchApp < handle
         NavHtml                     % uihtml nav menu with consistent icon sizing
         NavToggleButton
         NavCollapsed = false
+        ShowAdvanced = false        % progressive disclosure: hide advanced
+                                    % screens from the sidebar until toggled
         % Routing key of the currently-visible section panel. Read by
         % NavigationManager.onSelectSection / onResizeUI to hide and
         % resize only the active panel instead of looping all 22

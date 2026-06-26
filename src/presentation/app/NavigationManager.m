@@ -733,6 +733,17 @@ classdef NavigationManager
                 d = src.Data;
                 if isstruct(d); return; end
                 clickedName = char(string(d));
+                if strcmp(clickedName, '__toggleAdvanced__')
+                    % Progressive-disclosure toggle — flip state and re-render
+                    % the sidebar in place; never routed to a screen.
+                    app.ShowAdvanced = ~app.ShowAdvanced;
+                    activeKey = 'Dashboard';
+                    if ~isempty(app.NavList) && isvalid(app.NavList)
+                        activeKey = char(app.NavList.Value);
+                    end
+                    NavigationManager.renderNavHtml(app, activeKey, app.NavCollapsed);
+                    return;
+                end
                 if ~isempty(clickedName)
                     app.onSelectSection(clickedName);
                 end
@@ -767,7 +778,8 @@ classdef NavigationManager
                 '.btn.active{background:' activeBg ';color:' activeFg ';}' ...
                 '.icon{display:inline-flex;align-items:center;justify-content:center;' ...
                 'width:22px;height:22px;font-size:16px;flex-shrink:0;text-align:center;}' ...
-                '.label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'];
+                '.label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' ...
+                '.btn.toggle{opacity:0.8;font-weight:600;font-size:13px;margin-top:6px;}'];
 
             if collapsed
                 css = [css '.btn{justify-content:center;padding:6px 0;height:32px;}' ...
@@ -779,6 +791,13 @@ classdef NavigationManager
             q = char(39);  % single-quote for JS strings
             items = '';
             for i = 1:numel(names)
+                % Progressive disclosure: skip advanced screens unless the
+                % user enabled "Show advanced". The active screen is always
+                % kept visible so its highlight never disappears.
+                if NavigationManager.isAdvancedScreen(names{i}) ...
+                        && ~app.ShowAdvanced && ~strcmp(names{i}, activeKey)
+                    continue;
+                end
                 cls = 'btn';
                 if strcmp(names{i}, activeKey); cls = 'btn active'; end
                 btn = ['<button class="' cls '" data-name="' names{i} '" onclick="sendClick(' q names{i} q ')">' ...
@@ -786,6 +805,20 @@ classdef NavigationManager
                        '<span class="label">' labels{i} '</span></button>'];
                 items = [items btn]; %#ok<AGROW>
             end
+            % Show/Hide advanced toggle — a distinct nav row that flips
+            % app.ShowAdvanced (handled by onNavHtmlClick, not routed).
+            if app.ShowAdvanced
+                togLabel = Labels.get('nav_hide_advanced');
+                togIcon  = char(9652);   % ▴
+            else
+                togLabel = Labels.get('nav_show_advanced');
+                togIcon  = char(9662);   % ▾
+            end
+            togName = '__toggleAdvanced__';
+            items = [items '<button class="btn toggle" data-name="' togName ...
+                     '" onclick="sendClick(' q togName q ')">' ...
+                     '<span class="icon">' togIcon '</span>' ...
+                     '<span class="label">' togLabel '</span></button>'];
 
             js = ['var _comp;' ...
                   'function applyActive(n){var bs=document.querySelectorAll(".btn");' ...
@@ -1012,6 +1045,18 @@ classdef NavigationManager
             % Screens whose core surface is fully local (no FastAPIClient)
             % and therefore usable without a backend login.
             tf = any(strcmp(char(key), {'Composer'}));
+        end
+
+        function tf = isAdvancedScreen(key)
+            % Progressive disclosure: specialist surfaces that are hidden
+            % from the sidebar until the user opts into "Show advanced".
+            % They are NOT removed — routing keys stay live, so cross-screen
+            % links and the toggle still reach them. Keeps the default
+            % sidebar focused on the core build -> simulate -> analyse -> run
+            % workflow (client feedback: streamline the wide feature set).
+            tf = any(strcmp(char(key), { ...
+                'Circuit Cutting', 'Mitigation Compare', 'Resource Estimator', ...
+                'QEC Simulation', 'QEC Visualization'}));
         end
 
         function refreshAuthOverlay(app, key)
