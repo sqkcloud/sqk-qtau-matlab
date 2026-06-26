@@ -824,9 +824,15 @@ classdef NavigationManager
             % toolbars host the upload entry-points instead. UploadScreen /
             % UploadViewModel / app.UploadVm stay so any cross-screen call
             % (`app.onSelectSection('Upload')`) still routes correctly.
+            %
+            % Prediction is hidden too — it has been consolidated into Run
+            % Planner (which already computes per-backend fidelity as its
+            % first step). PredictionScreen / PredictionViewModel / the
+            % 'Prediction' routing key stay wired so any cross-screen call
+            % (`app.onSelectSection('Prediction')`) still routes correctly.
             n = {'Dashboard','Welcome','Circuits','Analysis', ...
                  'Circuit Cutting','Backends', ...
-                 'Benchmark','Prediction','Mitigation Compare','Resource Estimator','Run Planner', ...
+                 'Benchmark','Mitigation Compare','Resource Estimator','Run Planner', ...
                  'Jobs','Results', ...
                  'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
@@ -843,7 +849,6 @@ classdef NavigationManager
                 char(9986),  ... ✂ Circuit Cutting
                 char(9004),  ... ⌬ Backends
                 char(9678),  ... ◎ Benchmark
-                char(9671),  ... ◇ Prediction
                 char(9878),  ... ⚖ Mitigation Compare
                 char(9580),  ... ╌ Resource Estimator
                 char(9881),  ... ⚙ Run Planner
@@ -865,7 +870,7 @@ classdef NavigationManager
             %      classes don't need to be renamed.
             lb = {'Dashboard','Projects','Circuits','Analysis', ...
                   'Circuit Cutting','Backends', ...
-                  'Benchmark','Prediction','Mitigation Compare','Resource Estimator','Run Planner', ...
+                  'Benchmark','Mitigation Compare','Resource Estimator','Run Planner', ...
                   'Jobs','Results', ...
                   'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
