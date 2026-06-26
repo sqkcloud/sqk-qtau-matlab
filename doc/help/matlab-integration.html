@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>MATLAB Integration - QTAU Connector Workbench</title>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; max-width: 760px; margin: 1em 2em; line-height: 1.5; color: #222; }
+        h1 { color: #07669e; border-bottom: 2px solid #07669e; padding-bottom: 0.3em; }
+        h2 { color: #07669e; margin-top: 1.6em; }
+        h3 { color: #07669e; margin-top: 1.2em; font-size: 1.05em; }
+        code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
+        pre { background: #f4f4f4; padding: 0.8em; border-radius: 4px; overflow-x: auto; }
+        .note { background: #fffbea; border-left: 3px solid #f5b900; padding: 0.6em 1em; margin: 1em 0; }
+        .lede { font-size: 1.1em; color: #444; }
+        ol { padding-left: 1.6em; }
+        ol li { margin-bottom: 0.4em; }
+        ul { padding-left: 1.4em; }
+    </style>
+</head>
+<body>
+
+<h1>MATLAB Integration</h1>
+
+<p class="lede">
+    The Composer round-trips circuits, data, and simulation through MATLAB's
+    own quantum tooling, so your work stays inside MATLAB end to end. Every
+    path on this page works <strong>offline</strong> &mdash; no QTAU server
+    login is required.
+</p>
+
+<div class="note">
+    The interop layer uses the <strong>MATLAB Support Package for Quantum
+    Computing</strong> (<code>quantumCircuit</code>, <code>simulate</code>,
+    gate constructors). When the add-on is not installed, these features
+    degrade gracefully: the import/simulate buttons report that the package
+    is missing, and the rest of the Composer still works. Importing MATLAB
+    <em>data</em> and pasting OpenQASM need no add-on at all.
+</div>
+
+<h2>Import a circuit created in MATLAB</h2>
+
+<p>
+    Build a circuit with the Support Package, then bring it into the Composer
+    two ways:
+</p>
+
+<h3>Direct object import</h3>
+<pre>&gt;&gt; c = quantumCircuit([hGate(1); cxGate(1,2)], 2);   % a Bell circuit</pre>
+<p>
+    In the Composer toolbar click <strong>Import MATLAB</strong>, pick
+    <code>c</code> from the workspace list, and the canvas renders it. MATLAB's
+    1-based qubit indices are shifted to the app's 0-based convention
+    automatically.
+</p>
+
+<h3>Via <code>generateQASM()</code></h3>
+<pre>&gt;&gt; qasm = generateQASM(c);</pre>
+<p>
+    Paste the result into the Composer's <strong>OpenQASM mirror</strong> and
+    it commits to the canvas. The mirror accepts both OpenQASM 2.0 and the
+    OpenQASM 3.0 that <code>generateQASM()</code> emits (the
+    <code>qubit[n]</code> / <code>bit[n]</code> declarations and the
+    whole-register <code>c = measure q;</code> form are all understood).
+</p>
+
+<h2>Simulate with MATLAB's built-in engine</h2>
+<p>
+    The Composer's <strong>Inspect</strong> footer runs a local statevector
+    simulator. When the Support Package is present, it also runs MATLAB's
+    native <code>simulate()</code> on the same circuit and flashes a parity
+    check &mdash; <em>"MATLAB simulate() matches local simulator"</em> &mdash;
+    so you can trust the in-app preview against MATLAB's authoritative engine.
+</p>
+
+<h2>Export back to MATLAB</h2>
+<p>
+    From the Composer toolbar choose <strong>Export</strong>. The dialog leads
+    with the workflow-native targets:
+</p>
+<ul>
+    <li><strong>MATLAB (quantumCircuit)</strong> &mdash; a runnable script that
+        rebuilds the circuit as a <code>quantumCircuit</code> object (default).</li>
+    <li><strong>OpenQASM 2.0 / 3.0</strong> &mdash; standard interchange.</li>
+    <li><strong>Advanced</strong> &mdash; Qiskit / Cirq / Braket Python, for
+        collaboration or downstream execution on those platform SDKs.</li>
+</ul>
+<p>
+    To keep working in MATLAB without a file round-trip, click
+    <strong>Push to workspace</strong> in the same dialog: it writes a live
+    <code>quantumCircuit</code> to the base workspace (as
+    <code>qtau_circuit</code>) that you can simulate, transpile, or analyze
+    with the rest of your MATLAB code.
+</p>
+
+<h2>Import MATLAB data as a parametric circuit</h2>
+<p>
+    Turn numeric MATLAB data into a circuit. Put a vector (or a numeric table)
+    in the workspace:
+</p>
+<pre>&gt;&gt; theta = linspace(0, pi, 5);</pre>
+<p>
+    Click <strong>Import data</strong> in the Composer toolbar and pick
+    <code>theta</code>. The values become the rotation angles of a
+    hardware-efficient ansatz &mdash; one <code>Ry</code> per value (capped at
+    16 qubits) plus a linear <code>CX</code> entangling chain. This is the
+    bridge from MATLAB data analysis into a runnable circuit.
+</p>
+
+<h2>Work offline</h2>
+<p>
+    The Composer is fully usable without a backend login. From the
+    <strong>Projects</strong> screen click <strong>Explore offline</strong> to
+    jump straight in. Building, importing, simulating, and exporting all run
+    locally; only the server-backed screens (Jobs, Backends, Reports, &hellip;)
+    require authentication.
+</p>
+
+<h2>A focused interface</h2>
+<p>
+    The sidebar defaults to the core workflow &mdash; build &rarr; simulate
+    &rarr; analyse &rarr; run. Specialist surfaces (Circuit Cutting, Mitigation
+    Compare, Resource Estimator, QEC) are tucked behind the
+    <strong>Show advanced</strong> toggle at the bottom of the sidebar.
+    Nothing is removed; click the toggle to reveal everything.
+</p>
+
+<h2>Where to go next</h2>
+<ul>
+    <li><a href="screens.html">Screen Catalog</a> &mdash; what each screen does.</li>
+    <li><a href="getting-started.html">Getting Started</a> &mdash; first launch and the 5-minute tour.</li>
+    <li><a href="troubleshooting.html">Troubleshooting</a> &mdash; common issues and fixes.</li>
+</ul>
+
+</body>
+</html>

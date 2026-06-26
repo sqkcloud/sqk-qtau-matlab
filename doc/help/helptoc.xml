@@ -11,6 +11,7 @@
     <tocitem target="overview.html">QTAU Connector Workbench
         <tocitem target="getting-started.html">Getting Started</tocitem>
         <tocitem target="screens.html">Screen Catalog</tocitem>
+        <tocitem target="matlab-integration.html">MATLAB Integration</tocitem>
         <tocitem target="troubleshooting.html">Troubleshooting</tocitem>
         <tocitem target="examples/example_01_qec_simulation.m"
                  image="$toolbox/matlab/icons/help_demo.gif">
