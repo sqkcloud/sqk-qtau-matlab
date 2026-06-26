@@ -474,6 +474,26 @@ classdef CircuitModel < handle
             end
             tok = regexp(stmt, '^creg\s+\w+\s*\[\s*(\d+)\s*\]$', 'tokens', 'once');
             if ~isempty(tok); return; end
+            % OpenQASM 3.0 register declarations (MATLAB generateQASM output):
+            %   `qubit[n] q;` sizes the circuit; `bit[n] c;` has no circuit
+            %   effect. The bare single-register forms are also accepted.
+            tok = regexp(stmt, '^qubit\s*\[\s*(\d+)\s*\]\s+\w+$', 'tokens', 'once');
+            if ~isempty(tok)
+                n = max(n, str2double(tok{1}));
+                if n > CircuitModel.MAX_QUBITS
+                    error('CircuitModel:Parse', ...
+                        'Line %d: qubit declares %d qubits (max %d)', ...
+                        ln, n, CircuitModel.MAX_QUBITS);
+                end
+                return;
+            end
+            if ~isempty(regexp(stmt, '^qubit\s+\w+$', 'once'))
+                n = max(n, 1); return;
+            end
+            if ~isempty(regexp(stmt, '^bit\s*\[\s*\d+\s*\]\s+\w+$', 'once')) || ...
+               ~isempty(regexp(stmt, '^bit\s+\w+$', 'once'))
+                return;  % classical register — no circuit effect
+            end
             % barrier (with or without arg list).
             if regexp(stmt, '^barrier(\s+|$)')
                 gates(end+1) = struct('kind','barrier','qubits',[],'params',[]);
@@ -482,6 +502,32 @@ classdef CircuitModel < handle
             % measure q[a] -> c[b];
             tok = regexp(stmt, '^measure\s+\w+\s*\[\s*(\d+)\s*\]\s*->\s*\w+\s*\[\s*(\d+)\s*\]$', ...
                 'tokens', 'once');
+            if ~isempty(tok)
+                q = str2double(tok{1});
+                gates(end+1) = struct('kind','measure','qubits',q,'params',[]);
+                n = max(n, q+1);
+                return;
+            end
+            % OpenQASM 3.0 measurement — per qubit: `c[b] = measure q[a];`
+            tok = regexp(stmt, ...
+                '^\w+\s*\[\s*\d+\s*\]\s*=\s*measure\s+\w+\s*\[\s*(\d+)\s*\]$', ...
+                'tokens', 'once');
+            if ~isempty(tok)
+                q = str2double(tok{1});
+                gates(end+1) = struct('kind','measure','qubits',q,'params',[]);
+                n = max(n, q+1);
+                return;
+            end
+            % OpenQASM 3.0 measurement — whole register: `c = measure q;`
+            %   expands to one measure per qubit declared so far.
+            if ~isempty(regexp(stmt, '^\w+\s*=\s*measure\s+\w+$', 'once'))
+                for q = 0:(n-1)
+                    gates(end+1) = struct('kind','measure','qubits',q,'params',[]); %#ok<AGROW>
+                end
+                return;
+            end
+            % OpenQASM 3.0 measurement — bare: `measure q[a];`
+            tok = regexp(stmt, '^measure\s+\w+\s*\[\s*(\d+)\s*\]$', 'tokens', 'once');
             if ~isempty(tok)
                 q = str2double(tok{1});
                 gates(end+1) = struct('kind','measure','qubits',q,'params',[]);

@@ -118,3 +118,48 @@ function test_fromQasm_evals_pi_expressions(testCase)
     m = CircuitModel.fromQasm(qasm);
     testCase.assertEqual(m.Gates(1).params, pi/3, 'AbsTol', 1e-9);
 end
+
+% ── OpenQASM 3.0 import (MATLAB circuit.generateQASM() output) ────────────────
+% MATLAB's generateQASM emits OpenQASM 3.0 with qubit[n]/bit[n] declarations
+% and a whole-register `c = measure q;` line. These cases pin that exact shape.
+function test_fromQasm3_parses_generateQASM_bell_output(testCase)
+    % Verbatim shape produced by MATLAB quantumCircuit.generateQASM().
+    qasm = sprintf(['OPENQASM 3.0;\ninclude "stdgates.inc";\n\n' ...
+                    'qubit[2] q;\nbit[2] c;\n\nh q[0];\ncx q[0],q[1];\n']);
+    m = CircuitModel.fromQasm(qasm);
+    testCase.assertEqual(m.NumQubits, 2);
+    testCase.assertEqual(numel(m.Gates), 2);
+    testCase.assertEqual(m.Gates(1).kind, 'h');
+    testCase.assertEqual(m.Gates(2).kind, 'cx');
+    testCase.assertEqual(m.Gates(2).qubits, [0 1]);
+end
+
+function test_fromQasm3_whole_register_measure_expands_per_qubit(testCase)
+    qasm = sprintf(['OPENQASM 3.0;\nqubit[2] q;\nbit[2] c;\n' ...
+                    'h q[0];\ncx q[0],q[1];\nc = measure q;']);
+    m = CircuitModel.fromQasm(qasm);
+    % h + cx + one measure per qubit (2) = 4 gates.
+    testCase.assertEqual(numel(m.Gates), 4);
+    testCase.assertEqual(m.Gates(3).kind, 'measure');
+    testCase.assertEqual(m.Gates(3).qubits, 0);
+    testCase.assertEqual(m.Gates(4).kind, 'measure');
+    testCase.assertEqual(m.Gates(4).qubits, 1);
+end
+
+function test_fromQasm3_per_qubit_measure_assignment(testCase)
+    qasm = sprintf('OPENQASM 3.0;\nqubit[1] q;\nbit[1] c;\nh q[0];\nc[0] = measure q[0];');
+    m = CircuitModel.fromQasm(qasm);
+    testCase.assertEqual(numel(m.Gates), 2);
+    testCase.assertEqual(m.Gates(2).kind, 'measure');
+    testCase.assertEqual(m.Gates(2).qubits, 0);
+end
+
+function test_fromQasm3_roundtrips_through_toQasm3(testCase)
+    src = CircuitModel(2);
+    src.addGate('h', 0); src.addGate('cx', [0 1]); src.addGate('measure', 0);
+    parsed = CircuitModel.fromQasm(src.toQasm3());
+    testCase.assertEqual(parsed.NumQubits, 2);
+    testCase.assertEqual(parsed.Gates(1).kind, 'h');
+    testCase.assertEqual(parsed.Gates(2).kind, 'cx');
+    testCase.assertEqual(parsed.Gates(3).kind, 'measure');
+end
