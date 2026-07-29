@@ -28,8 +28,8 @@ function ComposerScreen(app)
     % minimum (or whenever the user expands the mirror + inspect rows).
     % Pinning row 3 to a fixed pixel height instead of '1x' is the
     % single change that makes that minimum predictable.
-    g = uigridlayout(t, [5 1]);
-    g.RowHeight    = {50, 'fit', 460, 36, 360};
+    g = uigridlayout(t, [6 1]);
+    g.RowHeight    = {50, 'fit', 430, 320, 36, 360};
     g.Padding      = Theme.GRID_PADDING;
     g.RowSpacing   = 8;
     g.BackgroundColor = Theme.COLOR_BG;
@@ -38,6 +38,7 @@ function ComposerScreen(app)
     buildToolbar(g, vm);
     buildHero(g, vm);
     buildBody(g, vm);
+    buildSimulationResults(g, vm);
     buildMirror(g, vm);
     buildInspect(g, vm);
 
@@ -56,15 +57,31 @@ function buildToolbar(parent, vm)
         'BorderColor', Theme.COLOR_DIVIDER, 'BackgroundColor', Theme.COLOR_CARD);
     bar.Layout.Row = 1; bar.Layout.Column = 1;
 
-    grid = uigridlayout(bar, [1 11]);
+    grid = uigridlayout(bar, [1 15]);
     grid.Padding = [10 6 10 6];
     grid.ColumnSpacing = 8;
-    grid.ColumnWidth = {120, 90, 100, 100, 100, 90, 90, 90, 100, '1x', 160};
+    grid.ColumnWidth = {120, 120, 120, 120, 120, 90, 100, 100, 100, 90, 90, 90, 100, '1x', 160};
     grid.BackgroundColor = Theme.COLOR_CARD;
 
     btnTemplates = uibutton(grid, 'Text', Labels.get('composer_btn_templates'), ...
         'ButtonPushedFcn', @(~,~) vm.onOpenTemplatesDialog());
     StyleHelper.styleBtn(btnTemplates, 'primary');
+
+    btnImportWs = uibutton(grid, 'Text', 'Import Workspace', ...
+        'ButtonPushedFcn', @(~,~) vm.onImportWorkspace());
+    StyleHelper.styleBtn(btnImportWs, 'secondary');
+
+    btnImportFile = uibutton(grid, 'Text', 'Import File', ...
+        'ButtonPushedFcn', @(~,~) vm.onImportFile());
+    StyleHelper.styleBtn(btnImportFile, 'secondary');
+
+    btnExportWs = uibutton(grid, 'Text', 'Export Project', ...
+        'ButtonPushedFcn', @(~,~) vm.onExportProject());
+    StyleHelper.styleBtn(btnExportWs, 'secondary');
+
+    btnMatlabSim = uibutton(grid, 'Text', 'MATLAB Simulate', ...
+        'ButtonPushedFcn', @(~,~) vm.onSimulateMatlab());
+    StyleHelper.styleBtn(btnMatlabSim, 'secondary');
 
     btnSave = uibutton(grid, 'Text', Labels.get('composer_btn_save'), ...
         'ButtonPushedFcn', @(~,~) vm.onSave());
@@ -145,7 +162,7 @@ end
 function buildBody(parent, vm)
     bodyGrid = uigridlayout(parent, [1 3]);
     bodyGrid.Layout.Row = 3; bodyGrid.Layout.Column = 1;
-    bodyGrid.ColumnWidth = {180, '1x', 240};
+    bodyGrid.ColumnWidth = {200, '1x', 260};
     bodyGrid.ColumnSpacing = 10;
     bodyGrid.Padding = [0 0 0 0];
     bodyGrid.BackgroundColor = Theme.COLOR_BG;
@@ -228,16 +245,13 @@ function buildCanvas(parent, vm)
         'ForegroundColor', Theme.COLOR_HEADING, 'FontWeight', 'bold');
     panel.Layout.Row = 1; panel.Layout.Column = 2;
 
-    % Three-row layout: axes (pixel-fixed at 25 px per qubit) + empty-state
-    % caption + spacer ('1x'). The spacer absorbs leftover container
-    % height so the axes never stretches — wire-to-wire spacing stays at
-    % exactly 25 px regardless of body-row size, matching the rest of
-    % the app's circuit-diagram surfaces. ComposerViewModel.repaintCanvas
-    % resizes RowHeight{1} as the qubit count grows.
-    g = uigridlayout(panel, [3 1]);
-    g.RowHeight   = {50, 22, '1x'};
-    g.Padding     = [10 10 10 6];
-    g.RowSpacing  = 4;
+    % Two-row layout. The axes fills the available canvas area; forcing a
+    % small pixel row caused MATLAB to preserve the axes plot-box aspect
+    % ratio and compress multi-wire circuits into a narrow strip.
+    g = uigridlayout(panel, [2 1]);
+    g.RowHeight   = {'1x', 22};
+    g.Padding     = [14 12 14 8];
+    g.RowSpacing  = 6;
     g.BackgroundColor = Theme.COLOR_CARD;
     vm.CanvasInnerGrid = g;
 
@@ -248,6 +262,9 @@ function buildCanvas(parent, vm)
     ax.XColor = 'none'; ax.YColor = 'none';
     ax.XTick = []; ax.YTick = [];
     ax.Box = 'off';
+    ax.DataAspectRatioMode = 'auto';
+    ax.PlotBoxAspectRatioMode = 'auto';
+    ax.PositionConstraint = 'outerposition';
     try; disableDefaultInteractivity(ax); catch; end
     ax.ButtonDownFcn = @(src,evt) vm.onCanvasClick(evt);
     ax.HitTest = 'on';
@@ -291,11 +308,69 @@ function buildSelection(parent, vm)
     vm.SelectionDetail = detail;
 end
 
+% ── MATLAB simulation results ────────────────────────────────────────────
+function buildSimulationResults(parent, vm)
+    panel = uipanel(parent, 'Title', 'MATLAB Simulation Result', ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER, ...
+        'BackgroundColor', Theme.COLOR_CARD, ...
+        'ForegroundColor', Theme.COLOR_HEADING, 'FontWeight', 'bold');
+    panel.Layout.Row = 4; panel.Layout.Column = 1;
+
+    outer = uigridlayout(panel, [2 3]);
+    outer.RowHeight = {42, '1x'};
+    outer.ColumnWidth = {280, '1x', '1x'};
+    outer.Padding = [12 8 12 10];
+    outer.RowSpacing = 8;
+    outer.ColumnSpacing = 12;
+    outer.BackgroundColor = Theme.COLOR_CARD;
+
+    meta = uilabel(outer, ...
+        'Text', 'Run MATLAB Simulate to display state probabilities.', ...
+        'FontSize', 11, 'FontColor', Theme.COLOR_LABEL, ...
+        'WordWrap', 'on', 'HorizontalAlignment', 'left');
+    meta.Layout.Row = 1; meta.Layout.Column = [1 2];
+
+    exportBtn = uibutton(outer, 'Text', 'Export Result Table', ...
+        'ButtonPushedFcn', @(~,~) vm.onExportSimulationTable());
+    exportBtn.Layout.Row = 1; exportBtn.Layout.Column = 3;
+    StyleHelper.styleBtn(exportBtn, 'secondary');
+    exportBtn.Enable = 'off';
+
+    tbl = uitable(outer, ...
+        'Data', table(string.empty(0,1), zeros(0,1), ...
+            'VariableNames', {'State','Probability'}), ...
+        'ColumnName', {'State','Probability'}, ...
+        'RowName', {}, 'FontSize', 11);
+    tbl.Layout.Row = 2; tbl.Layout.Column = 1;
+
+    ax = uiaxes(outer);
+    ax.Layout.Row = 2; ax.Layout.Column = [2 3];
+    ax.Toolbar.Visible = 'off';
+    ax.Color = Theme.COLOR_CARD;
+    ax.XColor = Theme.COLOR_LABEL;
+    ax.YColor = Theme.COLOR_LABEL;
+    ax.GridColor = Theme.COLOR_DIVIDER;
+    ax.Title.String = 'State Probability Distribution';
+    ax.Title.Color = Theme.COLOR_HEADING;
+    ax.XLabel.String = 'State';
+    ax.YLabel.String = 'Probability';
+    ax.XLabel.Color = Theme.COLOR_LABEL;
+    ax.YLabel.Color = Theme.COLOR_LABEL;
+    grid(ax, 'on');
+    try; disableDefaultInteractivity(ax); catch; end
+
+    vm.SimulationResultPanel = panel;
+    vm.SimulationMetaLabel = meta;
+    vm.SimulationResultTable = tbl;
+    vm.SimulationResultAxes = ax;
+    vm.SimulationExportButton = exportBtn;
+end
+
 % ── Mirror ───────────────────────────────────────────────────────────────
 function buildMirror(parent, vm)
     panel = uipanel(parent, 'Title', '', 'BorderType', 'none', ...
         'BackgroundColor', Theme.COLOR_BG, 'Scrollable', 'on');
-    panel.Layout.Row = 4; panel.Layout.Column = 1;
+    panel.Layout.Row = 5; panel.Layout.Column = 1;
 
     g = uigridlayout(panel, [2 1]);
     g.RowHeight = {28, '1x'};
@@ -342,7 +417,7 @@ end
 function buildInspect(parent, vm)
     panel = uipanel(parent, 'Title', '', 'BorderType', 'line', ...
         'BorderColor', Theme.COLOR_DIVIDER, 'BackgroundColor', Theme.COLOR_CARD);
-    panel.Layout.Row = 5; panel.Layout.Column = 1;
+    panel.Layout.Row = 6; panel.Layout.Column = 1;
 
     g = uigridlayout(panel, [2 1]);
     g.RowHeight = {32, '1x'};

@@ -23,6 +23,11 @@ classdef ServiceContainer < handle
         QmcSvc          % QmcService (Quantum Amplitude Estimation / QMC)
         CuttingSvc      % CuttingService (circuit cutting + reconstruction)
         MitigationSvc   % MitigationService (QEM ladder, cost preview)
+        WorkspaceSvc    % MatlabWorkspaceService (local, no HTTP)
+        MatlabQuantumSvc % MatlabQuantumService (optional support package)
+        SimulationSvc   % SimulationService (MATLAB/QTAU local provider)
+        WorkspaceExportSvc % WorkspaceExportService
+        HardwareRecommendationSvc % HardwareRecommendationService
     end
 
     methods
@@ -42,6 +47,11 @@ classdef ServiceContainer < handle
             obj.QmcSvc        = QmcService(obj.Client);
             obj.CuttingSvc    = CuttingService(obj.Client);
             obj.MitigationSvc = MitigationService(obj.Client);
+            obj.WorkspaceSvc   = MatlabWorkspaceService();
+            obj.MatlabQuantumSvc = MatlabQuantumService();
+            obj.SimulationSvc  = SimulationService(obj.MatlabQuantumSvc);
+            obj.WorkspaceExportSvc = WorkspaceExportService();
+            obj.HardwareRecommendationSvc = HardwareRecommendationService();
             Logger.info('ServiceContainer', 'All services initialized');
         end
     end

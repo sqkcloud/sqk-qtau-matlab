@@ -12,8 +12,8 @@ function WelcomeScreen(app)
     t = app.createSectionPage('Welcome');
 
     % ── Root grid: 2 rows × 1 col ───────────────────────────────────────────
-    g = uigridlayout(t, [2 1]);
-    g.RowHeight     = {72, '1x'};
+    g = uigridlayout(t, [3 1]);
+    g.RowHeight     = {104, 132, '1x'};
     g.ColumnWidth   = {'1x'};
     g.Padding       = Theme.GRID_PADDING;
     g.RowSpacing    = Theme.GRID_ROW_SPACING;
@@ -24,9 +24,9 @@ function WelcomeScreen(app)
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
     hero.Layout.Row = 1; hero.Layout.Column = 1;
     hero.BackgroundColor = Theme.COLOR_CARD;
-    hg = uigridlayout(hero, [1 5]);
-    hg.RowHeight   = {34};
-    hg.ColumnWidth = {'1x', 110, 110, 110, 110};
+    hg = uigridlayout(hero, [2 5]);
+    hg.RowHeight   = {34, 34};
+    hg.ColumnWidth = {'1x', 145, 145, 145, 145};
     hg.Padding     = [18 10 18 10]; hg.ColumnSpacing = 8; hg.BackgroundColor = Theme.COLOR_CARD;
 
     titleLabel = uilabel(hg, 'Text', Labels.get('welcome_hero_title'));
@@ -34,30 +34,61 @@ function WelcomeScreen(app)
     titleLabel.Layout.Row = 1; titleLabel.Layout.Column = 1;
     titleLabel.VerticalAlignment = 'center'; titleLabel.WordWrap = 'on';
 
-    btn1 = uibutton(hg, 'Text', [char(10010) ' ' Labels.get('welcome_btn_new_project')]);
+    modeLabel = uilabel(hg, 'Text', 'Offline Mode: templates, Workspace import/export, and local simulation require no server login.', ...
+        'FontSize', 12, 'FontColor', Theme.COLOR_MUTED);
+    modeLabel.Layout.Row = 2; modeLabel.Layout.Column = 1;
+
+    btn1 = uibutton(hg, 'Text', 'Open Templates');
     btn1.Layout.Row = 1; btn1.Layout.Column = 2; app.styleBtn(btn1, 'primary');
     btn1.FontSize = 14;
-    btn1.ButtonPushedFcn = @(~,~)app.WelcomeVm.onNewProject();
+    btn1.ButtonPushedFcn = @(~,~)app.WelcomeVm.onOpenTemplates();
 
-    btn2 = uibutton(hg, 'Text', [char(9776) ' ' Labels.get('welcome_btn_load_project')]);
+    btn2 = uibutton(hg, 'Text', 'Import Workspace');
     btn2.Layout.Row = 1; btn2.Layout.Column = 3; app.styleBtn(btn2, 'ghost');
     btn2.FontSize = 14;
-    btn2.ButtonPushedFcn = @(~,~)app.WelcomeVm.onLoadProject();
+    btn2.ButtonPushedFcn = @(~,~)app.WelcomeVm.onImportWorkspace();
 
-    btn3 = uibutton(hg, 'Text', [char(8505) ' ' Labels.get('welcome_btn_documentation')]);
+    btn3 = uibutton(hg, 'Text', 'MATLAB Example');
     btn3.Layout.Row = 1; btn3.Layout.Column = 4; app.styleBtn(btn3, 'ghost');
     btn3.FontSize = 14;
-    btn3.ButtonPushedFcn = @(~,~)web(char(AppConfig.get('docs_url', 'https://docs.quantum.ibm.com')), '-browser');
+    btn3.ButtonPushedFcn = @(~,~)app.WelcomeVm.onOpenMatlabExample();
 
-    btn4 = uibutton(hg, 'Text', [char(9881) ' ' Labels.get('welcome_btn_ibm_account')]);
+    btn4 = uibutton(hg, 'Text', 'Connect to QTAU');
     btn4.Layout.Row = 1; btn4.Layout.Column = 5; app.styleBtn(btn4, 'secondary');
     btn4.FontSize = 14;
-    btn4.ButtonPushedFcn = @(~,~)app.onSelectSection('Settings');
+    btn4.ButtonPushedFcn = @(~,~)app.showLoginDialog();
+
+    demoBtn = uibutton(hg, 'Text', 'Guided Offline Demo');
+    demoBtn.Layout.Row = 2; demoBtn.Layout.Column = 2; app.styleBtn(demoBtn, 'secondary');
+    demoBtn.FontSize = 13;
+    demoBtn.ButtonPushedFcn = @(~,~)app.WelcomeVm.onRunOfflineDemo();
+    demoBtn.Tooltip = 'Run a Bell-state simulation and export results without authentication';
+
+    % ── MATLAB-centered workflow cards ───────────────────────────────────────
+    flowPanel = uipanel(g, 'Title', 'Start a MATLAB-Centered Workflow', ...
+        'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
+    flowPanel.Layout.Row = 2; flowPanel.Layout.Column = 1;
+    flowPanel.BackgroundColor = Theme.COLOR_CARD;
+    fg = uigridlayout(flowPanel, [1 3]);
+    fg.ColumnWidth = {'1x','1x','1x'}; fg.Padding = [12 10 12 10]; fg.ColumnSpacing = 10;
+    cards = { ...
+        '1  Build & Simulate', 'Workspace / quantumCircuit / Templates', 'Composer'; ...
+        '2  Plan & Run', 'Prediction → compare backends → execute', 'Prediction'; ...
+        '3  Analyze in MATLAB', 'Export table, struct, MAT-file, and plots', 'Results'};
+    for i = 1:3
+        cp = uipanel(fg, 'BorderType','line','BorderColor',Theme.COLOR_DIVIDER, ...
+            'BackgroundColor',Theme.COLOR_CARD);
+        cg = uigridlayout(cp,[3 1]); cg.RowHeight={24,36,30}; cg.Padding=[10 8 10 8];
+        uilabel(cg,'Text',cards{i,1},'FontWeight','bold','FontColor',Theme.COLOR_HEADING);
+        uilabel(cg,'Text',cards{i,2},'WordWrap','on','FontColor',Theme.COLOR_MUTED);
+        b = uibutton(cg,'Text','Open','ButtonPushedFcn',@(~,~)app.onSelectSection(cards{i,3}));
+        app.styleBtn(b,'ghost');
+    end
 
     % ── Recent Projects (full width) ─────────────────────────────────────────
     projPanel = uipanel(g, 'Title', Labels.get('welcome_panel_recent_projects'), ...
         'BorderType', 'line', 'BorderColor', Theme.COLOR_DIVIDER);
-    projPanel.Layout.Row = 2; projPanel.Layout.Column = 1;
+    projPanel.Layout.Row = 3; projPanel.Layout.Column = 1;
     projPanel.BackgroundColor = Theme.COLOR_CARD;
 
     pg = uigridlayout(projPanel, [5 1]);

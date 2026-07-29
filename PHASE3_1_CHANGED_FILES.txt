@@ -1,0 +1,4 @@
+src/presentation/app/NavigationManager.m
+src/presentation/viewmodels/DashboardViewModel.m
+doc/PHASE3_1_OFFLINE_DASHBOARD_FIX.md
+PHASE3_1_CHANGED_FILES.txt

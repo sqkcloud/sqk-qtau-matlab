@@ -31,15 +31,14 @@ classdef DashboardViewModel < handle
             app = obj.App;
             app.logEvent('UI', sprintf('Dashboard refresh triggered (silent=%d) — auth: %s  project: %s', ...
                 double(silent), string(app.State.isAuthenticated()), app.State.currentProjectId));
-            % Phase 3: keep the toolbar's project switcher populated.
-            % Async fire-and-forget — independent of the dashboard fetch.
-            obj.populateProjectsDropdown();
-            % Phase 4: arm the 30 s live auto-refresh timer. Idempotent —
-            % the next tick checks visibility and self-terminates when
-            % the user navigates away. Doesn't hammer when the user
-            % stays put on Dashboard.
-            obj.startAutoRefresh(30);
+            % Remote-only dashboard services must never delay the
+            % offline MATLAB workflow. Populate the project switcher and
+            % start periodic server refresh only when an authenticated
+            % project is available. Offline mode paints immediately from
+            % local session state and leaves no background timer running.
             if app.State.isAuthenticated() && app.State.hasProject()
+                obj.populateProjectsDropdown();
+                obj.startAutoRefresh(30);
                 pid = app.State.currentProjectId;
                 app.logEvent('API', sprintf('Loading dashboard — project %s', pid));
                 if ~silent
@@ -53,9 +52,13 @@ classdef DashboardViewModel < handle
                     @(ME)   obj.onDashboardError(app, pid, ME, silent));
                 return;
             end
-            app.logEvent('UI', 'Dashboard falling back to session state summary');
+            obj.stopAutoRefresh();
+            obj.paintOfflineProjectSwitcher();
+            app.logEvent('UI', 'Dashboard falling back to offline session state summary');
             obj.refreshDashboardFromState();
             obj.refreshActivityTable();
+            obj.LastRefresh = tic;
+            try; app.hideLoading(); catch; end
         end
 
         function onDashboardComplete(obj, app, pid, data, silent)
@@ -902,6 +905,31 @@ classdef DashboardViewModel < handle
                     c.nameLbl.Text     = char(8212);
                     c.qubitsLbl.Text   = '';
                 end
+            end
+        end
+
+        % ── Offline dashboard state ───────────────────────────────
+        function paintOfflineProjectSwitcher(obj)
+            % Keep the toolbar valid and informative when no backend
+            % session exists. This prevents a stale '(loading projects…)'
+            % value from suggesting that the application is still waiting.
+            app = obj.App;
+            try
+                if ~isempty(app.DashProjectDropdown) && isvalid(app.DashProjectDropdown)
+                    app.DashProjectDropdown.Items = {'Offline MATLAB Workspace'};
+                    app.DashProjectDropdown.ItemsData = {'offline'};
+                    app.DashProjectDropdown.Value = 'offline';
+                    app.DashProjectDropdown.Enable = 'off';
+                    app.DashProjectDropdown.Tooltip = ...
+                        'Connect to QTAU to load remote projects.';
+                end
+                if ~isempty(app.DashGreetingLabel) && isvalid(app.DashGreetingLabel)
+                    app.DashGreetingLabel.Text = ...
+                        'Offline mode · Templates, Workspace import, and MATLAB simulation are available';
+                end
+            catch ME
+                Logger.debug('DashboardViewModel', ...
+                    'paintOfflineProjectSwitcher: %s', ME.message);
             end
         end
 

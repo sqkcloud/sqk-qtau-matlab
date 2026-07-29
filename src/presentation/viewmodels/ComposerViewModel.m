@@ -31,10 +31,17 @@ classdef ComposerViewModel < handle
         PaletteButtons
 
         CanvasAxes
-        CanvasInnerGrid       % uigridlayout that hosts the axes; row 1 resized per-qubit (25 px each)
+        CanvasInnerGrid       % uigridlayout that hosts the axes; row 1 resized per-qubit (72 px each)
         CanvasEmpty
         SelectionTitle
         SelectionDetail
+
+        SimulationResultPanel
+        SimulationMetaLabel
+        SimulationResultTable
+        SimulationResultAxes
+        SimulationExportButton
+        LastSimulationResult = []
 
         MirrorPanel
         MirrorTextarea
@@ -137,6 +144,277 @@ classdef ComposerViewModel < handle
 
         function onOpenTemplatesDialog(obj)
             obj.openTemplatesDialog();
+        end
+
+
+        function loadOfflineDemo(obj, model, result)
+            % loadOfflineDemo  Public workflow entry used by WelcomeViewModel.
+            % Keeps private refresh hooks encapsulated inside ComposerViewModel.
+            if nargin < 3
+                error('ComposerViewModel:InvalidOfflineDemo', ...
+                    'Both a CircuitModel and simulation result are required.');
+            end
+            if ~isa(model, 'CircuitModel')
+                error('ComposerViewModel:InvalidCircuitModel', ...
+                    'The offline demo model must be a CircuitModel.');
+            end
+            obj.Model = model;
+            obj.LastSimulationResult = result;
+            obj.afterModelEdit('Offline Bell demo loaded and simulated.');
+            obj.renderSimulationResult(result);
+        end
+
+        function onImportWorkspace(obj)
+            rows = obj.App.WorkspaceSvc.listSupportedVariables();
+            if isempty(rows)
+                uialert(obj.App.UIFigure, 'No supported variables were found in the base Workspace.', ...
+                    'Import from Workspace', 'Icon', 'info'); return;
+            end
+            names = string(rows(:,1));
+            classes = string(rows(:,2));
+            labels = names + "    [" + classes + "]";
+            [idx,ok] = listdlg('PromptString','Select a MATLAB quantum circuit:', ...
+                'Name','Import Quantum Circuit', ...
+                'SelectionMode','single','ListString',cellstr(labels));
+            if ~ok; return; end
+            value = obj.App.WorkspaceSvc.importVariable(names(idx));
+            try
+                obj.Model = MatlabCircuitAdapter.toCircuitModel(value);
+                obj.afterModelEdit(sprintf('Imported Workspace variable "%s".', names(idx)));
+            catch ME
+                uialert(obj.App.UIFigure, ME.message, 'Workspace Import', 'Icon', 'error');
+            end
+        end
+
+        function onImportFile(obj)
+            % Import customer circuits from MATLAB function/script, MAT or QASM.
+            [file, folder] = uigetfile({ ...
+                '*.m;*.mat;*.qasm;*.txt','MATLAB / MAT / OpenQASM files'; ...
+                '*.m','MATLAB files (*.m)'; '*.mat','MAT-files (*.mat)'; ...
+                '*.qasm;*.txt','OpenQASM or text (*.qasm, *.txt)'}, ...
+                'Import Customer Circuit');
+            if isequal(file,0); return; end
+            fullPath = fullfile(folder,file);
+            [~,stem,ext] = fileparts(fullPath);
+            try
+                imported = [];
+                sourceName = file;
+                switch lower(ext)
+                    case {'.qasm','.txt'}
+                        qasmText = fileread(fullPath);
+                        imported = CircuitModel.fromQasm(qasmText);
+                    case '.mat'
+                        data = load(fullPath);
+                        fields = fieldnames(data);
+                        supported = {};
+                        values = {};
+                        for k = 1:numel(fields)
+                            try
+                                candidate = data.(fields{k});
+                                modelCandidate = MatlabCircuitAdapter.toCircuitModel(candidate);
+                                supported{end+1} = sprintf('%s    [%s]', fields{k}, class(candidate)); %#ok<AGROW>
+                                values{end+1} = modelCandidate; %#ok<AGROW>
+                            catch
+                            end
+                        end
+                        if isempty(supported)
+                            error('ComposerViewModel:NoCircuitInMat', ...
+                                'No CircuitModel or quantumCircuit was found in %s.', file);
+                        end
+                        if numel(supported) == 1
+                            imported = values{1};
+                        else
+                            [idx,ok] = listdlg('PromptString','Select a circuit variable:', ...
+                                'Name','Import MAT-file','SelectionMode','single', ...
+                                'ListString',supported);
+                            if ~ok; return; end
+                            imported = values{idx};
+                        end
+                    case '.m'
+                        % Prefer a function file that returns CircuitModel or quantumCircuit.
+                        oldPath = path;
+                        cleanupPath = onCleanup(@()path(oldPath)); %#ok<NASGU>
+                        addpath(folder);
+                        try
+                            returned = feval(stem);
+                            imported = MatlabCircuitAdapter.toCircuitModel(returned);
+                        catch functionError
+                            % Script fallback: run in this method workspace and detect new variables.
+                            beforeNames = who;
+                            run(fullPath);
+                            afterNames = who;
+                            newNames = setdiff(afterNames,beforeNames,'stable');
+                            for k = 1:numel(newNames)
+                                try
+                                    candidate = eval(newNames{k});
+                                    imported = MatlabCircuitAdapter.toCircuitModel(candidate);
+                                    break;
+                                catch
+                                end
+                            end
+                            if isempty(imported)
+                                error('ComposerViewModel:MatlabFileImport', ...
+                                    ['The MATLAB file did not return or create a supported circuit. ' ...
+                                     'Recommended form: function circuit = %s() ... end. Original error: %s'], ...
+                                    stem, functionError.message);
+                            end
+                        end
+                    otherwise
+                        error('ComposerViewModel:UnsupportedImport', ...
+                            'Unsupported file type: %s', ext);
+                end
+                obj.Model = imported;
+                obj.afterModelEdit(sprintf('Imported customer circuit from "%s".', sourceName));
+                obj.App.logEvent('MATLAB', sprintf('Imported customer circuit file: %s', fullPath));
+                uialert(obj.App.UIFigure, sprintf([ ...
+                    'Customer circuit imported successfully.\n\n' ...
+                    'Source: %s\nQubits: %d\nGates: %d\nDepth: %d'], ...
+                    file, obj.Model.NumQubits, numel(obj.Model.Gates), obj.Model.depth()), ...
+                    'Import Complete', 'Icon', 'success');
+            catch ME
+                uialert(obj.App.UIFigure, ME.message, 'Circuit File Import', 'Icon', 'error');
+            end
+        end
+
+        function onExportProject(obj)
+            % Export a reproducible MATLAB-centered customer project bundle.
+            if obj.Model.isEmpty()
+                obj.flashStatus('Add or import a circuit before exporting.', 'danger'); return;
+            end
+            parentFolder = uigetdir(pwd, 'Select folder for QTAU project export');
+            if isequal(parentFolder,0); return; end
+            stamp = datestr(now,'yyyymmdd_HHMMSS');
+            projectName = ['QTAU_Project_' stamp];
+            projectFolder = fullfile(parentFolder,projectName);
+            mkdir(projectFolder);
+            try
+                payload = obj.App.Services.WorkspaceExportSvc.buildPackage( ...
+                    obj.Model, obj.LastSimulationResult);
+                qtauWorkspacePackage = payload; %#ok<NASGU>
+                save(fullfile(projectFolder,'qtau_project.mat'),'qtauWorkspacePackage');
+
+                qasm2 = char(payload.openQASM2);
+                qasm3 = char(payload.openQASM3);
+                ComposerViewModel.writeText(fullfile(projectFolder,'circuit.qasm'),qasm3);
+                ComposerViewModel.writeText(fullfile(projectFolder,'circuit_openqasm2.qasm'),qasm2);
+                ComposerViewModel.writeMatlabReproducer( ...
+                    fullfile(projectFolder,'reproduce_qtau_circuit.m'), qasm3);
+
+                if ~isempty(obj.LastSimulationResult)
+                    resultTable = MatlabResultAdapter.toTable(obj.LastSimulationResult);
+                    writetable(resultTable,fullfile(projectFolder,'simulation_result.csv'));
+                end
+                readme = sprintf([ ...
+                    '# QTAU MATLAB Project\n\n' ...
+                    'Exported: %s\n\n' ...
+                    'Qubits: %d\nGates: %d\nDepth: %d\n\n' ...
+                    'Files:\n- qtau_project.mat\n- circuit.qasm\n' ...
+                    '- circuit_openqasm2.qasm\n- reproduce_qtau_circuit.m\n' ...
+                    '- simulation_result.csv (when simulation has run)\n\n' ...
+                    'Open reproduce_qtau_circuit.m in MATLAB to rebuild the circuit.\n'], ...
+                    datestr(now),obj.Model.NumQubits,numel(obj.Model.Gates),obj.Model.depth());
+                ComposerViewModel.writeText(fullfile(projectFolder,'README.md'),readme);
+
+                zipPath = fullfile(parentFolder,[projectName '.zip']);
+                zip(zipPath,projectFolder);
+                obj.flashStatus(sprintf('Exported complete project: %s',zipPath),'success');
+                uialert(obj.App.UIFigure, sprintf([ ...
+                    'Complete MATLAB project exported.\n\n' ...
+                    'MAT-file, MATLAB reproducer, OpenQASM, results CSV and README were bundled.\n\n%s'], ...
+                    zipPath),'Export Project Complete','Icon','success');
+            catch ME
+                uialert(obj.App.UIFigure,ME.message,'Export Project','Icon','error');
+            end
+        end
+
+        function onExportWorkspace(obj)
+            if obj.Model.isEmpty()
+                obj.flashStatus('Add or import a circuit before exporting.', 'danger'); return;
+            end
+            try
+                obj.App.Services.WorkspaceExportSvc.exportToBase(obj.Model, obj.LastSimulationResult);
+                roundTrip = RoundTripVerifier.verify(obj.Model);
+                assignin('base','qtauRoundTripReport',roundTrip);
+                msg = sprintf(['Exported qtauCircuitModel, qtauQuantumCircuit, qtauOpenQASM2/3, ' ...
+                    'qtauCircuitMetadata and qtauWorkspacePackage.\n\n%s'], roundTrip.message);
+                icon='warning'; if roundTrip.passed; icon='success'; end
+                uialert(obj.App.UIFigure,msg,'Workspace Export','Icon',icon);
+                obj.flashStatus('Workspace package exported; qtauRoundTripReport created.', 'success');
+            catch ME
+                uialert(obj.App.UIFigure, ME.message, 'Workspace Export', 'Icon', 'error');
+            end
+        end
+
+        function onSimulateMatlab(obj)
+            try
+                obj.flashStatus('Running MATLAB quantum simulation…', 'info');
+                drawnow limitrate;
+                result = obj.App.SimulationSvc.simulate(obj.Model, 'matlab', 1024);
+                obj.LastSimulationResult = result;
+                obj.App.WorkspaceSvc.exportVariable('qtauSimulationResult', result);
+                obj.renderSimulationResult(result);
+                obj.showSimulationResultDialog(result);
+                obj.flashStatus('MATLAB simulation complete — result shown below and exported as qtauSimulationResult.', 'success');
+                uialert(obj.App.UIFigure, ...
+                    'MATLAB simulation completed. The probability table and chart are displayed below the Composer.', ...
+                    'Simulation Complete', 'Icon', 'success');
+            catch ME
+                uialert(obj.App.UIFigure, ME.message, 'MATLAB Simulation', 'Icon', 'error');
+            end
+        end
+
+        function onExportSimulationTable(obj)
+            if isempty(obj.LastSimulationResult)
+                obj.flashStatus('Run MATLAB Simulate before exporting results.', 'danger');
+                return;
+            end
+            result = obj.LastSimulationResult;
+            tbl = table(string(result.states(:)), double(result.probabilities(:)), ...
+                'VariableNames', {'State','Probability'});
+            obj.App.WorkspaceSvc.exportVariable('qtauSimulationResultTable', tbl);
+            obj.flashStatus('Exported qtauSimulationResultTable to MATLAB Workspace.', 'success');
+        end
+
+        function renderSimulationResult(obj, result)
+            if isempty(obj.SimulationResultTable) || ~isvalid(obj.SimulationResultTable)
+                return;
+            end
+
+            states = string(result.states(:));
+            probs = double(result.probabilities(:));
+            [probs, order] = sort(probs, 'descend');
+            states = states(order);
+            tbl = table(states, probs, 'VariableNames', {'State','Probability'});
+            obj.SimulationResultTable.Data = tbl;
+
+            engine = string(result.engine);
+            provider = string(result.provider);
+            shots = double(result.shots);
+            warningText = "";
+            if isfield(result, 'warnings') && ~isempty(result.warnings)
+                warningText = " · Warnings: " + strjoin(string(result.warnings), "; ");
+            end
+            obj.SimulationMetaLabel.Text = sprintf( ...
+                'Engine: %s   |   Provider: %s   |   Shots: %d%s', ...
+                char(engine), char(provider), shots, char(warningText));
+
+            ax = obj.SimulationResultAxes;
+            cla(ax);
+            if isempty(states)
+                text(ax, 0.5, 0.5, 'No state probabilities returned.', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center', ...
+                    'Color', Theme.COLOR_MUTED);
+            else
+                bar(ax, categorical(states), probs);
+                ylim(ax, [0 max(1, max(probs) * 1.15)]);
+                ax.XTickLabelRotation = 25;
+                grid(ax, 'on');
+            end
+            ax.Title.String = 'State Probability Distribution';
+            ax.XLabel.String = 'State';
+            ax.YLabel.String = 'Probability';
+            obj.SimulationExportButton.Enable = 'on';
+            drawnow limitrate;
         end
 
         function onOpenAnalysis(obj)
@@ -304,13 +582,15 @@ classdef ComposerViewModel < handle
             depth = max(1, obj.Model.depth());
             xMax = depth + 1;
 
-            % Pixel-fixed wire spacing: 25 px per qubit unit (matches the
-            % rest of the app's circuit-diagram surfaces). Resize the
-            % inner grid's axes row so consecutive wires render exactly
-            % 25 px apart regardless of container height.
+            % Let the axes occupy the full canvas. MATLAB otherwise keeps a
+            % near-square plot box for the wide X range, which visually packs
+            % all qubit wires into a thin strip at the top of the panel.
             if ~isempty(obj.CanvasInnerGrid) && isvalid(obj.CanvasInnerGrid)
-                obj.CanvasInnerGrid.RowHeight{1} = max(50, 25 * n);
+                obj.CanvasInnerGrid.RowHeight = {'1x', 22};
             end
+            ax.DataAspectRatioMode = 'auto';
+            ax.PlotBoxAspectRatioMode = 'auto';
+            ax.PositionConstraint = 'outerposition';
 
             % Grid backdrop: keep at least 8 visible time-step columns
             % even when the circuit is empty, plus 3 columns of headroom
@@ -321,7 +601,7 @@ classdef ComposerViewModel < handle
             xMax = max(xMax, gridCols + 0.5);
 
             ax.XLim = [-0.5, xMax + 0.5];
-            ax.YLim = [-0.5, n - 0.5];
+            ax.YLim = [-0.9, max(1, n - 1) + 0.9];
             ax.YDir = 'reverse';
             hold(ax, 'on');
 
@@ -524,21 +804,21 @@ classdef ComposerViewModel < handle
             % other circuit-render surfaces instead of the previous
             % theme-driven purple variant.
             s = ComposerViewModel.gateStyle();
-            w = 0.7; h = 0.55;
+            w = 0.62; h = 0.46;
             rectangle(ax, 'Position', [x - w/2, q - h/2, w, h], ...
                 'FaceColor', s.Fill, ...
-                'EdgeColor', s.Border, 'LineWidth', 1.2, ...
-                'Curvature', 0.3);
+                'EdgeColor', s.Border, 'LineWidth', 1.6, ...
+                'Curvature', 0.22);
             text(ax, x, q, char(label), ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-                'FontWeight', 'bold', 'FontSize', 11, ...
+                'FontWeight', 'bold', 'FontSize', 12, ...
                 'Color', s.Text, ...
                 'HitTest', 'off', 'PickableParts', 'none');
         end
 
         function drawCtrl(~, ax, x, q)
             s = ComposerViewModel.gateStyle();
-            r = 0.13;
+            r = 0.10;
             rectangle(ax, 'Position', [x-r, q-r, 2*r, 2*r], ...
                 'FaceColor', s.Border, ...
                 'EdgeColor', s.Border, 'Curvature', 1.0);
@@ -546,7 +826,7 @@ classdef ComposerViewModel < handle
 
         function drawTargetCircle(~, ax, x, q)
             s = ComposerViewModel.gateStyle();
-            r = 0.22;
+            r = 0.18;
             rectangle(ax, 'Position', [x-r, q-r, 2*r, 2*r], ...
                 'FaceColor', s.TargetFill, 'EdgeColor', s.Border, ...
                 'LineWidth', 1.4, 'Curvature', 1.0);
@@ -1482,6 +1762,56 @@ classdef ComposerViewModel < handle
             xlabel(ax, '|amplitude|^2');
         end
 
+        function showSimulationResultDialog(obj, result)
+            % Always surface the result immediately. The embedded result panel
+            % remains in Composer, while this dialog prevents a successful run
+            % from appearing to do nothing when the panel is below the viewport.
+            try
+                states = string(result.states(:));
+                probs = double(result.probabilities(:));
+                tbl = table(states, probs, 'VariableNames', {'State','Probability'});
+
+                fig = uifigure('Name', 'MATLAB Simulation Result', ...
+                    'Position', [260 140 900 620], 'Color', Theme.COLOR_BG);
+                try; Theme.applyFigureMode(fig, Theme.activeName()); catch; end
+                root = uigridlayout(fig, [3 2]);
+                root.RowHeight = {70, '1x', 42};
+                root.ColumnWidth = {320, '1x'};
+                root.Padding = [16 14 16 14];
+                root.RowSpacing = 10; root.ColumnSpacing = 12;
+                root.BackgroundColor = Theme.COLOR_BG;
+
+                engine = string(result.engine);
+                provider = string(result.provider);
+                shots = double(result.shots);
+                meta = uilabel(root, 'Text', sprintf('Engine: %s\nProvider: %s\nShots: %d', ...
+                    engine, provider, shots), 'WordWrap', 'on', ...
+                    'FontSize', 12, 'FontColor', Theme.COLOR_LABEL);
+                meta.Layout.Row = 1; meta.Layout.Column = [1 2];
+
+                uit = uitable(root, 'Data', tbl, 'ColumnName', {'State','Probability'}, ...
+                    'RowName', {}, 'FontSize', 12);
+                uit.Layout.Row = 2; uit.Layout.Column = 1;
+
+                ax = uiaxes(root);
+                ax.Layout.Row = 2; ax.Layout.Column = 2;
+                ax.Toolbar.Visible = 'off'; ax.Color = Theme.COLOR_CARD;
+                ax.XColor = Theme.COLOR_LABEL; ax.YColor = Theme.COLOR_LABEL;
+                bar(ax, categorical(states), probs, 'FaceColor', Theme.COLOR_PRIMARY, ...
+                    'EdgeColor', 'none');
+                title(ax, 'State Probability Distribution', 'Color', Theme.COLOR_HEADING);
+                xlabel(ax, 'State'); ylabel(ax, 'Probability');
+                ylim(ax, [0, max(1, max(probs) * 1.15)]); grid(ax, 'on');
+
+                closeBtn = uibutton(root, 'Text', 'Close', ...
+                    'ButtonPushedFcn', @(~,~) close(fig));
+                closeBtn.Layout.Row = 3; closeBtn.Layout.Column = 2;
+                StyleHelper.styleBtn(closeBtn, 'primary');
+            catch ME
+                obj.App.logEvent('WARN', sprintf('Could not open simulation result dialog: %s', ME.message));
+            end
+        end
+
         function startPlayTimer(obj)
             obj.stopPlayTimer();
             obj.PlayTimer = timer( ...
@@ -1539,6 +1869,37 @@ classdef ComposerViewModel < handle
                 'Text',       [1 1 1]);                       % #FFFFFF
         end
     end
+
+    methods (Static, Access = private)
+        function writeText(pathName, textValue)
+            fid = fopen(pathName,'w');
+            if fid < 0
+                error('ComposerViewModel:FileWrite','Unable to write %s.',pathName);
+            end
+            cleanup = onCleanup(@()fclose(fid)); %#ok<NASGU>
+            fwrite(fid,char(textValue),'char');
+        end
+
+        function writeMatlabReproducer(pathName, qasm3)
+            lines = splitlines(string(qasm3));
+            escaped = strings(numel(lines),1);
+            for k = 1:numel(lines)
+                escaped(k) = strrep(lines(k),'"','""');
+            end
+            body = "function circuit = reproduce_qtau_circuit()" + newline + ...
+                "%% Rebuild the exported QTAU circuit using MATLAB Quantum Computing Support Package." + newline + ...
+                "qasm = join([" + newline;
+            for k = 1:numel(escaped)
+                body = body + "    \"" + escaped(k) + "\"";
+                if k < numel(escaped); body = body + ";"; end
+                body = body + newline;
+            end
+            body = body + "], newline);" + newline + ...
+                "circuit = quantumCircuit(qasm);" + newline + "end" + newline;
+            ComposerViewModel.writeText(pathName,body);
+        end
+    end
+
 end
 
 % ── File-private helpers ─────────────────────────────────────────────────
@@ -1564,4 +1925,5 @@ end
 
 function v = ternary(cond, a, b)
     if cond; v = a; else; v = b; end
+
 end

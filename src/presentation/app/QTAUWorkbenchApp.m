@@ -88,6 +88,9 @@ classdef QTAUWorkbenchApp < handle
         QmcSvc          % QmcService (Quantum Amplitude Estimation / QMC)
         CuttingSvc      % CuttingService (circuit cutting + reconstruction)
         MitigationSvc   % MitigationService (QEM ladder + cost preview)
+        WorkspaceSvc    % MatlabWorkspaceService
+        MatlabQuantumSvc % MatlabQuantumService
+        SimulationSvc   % SimulationService
     end
 
     % ── Screen callback services ──────────────────────────────────────────────
@@ -823,6 +826,9 @@ classdef QTAUWorkbenchApp < handle
             app.QmcSvc        = app.Services.QmcSvc;
             app.CuttingSvc    = app.Services.CuttingSvc;
             app.MitigationSvc = app.Services.MitigationSvc;
+            app.WorkspaceSvc   = app.Services.WorkspaceSvc;
+            app.MatlabQuantumSvc = app.Services.MatlabQuantumSvc;
+            app.SimulationSvc  = app.Services.SimulationSvc;
 
             % Kick the parallel-pool warm-up as soon as services are
             % wired — the pool acquisition is the slow part (1.3–3.9 s
@@ -1505,7 +1511,11 @@ classdef QTAUWorkbenchApp < handle
             % onLogin auto-navigates back to Dashboard once login
             % completes — so landing on Dashboard from boot is
             % consistent with the post-login behavior.
-            app.onSelectSection('Dashboard');
+            if app.State.isAuthenticated()
+                app.onSelectSection('Dashboard');
+            else
+                app.onSelectSection('Welcome');
+            end
             % onSelectSection already fits the active panel and calls
             % fitAuthOverlay, so the pre-perf-pass fitAllSections +
             % onResizeUI calls here were redundant — they fanned out
@@ -1522,7 +1532,7 @@ classdef QTAUWorkbenchApp < handle
             AsyncRunner.warmUp();
 
             if ~app.State.isAuthenticated()
-                app.showAuthOverlay();
+                app.hideAuthOverlay();
             else
                 app.hideAuthOverlay();
                 % Warm shared lookup caches so Mitigation Compare /
@@ -1548,9 +1558,7 @@ classdef QTAUWorkbenchApp < handle
             % re-layout is redundant and produces a visible flash
             % after the user already sees the UI.
 
-            if ~app.State.isAuthenticated()
-                app.showLoginDialog();
-            end
+            % Login is now user-initiated from Connect to QTAU.
         end
 
     end

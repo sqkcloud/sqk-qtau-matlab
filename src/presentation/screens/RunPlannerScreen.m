@@ -7,7 +7,7 @@ function RunPlannerScreen(app)
     %     Row 3 — Body — left scatter + right recommendation card
     %     Row 4 — Status / disclaimer strip
 
-    Logger.info('RunPlannerScreen', 'Building Run Planner tab UI');
+    Logger.info('RunPlannerScreen', 'Building offline-capable Plan & Run UI');
     t = app.createSectionPage('Run Planner');
 
     vm = app.RunPlannerVm;
@@ -144,7 +144,7 @@ function buildScatter(parent, vm)
     % just to host placeholder text. repaintScatter promotes this label
     % to a real uiaxes the first time it has Pareto points to draw.
     placeholder = uilabel(g, ...
-        'Text', 'Pareto frontier appears here after you click Plan.', ...
+        'Text', 'Pareto frontier appears here after you click Plan. Offline mode uses transparent deterministic estimates.', ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'center', ...
         'FontSize', 11, 'FontColor', Theme.COLOR_MUTED, 'WordWrap', 'on');
 
@@ -160,8 +160,8 @@ function buildRecommendCard(parent, vm)
         'ForegroundColor', Theme.COLOR_HEADING, 'FontWeight', 'bold');
     card.Layout.Column = 2;
 
-    g = uigridlayout(card, [9 2]);
-    g.RowHeight   = {24, 24, 24, 24, 24, 24, 'fit', 36, 36};
+    g = uigridlayout(card, [12 2]);
+    g.RowHeight   = {24, 24, 24, 24, 24, 24, 'fit', 36, 36, 36, 36, 40};
     g.ColumnWidth = {130, '1x'};
     g.Padding     = [12 10 12 10]; g.RowSpacing = 4;
     g.BackgroundColor = Theme.COLOR_CARD;
@@ -186,6 +186,22 @@ function buildRecommendCard(parent, vm)
         'ButtonPushedFcn', @(~,~) vm.onBundle());
     vm.BundleBtn.Layout.Row = 9; vm.BundleBtn.Layout.Column = [1 2];
     StyleHelper.styleBtn(vm.BundleBtn, 'ghost');
+
+    exportBtn = uibutton(g, 'Text', 'Export to MATLAB', ...
+        'ButtonPushedFcn', @(~,~) vm.onExportWorkspace());
+    exportBtn.Layout.Row = 10; exportBtn.Layout.Column = [1 2];
+    StyleHelper.styleBtn(exportBtn, 'secondary');
+
+    saveBtn = uibutton(g, 'Text', 'Save MAT-file', ...
+        'ButtonPushedFcn', @(~,~) vm.onSaveMat());
+    saveBtn.Layout.Row = 11; saveBtn.Layout.Column = [1 2];
+    StyleHelper.styleBtn(saveBtn, 'ghost');
+
+
+    demoBtn = uibutton(g, 'Text', 'Run Customer Demo', ...
+        'ButtonPushedFcn', @(~,~) vm.onRunCustomerDemo());
+    demoBtn.Layout.Row = 12; demoBtn.Layout.Column = [1 2];
+    StyleHelper.styleBtn(demoBtn, 'primary');
 end
 
 function valLbl = pair(g, row, key)
