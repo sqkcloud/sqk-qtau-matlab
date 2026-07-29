@@ -146,6 +146,7 @@ foldersToAdd = { ...
     fullfile('src', 'presentation'), ...
     fullfile('src', 'domain', 'models'), ...
     fullfile('src', 'domain', 'services'), ...
+    fullfile('src', 'domain', 'adapters'), ...
     fullfile('src', 'domain'), ...
     fullfile('src', 'infrastructure', 'http'), ...
     fullfile('src', 'infrastructure', 'config'), ...
@@ -167,6 +168,27 @@ end
 existingFolders = existingFolders(keepIdx);
 if ~isempty(existingFolders)
     addpath(existingFolders{:});
+end
+
+% Always add the complete src tree.  MATLAB Project search-path metadata can
+% be stale after a ZIP replacement, and class folders added in a later phase
+% may otherwise be omitted.  genpath is intentional here for a deterministic
+% offline launch.
+addpath(genpath(srcRoot));
+
+% Always refresh function/class discovery after replacing a ZIP.  This is
+% required even in non-git customer installations where isDevLaunch=false.
+rehash path;
+rehash toolboxcache;
+
+% Fail early with a useful diagnostic rather than later from a UI callback.
+requiredClasses = {'SimulationService','MatlabQuantumService','CircuitModel'};
+for k = 1:numel(requiredClasses)
+    if isempty(which(requiredClasses{k}))
+        error('QTAUWorkbenchLauncher:MissingClass', ...
+            'Required class %s is not on the MATLAB path. Project root: %s', ...
+            requiredClasses{k}, projectRoot);
+    end
 end
 
 % rehash flushes MATLAB's function/class location cache. Only needed

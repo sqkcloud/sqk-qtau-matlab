@@ -19,6 +19,11 @@ The toolbox is the *client only* — your data lives on whichever QTAU server yo
 
 ---
 
+## MATLAB-Centered Offline Workflow
+
+The Workbench now supports an authentication-free local path: circuit templates, MATLAB Workspace import/export, `quantumCircuit` interoperability, MATLAB built-in simulation when the support package is installed, and QTAU lightweight local simulation as a fallback. See `samples/QTAU_MATLAB_Workflow.m` and `doc/MATLAB_WORKFLOW.md`.
+
+
 ## What's new in **1.1.0** (2026-05-20)
 
 - **MATLAB Help browser integration.** `info.xml` + `doc/help/helptoc.xml` + 4 HTML pages + `demos.xml`. The toolbox now appears as a first-class entry in F1 search; the *Examples* tab in the Add-On Explorer hosts three runnable scripts.
@@ -569,3 +574,12 @@ Before distribution, install the `.mltbx` on a fresh MATLAB instance:
 - **Allowed**: data files, images, `.m`/`.mlx`. Pure MATLAB code is welcome.
 - **Not allowed**: MEX, DLL, ActiveX controls (per the MathWorks "Create and Share Toolboxes" doc). This toolbox is pure MATLAB so the restriction doesn't apply.
 - File Exchange accepts Apache 2.0 with an explicit attribution in the submission form.
+
+
+## MATLAB-centered Phase 2 workflow
+
+The primary execution workflow is now **Plan & Run**. Prediction results can be exported to `qtauPredictionResult`; advanced Pareto planning exports `qtauRunPlanTable` and `qtauRecommendedRun`. Run `samples/QTAU_Offline_Demo.m` without authentication, and generate the Live Script with `scripts/create_qtau_live_script.m`.
+
+
+## Phase 3 MATLAB-native workflows
+Start offline from Projects, run local simulation through MATLAB Support Package for Quantum Computing, and inspect `samples/QTAU_VQE_Materials_Workflow.m`, `samples/QTAU_QAE_Financial_Risk_Workflow.m`, and `samples/QTAU_QMEDIC_Imaging_Workflow.m`. Remote prediction and IBM Runtime execution continue through the QTAU backend.

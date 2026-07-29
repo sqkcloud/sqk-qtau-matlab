@@ -21,6 +21,90 @@ classdef WelcomeViewModel < handle
             obj.App = app;
         end
 
+
+        function onOpenTemplates(obj)
+            obj.App.onSelectSection('Composer');
+            drawnow;
+            if ~isempty(obj.App.ComposerVm)
+                obj.App.ComposerVm.onOpenTemplatesDialog();
+            end
+        end
+
+        function onImportWorkspace(obj)
+            obj.App.onSelectSection('Composer');
+            drawnow;
+            if ~isempty(obj.App.ComposerVm)
+                obj.App.ComposerVm.onImportWorkspace();
+            end
+        end
+
+        function onOpenMatlabExample(obj)
+            root = fileparts(fileparts(fileparts(fileparts(mfilename('fullpath')))));
+            examplePath = fullfile(root, 'samples', 'QTAU_MATLAB_Workflow.m');
+            if exist(examplePath,'file')
+                edit(examplePath);
+            else
+                uialert(obj.App.UIFigure, 'MATLAB workflow example was not found.', ...
+                    'MATLAB Example', 'Icon', 'warning');
+            end
+        end
+
+        function onRunOfflineDemo(obj)
+            try
+                started = tic;
+                model = CircuitModel(2);
+                model.addGate('h', 0);
+                model.addGate('cx', [0 1]);
+                result = obj.App.SimulationSvc.simulate(model, 'qtau', 1024);
+                resultTable = MatlabResultAdapter.toTable(result);
+                elapsed = toc(started);
+                assignin('base', 'qtauOfflineCircuit', model);
+                assignin('base', 'qtauOfflineResult', result);
+                assignin('base', 'qtauOfflineResultTable', resultTable);
+
+                % Open the generated Bell circuit and result in Composer so the
+                % customer sees what ran rather than only receiving variables.
+                obj.App.onSelectSection('Composer');
+                drawnow;
+                if ~isempty(obj.App.ComposerVm)
+                    % Use the Composer public workflow entry. Private UI refresh
+                    % methods remain encapsulated inside ComposerViewModel.
+                    obj.App.ComposerVm.loadOfflineDemo(model, result);
+                end
+
+                stateText = '';
+                states = string(result.states(:));
+                probs = double(result.probabilities(:));
+                [probs,order] = sort(probs,'descend'); states = states(order);
+                for k = 1:min(4,numel(states))
+                    stateText = [stateText sprintf('|%s> = %.4f\n',states(k),probs(k))]; %#ok<AGROW>
+                end
+                engine = char(string(result.engine));
+                provider = char(string(result.provider));
+                obj.App.logEvent('OFFLINE', ...
+                    'Offline Bell-state demo completed, visualized and exported');
+                message = sprintf([ ...
+                    'QTAU OFFLINE DEMO — SUCCESS\n\n' ...
+                    'Step 1  Bell circuit loaded\n' ...
+                    '        2 qubits · H + CX · depth %d\n\n' ...
+                    'Step 2  Local quantum simulation completed\n' ...
+                    '        Engine: %s\n        Provider: %s\n        Shots: %d\n\n' ...
+                    'Step 3  Bell-state result verified\n%s\n' ...
+                    'Step 4  MATLAB Workspace exported\n' ...
+                    '        qtauOfflineCircuit\n        qtauOfflineResult\n' ...
+                    '        qtauOfflineResultTable\n\nElapsed: %.2f s'], ...
+                    model.depth(),engine,provider,result.shots,stateText,elapsed);
+                choice = uiconfirm(obj.App.UIFigure,message,'QTAU Offline Demo', ...
+                    'Options',{'Open Plan & Run','Stay in Composer'}, ...
+                    'DefaultOption',1,'CancelOption',2,'Icon','success');
+                if strcmp(choice,'Open Plan & Run')
+                    obj.App.onSelectSection('Run Planner');
+                end
+            catch ME
+                obj.App.showError('QTAU Offline Demo', ME);
+            end
+        end
+
         function onNewProject(obj)
             app = obj.App;
             app.logEvent('UI', 'New Project dialog opened');

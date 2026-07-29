@@ -9,6 +9,7 @@ classdef PredictionViewModel < handle
     %     - Error budget breakdown bar chart (gate/readout/decoherence/crosstalk)
     properties
         LastRefresh = []  % tic value — used by autoLoadScreen for freshness caching
+        LastPredictionData = [] % raw decoded payload for MATLAB export
     end
     properties (Access = private)
         App  % QTAUWorkbenchApp
@@ -413,11 +414,50 @@ classdef PredictionViewModel < handle
         end
     end
 
+
+    methods
+        function onExportWorkspace(obj, format)
+            if nargin < 2; format = 'table'; end
+            if isempty(obj.LastPredictionData)
+                uialert(obj.App.UIFigure, ...
+                    'Run a prediction before exporting.', ...
+                    'Export Prediction', 'Icon', 'warning');
+                return;
+            end
+            name = 'qtauPredictionResult';
+            MatlabResultAdapter.exportToWorkspace( ...
+                obj.LastPredictionData, name, format);
+            obj.App.logEvent('MATLAB', sprintf( ...
+                'Prediction exported to Workspace as %s (%s)', name, format));
+            uialert(obj.App.UIFigure, sprintf( ...
+                'Exported to MATLAB Workspace as %s.', name), ...
+                'Export Prediction', 'Icon', 'success');
+        end
+
+        function onSaveMat(obj)
+            if isempty(obj.LastPredictionData)
+                uialert(obj.App.UIFigure, ...
+                    'Run a prediction before saving.', ...
+                    'Save Prediction', 'Icon', 'warning');
+                return;
+            end
+            [file, folder] = uiputfile('*.mat', 'Save QTAU Prediction', ...
+                'qtau_prediction_result.mat');
+            if isequal(file,0); return; end
+            value = MatlabResultAdapter.toStruct(obj.LastPredictionData);
+            MatlabWorkspaceService().saveMatFile( ...
+                fullfile(folder,file), 'qtauPredictionResult', value);
+            obj.App.logEvent('MATLAB', sprintf( ...
+                'Prediction saved to MAT-file: %s', fullfile(folder,file)));
+        end
+    end
+
     methods (Access = private)
         function applyPredictionData(obj, data)
             app = obj.App;
             try
                 data = JsonHelper.decodeIfJson(data);
+                obj.LastPredictionData = data;
 
                 % ── Pull the top backend's prediction entry ─────────────
                 topBackend = char(JsonHelper.pick(data, {'top_backend'}));

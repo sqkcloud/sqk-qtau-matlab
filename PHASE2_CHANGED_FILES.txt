@@ -1,0 +1,13 @@
+Only in /mnt/data/qtau_phase2/sqk-qtau-matlab-main: IMPLEMENTATION_PHASE2.md
+Only in /mnt/data/qtau_phase2/sqk-qtau-matlab-main: PHASE2_CHANGED_FILES.txt
+Files /mnt/data/qtau_phase1_original/sqk-qtau-matlab-main/README.md and /mnt/data/qtau_phase2/sqk-qtau-matlab-main/README.md differ
+Only in /mnt/data/qtau_phase2/sqk-qtau-matlab-main/doc: PHASE2_PLAN_AND_RUN.md
+Only in /mnt/data/qtau_phase2/sqk-qtau-matlab-main/samples: QTAU_Offline_Demo.m
+Only in /mnt/data/qtau_phase2/sqk-qtau-matlab-main/scripts: create_qtau_live_script.m
+Files /mnt/data/qtau_phase1_original/sqk-qtau-matlab-main/src/presentation/app/NavigationManager.m and /mnt/data/qtau_phase2/sqk-qtau-matlab-main/src/presentation/app/NavigationManager.m differ
+Files /mnt/data/qtau_phase1_original/sqk-qtau-matlab-main/src/presentation/screens/PredictionScreen.m and /mnt/data/qtau_phase2/sqk-qtau-matlab-main/src/presentation/screens/PredictionScreen.m differ
+Files /mnt/data/qtau_phase1_original/sqk-qtau-matlab-main/src/presentation/screens/RunPlannerScreen.m and /mnt/data/qtau_phase2/sqk-qtau-matlab-main/src/presentation/screens/RunPlannerScreen.m differ
+Files /mnt/data/qtau_phase1_original/sqk-qtau-matlab-main/src/presentation/screens/WelcomeScreen.m and /mnt/data/qtau_phase2/sqk-qtau-matlab-main/src/presentation/screens/WelcomeScreen.m differ
+Files /mnt/data/qtau_phase1_original/sqk-qtau-matlab-main/src/presentation/viewmodels/PredictionViewModel.m and /mnt/data/qtau_phase2/sqk-qtau-matlab-main/src/presentation/viewmodels/PredictionViewModel.m differ
+Files /mnt/data/qtau_phase1_original/sqk-qtau-matlab-main/src/presentation/viewmodels/RunPlannerViewModel.m and /mnt/data/qtau_phase2/sqk-qtau-matlab-main/src/presentation/viewmodels/RunPlannerViewModel.m differ
+Files /mnt/data/qtau_phase1_original/sqk-qtau-matlab-main/src/presentation/viewmodels/WelcomeViewModel.m and /mnt/data/qtau_phase2/sqk-qtau-matlab-main/src/presentation/viewmodels/WelcomeViewModel.m differ

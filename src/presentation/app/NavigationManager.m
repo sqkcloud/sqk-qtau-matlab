@@ -89,6 +89,18 @@ classdef NavigationManager
             % fitAllSections — we've already resized the active panel
             % above, so call only the auth-overlay helper directly.
             OverlayManager.fitAuthOverlay(app);
+            % Offline-first behavior: local MATLAB workflows stay usable
+            % without authentication; remote QTAU screens show the login overlay.
+            try
+                if ~app.State.isAuthenticated()
+                    if NavigationManager.isOfflineScreen(key)
+                        app.hideAuthOverlay();
+                    else
+                        app.showAuthOverlay();
+                    end
+                end
+            catch
+            end
             NavigationManager.autoLoadScreen(app, key);
         end
 
@@ -282,9 +294,20 @@ classdef NavigationManager
                     end
                 case 'Dashboard'
                     if ~isempty(app.DashboardVm) && ~NavigationManager.isScreenFresh(app.DashboardVm, ttl)
-                        NavigationManager.showNavLoading(app, 'Dashboard');
-                        app.DashboardVm.onRefreshDashboard();
-                        asyncStarted = true;
+                        % Offline-safe dashboard loading. Only show the global
+                        % loading overlay when an authenticated project fetch
+                        % will actually be dispatched. In offline/no-project
+                        % mode onRefreshDashboard paints synchronously from
+                        % session state, so marking asyncStarted=true would
+                        % leave the overlay covering the entire application.
+                        if app.State.isAuthenticated() && app.State.hasProject()
+                            NavigationManager.showNavLoading(app, 'Dashboard');
+                            app.DashboardVm.onRefreshDashboard();
+                            asyncStarted = true;
+                        else
+                            app.DashboardVm.onRefreshDashboard(true);
+                            asyncStarted = false;
+                        end
                     elseif ~isempty(app.DashboardVm)
                         % Screen is fresh but activities may have changed from other screens
                         app.DashboardVm.refreshActivityTable();
@@ -350,8 +373,10 @@ classdef NavigationManager
                     % which refreshStatus writes to StatusLbl. The
                     % scatter axes ship a uilabel placeholder and the
                     % recommendation card shows em-dash defaults.
-                    if ~isempty(app.RunPlannerVm) && app.State.isAuthenticated() ...
+                    if ~isempty(app.RunPlannerVm) ...
                             && ~NavigationManager.isScreenFresh(app.RunPlannerVm, ttl)
+                        % RunPlannerViewModel.onEnter selects connected or offline mode.
+                        % Do not gate the screen on authentication here.
                         app.RunPlannerVm.onEnter();
                     end
                 case 'Jobs'
@@ -808,6 +833,12 @@ classdef NavigationManager
                 '<script>' js '</script></body></html>'];
         end
 
+
+        function tf = isOfflineScreen(key)
+            % Screens that are useful without the Python/FastAPI backend.
+            tf = any(strcmp(char(key), {'Welcome','Dashboard','Composer','Prediction','Run Planner'}));
+        end
+
         function n = navNames()
             % Routing keys — these MUST match the case labels in
             % screenBuilderFor / ensureVm / autoLoadScreen / etc. The
@@ -826,7 +857,7 @@ classdef NavigationManager
             % (`app.onSelectSection('Upload')`) still routes correctly.
             n = {'Dashboard','Welcome','Circuits','Analysis', ...
                  'Circuit Cutting','Backends', ...
-                 'Benchmark','Prediction','Mitigation Compare','Resource Estimator','Run Planner', ...
+                 'Benchmark','Prediction','Mitigation Compare','Resource Estimator', ...
                  'Jobs','Results', ...
                  'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
@@ -846,7 +877,6 @@ classdef NavigationManager
                 char(9671),  ... ◇ Prediction
                 char(9878),  ... ⚖ Mitigation Compare
                 char(9580),  ... ╌ Resource Estimator
-                char(9881),  ... ⚙ Run Planner
                 char(9635),  ... ▣ Jobs
                 char(9633),  ... □ Results
                 char(9673),  ... ◉ QEC Simulation
@@ -865,7 +895,7 @@ classdef NavigationManager
             %      classes don't need to be renamed.
             lb = {'Dashboard','Projects','Circuits','Analysis', ...
                   'Circuit Cutting','Backends', ...
-                  'Benchmark','Prediction','Mitigation Compare','Resource Estimator','Run Planner', ...
+                  'Benchmark','Plan & Run','Mitigation Compare','Resource Estimator', ...
                   'Jobs','Results', ...
                   'QEC Simulation','QEC Visualization','Reports','Settings'};
         end
@@ -913,7 +943,7 @@ classdef NavigationManager
                 'Analysis',         'subtitle_analysis', ...
                 'Backends',         'subtitle_backends', ...
                 'Benchmark',        'subtitle_benchmark', ...
-                'Prediction',       'subtitle_prediction', ...
+                'Prediction',       'subtitle_plan_run', ...
                 'MitigationCompare','subtitle_mitigation_compare', ...
                 'ResourceEstimator','subtitle_resource_estimator', ...
                 'RunPlanner',       'subtitle_run_planner', ...

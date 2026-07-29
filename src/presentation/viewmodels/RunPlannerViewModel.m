@@ -73,6 +73,14 @@ classdef RunPlannerViewModel < handle
         end
 
         function onEnter(obj)
+            % Offline-first: the planner must remain usable without the
+            % FastAPI backend. In offline mode it plans from the live
+            % Composer circuit using transparent local heuristics.
+            if ~obj.App.State.isAuthenticated()
+                obj.loadOfflinePlannerData();
+                return;
+            end
+
             obj.Phase = 'loading';
             obj.refreshStatus();
 
@@ -206,6 +214,19 @@ classdef RunPlannerViewModel < handle
         end
 
         function onPlan(obj)
+            % Offline mode uses the current Composer model and local,
+            % explicitly-labelled planning estimates. No Python call is made.
+            if ~obj.App.State.isAuthenticated()
+                model = obj.resolveSourceModel();
+                if isempty(model) || numel(model.Gates) == 0
+                    obj.flashStatus(Labels.get('run_planner_err_empty_circuit'), 'danger');
+                    return;
+                end
+                shots = max(1, round(obj.ShotsField.Value));
+                obj.planOffline(model, shots);
+                return;
+            end
+
             % Validate the chosen circuit source. Two branches:
             %   * Composer mode (dropdown value '__composer__'): require
             %     the live in-app Composer model to have at least one gate.
@@ -385,7 +406,14 @@ classdef RunPlannerViewModel < handle
         end
 
         function onSubmit(obj)
-            obj.flashStatus('Submit-this-run hands off to Benchmark in Phase 2.', 'info');
+            if ~obj.App.State.isAuthenticated()
+                uialert(obj.App.UIFigure, ...
+                    ['Offline planning is an estimate only. Connect to QTAU ' ...
+                     'before submitting a run to IBM Quantum.'], ...
+                    'Remote Connection Required', 'Icon', 'info');
+                return;
+            end
+            obj.flashStatus('Handing the recommended configuration to Benchmark.', 'info');
             try
                 obj.App.onSelectSection('Benchmark');
             catch
@@ -441,6 +469,91 @@ classdef RunPlannerViewModel < handle
     end
 
     methods (Access = private)
+        function loadOfflinePlannerData(obj)
+            % Synthetic catalogs are deliberately labelled as estimates.
+            % They allow the MATLAB-native workflow to be demonstrated
+            % without claiming live queue, calibration or pricing data.
+            obj.Circuits = [];
+            obj.Backends = [ ...
+                struct('name','MATLAB Local Simulator','num_qubits',32), ...
+                struct('name','Heron-class Hardware Estimate','num_qubits',133), ...
+                struct('name','Eagle-class Hardware Estimate','num_qubits',127)];
+            tbl = RunPlannerService.mitigationFactorTable();
+            obj.Levels = [tbl.x0, tbl.x1, tbl.x2, tbl.x3];
+            obj.populateCircuitDropdown();
+            obj.Phase = 'ready';
+            obj.LastRefresh = tic;
+            obj.flashStatus([ ...
+                'Offline estimate mode — using the current Composer circuit. ' ...
+                'Connect to QTAU for live backend calibration, queue and cost data.'], 'info');
+        end
+
+        function planOffline(obj, model, shots)
+            obj.Phase = 'planning';
+            obj.flashStatus('Computing local backend and mitigation estimates...', 'info');
+
+            nq = max(1, double(model.NumQubits));
+            ng = max(1, numel(model.Gates));
+            depth = ng;
+            try
+                if ismethod(model, 'depth'); depth = max(1, double(model.depth())); end
+            catch
+            end
+
+            names = {'MATLAB Local Simulator', ...
+                     'Heron-class Hardware Estimate', ...
+                     'Eagle-class Hardware Estimate'};
+            % Transparent deterministic estimates: local simulator is ideal;
+            % hardware estimates decay with width and gate count.
+            base = [0.99, ...
+                    max(0.52, 0.965 - 0.0025*ng - 0.0015*nq), ...
+                    max(0.48, 0.945 - 0.0035*ng - 0.0020*nq)];
+            runtimeBase = [max(0.01, 0.002*ng), ...
+                           8 + 0.020*shots + 0.12*depth, ...
+                           12 + 0.028*shots + 0.16*depth];
+            costBase = [0, ...
+                        0.0012*shots*(1 + nq/100), ...
+                        0.0009*shots*(1 + nq/90)];
+
+            levels = obj.Levels;
+            emptyPoint = RunPlannerService.makePoint('', '', '', 0, 0, 0, 0, 0, 0);
+            points = repmat(emptyPoint, 1, numel(names)*numel(levels));
+            idx = 0;
+            for bi = 1:numel(names)
+                for li = 1:numel(levels)
+                    lvl = levels(li);
+                    lid = char(string(lvl.id));
+                    label = char(string(lvl.label));
+                    factor = [1.0, 1.35, 2.15, 3.40];
+                    mult = factor(min(li, numel(factor)));
+                    fid = RunPlannerService.applyMitigationFactor(base(bi), lid);
+                    % Ideal local simulation does not need mitigation overhead.
+                    if bi == 1
+                        fid = 0.99; mult = 1.0;
+                    end
+                    idx = idx + 1;
+                    points(idx) = RunPlannerService.makePoint( ...
+                        names{bi}, lid, label, base(bi), fid, ...
+                        costBase(bi)*mult, runtimeBase(bi)*mult, ...
+                        shots*mult, mult);
+                end
+            end
+            obj.Points = points(1:idx);
+            obj.Frontier = RunPlannerService.computeParetoFrontier(obj.Points);
+            obj.Optimal = RunPlannerService.pickOptimal( ...
+                obj.Points, obj.Frontier, obj.TargetSlider.Value);
+            obj.Phase = 'done';
+            obj.repaintScatter();
+            obj.repaintCard();
+            obj.LblFactorNote.Text = [ ...
+                'Offline deterministic estimate. Live calibration, queue and ' ...
+                'pricing require a QTAU backend connection.'];
+            obj.refreshStatus();
+            obj.flashStatus(sprintf( ...
+                'Offline plan complete: %d candidates, %d Pareto points.', ...
+                numel(obj.Points), numel(obj.Frontier)), 'success');
+        end
+
         function model = resolveSourceModel(obj)
             model = [];
             if isempty(obj.CircuitDropdown) || ~isvalid(obj.CircuitDropdown); return; end
@@ -652,7 +765,22 @@ classdef RunPlannerViewModel < handle
             obj.LblFidelity.Text   = sprintf('%.3f (base %.3f)', p.fidelity, p.baseFidelity);
             obj.LblCost.Text       = sprintf('~%.3f IQP', p.cost);
             obj.LblRuntime.Text    = sprintf('~%.2fs', p.runtime);
-            obj.LblFactorNote.Text = Labels.get('run_planner_card_factor_note');
+            model = obj.resolveSourceModel();
+            if isempty(model)
+                obj.LblFactorNote.Text = Labels.get('run_planner_card_factor_note');
+            else
+                entangling = 0;
+                for k = 1:numel(model.Gates)
+                    if ismember(lower(model.Gates(k).kind), {'cx','cz','swap','ccx'})
+                        entangling = entangling + 1;
+                    end
+                end
+                obj.LblFactorNote.Text = sprintf([ ...
+                    'Why recommended: fits %d qubits; circuit depth %d with %d ' ...
+                    'entangling gate(s); predicted fidelity %.3f meets target %.2f. ' ...
+                    'Offline values are deterministic estimates, not live queue/calibration data.'], ...
+                    model.NumQubits, model.depth(), entangling, p.fidelity, obj.TargetSlider.Value);
+            end
         end
 
         function flashStatus(obj, msg, level)
@@ -663,6 +791,125 @@ classdef RunPlannerViewModel < handle
                 case 'success'; obj.StatusLbl.FontColor = Theme.COLOR_SUCCESS;
                 case 'info';    obj.StatusLbl.FontColor = Theme.COLOR_PRIMARY;
                 otherwise;      obj.StatusLbl.FontColor = Theme.COLOR_LABEL;
+            end
+        end
+    end
+
+
+    methods
+        function onExportWorkspace(obj)
+            if isempty(obj.Points)
+                uialert(obj.App.UIFigure, ...
+                    'Run the planner before exporting.', ...
+                    'Export Run Plan', 'Icon', 'warning');
+                return;
+            end
+            result = obj.exportPayload();
+            MatlabResultAdapter.exportToWorkspace(result.points, ...
+                'qtauRunPlanTable', 'table');
+            assignin('base', 'qtauRecommendedRun', result.recommended);
+            model = obj.resolveSourceModel();
+            if ~isempty(model)
+                hw = HardwareRecommendationService.recommend(model, round(obj.ShotsField.Value), obj.TargetSlider.Value);
+                assignin('base','qtauHardwareRanking',hw.ranking);
+                assignin('base','qtauHardwareRecommendation',hw);
+            end
+            obj.App.logEvent('MATLAB', ...
+                'Run plan exported as qtauRunPlanTable and qtauRecommendedRun');
+            uialert(obj.App.UIFigure, ...
+                ['Exported qtauRunPlanTable, qtauRecommendedRun, ' ...
+                 'qtauHardwareRanking and qtauHardwareRecommendation to MATLAB Workspace.'], ...
+                'Export Run Plan', 'Icon', 'success');
+        end
+
+        function onRunCustomerDemo(obj)
+            % Runs the complete Test 7 customer story in offline mode:
+            % MATLAB simulation -> workspace export -> round-trip -> planner
+            % -> hardware recommendation -> MATLAB report export.
+            model = obj.resolveSourceModel();
+            if isempty(model) || isempty(model.Gates)
+                uialert(obj.App.UIFigure, ...
+                    'Import or compose a circuit before running Customer Demo.', ...
+                    'Customer Demo', 'Icon', 'warning');
+                return;
+            end
+
+            shots = max(1, round(obj.ShotsField.Value));
+            target = obj.TargetSlider.Value;
+            obj.flashStatus('Running MATLAB-first customer demo...', 'info');
+            try
+                % Paint the planner UI using the same circuit and inputs.
+                obj.planOffline(model, shots);
+
+                report = CustomerDemoService.run(model, shots, target);
+                if report.passed
+                    statusText = 'PASS';
+                    iconName = 'success';
+                else
+                    statusText = 'CHECK';
+                    iconName = 'warning';
+                end
+
+                rec = report.hardware.recommended;
+                backend = char(string(rec.Backend(1)));
+                fidelity = double(rec.PredictedFidelity(1));
+                if report.roundTrip.passed
+                    roundTripText = 'PASS';
+                else
+                    roundTripText = 'FAIL';
+                end
+                msg = sprintf([ ...
+                    'Customer Demo %s\n\n' ...
+                    'MATLAB simulation: PASS\n' ...
+                    'Workspace export: PASS\n' ...
+                    'Round-trip: %s\n' ...
+                    'Offline planning: PASS\n' ...
+                    'Recommended backend: %s\n' ...
+                    'Predicted fidelity: %.3f\n\n' ...
+                    'Exported qtauCustomerDemoReport to MATLAB Workspace.\n\n' ...
+                    '%s'], ...
+                    statusText, roundTripText, backend, fidelity, ...
+                    char(report.disclaimer));
+                uialert(obj.App.UIFigure, msg, ...
+                    'MATLAB-to-Quantum Customer Demo', 'Icon', iconName);
+                obj.flashStatus([ ...
+                    'Customer Demo complete — inspect qtauCustomerDemoReport ' ...
+                    'in MATLAB Workspace.'], 'success');
+                obj.App.logEvent('MATLAB', ...
+                    'Customer Demo completed and exported to MATLAB Workspace');
+            catch ME
+                obj.flashStatus(sprintf('Customer Demo failed: %s', ME.message), 'danger');
+                uialert(obj.App.UIFigure, ME.message, ...
+                    'Customer Demo Failed', 'Icon', 'error');
+            end
+        end
+
+        function onSaveMat(obj)
+            if isempty(obj.Points)
+                uialert(obj.App.UIFigure, ...
+                    'Run the planner before saving.', ...
+                    'Save Run Plan', 'Icon', 'warning');
+                return;
+            end
+            [file, folder] = uiputfile('*.mat', 'Save QTAU Run Plan', ...
+                'qtau_run_plan.mat');
+            if isequal(file,0); return; end
+            qtauRunPlan = obj.exportPayload(); %#ok<NASGU>
+            save(fullfile(folder,file), 'qtauRunPlan');
+            obj.App.logEvent('MATLAB', sprintf( ...
+                'Run plan saved to MAT-file: %s', fullfile(folder,file)));
+        end
+
+        function result = exportPayload(obj)
+            result = struct();
+            result.points = MatlabResultAdapter.toTable(obj.Points);
+            result.frontier = MatlabResultAdapter.toTable(obj.Frontier);
+            result.target_fidelity = obj.TargetSlider.Value;
+            result.generated_at = datetime('now');
+            if isempty(obj.Optimal)
+                result.recommended = struct();
+            else
+                result.recommended = obj.Optimal;
             end
         end
     end

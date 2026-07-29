@@ -136,8 +136,8 @@ function PredictionScreen(app)
     submitPanel.Layout.Row = 4; submitPanel.Layout.Column = [1 3];
     submitPanel.BackgroundColor = Theme.COLOR_CARD;
 
-    sg = uigridlayout(submitPanel, [1 5]);
-    sg.ColumnWidth = {'1x', 170, 110, 130, 140};
+    sg = uigridlayout(submitPanel, [1 7]);
+    sg.ColumnWidth = {'1x', 155, 95, 110, 125, 125, 135};
     sg.Padding = [14 8 14 8]; sg.BackgroundColor = Theme.COLOR_CARD;
     desc = uilabel(sg, 'Text', Labels.get('prediction_action_msg'));
     desc.FontSize = 13; desc.Layout.Row = 1; desc.Layout.Column = 1;
@@ -159,8 +159,19 @@ function PredictionScreen(app)
     tmp = uibutton(sg, 'Text', [char(9678) ' Benchmark'], ...
         'ButtonPushedFcn', @(~,~)app.onSelectSection('Benchmark'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 4; app.styleBtn(tmp, 'ghost');
-    tmp = uibutton(sg, 'Text', [char(10004) ' ' Labels.get('prediction_btn_save', 'Save Prediction')]);
+    tmp = uibutton(sg, 'Text', 'Export Table', ...
+        'ButtonPushedFcn', @(~,~)app.PredictionVm.onExportWorkspace('table'));
     tmp.Layout.Row = 1; tmp.Layout.Column = 5; app.styleBtn(tmp, 'secondary');
+    tmp.Tooltip = 'Export the raw prediction payload to MATLAB Workspace as a table';
+
+    tmp = uibutton(sg, 'Text', 'Save MAT', ...
+        'ButtonPushedFcn', @(~,~)app.PredictionVm.onSaveMat());
+    tmp.Layout.Row = 1; tmp.Layout.Column = 6; app.styleBtn(tmp, 'ghost');
+
+    tmp = uibutton(sg, 'Text', 'Advanced Planner', ...
+        'ButtonPushedFcn', @(~,~)app.onSelectSection('Run Planner'));
+    tmp.Layout.Row = 1; tmp.Layout.Column = 7; app.styleBtn(tmp, 'ghost');
+    tmp.Tooltip = 'Compare backend, mitigation, shots, cost, and fidelity options';
 
     Logger.info('PredictionScreen', 'Prediction tab UI built successfully');
 end
