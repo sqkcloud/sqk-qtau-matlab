@@ -2470,6 +2470,13 @@ classdef AnalysisViewModel < handle
 
             vm = obj;
             qmcSvc = app.QmcSvc;
+            % Hoist the token into a LOCAL before building pollFcn.
+            % PollingRunner dispatches pollFcn onto a parfeval worker,
+            % and a closure that captures `app` cannot deserialize there
+            % (doc/workflow.md:170 — uihtml / WebComponent isn't on the
+            % worker classpath). That failure arrives as a transient poll
+            % error, so the loop would retry silently forever.
+            authToken = app.State.authToken;
 
             % Register first with no taskId-bound closures so the
             % registry hands us back an id we can capture.
@@ -2499,7 +2506,7 @@ classdef AnalysisViewModel < handle
                 {'completed','failed','cancelled'}));
 
             ctx = PollingRunner.start(struct( ...
-                'pollFcn',     @() qmcSvc.getAnalyzeJob(jobId, app.State.authToken), ...
+                'pollFcn',     @() qmcSvc.getAnalyzeJob(jobId, authToken), ...
                 'isTerminal',  isTerminal, ...
                 'onProgress',  @(s) vm.onQmcProgress(app, taskId, s), ...
                 'onDone',      @(s) vm.onQmcTerminal(app, taskId, s), ...

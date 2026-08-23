@@ -48,6 +48,10 @@ classdef BackgroundTaskManager < handle
         TasksChanged
     end
 
+    properties (Constant, Access = private)
+        MAX_TERMINAL = 25   % cap on retained completed/failed/cancelled tasks
+    end
+
     properties (Access = private)
         Tasks      = {}   % cell array of task structs
         IdCounter  = 0
@@ -91,18 +95,21 @@ classdef BackgroundTaskManager < handle
             idx = obj.findIndex(id);
             if idx == 0; return; end
             t = obj.Tasks{idx};
+            cb = t.onComplete;   % keep a local handle to fire after cleanup
             t.status      = 'completed';
             t.progressPct = 100;
             t.result      = result;
             t.completedAt = datetime('now');
             t.updatedAt   = t.completedAt;
+            t = BackgroundTaskManager.releaseHandles(t);
             obj.Tasks{idx} = t;
+            obj.evictOldTerminal();
             notify(obj, 'TasksChanged');
             % Fire the VM callback AFTER the listener pass so the indicator
             % renders the terminal state before any nested UI work runs.
-            if ~isempty(t.onComplete)
+            if ~isempty(cb)
                 try
-                    t.onComplete(result);
+                    cb(result);
                 catch ME
                     try; Logger.warn('BackgroundTaskManager', ...
                         'onComplete(%s) raised: %s', id, ME.message); catch; end
@@ -119,7 +126,9 @@ classdef BackgroundTaskManager < handle
             t.error       = ME;
             t.completedAt = datetime('now');
             t.updatedAt   = t.completedAt;
+            t = BackgroundTaskManager.releaseHandles(t);
             obj.Tasks{idx} = t;
+            obj.evictOldTerminal();
             notify(obj, 'TasksChanged');
         end
 
@@ -144,7 +153,9 @@ classdef BackgroundTaskManager < handle
             t.status      = 'cancelled';
             t.completedAt = datetime('now');
             t.updatedAt   = t.completedAt;
+            t = BackgroundTaskManager.releaseHandles(t);
             obj.Tasks{idx} = t;
+            obj.evictOldTerminal();
             notify(obj, 'TasksChanged');
         end
 
@@ -204,9 +215,41 @@ classdef BackgroundTaskManager < handle
             end
         end
 
+        function evictOldTerminal(obj)
+            % evictOldTerminal  Drop the oldest completed/failed/cancelled
+            %   tasks once the retained-terminal count exceeds
+            %   MAX_TERMINAL. Bounds both memory (terminal payloads) and
+            %   the O(n) cost of findIndex / countActive across a long
+            %   session. Active (queued/running) tasks are never evicted.
+            nT = numel(obj.Tasks);
+            if nT == 0; return; end
+            isTerm = false(1, nT);
+            for i = 1:nT
+                isTerm(i) = any(strcmp(obj.Tasks{i}.status, ...
+                    {'completed','failed','cancelled'}));
+            end
+            excess = sum(isTerm) - BackgroundTaskManager.MAX_TERMINAL;
+            if excess <= 0; return; end
+            termIdx = find(isTerm);
+            obj.Tasks(termIdx(1:excess)) = [];   % oldest terminal first
+        end
+
     end
 
     methods (Static, Access = private)
+
+        function t = releaseHandles(t)
+            % releaseHandles  Null the callback / poll-context handles a
+            %   task no longer needs once terminal, so completed tasks
+            %   don't pin VM/app object graphs or a dead poll timer in
+            %   the registry. result + error payloads are retained.
+            t.onComplete = [];
+            t.onCancel   = [];
+            if ~isempty(t.pollCtx)
+                try; PollingRunner.cancel(t.pollCtx); catch; end
+                t.pollCtx = [];
+            end
+        end
 
         function t = normalize(task)
             % normalize  Fill in defaults for any unset task fields so

@@ -123,6 +123,35 @@ function test_countActive_counts_only_queued_and_running(testCase)
     testCase.assertEqual(mgr.countActive(), 2);
 end
 
+% BGT-10
+function test_complete_releases_callback_handles(testCase)
+    % Terminal transition nulls the callback/poll-ctx closures so a
+    % finished task stops pinning VM/app object graphs; result is kept.
+    mgr = BackgroundTaskManager();
+    id = mgr.register(struct('kind','qmc','displayName','A', ...
+        'onComplete', @(r) r, 'onCancel', @() 1));
+    mgr.complete(id, struct('value', 7));
+    t = mgr.findById(id);
+    testCase.assertEmpty(t.onComplete);
+    testCase.assertEmpty(t.onCancel);
+    testCase.assertEqual(t.result.value, 7);
+end
+
+% BGT-11
+function test_terminal_retention_is_bounded(testCase)
+    % Retained terminal tasks are capped (oldest evicted) so a long
+    % session can't grow the registry unbounded.
+    mgr = BackgroundTaskManager();
+    ids = cell(1, 30);
+    for k = 1:30
+        ids{k} = mgr.register(struct('kind','qmc','displayName',sprintf('run-%d',k)));
+        mgr.complete(ids{k}, struct());
+    end
+    testCase.assertLessThanOrEqual(numel(mgr.list()), 25);
+    testCase.assertNotEmpty(mgr.findById(ids{30}));   % newest kept
+    testCase.assertEmpty(mgr.findById(ids{1}));       % oldest evicted
+end
+
 % ── helpers ─────────────────────────────────────────────────────────────────
 function recordComplete(payload)
     % Bridge the callback's local scope to the test by stashing the payload
