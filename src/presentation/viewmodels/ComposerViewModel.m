@@ -1647,7 +1647,8 @@ classdef ComposerViewModel < handle
                 return;
             end
             try
-                obj.InspectSteps = StatevectorSimulator.simulate(obj.Model);
+                obj.InspectSteps = StatevectorSimulator.simulate(obj.Model, ...
+                    struct('maxSteps', 256));
             catch ME
                 obj.showInspectMessage(sprintf('Simulator error: %s', ME.message));
                 return;
@@ -1682,19 +1683,25 @@ classdef ComposerViewModel < handle
             idx = max(1, min(stepCount, obj.InspectStepIdx));
             step = obj.InspectSteps(idx);
 
-            obj.InspectStepLbl.Text = sprintf('%d / %d', idx-1, stepCount-1);
+            % Report progress in GATES, not retained steps. With a step
+            % budget the walkthrough holds sampled checkpoints, so a
+            % step ordinal ("255 / 255") would read as a finished
+            % circuit when 5000 gates were actually executed.
+            obj.InspectStepLbl.Text = sprintf('%d / %d', ...
+                step.gateIndex, step.totalGates);
             if idx == 1
                 obj.InspectCaptionLbl.Text = Labels.get('composer_inspect_at_init');
             else
                 obj.InspectCaptionLbl.Text = sprintf( ...
-                    Labels.get('composer_inspect_after_fmt'), idx-1, stepCount-1, step.label);
+                    Labels.get('composer_inspect_after_fmt'), ...
+                    step.gateIndex, step.totalGates, step.label);
             end
 
             content = obj.InspectContent;
             delete(content.Children);
             switch obj.InspectTab
                 case 'amps'
-                    obj.paintAmps(content, step);
+                    obj.paintAmps(content, step, obj.Model.NumQubits);
                 otherwise
                     obj.paintBloch(content, step, obj.Model.NumQubits);
             end
@@ -1739,7 +1746,7 @@ classdef ComposerViewModel < handle
             end
         end
 
-        function paintAmps(~, content, step)
+        function paintAmps(~, content, step, n)
             g = uigridlayout(content, [1 1]);
             g.Padding = [10 10 10 10];
             g.BackgroundColor = Theme.COLOR_CARD;
@@ -1750,7 +1757,6 @@ classdef ComposerViewModel < handle
             ax.FontSize = 10;
             top = step.topAmps;
             if isempty(top); return; end
-            n = ceil(log2(numel(step.psi)));
             probs = arrayfun(@(s) s.prob, top);
             labels = arrayfun(@(s) sprintf('|%s⟩', dec2bin(s.state, n)), ...
                 top, 'UniformOutput', false);
